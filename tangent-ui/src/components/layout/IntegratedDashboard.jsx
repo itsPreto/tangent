@@ -1,22 +1,29 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from "react";
 import axios from "axios";
-import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../core/tabs';
-import { Share2, Download, ArrowLeft, Plus, Bot, PanelLeftClose, PanelLeft } from 'lucide-react';
-import ChatPersistenceManager from '../chat/ChatPersistanceManager';
-import FileUploader from '../forms/FileUploader';
-import { Button } from '../core/button';
-import ModelsModal from '../overlay/ModelsModal';
-import { ThemeToggle } from '../shared/ThemeToggle';
-import { ScrollArea } from '../core/scroll-area';
-import TangentLogo from '../shared/TangentLogo';
-import { Sparkles, ChartBarIcon, Text } from 'lucide-react';
-import ExploreTab from './ExploreTab';
-import TopicsPanel from '../visualization/TopicsPanel';
-import MainDashboard from '../visualization/MainDashboard';
-import TangentChat from '../chat/TangentChat';
-import { useVisualization } from '../providers/VisualizationProvider';
-
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../core/tabs";
+import {
+  Share2,
+  Download,
+  ArrowLeft,
+  Plus,
+  Bot,
+  PanelLeftClose,
+  PanelLeft,
+} from "lucide-react";
+import ChatPersistenceManager from "../chat/ChatPersistanceManager";
+import FileUploader from "../forms/FileUploader";
+import { Button } from "../core/button";
+import ModelsModal from "../overlay/ModelsModal";
+import { ThemeToggle } from "../shared/ThemeToggle";
+import { ScrollArea } from "../core/scroll-area";
+import TangentLogo from "../shared/TangentLogo";
+import { Sparkles, ChartBarIcon, Text } from "lucide-react";
+import ExploreTab from "./ExploreTab";
+import TopicsPanel from "../visualization/TopicsPanel";
+import MainDashboard from "../visualization/MainDashboard";
+import TangentChat from "../chat/TangentChat";
+import { useVisualization } from "../providers/VisualizationProvider";
 
 const SharedHeader = ({
   handleRefresh,
@@ -29,10 +36,16 @@ const SharedHeader = ({
   nodes,
   setNodes,
   activeChat,
-  setActiveChat
+  setActiveChat,
 }) => {
   return (
-    <header className={`${isPanelCollapsed ? 'w-screen' : 'w-[80vw]'} h-16 bg-background border border-border ${isPanelCollapsed ? 'left-0' : 'left-[20vw]'} z-[100] flex items-center px-6 transition-all duration-300`}>
+    <header
+      className={`${
+        isPanelCollapsed ? "w-screen" : "w-[80vw]"
+      } h-16 bg-background border border-border ${
+        isPanelCollapsed ? "left-0" : "left-[20vw]"
+      } z-[100] flex items-center px-6 transition-all duration-300`}
+    >
       <Button
         variant="outline"
         size="icon"
@@ -51,11 +64,7 @@ const SharedHeader = ({
       </div>
 
       <div className="flex items-center gap-2 ml-auto">
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 border-border"
-        >
+        <Button variant="outline" size="icon" className="h-9 w-9 border-border">
           <ThemeToggle theme={theme} setTheme={setTheme} />
         </Button>
         <Button
@@ -71,14 +80,10 @@ const SharedHeader = ({
           buttonProps={{
             variant: "outline",
             size: "icon",
-            className: "h-9 w-9"
+            className: "h-9 w-9",
           }}
         />
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 border-border"
-        >
+        <Button variant="outline" size="icon" className="h-9 w-9 border-border">
           <Share2 className="h-4 w-4" />
         </Button>
         <Button
@@ -105,14 +110,17 @@ export const SharedHeaderWrapper = ({ onNewThread, onManageModels }) => {
   const { handleRefresh, theme, setTheme, view, setView } = useVisualization();
   const [lastConversation, setLastConversation] = useState(null);
 
-  const handleBack = useCallback((conversation = null) => {
-    if (conversation) {
-      setView('conversation');
-      setLastConversation(conversation);
-    } else {
-      setView('clusters');
-    }
-  }, [setView]);
+  const handleBack = useCallback(
+    (conversation = null) => {
+      if (conversation) {
+        setView("conversation");
+        setLastConversation(conversation);
+      } else {
+        setView("clusters");
+      }
+    },
+    [setView]
+  );
 
   return (
     <SharedHeader
@@ -128,19 +136,18 @@ export const SharedHeaderWrapper = ({ onNewThread, onManageModels }) => {
   );
 };
 
-
 export const IntegratedDashboard = () => {
   const [selectedNodePosition, setSelectedNodePosition] = useState(null);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const [view, setView] = useState('clusters');
+  const [view, setView] = useState("clusters");
   const [lastThread, setLastThread] = useState(null);
   const { handleRefresh, theme, setTheme } = useVisualization();
-  const [activeTab, setActiveTab] = React.useState('dashboard');
+  const [activeTab, setActiveTab] = React.useState("dashboard");
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
   const [showQuickInput, setShowQuickInput] = useState(true);
   // Models state management
   const [showModelsModal, setShowModelsModal] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedModel, setSelectedModel] = useState("");
   const [localModels, setLocalModels] = useState([]);
   const [runningModels, setRunningModels] = useState([]);
   const [modelInfo, setModelInfo] = useState(null);
@@ -149,20 +156,22 @@ export const IntegratedDashboard = () => {
   const [pullStatus, setPullStatus] = useState("");
   const [detailedView, setDetailedView] = useState(false);
 
-  const [nodes, setNodes] = useState([{
-    id: 1,
-    messages: [],
-    x: window.innerWidth / 2 - 200,
-    y: 100,
-    type: 'main',
-    title: 'Main Thread',
-    branchId: '0'
-  }]);
+  const [nodes, setNodes] = useState([
+    {
+      id: 1,
+      messages: [],
+      x: window.innerWidth / 2 - 200,
+      y: 100,
+      type: "main",
+      title: "Main Thread",
+      branchId: "0",
+    },
+  ]);
 
   const [activeChat, setActiveChat] = useState(null);
 
   // Add these state declarations at the top with other states
-  const [sortBy, setSortBy] = useState('relevance');
+  const [sortBy, setSortBy] = useState("relevance");
   const [selectedCluster, setSelectedCluster] = useState(null);
   const [data, setData] = useState(null);
 
@@ -174,10 +183,26 @@ export const IntegratedDashboard = () => {
   // Add this function to match what's used in MainDashboard
   function getColor(index) {
     const colors = [
-      "#60A5FA", "#F87171", "#34D399", "#FBBF24", "#A78BFA",
-      "#F472B6", "#FB923C", "#2DD4BF", "#4ADE80", "#A3E635",
-      "#38BDF8", "#FB7185", "#818CF8", "#C084FC", "#E879F9",
-      "#22D3EE", "#F43F5E", "#10B981", "#6366F1", "#8B5CF6"
+      "#60A5FA",
+      "#F87171",
+      "#34D399",
+      "#FBBF24",
+      "#A78BFA",
+      "#F472B6",
+      "#FB923C",
+      "#2DD4BF",
+      "#4ADE80",
+      "#A3E635",
+      "#38BDF8",
+      "#FB7185",
+      "#818CF8",
+      "#C084FC",
+      "#E879F9",
+      "#22D3EE",
+      "#F43F5E",
+      "#10B981",
+      "#6366F1",
+      "#8B5CF6",
     ];
     return colors[index % colors.length];
   }
@@ -198,14 +223,17 @@ export const IntegratedDashboard = () => {
   };
 
   const handleDeleteModel = async (modelName) => {
-    if (!window.confirm(`Are you sure you want to delete model "${modelName}"?`)) return;
+    if (
+      !window.confirm(`Are you sure you want to delete model "${modelName}"?`)
+    )
+      return;
     try {
       await fetch("http://localhost:11434/api/delete", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: modelName }),
       });
-      const response = await fetch('http://localhost:11434/api/tags');
+      const response = await fetch("http://localhost:11434/api/tags");
       const data = await response.json();
       setLocalModels(data.models);
     } catch (error) {
@@ -229,7 +257,7 @@ export const IntegratedDashboard = () => {
       if (!response.ok) throw new Error("Failed to pull model");
       setPullStatus("Model downloaded successfully");
       setPullModelName("");
-      const tagsResponse = await fetch('http://localhost:11434/api/tags');
+      const tagsResponse = await fetch("http://localhost:11434/api/tags");
       const data = await tagsResponse.json();
       setLocalModels(data.models);
     } catch (error) {
@@ -251,54 +279,62 @@ export const IntegratedDashboard = () => {
       const chatData = {
         chatId: activeChat?.id || undefined,
         nodes,
-        title: activeChat?.title || 'Untitled Chat',
+        title: activeChat?.title || "Untitled Chat",
         metadata: {
           nodeCount: nodes.length,
-          messageCount: nodes.reduce((acc, node) => acc + node.messages.length, 0)
-        }
+          messageCount: nodes.reduce(
+            (acc, node) => acc + node.messages.length,
+            0
+          ),
+        },
       };
 
-      const response = await axios.post('http://localhost:5001/api/chats/save', chatData);
+      const response = await axios.post(
+        "http://localhost:5001/api/chats/save",
+        chatData
+      );
       if (response.data.success) {
         setActiveChat({
           id: response.data.chatId,
-          title: chatData.title
+          title: chatData.title,
         });
       }
     } catch (error) {
-      console.error('Error saving chat:', error);
+      console.error("Error saving chat:", error);
     }
   }, [nodes, activeChat]);
 
-
   const handleNewThread = useCallback(() => {
-    const newConversation = [{
-      id: Date.now(),
-      messages: [],
-      type: 'main',
-      title: 'Main Thread',
-      x: window.innerWidth / 4,
-      y: window.innerHeight / 3,
-      branchId: '0'
-    }, {
-      id: Date.now() + 1,
-      messages: [],
-      type: 'branch',
-      title: 'New Thread',
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-      parentId: Date.now(),
-      systemPrompt: '',
-      parentMessageIndex: 0,
-      branchId: '0.0'
-    }];
+    const newConversation = [
+      {
+        id: Date.now(),
+        messages: [],
+        type: "main",
+        title: "Main Thread",
+        x: window.innerWidth / 4,
+        y: window.innerHeight / 3,
+        branchId: "0",
+      },
+      {
+        id: Date.now() + 1,
+        messages: [],
+        type: "branch",
+        title: "New Thread",
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+        parentId: Date.now(),
+        systemPrompt: "",
+        parentMessageIndex: 0,
+        branchId: "0.0",
+      },
+    ];
     setSelectedConversation(newConversation);
     setLastThread(newConversation);
     setSelectedNodePosition({
       x: window.innerWidth / 2,
-      y: window.innerHeight / 2
+      y: window.innerHeight / 2,
     });
-    setView('conversation');
+    setView("conversation");
   }, []);
 
   useEffect(() => {
@@ -307,29 +343,34 @@ export const IntegratedDashboard = () => {
       setSelectedConversation(nodes);
       setLastThread(nodes);
       setSelectedNodePosition(position);
-      setView('conversation');
+      setView("conversation");
     };
 
-    window.addEventListener('openConversation', handleOpenConversation);
+    window.addEventListener("openConversation", handleOpenConversation);
 
     return () => {
-      window.removeEventListener('openConversation', handleOpenConversation);
+      window.removeEventListener("openConversation", handleOpenConversation);
     };
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      const isTyping = document.activeElement.tagName === 'INPUT' ||
-        document.activeElement.tagName === 'TEXTAREA';
+      const isTyping =
+        document.activeElement.tagName === "INPUT" ||
+        document.activeElement.tagName === "TEXTAREA";
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !isTyping) {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "s" &&
+        !isTyping
+      ) {
         e.preventDefault();
         handleSave();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSave]);
 
   useEffect(() => {
@@ -337,25 +378,31 @@ export const IntegratedDashboard = () => {
       try {
         const response = await fetch("http://127.0.0.1:5001/api/visualization");
         const responseData = await response.json();
-        const chatsWithReflections = new Set(responseData.chats_with_reflections);
+        const chatsWithReflections = new Set(
+          responseData.chats_with_reflections
+        );
 
-        const chartData = [{
-          id: 'points',
-          data: responseData.points.map((point, i) => ({
-            x: point[0],
-            y: point[1],
-            cluster: responseData.clusters[i],
-            title: responseData.titles[i],
-            hasReflection: chatsWithReflections.has(responseData.titles[i])
-          }))
-        }];
+        if (responseData.length > 0) {
+          const chartData = [
+            {
+              id: "points",
+              data: responseData.points.map((point, i) => ({
+                x: point[0],
+                y: point[1],
+                cluster: responseData.clusters[i],
+                title: responseData.titles[i],
+                hasReflection: chatsWithReflections.has(responseData.titles[i]),
+              })),
+            },
+          ];
 
-        setData({
-          chartData,
-          topics: responseData.topics
-        });
+          setData({
+            chartData,
+            topics: responseData.topics,
+          });
+        }
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error("Error fetching data:", error);
       }
     };
 
@@ -364,16 +411,18 @@ export const IntegratedDashboard = () => {
 
   const handleTopicConversationSelect = async (chat) => {
     try {
-      const baseTitle = chat.title.replace(/ \(Branch \d+\)$/, '');
+      const baseTitle = chat.title.replace(/ \(Branch \d+\)$/, "");
 
       // Get the branched data
       const response = await fetch(
-        `http://127.0.0.1:5001/api/messages_all/${encodeURIComponent(baseTitle)}?type=claude`
+        `http://127.0.0.1:5001/api/messages_all/${encodeURIComponent(
+          baseTitle
+        )}?type=claude`
       );
       const messageData = await response.json();
 
       if (!messageData || !messageData.branches) {
-        console.error('Failed to fetch conversation data');
+        console.error("Failed to fetch conversation data");
         return;
       }
 
@@ -382,30 +431,30 @@ export const IntegratedDashboard = () => {
       console.log("Processed nodes:", nodes);
 
       if (!nodes || nodes.length === 0) {
-        console.error('No valid nodes created from message data');
+        console.error("No valid nodes created from message data");
         return;
       }
 
       // Calculate center position for positioning the nodes
       const clickPosition = {
         x: window.innerWidth / 2,
-        y: window.innerHeight / 2
+        y: window.innerHeight / 2,
       };
 
       // Update the conversation state and view
       setSelectedConversation(nodes);
       setLastThread(nodes);
       setSelectedNodePosition(clickPosition);
-      setView('conversation');
+      setView("conversation");
     } catch (error) {
-      console.error('Error in conversation click handler:', error);
+      console.error("Error in conversation click handler:", error);
     }
   };
 
   // Helper function to build conversation nodes
   const buildConversationNodes = (responseData, chatTitle) => {
     if (!responseData || !responseData.branches) {
-      console.error('Invalid response data structure');
+      console.error("Invalid response data structure");
       return [];
     }
 
@@ -414,34 +463,36 @@ export const IntegratedDashboard = () => {
     let nodeIdCounter = 1;
 
     // First create the main thread (branch '0')
-    const mainBranch = responseData.branches['0'];
+    const mainBranch = responseData.branches["0"];
     if (mainBranch) {
       const mainNode = {
         id: nodeIdCounter++,
         title: chatTitle,
-        messages: mainBranch.map(msg => ({
-          role: msg.sender === 'human' ? 'user' : 'assistant',
+        messages: mainBranch.map((msg) => ({
+          role: msg.sender === "human" ? "user" : "assistant",
           content: msg.text,
-          messageId: msg.message_id
+          messageId: msg.message_id,
         })),
-        type: 'main',
-        branchId: '0',
+        type: "main",
+        branchId: "0",
         x: window.innerWidth / 4,
-        y: window.innerHeight / 3
+        y: window.innerHeight / 3,
       };
       nodes.push(mainNode);
-      mainBranch.forEach(msg => messageToNodeMap.set(msg.message_id, mainNode.id));
+      mainBranch.forEach((msg) =>
+        messageToNodeMap.set(msg.message_id, mainNode.id)
+      );
     }
 
     // Then create all branch nodes
     Object.entries(responseData.branches).forEach(([branchId, messages]) => {
-      if (branchId === '0') return; // Skip main thread
+      if (branchId === "0") return; // Skip main thread
 
       const firstMessage = messages[0];
       if (!firstMessage?.parent_message_id) return;
 
       const parentNodeId = messageToNodeMap.get(firstMessage.parent_message_id);
-      const parentNode = nodes.find(n => n.id === parentNodeId);
+      const parentNode = nodes.find((n) => n.id === parentNodeId);
 
       if (!parentNode) {
         console.warn(`Parent node not found for branch ${branchId}`);
@@ -449,36 +500,38 @@ export const IntegratedDashboard = () => {
       }
 
       const parentMessageIndex = parentNode.messages.findIndex(
-        msg => msg.messageId === firstMessage.parent_message_id
+        (msg) => msg.messageId === firstMessage.parent_message_id
       );
 
       const branchNode = {
         id: nodeIdCounter++,
         title: `${chatTitle} (Branch ${branchId})`,
-        messages: messages.map(msg => ({
-          role: msg.sender === 'human' ? 'user' : 'assistant',
+        messages: messages.map((msg) => ({
+          role: msg.sender === "human" ? "user" : "assistant",
           content: msg.text,
-          messageId: msg.message_id
+          messageId: msg.message_id,
         })),
-        type: 'branch',
+        type: "branch",
         parentId: parentNodeId,
         parentMessageIndex: parentMessageIndex >= 0 ? parentMessageIndex : 0,
         branchId: branchId,
         x: parentNode.x + 300,
-        y: parentNode.y + (parentMessageIndex * 50),
+        y: parentNode.y + parentMessageIndex * 50,
         // Add context messages for the branch
         contextMessages: [
           ...parentNode.messages.slice(0, parentMessageIndex + 1),
-          ...messages.map(msg => ({
-            role: msg.sender === 'human' ? 'user' : 'assistant',
+          ...messages.map((msg) => ({
+            role: msg.sender === "human" ? "user" : "assistant",
             content: msg.text,
-            messageId: msg.message_id
-          }))
-        ]
+            messageId: msg.message_id,
+          })),
+        ],
       };
 
       nodes.push(branchNode);
-      messages.forEach(msg => messageToNodeMap.set(msg.message_id, branchNode.id));
+      messages.forEach((msg) =>
+        messageToNodeMap.set(msg.message_id, branchNode.id)
+      );
     });
 
     return nodes;
@@ -489,7 +542,11 @@ export const IntegratedDashboard = () => {
       {/* Left Sidebar */}
       {!isPanelCollapsed && (
         <div className="fixed top-0 left-0 w-[20vw] h-full py-2 border-r border-border flex flex-col transition-all duration-300">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex-1 flex flex-col"
+          >
             <div className="px-4 py-2">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="dashboard" className="gap-2">
@@ -508,7 +565,10 @@ export const IntegratedDashboard = () => {
             </div>
 
             <div className="flex-1 p-4 overflow-hidden">
-              <TabsContent value="dashboard" className="h-full m-0 overflow-hidden">
+              <TabsContent
+                value="dashboard"
+                className="h-full m-0 overflow-hidden"
+              >
                 <MainDashboard />
               </TabsContent>
               <TabsContent value="explore" className="h-full m-0">
@@ -535,13 +595,17 @@ export const IntegratedDashboard = () => {
       )}
 
       {/* Right Content Area */}
-      <div className={`${isPanelCollapsed ? 'w-full' : 'ml-[20vw] w-[80vw]'} flex flex-col transition-all duration-300`}>
+      <div
+        className={`${
+          isPanelCollapsed ? "w-full" : "ml-[20vw] w-[80vw]"
+        } flex flex-col transition-all duration-300`}
+      >
         <SharedHeader
           handleRefresh={handleRefresh}
           theme={theme}
           setTheme={setTheme}
           currentView={view}
-          handleBack={() => setView('clusters')}
+          handleBack={() => setView("clusters")}
           onNewThread={handleNewThread}
           lastConversation={lastThread}
           onManageModels={handleManageModels}

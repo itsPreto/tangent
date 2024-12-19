@@ -5,7 +5,7 @@
 
 
 ## What is this?
-  
+
 Tangent is a canvas for exploring AI conversations, treating each chat branch as an experiment you can merge, compare, and discard. It lets you resurrect conversations that hit context limits, pick up abandoned threads, and map the hidden connections between different discussions.
 
 ## Core stuff it does:
@@ -45,14 +45,14 @@ https://github.com/user-attachments/assets/69fac816-ebec-4506-af33-2d31bbe9419e
 </div>
 
 <div align="center">
-  
+
 ### Environment Setup
 
 </div>
 
 Initialize a new venv (mac):
 ```bash
-python3 -m venv my_env
+cd 
 source my_env/bin/activate
 ```
 
@@ -62,7 +62,7 @@ pip install flask flask-cors scikit-learn numpy pandas hdbscan umap-learn reques
 ```
 
 <div align="center">
-  
+
 ### Ollama Setup
 
 </div>
@@ -72,7 +72,7 @@ Install Ollama
 
 Verify installation
 ```bash
-ollama --version                                                                                                                      
+ollama --version
 ollama version is 0.4.4
 ```
 
@@ -89,7 +89,7 @@ ollama serve
 ```
 
 <div align="center">
-  
+
 ### Backend Setup
 
 </div>
@@ -112,9 +112,9 @@ python3 tsne.py --embedding-model "custom-embedding-model" --generation-model "c
 ```
 
 <div align="center">
-  
+
   ### Frontend Setup
-  
+
 </div>
 
 ```bash

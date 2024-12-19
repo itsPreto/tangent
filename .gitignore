@@ -1,20 +1,24 @@
 /datasets
-/simplified-ab/processed_data/
-/simplified-ab/simplified_env/
-/simplified-ab/unprocessed/
-/simplified-ab/uploads/
+/**/processed_data/
+/**/simplified_env/
+/**/unprocessed/
+/**/uploads/
 /venv/
-/simplified-ui/node_modules/
+/**/node_modules/
 .DS_Store
 
 
 output.wav
-simplified-ab/reflection/
-simplified-ab/test/
-simplified-ui/build/
-simplified-ui/dist/
-simplified-ui/electron-builder.json
-simplified-ui/electron/
-simplified-ui/src/config.js
-simplified-ui/webpack.config.js
+**/reflection/
+**/test/
+**/build/
+**/dist/
+**/electron-builder.json
+**/electron/
+**/src/config.js
+**/webpack.config.js
 utils/voice_assistant.py
+
+**/__pycache__/**
+yarn.lock
+npm.lock

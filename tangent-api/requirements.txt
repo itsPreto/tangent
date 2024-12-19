@@ -1,0 +1,10 @@
+Flask
+flask-cors
+numpy
+pandas
+scipy
+hdbscan
+umap-learn
+requests
+dataclasses-json
+python-dotenv
