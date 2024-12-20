@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '../core/card';
 import { Badge } from "../index";
-import { ChevronDown, ChevronUp, X, PlusCircle, MessageCircle, Timer, Edit2, Maximize2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, PlusCircle, MessageCircle, Timer, Edit2, Maximize2, Play, Bug } from 'lucide-react';
 import { RecordingButton } from '../forms/RecordingButton';
 import { cn } from '../../utils/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,62 @@ const calculateMessageOffset = (messages, index) => {
     ), 100);
 };
 
+const CodeBlock = ({ code, onRun, onDebug }) => {
+    const [result, setResult] = useState(null);
+    const [isRunning, setIsRunning] = useState(false);
+  
+    const handleRun = async () => {
+      setIsRunning(true);
+      try {
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: selectedModel,
+            prompt: code,
+            execute_code: true
+          })
+        });
+        const data = await response.json();
+        setResult(data.code_execution[0]);
+      } catch (error) {
+        console.error('Error executing code:', error);
+      } finally {
+        setIsRunning(false);
+      }
+    };
+  
+    return (
+      <div className="relative group">
+        <pre className="bg-muted p-4 rounded-md overflow-x-auto">
+          <code className="text-sm font-mono">{code}</code>
+        </pre>
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+          <button
+            onClick={handleRun}
+            disabled={isRunning}
+            className="p-1.5 rounded bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50"
+            title="Run Code"
+          >
+            <Play className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onDebug}
+            className="p-1.5 rounded bg-muted hover:bg-muted/90"
+            title="Debug Code"
+          >
+            <Bug className="w-4 h-4" />
+          </button>
+        </div>
+        {isRunning && (
+          <div className="mt-2 text-sm text-muted-foreground">
+            Running code...
+          </div>
+        )}
+        <ExecutionResult result={result} />
+      </div>
+    );
+  };
 
 const MessageTimestamp = ({ messageIndex, side = 'right' }) => {
     const baseTime = new Date();
@@ -43,6 +99,27 @@ const MessageTimestamp = ({ messageIndex, side = 'right' }) => {
         </div>
     );
 };
+
+const ExecutionResult = ({ result }) => {
+    if (!result) return null;
+  
+    return (
+      <div className="mt-2 text-sm">
+        {result.stdout && (
+          <div className="bg-muted/50 p-2 rounded">
+            <div className="font-semibold text-xs mb-1">Output:</div>
+            <pre className="whitespace-pre-wrap">{result.stdout}</pre>
+          </div>
+        )}
+        {result.stderr && (
+          <div className="bg-destructive/10 p-2 rounded mt-2">
+            <div className="font-semibold text-xs mb-1 text-destructive">Error:</div>
+            <pre className="whitespace-pre-wrap text-destructive">{result.stderr}</pre>
+          </div>
+        )}
+      </div>
+    );
+  };
 
 
 const ExpandButton = ({ isExpanded, onClick }) => (
@@ -291,6 +368,49 @@ export const BranchNode = ({
         );
     };
 
+    const renderMessageContent = (content) => {
+        // Regex to find code blocks
+        const parts = content.split(/(```python.*?```)/s);
+
+        return parts.map((part, index) => {
+            if (part.startsWith('```python')) {
+                // Extract code from the code block
+                const code = part.replace(/```python\n?/, '').replace(/```$/, '');
+
+                return (
+                    <CodeBlock
+                        key={index}
+                        code={code}
+                        onRun={async () => {
+                            try {
+                                const response = await fetch('/api/generate', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        model: selectedModel,
+                                        prompt: code,
+                                        execute_code: true
+                                    })
+                                });
+                                const data = await response.json();
+                                // Handle execution results
+                                console.log('Execution results:', data.code_execution);
+                            } catch (error) {
+                                console.error('Error executing code:', error);
+                            }
+                        }}
+                        onDebug={() => {
+                            // Add debug functionality
+                            console.log('Debug code:', code);
+                        }}
+                    />
+                );
+            }
+            return <p key={index}>{part}</p>;
+        });
+    };
+
+
     const renderMessages = () => {
 
         if (!isExpanded) return null;
@@ -346,7 +466,7 @@ export const BranchNode = ({
                                     "text-sm text-foreground whitespace-pre-wrap",
                                     !msg.isStreaming && expandedMessage !== i && msg.content.length > 150 && "line-clamp-2"
                                 )}>
-                                    {msg.content}
+                                    {renderMessageContent(msg.content)}
                                     {msg.isStreaming && (
                                         <span className="inline-flex items-center gap-1 ml-1">
                                             <span className="w-1 h-1 bg-primary rounded-full animate-ping"></span>

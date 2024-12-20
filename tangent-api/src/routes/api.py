@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import requests
 import os
 from pathlib import Path
 import re
@@ -10,6 +11,7 @@ import pandas as pd
 from torch import cosine_similarity
 from services.embedding import get_embeddings
 from services.background_processor import BackgroundProcessor
+from services.code_interpreter import CodeInterpreter 
 from services.data_processing import analyze_branches
 from utils import load_visualization_data
 from config import CLAUDE_DATA_DIR, CHATGPT_DATA_DIR, BASE_DATA_DIR
@@ -18,7 +20,7 @@ from shared_data import models_data
 
 api_bp = Blueprint("api", __name__)
 background_processor = BackgroundProcessor()
-
+code_interpreter = CodeInterpreter()
 
 @api_bp.route("/process", methods=["POST"])
 def process_data():
@@ -573,7 +575,41 @@ def generate_topic():
         return jsonify({"topic": topic})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@api_bp.route("/api/generate", methods=["POST"])
+def generate():
+    try:
+        data = request.json
+        response = requests.post(
+            'http://localhost:11434/api/generate',
+            headers={'Content-Type': 'application/json'},
+            json=data,
+            stream=True
+        )
+        
+        # Extract complete response from streaming
+        full_response = ''
+        for line in response.iter_lines():
+            if line:
+                try:
+                    chunk = json.loads(line.decode('utf-8'))
+                    if 'response' in chunk:
+                        full_response += chunk['response']
+                except json.JSONDecodeError:
+                    continue
 
-
+        # Execute any code blocks
+        execution_results = code_interpreter.handle_response(full_response)
+        
+        return jsonify({
+            'response': full_response,
+            'code_execution': execution_results
+        })
+            
+    except Exception as e:
+        print(f"Error in generate endpoint: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    
 def register_routes(app):
     app.register_blueprint(api_bp, url_prefix="/api")
