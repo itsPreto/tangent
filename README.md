@@ -60,7 +60,7 @@ tangent-api
 
 
 
-* [Whisper.cpp](https://github.com/ggerganov/whisper.cpp) (`git clone https://github.com/ggerganov/whisper.cpp` -> `cd whisper.cpp` -> `sh ./models/download-ggml-model.sh base.en` -> `make` -> `make server && ./server`)
+* [Whisper.cpp](https://github.com/ggerganov/whisper.cpp) (`git clone https://github.com/ggerganov/whisper.cpp` -> `cd whisper.cpp` -> `sh ./models/download-ggml-model.sh base.en` -> `make` -> `./build/bin/whisper-server`)
 * [Ollama](https://ollama.com/) (project was kinda hardcoded for ollama but can be generalized to accept diff backends)
 * Exported Archive Data (from Claude or ChatGPT)
 
