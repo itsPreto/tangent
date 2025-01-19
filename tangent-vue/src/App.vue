@@ -5,23 +5,10 @@ import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
 import TangentLogo from './components/logo/TangentLogo.vue';
 import ModelSelector from './components/models/ModelSelector.vue';
-
-interface ModelSelection {
-  id: string;
-  name: string;
-  source: 'ollama' | 'openrouter';
-  provider?: string;
-  description?: string;
-  pricing?: {
-    prompt: string;
-    completion: string;
-  };
-  tags?: string[];
-  context_length?: number;
-}
+import type { Model } from './components/models/ModelSelector.vue';
 
 // State - load from localStorage if present
-const selectedModel = ref<ModelSelection | null>(
+const selectedModel = ref<Model | null>(
   localStorage.getItem('selectedModel')
     ? JSON.parse(localStorage.getItem('selectedModel')!)
     : null
@@ -31,7 +18,7 @@ const settingsDialog = ref<HTMLDialogElement | null>(null);
 const openRouterApiKey = ref(localStorage.getItem('openRouterApiKey') || '');
 
 // Methods
-const handleModelSelect = (model: ModelSelection) => {
+const handleModelSelect = (model: Model) => {
   console.log('Previous model:', selectedModel.value);
   console.log('New model:', model);
 

@@ -1,4 +1,3 @@
-<!-- BranchNode.vue -->
 <template>
   <div class="branch-node" :class="{
     'selected': isSelected,
@@ -183,6 +182,7 @@ interface ExtendedMessage extends Message {
 
 interface ExtendedNode extends Node {
   messages: ExtendedMessage[];
+  streamingContent: string | null
 }
 
 const props = defineProps({
@@ -207,13 +207,13 @@ const emit = defineEmits(['select', 'drag-start', 'create-branch', 'update-title
 const isExpanded = ref(true);
 const isEditing = ref(false);
 const titleInput = ref('');
-const expandedMessages = ref(new Set());
+const expandedMessages = ref(new Set<number>());
 const titleInputRef = ref<HTMLElement | null>(null);
 const isDraggable = ref(false);
 const dragStartPosition = ref({ x: 0, y: 0 });
 const DRAG_THRESHOLD = 5; // Pixels to move before initiating drag
 const isStreaming = ref(false);
-const fadeTimeout = ref(null);
+const fadeTimeout = ref<number | null>(null);
 
 // Store
 const store = useCanvasStore();
@@ -250,7 +250,7 @@ watch(() => props.node.streamingContent, (newVal) => {
 const threadColor = computed(() => {
   const hues = [210, 330, 160, 280, 40, 190];
   // Simple pseudo-random approach based on the node ID
-  const index = Math.abs(Math.floor(Math.sin(props.node.id) * hues.length));
+  const index = Math.abs(Math.floor(Number(props.node.id) * Math.sin(Number(props.node.id))) % hues.length);
   return `hsl(${hues[index]}, 85%, 45%)`;
 });
 
@@ -647,12 +647,12 @@ const expandMessage = (index: number) => {
 
 function getMessageStyles(index: number) {
   const isInherited =
-    props.node.type === 'branch' && index <= props.node.branchMessageIndex;
+    props.node.type === 'branch' && props.node.branchMessageIndex !== null && index <= props.node.branchMessageIndex;
   return {
     background: `linear-gradient(to right, ${threadColor.value}10, ${threadColor.value}25)`,
     borderLeft: `4px solid ${threadColor.value}`,
     borderRadius: '0.5rem',
-    position: 'relative',
+    position: 'relative' as const, // Changed this
     transition: 'box-shadow 0.3s ease',
     ...(isInherited && {
       borderLeft: `4px dashed ${threadColor.value}`,
@@ -710,15 +710,14 @@ onBeforeUnmount(() => {
   position: absolute;
   border-radius: inherit;
   background: linear-gradient(90deg,
-    #ff1493 0%,
-    #ff6347 15%,
-    #ffd700 30%,
-    #32cd32 45%,
-    #4169e1 60%,
-    #9400d3 75%,
-    #ff1493 90%,
-    #ff6347 100%
-  );
+      #ff1493 0%,
+      #ff6347 15%,
+      #ffd700 30%,
+      #32cd32 45%,
+      #4169e1 60%,
+      #9400d3 75%,
+      #ff1493 90%,
+      #ff6347 100%);
   background-size: 200% 100%;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
@@ -729,15 +728,21 @@ onBeforeUnmount(() => {
 }
 
 .streaming .node-card::before {
-  inset: -2px;  /* Reduced from -4px */
-  padding: 2px;  /* Reduced from 4px */
-  filter: blur(3px);  /* Slightly reduced blur */
+  inset: -2px;
+  /* Reduced from -4px */
+  padding: 2px;
+  /* Reduced from 4px */
+  filter: blur(3px);
+  /* Slightly reduced blur */
 }
 
 .streaming .node-card::after {
-  inset: -1px;  /* Reduced from -2px */
-  padding: 1px;  /* Reduced from 2px */
-  filter: blur(1px);  /* Reduced blur for sharper inner border */
+  inset: -1px;
+  /* Reduced from -2px */
+  padding: 1px;
+  /* Reduced from 2px */
+  filter: blur(1px);
+  /* Reduced blur for sharper inner border */
 }
 
 /* Animation states */
@@ -755,6 +760,7 @@ onBeforeUnmount(() => {
   0% {
     background-position: 100% 0;
   }
+
   100% {
     background-position: -100% 0;
   }
@@ -775,6 +781,7 @@ onBeforeUnmount(() => {
     opacity: 0;
     transform: translateY(5px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -786,8 +793,13 @@ onBeforeUnmount(() => {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .avatar-overlay {

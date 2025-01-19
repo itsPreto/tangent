@@ -1,4 +1,3 @@
-<!-- CodePreview.vue -->
 <template>
   <div class="relative mt-3 mb-3">
     <div class="absolute right-2 top-2 flex gap-2">
@@ -33,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import { Clipboard } from 'lucide-vue-next';
@@ -95,9 +94,10 @@ const highlightedCode = computed(() => {
       return DOMPurify.sanitize(props.content);
     }
 
-    const result = hljs.highlight(props.content, {
-      language: props.language,
-    });
+     const result = hljs.highlight(props.content, {
+        language: props.language,
+      });
+
 
     return DOMPurify.sanitize(result.value);
   } catch (err) {

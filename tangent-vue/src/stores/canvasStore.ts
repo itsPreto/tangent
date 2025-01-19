@@ -1,25 +1,25 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { Message } from '../types/message';
+import type { Message, Node } from '../types/message';
 
 export const useCanvasStore = defineStore('canvas', () => {
   // Main state
-  const nodes = ref([{ 
-    id: '1', 
-    x: 100, 
-    y: 100, 
-    text: 'Root Node',
+  const nodes = ref<Node[]>([{
+    id: '1',
+    x: 100,
+    y: 100,
+    title: 'Root Thread',
     parentId: null,
     messages: [],
-    title: 'Root Thread',
     type: 'main',
-    branchMessageIndex: null // Add this to track where branches start
+    branchMessageIndex: null, // Add this to track where branches start
+    streamingContent: null
   }]);
-  
-  const activeNode = ref(null);
+
+  const activeNode = ref<string | null>(null);
   const isDragging = ref(false);
   const dragOffset = ref({ x: 0, y: 0 });
-  const viewMode = ref('2d');
+  const viewMode = ref<'2d' | '3d'>('2d');
   const isTransitioning = ref(false);
 
   // Constants
@@ -45,12 +45,12 @@ export const useCanvasStore = defineStore('canvas', () => {
       title: node.title || 'Untitled Thread',
       clusterId: nodeTopics.value.get(node.id),
       messageCount: node.messages?.length || 0,
-      lastActive: node.messages?.[node.messages.length - 1]?.timestamp,
+      lastActive: node.messages?.[node.messages.length - 1]?.timestamp || '',
       branchPoint: node.branchMessageIndex
     }));
 
     const links = connections.value.map(conn => ({
-      source: conn.parent.id,
+      source: conn.parent?.id || '',
       target: conn.child.id,
       branchPoint: nodes.value.find(n => n.id === conn.child.id)?.branchMessageIndex
     }));
@@ -81,7 +81,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         ...node.messages.slice(0, messageIndex),
         ...node.messages.slice(messageIndex + 1)
       ];
-      
+
       // If this node has children, we need to update their inherited messages
       const childNodes = nodes.value.filter(n => n.parentId === nodeId);
       childNodes.forEach(childNode => {
@@ -94,7 +94,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   };
 
   // Node management
-  const addNode = (parentId, branchMessageIndex, position, initialData = {}) => {
+  const addNode = (parentId: string, branchMessageIndex: number, position: { x: number, y: number }, initialData = {}) => {
     const newId = (Math.max(...nodes.value.map(n => parseInt(n.id))) + 1).toString();
     const parentNode = nodes.value.find(n => n.id === parentId);
     const existingChildren = nodes.value.filter(n => n.parentId === parentId).length;
@@ -106,15 +106,15 @@ export const useCanvasStore = defineStore('canvas', () => {
       timestamp: new Date().toISOString() // Reset timestamp for the new branch
     }));
 
-    const newNode = {
+    const newNode: Node = {
       id: newId,
       x: position.x,
       y: position.y + (existingChildren * (CARD_HEIGHT + 20)),
-      text: `Node ${newId}`,
       parentId,
       messages: contextMessages,
       type: 'branch',
       branchMessageIndex, // Store the point where this branch diverged
+      streamingContent: null,
       ...initialData
     };
 
@@ -127,23 +127,24 @@ export const useCanvasStore = defineStore('canvas', () => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
       // If message is a string, create Message object
-      const newMessage = typeof message === 'string' ? {
+      const newMessage: Message = typeof message === 'string' ? {
         role: 'assistant',
         content: message,
         timestamp: new Date().toISOString(),
         isStreaming: false
       } : {
         ...message,
+        role: message.role as 'user' | 'assistant',
         isStreaming: message.isStreaming ?? false // Set default if not provided
       };
-      
+
       node.messages = [...(node.messages || []), newMessage];
       // analyzeNodeTopics(nodeId);
     }
   };
 
   // Rest of the store implementation...
-  const updateNodePosition = (id, position) => {
+  const updateNodePosition = (id: string, position: { x: number, y: number }) => {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.x = position.x;
@@ -151,7 +152,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
-  const removeNode = (id) => {
+  const removeNode = (id: string) => {
     const topicId = nodeTopics.value.get(id);
     if (topicId !== undefined) {
       const cluster = topicClusters.value.get(topicId);
@@ -166,14 +167,14 @@ export const useCanvasStore = defineStore('canvas', () => {
     nodes.value = nodes.value.filter(n => n.id !== id && n.parentId !== id);
   };
 
-  const updateNodeTitle = (id, title) => {
+  const updateNodeTitle = (id: string, title: string) => {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.title = title;
     }
   };
 
-  const setStreamingContent = (nodeId, content) => {
+  const setStreamingContent = (nodeId: string, content: string | null) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
       node.streamingContent = content;
@@ -190,16 +191,16 @@ export const useCanvasStore = defineStore('canvas', () => {
     isTransitioning,
     topicClusters,
     nodeTopics,
-    
+
     // Computed
     connections,
     graphData,
-    
+
     // Constants
     CARD_WIDTH,
     CARD_HEIGHT,
     HORIZONTAL_SPACING,
-    
+
     // Methods
     addNode,
     updateNodePosition,
