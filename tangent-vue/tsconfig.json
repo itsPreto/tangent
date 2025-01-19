@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "compilerOptions": {
+    "types": ["prismjs"]
+  },
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
