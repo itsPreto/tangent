@@ -71,7 +71,182 @@ export const useCanvasStore = defineStore('canvas', () => {
       });
   });
 
+  const sendMessage = async (
+    nodeId: string,
+    message: string,
+    selectedModel: string,
+    openRouterApiKey: string,
+    addUserMessage = true
+  ) => {
+    const node = nodes.value.find(n => n.id === nodeId);
+    if (!node) return;
 
+    const systemPrompt = `
+      You are a helpful AI assistant who can engage in natural conversation while also helping with code. When sharing code examples, always format them in markdown using fenced blocks with the appropriate language.
+    `;
+
+    try {
+      // Parse model info based on whether it's OpenRouter or Ollama
+      let modelInfo: { id: string; name: string; source: 'ollama' | 'openrouter'; provider?: string };
+      if (selectedModel.includes('/')) {
+        const [provider, name] = selectedModel.split('/');
+        modelInfo = {
+          id: selectedModel,
+          name,
+          source: 'openrouter',
+          provider
+        };
+      } else {
+        modelInfo = {
+          id: selectedModel,
+          name: selectedModel,
+          source: 'ollama'
+        };
+      }
+
+      // Only add new user message if addUserMessage is true
+      if (addUserMessage) {
+        const userMessage: Message = {
+          role: 'user',
+          content: message,
+          timestamp: new Date().toISOString(),
+          isStreaming: false
+        };
+        addMessage(nodeId, userMessage);
+      }
+
+      // Create message context from existing messages
+      const messageContext = node.messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      const isOpenRouter = selectedModel.includes('/');
+      const endpoint = isOpenRouter
+        ? 'https://openrouter.ai/api/v1/chat/completions'
+        : 'http://localhost:11434/api/chat';
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (isOpenRouter) {
+        headers['Authorization'] = `Bearer ${openRouterApiKey}`;
+        headers['HTTP-Referer'] = window.location.origin;
+        headers['X-Title'] = 'Tangent Chat';
+      }
+
+      const requestBody = {
+        model: selectedModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messageContext
+        ],
+        stream: true
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Response body is null');
+
+      let accumulatedContent = '';
+      const decoder = new TextDecoder();
+
+      // In canvasStore.ts, update the OpenRouter streaming handler:
+      if (isOpenRouter) {
+        // OpenRouter SSE handling
+        const processLine = (line: string) => {
+          // First check for control messages before any string manipulation
+          if (!line || line === 'data: [DONE]' || line === '[DONE]' || line.startsWith(': OPENROUTER PROCESSING')) {
+            return;
+          }
+
+          // Remove 'data: ' prefix if present
+          const jsonData = line.startsWith('data: ') ? line.slice(5) : line;
+
+          try {
+            const data = JSON.parse(jsonData);
+            const content = data.choices?.[0]?.delta?.content || '';
+            if (content) {
+              accumulatedContent += content;
+              setStreamingContent(nodeId, accumulatedContent);
+            }
+          } catch (e) {
+            // Only log actual parsing errors
+            if (!line.includes('[DONE]') && !line.includes('OPENROUTER PROCESSING')) {
+              console.error('Error parsing OpenRouter response:', e);
+            }
+          }
+        };
+
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            processLine(line);  // Process the raw line without trimming
+          }
+        }
+        // Process any remaining buffer content
+        if (buffer) {
+          processLine(buffer);  // Process the raw buffer without trimming
+        }
+      } else {
+        // Ollama streaming
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n').filter((l) => l.trim());
+
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line);
+              const content = data.message?.content || '';
+              if (content) {
+                accumulatedContent += content;
+                setStreamingContent(nodeId, accumulatedContent);
+              }
+            } catch (e) {
+              console.error('Error parsing chunk:', e);
+            }
+          }
+        }
+      }
+
+      // Store final message with model info
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: accumulatedContent,
+        timestamp: new Date().toISOString(),
+        modelId: modelInfo.id,  // Include the full model ID
+        isStreaming: false
+      };
+      addMessage(nodeId, assistantMessage);
+      setStreamingContent(nodeId, null);
+
+      return true;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setStreamingContent(nodeId, null);
+      return false;
+    }
+  };
 
   const removeMessage = (nodeId: string, messageIndex: number) => {
     const node = nodes.value.find(n => n.id === nodeId);
@@ -208,6 +383,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     updateNodeTitle,
     addMessage,
     setStreamingContent,
-    removeMessage
+    removeMessage,
+    sendMessage
   };
 });

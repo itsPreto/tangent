@@ -76,7 +76,7 @@ watch(
         if (!inCodeBlock) {
           if (currentBuffer) {
             const html = await marked(currentBuffer)
-            const safeHTML = DOMPurify.sanitize(html)
+            const safeHTML = DOMPurify.sanitize(html as string)
             parts.push({
               type: 'text',
               content: safeHTML,
@@ -144,7 +144,7 @@ const parsedContent = computed<ContentPart[]>(() => {
   const processMarkdown = (text: string) => {
     if (!text) return
     const html = marked(text)
-    const safeHTML = DOMPurify.sanitize(html)
+    const safeHTML = DOMPurify.sanitize(html as string)
     parts.push({
       type: 'text',
       content: safeHTML,

@@ -5,6 +5,7 @@ import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
 import TangentLogo from './components/logo/TangentLogo.vue';
 import ModelSelector from './components/models/ModelSelector.vue';
+import TaskManager from './components/manager/TaskManager.vue';
 import type { Model } from './components/models/ModelSelector.vue';
 
 // State - load from localStorage if present
@@ -16,6 +17,7 @@ const selectedModel = ref<Model | null>(
 const modelType = ref<string>(localStorage.getItem('modelType') || '');
 const settingsDialog = ref<HTMLDialogElement | null>(null);
 const openRouterApiKey = ref(localStorage.getItem('openRouterApiKey') || '');
+const activeTab = ref<'api' | 'tasks'>('api');
 
 // Methods
 const handleModelSelect = (model: Model) => {
@@ -57,8 +59,24 @@ const closeSettings = () => {
     <!-- Settings Modal -->
     <dialog ref="settingsDialog" class="modal">
       <div class="modal-box max-w-lg">
-        <h3 class="font-bold text-lg mb-4">API Settings</h3>
-        <div class="space-y-4">
+        <div class="flex items-center space-x-2 mb-4">
+          <button 
+            class="btn btn-sm"
+            :class="{ 'btn-active': activeTab === 'api' }"
+            @click="activeTab = 'api'"
+          >
+            API Settings
+          </button>
+          <button 
+            class="btn btn-sm"
+            :class="{ 'btn-active': activeTab === 'tasks' }"
+            @click="activeTab = 'tasks'"
+          >
+            Tasks
+          </button>
+        </div>
+
+        <div v-if="activeTab === 'api'" class="space-y-4">
           <div class="form-control">
             <label class="label">
               <span class="label-text">OpenRouter API Key</span>
@@ -71,6 +89,11 @@ const closeSettings = () => {
             />
           </div>
         </div>
+
+        <div v-else-if="activeTab === 'tasks'">
+          <TaskManager />
+        </div>
+
         <div class="modal-action">
           <button class="btn" @click="closeSettings">Close</button>
         </div>
@@ -86,7 +109,6 @@ const closeSettings = () => {
         <Settings class="w-5 h-5" />
       </button>
 
-      <!-- Pass the parent's selectedModel to the child for highlight sync -->
       <ModelSelector
         :api-key="openRouterApiKey"
         :selected-model="selectedModel"

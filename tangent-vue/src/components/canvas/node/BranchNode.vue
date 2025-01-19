@@ -1,5 +1,5 @@
 <template>
-  <div class="branch-node" :class="{
+  <div class="branch-node" :data-node-id="node.id" :class="{
     'selected': isSelected,
     'streaming': node.streamingContent,
     'active': isStreaming,
@@ -12,11 +12,9 @@
         <div v-for="model in uniqueModels" :key="model.id" class="relative group w-9 h-9">
           <img :src="getAvatarUrl(model)" alt="Provider Avatar"
             class="w-9 h-9 rounded-full border-2 border-base-100 dark:border-base-300 shadow-md object-cover" />
-          <!-- Dark overlay on hover (optional 'cool' effect) -->
           <div
             class="avatar-overlay transition-opacity duration-200 opacity-0 absolute inset-0 rounded-full bg-black/30 group-hover:opacity-100">
           </div>
-          <!-- Tooltip -->
           <div class="absolute bottom-full mb-2 hidden group-hover:block z-50"
             style="left: 50%; transform: translateX(-50%);">
             <div
@@ -29,6 +27,7 @@
 
       <div class="p-4">
         <div class="flex items-center justify-between mb-4">
+          <!-- Header Content -->
           <div class="flex items-center gap-3">
             <button @click.stop="isExpanded = !isExpanded"
               class="p-2 rounded-full hover:bg-base-300/80 transition-colors">
@@ -37,6 +36,7 @@
             </button>
 
             <div class="flex flex-col">
+              <!-- Title Section -->
               <div class="flex items-center gap-2">
                 <template v-if="isEditing">
                   <input ref="titleInputRef" v-model="titleInput" @blur="handleTitleUpdate"
@@ -53,6 +53,7 @@
                 </template>
               </div>
 
+              <!-- Message Count -->
               <div class="flex items-center gap-2 mt-1">
                 <MessageCircle class="w-4 h-4 text-base-content/60" />
                 <span class="text-sm text-base-content/60">
@@ -62,6 +63,7 @@
             </div>
           </div>
 
+          <!-- Delete Button -->
           <button v-if="node.type !== 'main'"
             class="p-2 rounded-full hover:bg-destructive/10 text-base-content/60 hover:text-destructive flex-shrink-0"
             @click.stop="$emit('delete')">
@@ -69,12 +71,45 @@
           </button>
         </div>
 
+        <!-- Messages -->
         <div v-if="isExpanded && node.messages" class="space-y-4">
           <div v-for="(msg, i) in displayMessages" :key="i" class="relative group message-container"
             :style="getMessageStyles(i)">
             <MessageTimestamp :timestamp="msg.timestamp" :side="node.type === 'branch' ? 'left' : 'right'" />
 
+            <!-- Branch Button -->
+            <div
+              class="absolute inset-y-0 -left-12 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out z-20">
+              <button @click.stop="createBranch(i, 'left')"
+                class="p-2 rounded-full hover:bg-base-300/80 text-primary hover:text-primary/80 transition-colors group/btn"
+                title="Branch left">
+                <div class="relative">
+                  <GitBranch class="w-5 h-5 transform -scale-x-100" />
+                  <div
+                    class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 backdrop-blur px-2 py-1 rounded">
+                    Branch left
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div
+              class="absolute inset-y-0 -right-12 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out z-20">
+              <button @click.stop="createBranch(i, 'right')"
+                class="p-2 rounded-full hover:bg-base-300/80 text-primary hover:text-primary/80 transition-colors group/btn"
+                title="Branch right">
+                <div class="relative">
+                  <GitBranch class="w-5 h-5" />
+                  <div
+                    class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 backdrop-blur px-2 py-1 rounded">
+                    Branch right
+                  </div>
+                </div>
+              </button>
+            </div>
+
             <div class="p-4 relative z-10">
+              <!-- Message Header -->
               <div class="flex items-center justify-between mb-2">
                 <Badge :variant="msg.role === 'user' ? 'default' : msg.isStreaming ? 'outline' : 'secondary'"
                   class="text-xs">
@@ -89,6 +124,7 @@
                 </div>
               </div>
 
+              <!-- Message Content -->
               <div class="text-sm text-base-content break-words overflow-hidden" :class="{
                 'line-clamp-2': expandedMessages.has(i),
                 'whitespace-pre-wrap': !msg.isStreaming,
@@ -97,29 +133,25 @@
                 <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" />
               </div>
 
+              <!-- Message Actions -->
               <div class="mt-3 flex items-center justify-between">
-                <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button class="flex items-center gap-2 text-sm text-primary hover:underline"
-                    @click.stop="createBranch(i)">
-                    <PlusCircle class="w-4 h-4" />
-                    New branch
-                  </button>
-
-                  <button v-if="msg.isStreaming" class="flex items-center gap-2 text-sm text-red-500 hover:underline"
+                <div class="flex items-center gap-3">
+                  <button v-if="msg.isStreaming"
+                    class="flex items-center gap-2 text-sm text-red-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
                     @click.stop="stopStreaming">
                     <XCircle class="w-4 h-4" />
                     Stop
                   </button>
 
                   <button v-else-if="msg.role === 'assistant'"
-                    class="flex items-center gap-2 text-sm text-primary hover:underline"
-                    @click.stop="handleRegenerate(i)">
+                    class="flex items-center gap-2 text-sm text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                    @click.stop="$emit('resend', i - 1)">
                     <RotateCw class="w-4 h-4" />
-                    Regenerate
+                    Resend
                   </button>
                 </div>
 
-                <!-- Model Badge (replaced text bubble with a mini avatar + label) -->
+                <!-- Model Badge -->
                 <div v-if="msg.role === 'assistant'"
                   class="model-badge opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-base-100/90 dark:bg-base-300/80 border border-base-200 dark:border-base-400">
                   <img :src="getAvatarUrl(getModelInfo(msg.modelId))" alt="Model Avatar"
@@ -133,6 +165,7 @@
           </div>
         </div>
 
+        <!-- Collapsed View -->
         <div v-else-if="node.messages?.length" class="mt-2 text-sm text-base-content/60">
           <div class="line-clamp-2 break-words overflow-hidden">
             Last message:
@@ -150,7 +183,7 @@
 import { ref, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue';
 import type { PropType } from 'vue';
 import {
-  ChevronDown, MessageCircle, Edit2, X, PlusCircle,
+  ChevronDown, MessageCircle, Edit2, X,
   Maximize2, Minimize2, XCircle, RotateCw
 } from 'lucide-vue-next';
 
@@ -168,6 +201,7 @@ import meta from '@/assets/meta.jpeg'
 import mistral from '@/assets/mistral.jpeg'
 import unknownAvatar from '@/assets/unknown.jpeg'
 import ollama from '@/assets/ollama.jpeg'
+import { GitBranch } from 'lucide-vue-next';
 
 interface ModelInfo {
   id: string;
@@ -198,10 +232,19 @@ const props = defineProps({
   openRouterApiKey: {
     type: String,
     required: true
+  },
+  zoom: {
+    type: Number,
+    required: true
+  },
+  modelRegistry: {
+    type: Object as PropType<Map<string, ModelInfo>>,
+    required: true
   }
 });
 
-const emit = defineEmits(['select', 'drag-start', 'create-branch', 'update-title', 'delete']);
+
+const emit = defineEmits(['select', 'drag-start', 'create-branch', 'update-title', 'delete', 'resend']);
 
 // UI states
 const isExpanded = ref(true);
@@ -269,9 +312,6 @@ const displayMessages = computed((): Message[] => {
     : props.node.messages;
 });
 
-// Model tracking
-const modelRegistry = ref(new Map<string, ModelInfo>());
-
 const providerAvatars: Record<string, string> = {
   Anthropic: anthropic,
   OpenAI: openai,
@@ -279,35 +319,58 @@ const providerAvatars: Record<string, string> = {
   Meta: meta,
   Mistral: mistral,
   Unknown: unknownAvatar,
-}
+  ollama: ollama
+};
 
 function getAvatarUrl(model?: ModelInfo): string {
   if (!model) return providerAvatars['Unknown'];
+
   if (model.source === 'ollama') {
-    // Could be a dedicated "ollama" avatar
-    return ollama;
+    return providerAvatars['ollama'];
   }
-  // For openrouter-based (Anthropic, OpenAI, etc.)
-  const avatar = providerAvatars[model.provider || 'Unknown'];
+
+  // For openrouter models
+  const avatar = model.provider ? providerAvatars[model.provider] : providerAvatars['Unknown'];
   return avatar || providerAvatars['Unknown'];
 }
 
-// Get unique models used in the thread
 const uniqueModels = computed(() => {
   const models = new Set<ModelInfo>();
+  if (!props.node.messages) return [];
+
   props.node.messages.forEach((msg) => {
     if (msg.modelId) {
-      const model = modelRegistry.value.get(msg.modelId);
+      const model = getModelInfo(msg.modelId);
       if (model) models.add(model);
     }
   });
   return Array.from(models);
 });
 
-// Helper functions for model retrieval
+
 function getModelInfo(modelId?: string): ModelInfo | undefined {
   if (!modelId) return undefined;
-  return modelRegistry.value.get(modelId);
+
+  // First try to get from registry
+  const registryModel = props.modelRegistry.get(modelId);
+  if (registryModel) return registryModel;
+
+  // Fallback: Parse from model ID if not in registry
+  if (modelId.includes('/')) {
+    const [provider, name] = modelId.split('/');
+    return {
+      id: modelId,
+      name,
+      source: 'openrouter',
+      provider
+    };
+  }
+
+  return {
+    id: modelId,
+    name: modelId,
+    source: 'ollama'
+  };
 }
 
 const nodeStyles = computed(() => ({
@@ -365,20 +428,24 @@ const handleTitleUpdate = () => {
 /* ------------------
    Branch creation
 ------------------ */
-const createBranch = (messageIndex: number) => {
-  const offset = messageIndex * 120;
+const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
+  const horizontalOffset = direction === 'left'
+    ? -store.CARD_WIDTH - 100
+    : store.CARD_WIDTH + 100;
+
   // Calculate new branch position
   const position = {
-    x: props.node.x + 300,
-    y: props.node.y + offset - 60
+    x: props.node.x + horizontalOffset,
+    y: props.node.y  // Let handleCreateBranch handle vertical positioning
   };
 
   // Create initial data for the new branch
   const initialData = {
     title: `Branch from "${props.node.title || 'Untitled Thread'}"`,
-    // Copy messages up to this branch point
     messages: props.node.messages.slice(0, messageIndex + 1),
-    branchMessageIndex: messageIndex
+    branchMessageIndex: messageIndex,
+    // This is crucial for connector positioning
+    type: direction === 'left' ? 'left-branch' : 'right-branch'
   };
 
   emit('create-branch', props.node.id, messageIndex, position, initialData);
@@ -387,192 +454,19 @@ const createBranch = (messageIndex: number) => {
 /* ------------------
    Message sending
 ------------------ */
+
 async function handleMessageSend(message: string) {
-  const systemPrompt = `
-    You are a helpful coding assistant.
-    Always output any code in fenced blocks with the correct syntax, like:
-    \`\`\`python
-    # some python code
-    \`\`\`
-    or \`\`\`jsx
-    // some React code
-    \`\`\`
-  `;
-
+  isLoading.value = true;
   try {
-    isLoading.value = true;
-    abortController = new AbortController();
-
-    // Create/update model info
-    let modelInfo: ModelInfo;
-    if (props.selectedModel.includes('/')) {
-      const [provider, name] = props.selectedModel.split('/');
-      modelInfo = {
-        id: props.selectedModel,
-        name: name,
-        source: 'openrouter',
-        provider: provider
-      };
-    } else {
-      modelInfo = {
-        id: props.selectedModel,
-        name: props.selectedModel,
-        source: 'ollama'
-      };
-    }
-    modelRegistry.value.set(modelInfo.id, modelInfo);
-
-    const userMessage: ExtendedMessage = {
-      role: 'user',
-      content: message,
-      timestamp: new Date().toISOString()
-    };
-    store.addMessage(props.node.id, userMessage);
-
-    const messageContext = props.node.messages.map((msg) => ({
-      role: msg.role,
-      content: msg.content
-    }));
-
-    const isOpenRouter = props.selectedModel.includes('/');
-
-    const endpoint = isOpenRouter
-      ? 'https://openrouter.ai/api/v1/chat/completions'
-      : 'http://localhost:11434/api/chat';
-
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json'
-    };
-
-    if (isOpenRouter) {
-      headers['Authorization'] = `Bearer ${props.openRouterApiKey}`;
-      headers['HTTP-Referer'] = window.location.origin;
-      headers['X-Title'] = 'Tangent Chat';
-    }
-
-    const requestBody = {
-      model: props.selectedModel,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messageContext,
-        { role: 'user', content: message }
-      ],
-      stream: true
-    };
-
-    console.log('OpenRouter Request:', {
-      model: props.selectedModel,
-      headers,
-      body: requestBody
-    });
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-      signal: abortController.signal
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenRouter Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData
-      });
-      throw new Error(`OpenRouter API error: ${response.status} ${errorData}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('Response body is null');
-
-    let accumulatedContent = '';
-    const decoder = new TextDecoder();
-
-    if (isOpenRouter) {
-      // OpenRouter SSE handling
-      const processLine = (line: string) => {
-        if (!line || line.startsWith(': OPENROUTER PROCESSING')) return;
-        if (line.startsWith('data: ')) {
-          line = line.slice(5);
-        }
-
-        try {
-          const data = JSON.parse(line);
-          const content = data.choices?.[0]?.delta?.content || '';
-          if (content) {
-            accumulatedContent += content;
-            store.setStreamingContent(props.node.id, accumulatedContent);
-          }
-        } catch (e) {
-          console.error('Error parsing OpenRouter response:', e, 'Line:', line);
-        }
-      };
-
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep last incomplete line
-
-        for (const line of lines) {
-          processLine(line.trim());
-        }
-      }
-      if (buffer) {
-        processLine(buffer.trim());
-      }
-    } else {
-      // Ollama streaming
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter((l) => l.trim());
-
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            const content = data.message?.content || '';
-            if (content) {
-              accumulatedContent += content;
-              store.setStreamingContent(props.node.id, accumulatedContent);
-            }
-          } catch (e) {
-            console.error('Error parsing chunk:', e);
-          }
-        }
-      }
-    }
-
-    // Store final message
-    const assistantMessage: ExtendedMessage = {
-      role: 'assistant',
-      content: accumulatedContent,
-      timestamp: new Date().toISOString(),
-      modelId: modelInfo.id
-    };
-    store.addMessage(props.node.id, assistantMessage);
-    store.setStreamingContent(props.node.id, null);
-
+    await store.sendMessage(props.node.id, message, props.selectedModel, props.openRouterApiKey);
     // Auto-generate title for new conversations
     if (props.node.messages.length === 2 && !props.node.title) {
       generateTitle();
     }
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.log('Request aborted');
-    } else {
-      console.error('Error sending message:', error);
-    }
-    store.setStreamingContent(props.node.id, null);
+  } catch (error) {
+    console.error('Error sending message:', error);
   } finally {
     isLoading.value = false;
-    abortController = null;
   }
 }
 
@@ -613,22 +507,6 @@ function stopStreaming() {
   if (abortController) {
     abortController.abort();
     store.setStreamingContent(props.node.id, null);
-  }
-}
-
-/* ------------------
-   Regenerate logic
------------------- */
-function handleRegenerate(assistantIndex: number) {
-  const lastMsg = props.node.messages[assistantIndex];
-  if (lastMsg?.role === 'assistant') {
-    store.removeMessage(props.node.id, assistantIndex);
-  }
-
-  const userIndex = assistantIndex - 1;
-  const userMsg = props.node.messages[userIndex];
-  if (userMsg?.role === 'user') {
-    handleMessageSend(userMsg.content);
   }
 }
 
@@ -788,8 +666,40 @@ onBeforeUnmount(() => {
   }
 }
 
-.message-container:hover .model-badge {
-  animation: fadeIn 0.2s ease-out;
+.message-container {
+  position: relative;
+  transition: all 0.2s ease-in-out;
+}
+
+.message-container:hover {
+  transform: translateX(0);
+}
+
+.branch-button {
+  transform: translateX(20px);
+  opacity: 0;
+  transition: all 0.2s ease-in-out;
+}
+
+.message-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -12px;
+  right: -12px;
+  bottom: 0;
+  z-index: -1;
+}
+
+/* Ensure branch buttons have enough hover area */
+.message-container .absolute {
+  padding: 0.5rem;
+  margin: -0.5rem;
+}
+
+.message-container:hover .branch-button {
+  transform: translateX(0);
+  opacity: 1;
 }
 
 @keyframes fadeIn {
