@@ -1,0 +1,49 @@
+{
+  "name": "tangent-vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun vite",
+    "build": "bunx --bun vue-tsc -b && bunx --bun vite build",
+    "preview": "bunx --bun vite preview",
+    "typecheck": "bunx --bun vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@headlessui/vue": "^1.7.23",
+    "@heroicons/vue": "^2.2.0",
+    "@monaco-editor/loader": "^1.4.0",
+    "@radix-ui/colors": "^3.0.0",
+    "@types/highlight.js": "^9.12.4",
+    "@types/marked": "^5.0.2",
+    "@types/prismjs": "^1.26.5",
+    "@vueuse/core": "^12.4.0",
+    "autoprefixer": "^10.4.20",
+    "dompurify": "^3.2.3",
+    "highlight.js": "^11.11.1",
+    "lodash": "^4.17.21",
+    "lucide-vue-next": "^0.471.0",
+    "marked": "^15.0.6",
+    "pinia": "^2.3.0",
+    "postcss": "^8.5.1",
+    "prismjs": "^1.29.0",
+    "tailwindcss": "^3.4.17",
+    "vue": "^3.5.13",
+    "vue-prism-component": "^2.0.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.16",
+    "@types/dompurify": "^3.0.5",
+    "@types/lodash": "^4.17.14",
+    "@types/node": "^22.10.7",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.7.0",
+    "bun-types": "latest",
+    "daisyui": "^4.12.23",
+    "sass": "^1.83.4",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
+  }
+}
