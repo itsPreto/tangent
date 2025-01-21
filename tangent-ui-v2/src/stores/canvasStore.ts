@@ -45,8 +45,8 @@ export const useCanvasStore = defineStore('canvas', () => {
   // Helper function to process SSE lines
   const processSSELine = (line: string, source: ModelSource) => {
     // Skip empty lines and known control messages
-    if (!line || line === 'data: [DONE]' || line === '[DONE]' || 
-        (source === 'openrouter' && line.startsWith(': OPENROUTER PROCESSING'))) {
+    if (!line || line === 'data: [DONE]' || line === '[DONE]' ||
+      (source === 'openrouter' && line.startsWith(': OPENROUTER PROCESSING'))) {
       return null;
     }
 
@@ -55,10 +55,19 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     try {
       const data = JSON.parse(jsonData);
-      if (source === 'openrouter') {
-        return data.choices?.[0]?.delta?.content || '';
-      } else {
-        return data.content || '';
+
+      // Handle different provider response structures
+      switch (source) {
+        case 'openrouter':
+          return data.choices?.[0]?.delta?.content || '';
+        case 'ollama':
+          // Ollama's response structure uses 'message' field
+          return data.message?.content || data.content || '';
+        case 'custom':
+          // Handle custom API formats
+          return data.content || data.response || data.output || '';
+        default:
+          return data.content || '';
       }
     } catch (e) {
       // Only log actual parsing errors for non-control messages
@@ -90,7 +99,7 @@ export const useCanvasStore = defineStore('canvas', () => {
 
         for (const line of lines) {
           const content = processSSELine(line, modelSource);
-          if (content) {
+          if (content !== null) { // Explicit null check
             accumulatedContent += content;
             setStreamingContent(nodeId, accumulatedContent);
           }
@@ -100,7 +109,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       // Process any remaining buffer content
       if (buffer) {
         const content = processSSELine(buffer, modelSource);
-        if (content) {
+        if (content !== null) {
           accumulatedContent += content;
           setStreamingContent(nodeId, accumulatedContent);
         }
@@ -112,6 +121,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       throw error;
     }
   };
+
 
   // Computed properties for 3D view
   const graphData = computed(() => {
@@ -277,18 +287,18 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     const requestBody = modelInfo.source === 'custom' && customApiUrl.value
       ? {
-          prompt: `${messageContext.map(m => `${m.role}: ${m.content}`).join('\n')}`,
-          stream: true,
-          model: modelInfo.id
-        }
+        prompt: `${messageContext.map(m => `${m.role}: ${m.content}`).join('\n')}`,
+        stream: true,
+        model: modelInfo.id
+      }
       : {
-          model: modelInfo.id,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messageContext
-          ],
-          stream: true
-        };
+        model: modelInfo.id,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messageContext
+        ],
+        stream: true
+      };
 
     return { endpoint, headers, requestBody };
   };
@@ -335,18 +345,18 @@ export const useCanvasStore = defineStore('canvas', () => {
   const addMessage = (nodeId: string, message: string | Message) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
-      const newMessage: Message = typeof message === 'string' 
+      const newMessage: Message = typeof message === 'string'
         ? {
-            role: 'assistant',
-            content: message,
-            timestamp: new Date().toISOString(),
-            isStreaming: false
-          } 
+          role: 'assistant',
+          content: message,
+          timestamp: new Date().toISOString(),
+          isStreaming: false
+        }
         : {
-            ...message,
-            role: message.role as 'user' | 'assistant',
-            isStreaming: message.isStreaming ?? false
-          };
+          ...message,
+          role: message.role as 'user' | 'assistant',
+          isStreaming: message.isStreaming ?? false
+        };
 
       node.messages = [...(node.messages || []), newMessage];
     }
