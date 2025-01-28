@@ -339,13 +339,13 @@
   })
   
   onMounted(async () => {
-    try {
-      const response = await fetch('http://127.0.0.1:5000/models')
-      const data = await response.json()
-      availableModels.value = data.models
-    } catch (error) {
-      console.error('Error fetching models:', error)
-    }
+    // try {
+    //   const response = await fetch('http://127.0.0.1:5000/models')
+    //   const data = await response.json()
+    //   availableModels.value = data.models
+    // } catch (error) {
+    //   console.error('Error fetching models:', error)
+    // }
   })
   
   const removedTokens = computed(() => {

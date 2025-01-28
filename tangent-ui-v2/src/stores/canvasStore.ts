@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { useChatStore } from './chatStore';
+import { ref, watch, computed } from 'vue';
 import type { Message, Node } from '../types/message';
 
 // Helper types for model info
@@ -11,7 +12,27 @@ interface ModelInfo {
   provider?: string;
 }
 
+interface LocalStorageState {
+  nodes: Node[];
+  lastSavedWorkspaceId: string | null;
+}
+
+
 export const useCanvasStore = defineStore('canvas', () => {
+  const chatStore = useChatStore();
+  const lastSavedWorkspaceId = ref<string | null>(null);
+
+
+  const initFromLocalStorage = () => {
+    const savedState = localStorage.getItem('canvasState');
+    if (savedState) {
+      const state = JSON.parse(savedState) as LocalStorageState;
+      nodes.value = state.nodes;
+      lastSavedWorkspaceId.value = state.lastSavedWorkspaceId;
+    }
+  };
+
+
   // Main state
   const nodes = ref<Node[]>([{
     id: '1',
@@ -315,7 +336,12 @@ export const useCanvasStore = defineStore('canvas', () => {
   };
 
   // Node management functions
-  const addNode = (parentId: string, branchMessageIndex: number, position: { x: number, y: number }, initialData = {}) => {
+  const addNode = async (
+    parentId: string | null,
+    branchMessageIndex: number,
+    position: { x: number, y: number },
+    initialData = {}
+  ) => {
     const newId = (Math.max(...nodes.value.map(n => parseInt(n.id))) + 1).toString();
     const parentNode = nodes.value.find(n => n.id === parentId);
     const existingChildren = nodes.value.filter(n => n.parentId === parentId).length;
@@ -338,11 +364,37 @@ export const useCanvasStore = defineStore('canvas', () => {
       ...initialData
     };
 
+    // Add to local state
     nodes.value.push(newNode);
+
+    // Auto-save if in a chat
+    if (chatStore.currentChatId) {
+      const nodeId = await chatStore.addNode(chatStore.currentChatId, {
+        ...newNode,
+        metadata: {
+          type: newNode.type,
+          url: (newNode as any).url,
+          mediaType: (newNode as any).mediaType
+        }
+      });
+      if (nodeId) {
+        newNode.id = nodeId;
+        // Auto-save the parent node's state as well
+        if (parentId) {
+          const parentNode = nodes.value.find(n => n.id === parentId);
+          if (parentNode) {
+            chatStore.autoSave(chatStore.currentChatId, parentId, {
+              children: [...(parentNode.children || []), nodeId]
+            });
+          }
+        }
+      }
+    }
+
     return newNode;
   };
 
-  const addMessage = (nodeId: string, message: string | Message) => {
+  const addMessage = async (nodeId: string, message: string | Message) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
       const newMessage: Message = typeof message === 'string'
@@ -359,10 +411,17 @@ export const useCanvasStore = defineStore('canvas', () => {
         };
 
       node.messages = [...(node.messages || []), newMessage];
+
+      // Auto-save messages
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, nodeId, {
+          messages: node.messages
+        });
+      }
     }
   };
 
-  const removeMessage = (nodeId: string, messageIndex: number) => {
+  const removeMessage = async (nodeId: string, messageIndex: number) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node && node.messages) {
       node.messages = [
@@ -376,18 +435,41 @@ export const useCanvasStore = defineStore('canvas', () => {
           childNode.branchMessageIndex--;
         }
       });
+
+      // Persist changes if in a chat
+      if (chatStore.currentChatId) {
+        await chatStore.updateNode(chatStore.currentChatId, nodeId, {
+          messages: node.messages
+        });
+
+        // Update child nodes if branch indices changed
+        for (const childNode of childNodes) {
+          if (childNode.branchMessageIndex !== undefined) {
+            await chatStore.updateNode(chatStore.currentChatId, childNode.id, {
+              branchMessageIndex: childNode.branchMessageIndex
+            });
+          }
+        }
+      }
     }
   };
 
-  const updateNodePosition = (id: string, position: { x: number, y: number }) => {
+
+  const updateNodePosition = async (id: string, position: { x: number, y: number }) => {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.x = position.x;
       node.y = position.y;
+
+      // Auto-save position if in a chat
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, id, { x: position.x, y: position.y });
+      }
     }
   };
 
-  const removeNode = (id: string) => {
+  const removeNode = async (id: string) => {
+    // Remove from topics if present
     const topicId = nodeTopics.value.get(id);
     if (topicId !== undefined) {
       const cluster = topicClusters.value.get(topicId);
@@ -399,13 +481,25 @@ export const useCanvasStore = defineStore('canvas', () => {
       }
       nodeTopics.value.delete(id);
     }
+
+    // Remove from backend if in a chat
+    if (chatStore.currentChatId) {
+      await chatStore.removeNode(chatStore.currentChatId, id);
+    }
+
+    // Remove from local state
     nodes.value = nodes.value.filter(n => n.id !== id && n.parentId !== id);
   };
 
-  const updateNodeTitle = (id: string, title: string) => {
+  const updateNodeTitle = async (id: string, title: string) => {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.title = title;
+
+      // Auto-save title
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, id, { title });
+      }
     }
   };
 
@@ -413,6 +507,140 @@ export const useCanvasStore = defineStore('canvas', () => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
       node.streamingContent = content;
+    }
+  };
+
+  const loadChatState = async (chatId: string) => {
+    try {
+      const chatData = await chatStore.loadChat(chatId);
+      if (!chatData) throw new Error('Failed to load chat');
+
+      // Clear existing nodes
+      nodes.value = [];
+
+      // Convert and load nodes
+      const flattenNodes = (node: any): Node[] => {
+        const children = node.children || [];
+        return [
+          {
+            id: node.id,
+            type: node.type,
+            title: node.title,
+            x: node.x,
+            y: node.y,
+            parentId: node.parentId,
+            branchMessageIndex: node.branchMessageIndex,
+            messages: node.messages || [],
+            streamingContent: null,
+            ...node.metadata
+          },
+          ...children.flatMap(flattenNodes)
+        ];
+      };
+
+      // Load nodes and update state
+      nodes.value = flattenNodes(chatData.nodes);
+      lastSavedWorkspaceId.value = chatId;
+
+      // Update localStorage
+      const state: LocalStorageState = {
+        nodes: nodes.value,
+        lastSavedWorkspaceId: chatId
+      };
+      localStorage.setItem('canvasState', JSON.stringify(state));
+
+      return true;
+    } catch (error) {
+      console.error('Error loading chat state:', error);
+      return false;
+    }
+  };
+
+  const saveAsNewChat = async (title: string) => {
+    const rootNode = nodes.value.find(n => !n.parentId);
+    if (!rootNode) return null;
+
+    const chatId = await chatStore.createChat(title, {
+      type: rootNode.type,
+      title: rootNode.title,
+      x: rootNode.x,
+      y: rootNode.y,
+      messages: rootNode.messages,
+      metadata: {
+        type: rootNode.type,
+        url: (rootNode as any).url,
+        mediaType: (rootNode as any).mediaType
+      }
+    });
+
+    if (chatId) {
+      // Save all other nodes
+      const otherNodes = nodes.value.filter(n => n.parentId);
+      for (const node of otherNodes) {
+        await chatStore.addNode(chatId, {
+          ...node,
+          metadata: {
+            type: node.type,
+            url: (node as any).url,
+            mediaType: (node as any).mediaType
+          }
+        });
+      }
+    }
+
+    return chatId;
+  };
+
+  const saveWorkspace = async (title?: string) => {
+    try {
+      if (!title) {
+        title = `Workspace ${new Date().toLocaleString()}`;
+      }
+
+      // Save the root node and its state
+      const rootNode = nodes.value.find(n => !n.parentId);
+      if (!rootNode) return null;
+
+      const chatId = await chatStore.createChat(title, {
+        type: rootNode.type,
+        title: rootNode.title,
+        x: rootNode.x,
+        y: rootNode.y,
+        messages: rootNode.messages,
+        metadata: {
+          type: rootNode.type,
+          url: (rootNode as any).url,
+          mediaType: (rootNode as any).mediaType
+        }
+      });
+
+      if (!chatId) throw new Error('Failed to create chat');
+
+      // Save all other nodes
+      const otherNodes = nodes.value.filter(n => n.parentId);
+      for (const node of otherNodes) {
+        await chatStore.addNode(chatId, {
+          ...node,
+          metadata: {
+            type: node.type,
+            url: (node as any).url,
+            mediaType: (node as any).mediaType
+          }
+        });
+      }
+
+      // Update local state and localStorage
+      lastSavedWorkspaceId.value = chatId;
+      const state: LocalStorageState = {
+        nodes: nodes.value,
+        lastSavedWorkspaceId: chatId
+      };
+      localStorage.setItem('canvasState', JSON.stringify(state));
+
+      return chatId;
+    } catch (error) {
+      console.error('Error saving workspace:', error);
+      return null;
     }
   };
 
@@ -424,9 +652,34 @@ export const useCanvasStore = defineStore('canvas', () => {
       localStorage.removeItem('customApiUrl');
     }
   };
+  watch(() => nodes.value, (newNodes) => {
+    // Save to localStorage
+    const state: LocalStorageState = {
+      nodes: newNodes,
+      lastSavedWorkspaceId: lastSavedWorkspaceId.value
+    };
+    localStorage.setItem('canvasState', JSON.stringify(state));
 
+    // Auto-save to backend if in a chat
+    if (chatStore.currentChatId) {
+      newNodes.forEach(node => {
+        chatStore.autoSave(chatStore.currentChatId!, node.id, {
+          x: node.x,
+          y: node.y,
+          messages: node.messages,
+          title: node.title,
+          metadata: {
+            type: node.type,
+            url: (node as any).url,
+            mediaType: (node as any).mediaType
+          }
+        });
+      });
+    }
+  }, { deep: true });  // Remove the extra "deep: true" text here
+
+  // Move the return statement inside the store definition
   return {
-    // State
     nodes,
     activeNode,
     isDragging,
@@ -436,25 +689,27 @@ export const useCanvasStore = defineStore('canvas', () => {
     topicClusters,
     nodeTopics,
     customApiUrl,
-
-    // Computed
     connections,
     graphData,
+    lastSavedWorkspaceId,
 
-    // Constants
     CARD_WIDTH,
     CARD_HEIGHT,
     HORIZONTAL_SPACING,
 
-    // Methods
+    // Updated methods
     addNode,
     updateNodePosition,
     removeNode,
     updateNodeTitle,
     addMessage,
-    setStreamingContent,
     removeMessage,
+    setStreamingContent,
     sendMessage,
-    setCustomApiUrl
+    setCustomApiUrl,
+    initFromLocalStorage,
+    saveWorkspace,
+    loadChatState,
+    saveAsNewChat
   };
-});
+}); // Move this closing parenthesis here

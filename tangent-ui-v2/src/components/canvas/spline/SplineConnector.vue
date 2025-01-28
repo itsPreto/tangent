@@ -106,10 +106,90 @@ const particleRadius = computed(() => {
   return baseParticleRadius * Math.min(scale, 4);
 });
 
-// Adjust particle speed based on zoom
+// First, update the animateParticles function to correctly calculate control points
+const animateParticles = () => {
+  const { startPoint, endPoint } = calculateConnectionPoints();
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // Use the same curve calculations as the main path
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
+  const controlPoint1 = {
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y + verticalOffset
+  };
+
+  const controlPoint2 = {
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y - verticalOffset
+  };
+
+  // Get current base speed based on zoom level
+  const baseSpeed = getParticleSpeed();
+
+  particles.value = particles.value.map(particle => {
+    // Update particle speed based on current zoom level while maintaining relative randomness
+    const relativeSpeedFactor = particle.speed / (particle.speed - (Math.random() * particle.speed * 0.5));
+    const newSpeed = baseSpeed + (Math.random() * baseSpeed * 0.5);
+    particle.speed = newSpeed * relativeSpeedFactor;
+
+    // Update progress with new speed
+    particle.progress += particle.speed;
+    if (particle.progress > 1) {
+      particle.progress = 0;
+    }
+
+    // Get point on curve using the updated control points
+    const t = particle.progress;
+    const t1 = 1 - t;
+    const point = {
+      x: Math.pow(t1, 3) * startPoint.x +
+         3 * Math.pow(t1, 2) * t * controlPoint1.x +
+         3 * t1 * Math.pow(t, 2) * controlPoint2.x +
+         Math.pow(t, 3) * endPoint.x,
+      y: Math.pow(t1, 3) * startPoint.y +
+         3 * Math.pow(t1, 2) * t * controlPoint1.y +
+         3 * t1 * Math.pow(t, 2) * controlPoint2.y +
+         Math.pow(t, 3) * endPoint.y
+    };
+
+    return {
+      ...particle,
+      x: point.x,
+      y: point.y
+    };
+  });
+
+  animationFrame = requestAnimationFrame(animateParticles);
+};
+
+// Update the getParticleSpeed function to adjust for the longer curve
 const getParticleSpeed = () => {
   const scale = 1 / Math.max(0.3, props.zoomLevel);
-  return baseParticleSpeed * Math.min(scale, 2);
+  // Reduce base speed since the curve is longer
+  return (baseParticleSpeed * 0.7) * Math.min(scale, 2);
+};
+
+// Adjust the number of particles and their initialization
+const initializeParticles = () => {
+  const newParticles = [];
+  const baseSpeed = getParticleSpeed();
+  
+  // Increase number of particles since the curve is longer
+  const adjustedNumParticles = Math.ceil(numParticles * 1.5);
+
+  for (let i = 0; i < adjustedNumParticles; i++) {
+    newParticles.push({
+      id: i,
+      progress: i / adjustedNumParticles,
+      speed: baseSpeed + (Math.random() * baseSpeed * 0.5),
+      duration: `${0.8 + Math.random() * 0.4}s`
+    });
+  }
+  particles.value = newParticles;
 };
 
 const fontSize = computed(() => {
@@ -137,7 +217,7 @@ const inputStyle = computed(() => ({
 const calculateConnectionPoints = () => {
   const messageIndex = props.endNode.branchMessageIndex || 0;
   const messageYOffset = messageIndex * 120 + 40;
-  const startOffset = 36;
+  const startOffset = 1;
 
   const startPoint = {
     x: isLeftBranch.value
@@ -153,23 +233,28 @@ const calculateConnectionPoints = () => {
 
   return { startPoint, endPoint };
 };
-
+// Find the pathData computed property and replace it with this enhanced version
 const pathData = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints();
 
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(60, distance * 0.3);
-
+  
+  // Increase the control point distance significantly
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  
+  // Add vertical offset to control points to create more curve
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
   const controlPoint1 = {
     x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
-    y: startPoint.y
+    y: startPoint.y + verticalOffset
   };
 
   const controlPoint2 = {
     x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
-    y: endPoint.y
+    y: endPoint.y - verticalOffset
   };
 
   return `M ${startPoint.x} ${startPoint.y} 
@@ -178,22 +263,26 @@ const pathData = computed(() => {
             ${endPoint.x} ${endPoint.y}`;
 });
 
+// Also update the reversedPathData computed property for consistency
 const reversedPathData = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints();
 
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(60, distance * 0.3);
+  
+  // Use the same enhanced curving logic
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
 
   const controlPoint1 = {
-    x: endPoint.x + controlPointDistance,
-    y: endPoint.y
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y - verticalOffset
   };
 
   const controlPoint2 = {
-    x: startPoint.x - controlPointDistance,
-    y: startPoint.y
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y + verticalOffset
   };
 
   return `M ${endPoint.x} ${endPoint.y} 
@@ -202,8 +291,25 @@ const reversedPathData = computed(() => {
             ${startPoint.x} ${startPoint.y}`;
 });
 
-// Particle animation
-const getPointOnCurve = (t, startPoint, controlPoint1, controlPoint2, endPoint) => {
+// Update the getPointOnCurve function to match the new curving logic
+const getPointOnCurve = (t, startPoint, endPoint) => {
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
+  const controlPoint1 = {
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y + verticalOffset
+  };
+
+  const controlPoint2 = {
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y - verticalOffset
+  };
+
   const t1 = 1 - t;
   return {
     x: Math.pow(t1, 3) * startPoint.x +
@@ -215,72 +321,6 @@ const getPointOnCurve = (t, startPoint, controlPoint1, controlPoint2, endPoint) 
       3 * t1 * Math.pow(t, 2) * controlPoint2.y +
       Math.pow(t, 3) * endPoint.y
   };
-};
-
-const initializeParticles = () => {
-  const newParticles = [];
-  const baseSpeed = getParticleSpeed();
-
-  for (let i = 0; i < numParticles; i++) {
-    newParticles.push({
-      id: i,
-      progress: i / numParticles,
-      speed: baseSpeed + (Math.random() * baseSpeed * 0.5), // Add some randomness
-      duration: `${0.8 + Math.random() * 0.4}s`
-    });
-  }
-  particles.value = newParticles;
-};
-
-
-const animateParticles = () => {
-  const { startPoint, endPoint } = calculateConnectionPoints();
-  const dx = endPoint.x - startPoint.x;
-  const dy = endPoint.y - startPoint.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(60, distance * 0.3);
-
-  const controlPoint1 = {
-    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
-    y: startPoint.y
-  };
-
-  const controlPoint2 = {
-    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
-    y: endPoint.y
-  };
-
-  // Get current base speed based on zoom level
-  const baseSpeed = getParticleSpeed();
-
-  particles.value = particles.value.map(particle => {
-    // Update particle speed based on current zoom level while maintaining relative randomness
-    const relativeSpeedFactor = particle.speed / (particle.speed - (Math.random() * particle.speed * 0.5));
-    const newSpeed = baseSpeed + (Math.random() * baseSpeed * 0.5);
-    particle.speed = newSpeed * relativeSpeedFactor;
-
-    // Update progress with new speed
-    particle.progress += particle.speed;
-    if (particle.progress > 1) {
-      particle.progress = 0;
-    }
-
-    const point = getPointOnCurve(
-      particle.progress,
-      startPoint,
-      controlPoint1,
-      controlPoint2,
-      endPoint
-    );
-
-    return {
-      ...particle,
-      x: point.x,
-      y: point.y
-    };
-  });
-
-  animationFrame = requestAnimationFrame(animateParticles);
 };
 
 onMounted(() => {

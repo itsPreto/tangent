@@ -23,27 +23,52 @@
       <ChevronRight class="w-5 h-5 transition-transform" :class="{ 'rotate-180': isSidePanelOpen }" />
     </button>
 
-    <!-- Left Controls (Theme Toggle) -->
-    <div class="fixed top-0 z-50 transition-all duration-300 p-4" :style="{
-      left: isSidePanelOpen ? '40vw' : '0'
+    <!-- Top Controls Container -->
+    <div class="fixed top-0 z-50 transition-all duration-300 flex justify-between" :style="{
+      left: isSidePanelOpen ? '40vw' : '0',
+      right: '0'
     }">
-      <ThemeToggle />
-    </div>
+      <!-- Left Controls Group -->
+      <div class="flex items-center gap-4 p-4">
+        <div class="flex items-center gap-4">
+          <WorkspaceMenu />
+          
+          <!-- Canvas Controls -->
+          <div class="flex items-center gap-2">
+            <ThemeToggle />
+            <div class="px-3 py-1.5 bg-base-200/90 backdrop-blur text-sm rounded-full border border-base-300">
+              {{ Math.round(canvasZoom * 100) }}%
+            </div>
+            <button
+              class="px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 hover:bg-base-300/90"
+              @click="toggleAutoZoom"
+            >
+              <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
-    <!-- Right Controls -->
-    <div class="fixed top-0 right-4 z-50 p-4 flex items-center gap-2">
-      <button @click="openSettings" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-        <Settings class="w-5 h-5" />
-      </button>
-
-      <ModelSelector :api-key="openRouterApiKey" :selected-model="selectedModel" @select="handleModelSelect" />
+      <!-- Right Controls Group -->
+      <div class="flex items-center gap-2 p-4 mr-4">
+        <button @click="openSettings" class="btn btn-sm btn-ghost">
+          <Settings class="w-4 h-4" />
+        </button>
+        <ModelSelector :api-key="openRouterApiKey" :selected-model="selectedModel" @select="handleModelSelect" />
+      </div>
     </div>
 
     <!-- Canvas Container -->
-    <div class="w-full h-screen">
-      <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
-        :model-type="modelType" :side-panel-open="isSidePanelOpen" />
-    </div>
+    <InfiniteCanvas 
+      ref="canvasRef" 
+      :selected-model="selectedModel?.id || ''" 
+      :open-router-api-key="openRouterApiKey"
+      :model-type="modelType" 
+      :side-panel-open="isSidePanelOpen" 
+      :zoom="canvasZoom" 
+      v-model:zoom="canvasZoom"
+      v-model:auto-zoom-enabled="canvasAutoZoom" 
+    />
 
     <!-- Settings Modal -->
     <dialog ref="settingsDialog" class="modal">
@@ -64,7 +89,14 @@
             </label>
             <input v-model="openRouterApiKey" type="password" placeholder="sk-or-..."
               class="input input-bordered w-full" />
-            <label class="label">
+            
+            <label class="label mt-2">
+              <span class="label-text">Gemini API Key</span>
+            </label>
+            <input v-model="geminiApiKey" type="password" placeholder="AIza..."
+              class="input input-bordered w-full" />
+
+            <label class="label mt-2">
               <span class="label-text">Custom API URL</span>
             </label>
             <input v-model="customApiUrl" type="url" placeholder="http://localhost:8080/v1/chat/completions"
@@ -84,9 +116,8 @@
   </div>
 </template>
 
-
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { Settings, ChevronRight } from 'lucide-vue-next';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
@@ -94,12 +125,26 @@ import TangentLogo from './components/logo/TangentLogo.vue';
 import ModelSelector from './components/models/ModelSelector.vue';
 import TaskManager from './components/manager/TaskManager.vue';
 import TokenOptimizer from './components/tokenizer/DirectoryTokenizer.vue';
-import type { Model } from './components/models/ModelSelector.vue';
+import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
+import type { Model } from './stores/modelStore';
 import { useCanvasStore } from './stores/canvasStore';
+import { useModelStore } from './stores/modelStore';
+import { useChatStore } from './stores/chatStore';
 
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
+const canvasZoom = ref(1);
+const canvasAutoZoom = ref(true);
 
-// State - load from localStorage if present
+// Stores
+const canvasStore = useCanvasStore();
+const modelStore = useModelStore();
+const chatStore = useChatStore();
+
+onMounted(() => {
+    canvasStore.initFromLocalStorage();
+    chatStore.loadChats();  // Add this line
+});
+// State
 const selectedModel = ref<Model | null>(
   localStorage.getItem('selectedModel')
     ? JSON.parse(localStorage.getItem('selectedModel')!)
@@ -108,50 +153,46 @@ const selectedModel = ref<Model | null>(
 const modelType = ref<string>(localStorage.getItem('modelType') || '');
 const settingsDialog = ref<HTMLDialogElement | null>(null);
 const openRouterApiKey = ref(localStorage.getItem('openRouterApiKey') || '');
+const geminiApiKey = ref(localStorage.getItem('geminiApiKey') || '');
 const activeTab = ref<'api' | 'tasks'>('api');
-const canvasStore = useCanvasStore();
 const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
-
-// Side panel state
 const isSidePanelOpen = ref(false);
 
 // Methods
 const toggleSidePanel = () => {
   isSidePanelOpen.value = !isSidePanelOpen.value;
-  // If panel is opening, wait for transition then center
   setTimeout(() => {
     canvasRef.value?.autoFitNodes();
-  }, 300); // Match the transition duration
+  }, 300);
 };
 
-const handleModelSelect = (model: Model) => {
-  console.log('Previous model:', selectedModel.value);
-  console.log('New model:', model);
-
-  selectedModel.value = model;
-  modelType.value = model.source;
-
-  try {
-    localStorage.setItem('selectedModel', JSON.stringify(model));
-    localStorage.setItem('modelType', model.source);
-  } catch (e) {
-    console.error('Error storing model:', e);
+const toggleAutoZoom = () => {
+  canvasAutoZoom.value = !canvasAutoZoom.value;
+  if (canvasAutoZoom.value) {
+    canvasRef.value?.autoFitNodes();
   }
 };
 
-const openSettings = () => {
-  settingsDialog.value?.showModal();
+const handleModelSelect = (model: Model) => {
+  selectedModel.value = model;
+  modelType.value = model.source;
+  localStorage.setItem('selectedModel', JSON.stringify(model));
+  localStorage.setItem('modelType', model.source);
 };
+
+const openSettings = () => settingsDialog.value?.showModal();
 
 const closeSettings = () => {
   settingsDialog.value?.close();
   if (openRouterApiKey.value) {
     localStorage.setItem('openRouterApiKey', openRouterApiKey.value);
-  } else {
-    localStorage.removeItem('openRouterApiKey');
   }
-  canvasStore.setCustomApiUrl(customApiUrl.value)
+  if (geminiApiKey.value) {
+    localStorage.setItem('geminiApiKey', geminiApiKey.value);
+    modelStore.initialize();
+  }
 };
+
 </script>
 
 <style scoped>
@@ -160,8 +201,16 @@ const closeSettings = () => {
   z-index: 100;
 }
 
-/* Ensure side panel is above canvas */
 .side-panel {
   isolation: isolate;
+}
+
+/* Smooth transitions */
+.btn {
+  transition: all 0.2s ease;
+}
+
+.btn-ghost {
+  @apply hover:bg-base-200/90;
 }
 </style>

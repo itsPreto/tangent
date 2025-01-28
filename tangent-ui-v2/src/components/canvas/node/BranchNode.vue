@@ -17,8 +17,8 @@
     }">
       <!-- Model Avatars -->
       <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 flex -space-x-2 px-2">
-        <div v-for="model in uniqueModels" :key="model.id" class="relative group w-9 h-9">
-          <img :src="getAvatarUrl(model)" alt="Provider Avatar"
+        <div v-if="lastModel" class="relative group w-9 h-9">
+          <img :src="getAvatarUrl(lastModel)" alt="Provider Avatar"
             class="w-9 h-9 rounded-full border-2 border-base-100 shadow-md object-cover" />
           <div
             class="avatar-overlay transition-opacity duration-200 opacity-0 absolute inset-0 rounded-full bg-black/30 group-hover:opacity-100">
@@ -26,7 +26,7 @@
           <div class="absolute bottom-full mb-2 hidden group-hover:block z-50"
             style="left: 50%; transform: translateX(-50%);">
             <div class="bg-base-100 border rounded-md shadow-lg px-2 py-1 text-xs whitespace-nowrap text-base-content">
-              {{ model.name }}
+              {{ lastModel.name }}
             </div>
           </div>
         </div>
@@ -76,6 +76,9 @@
             <X class="w-5 h-5" />
           </button>
         </div>
+
+        <!-- Slot for media content -->
+        <slot></slot>
 
         <!-- Messages -->
         <div v-if="isExpanded && node.messages" class="space-y-4">
@@ -259,10 +262,12 @@ const titleInput = ref('');
 const expandedMessages = ref(new Set<number>());
 const titleInputRef = ref<HTMLElement | null>(null);
 const isDraggable = ref(false);
+const isDragging = ref(false);
 const dragStartPosition = ref({ x: 0, y: 0 });
 const DRAG_THRESHOLD = 5; // Pixels to move before initiating drag
 const isStreaming = ref(false);
 const fadeTimeout = ref<number | null>(null);
+const lastModel = ref<ModelInfo | undefined>(undefined)
 
 // Store
 const store = useCanvasStore();
@@ -340,17 +345,10 @@ function getAvatarUrl(model?: ModelInfo): string {
   return avatar || providerAvatars['Unknown'];
 }
 
+// The computed models no longer needs to be a set
 const uniqueModels = computed(() => {
-  const models = new Set<ModelInfo>();
-  if (!props.node.messages) return [];
-
-  props.node.messages.forEach((msg) => {
-    if (msg.modelId) {
-      const model = getModelInfo(msg.modelId);
-      if (model) models.add(model);
-    }
-  });
-  return Array.from(models);
+  if (!lastModel.value) return [];
+  return [lastModel.value];
 });
 
 
@@ -391,25 +389,34 @@ const handleMouseDown = (e: MouseEvent) => {
   if (props.node.type !== 'main') {
     dragStartPosition.value = { x: e.clientX, y: e.clientY };
     isDraggable.value = true;
+    isDragging.value = false; // Reset drag state on mouse down
   }
 };
 
 const handleMouseMove = (e: MouseEvent) => {
   if (!isDraggable.value) return;
+
   const dx = Math.abs(e.clientX - dragStartPosition.value.x);
   const dy = Math.abs(e.clientY - dragStartPosition.value.y);
 
   if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
     e.stopPropagation();
     isDraggable.value = false;
+    isDragging.value = true; // Set dragging state when threshold is exceeded
     emit('drag-start', e, props.node);
   }
 };
 
 const handleMouseUp = () => {
+  const wasDragging = isDragging.value;
   isDraggable.value = false;
-};
+  isDragging.value = false;
 
+  // Only emit select if we weren't dragging
+  if (!wasDragging) {
+    emit('select');
+  }
+};
 /* ------------------
    Title editing
 ------------------ */
@@ -464,10 +471,13 @@ const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
 async function handleMessageSend(message: string) {
   isLoading.value = true;
   try {
-    await store.sendMessage(props.node.id, message, props.selectedModel, props.openRouterApiKey);
+    const modelId = await store.sendMessage(props.node.id, message, props.selectedModel, props.openRouterApiKey);
     // Auto-generate title for new conversations
     if (props.node.messages.length === 2 && !props.node.title) {
       generateTitle();
+    }
+    if (modelId) {
+      lastModel.value = getModelInfo(modelId);
     }
   } catch (error) {
     console.error('Error sending message:', error);
@@ -556,10 +566,18 @@ onMounted(() => {
   if (!props.node.title) {
     isEditing.value = true;
   }
+  // Initialize last model using all the messages
+  if (props.node.messages && props.node.messages.length > 0) {
+    let lastMessage = props.node.messages[props.node.messages.length - 1];
+    if (lastMessage.modelId) {
+      lastModel.value = getModelInfo(lastMessage.modelId);
+    }
+  }
 });
 
 onBeforeUnmount(() => {
   isDraggable.value = false;
+  isDragging.value = false;
   if (fadeTimeout.value) {
     clearTimeout(fadeTimeout.value);
   }
@@ -733,5 +751,19 @@ onBeforeUnmount(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+
+.cluster-viz-container {
+  transform-origin: bottom left;
+}
+
+.cluster-viz-minimized {
+  cursor: pointer;
+}
+
+.cluster-viz-focused {
+  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.5);
 }
 </style>

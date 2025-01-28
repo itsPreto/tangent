@@ -25,7 +25,7 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["prismjs"]
+    "types": ["prismjs",  "@tresjs/core"]
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
   "exclude": ["node_modules"]

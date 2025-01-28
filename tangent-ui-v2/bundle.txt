@@ -50,17 +50,129 @@ export default defineConfig({
 === START FILE: ./src/App.vue ===
 === TYPE: vue ===
 
-// src/App.vue
+<template>
+  <div class="min-h-screen bg-background">
+    <!-- Logo Container -->
+    <div class="fixed top-4 z-50 transition-all duration-300 w-[180px]" :style="{
+      left: isSidePanelOpen ? 'calc(40vw + (60vw - 180px) / 2)' : 'calc(50vw - 90px)'
+    }">
+      <TangentLogo />
+    </div>
+
+    <!-- Side Panel -->
+    <div
+      class="fixed left-0 top-0 h-full w-[40vw] bg-background shadow-lg transform transition-transform duration-300 z-40 border-r border-base-300"
+      :class="isSidePanelOpen ? 'translate-x-0' : '-translate-x-full'">
+      <div class="h-full pt-2 px-4 pb-4 bg-background">
+        <TokenOptimizer />
+      </div>
+    </div>
+
+    <!-- Toggle Button -->
+    <button @click="toggleSidePanel"
+      class="fixed left-0 top-1/2 -translate-y-1/2 z-50 p-2 bg-background border border-l-0 border-base-300 rounded-r-md hover:bg-base-200 transition-all duration-300 shadow-md"
+      :class="{ 'translate-x-[40vw]': isSidePanelOpen }">
+      <ChevronRight class="w-5 h-5 transition-transform" :class="{ 'rotate-180': isSidePanelOpen }" />
+    </button>
+
+    <!-- Top Controls Container -->
+    <div class="fixed top-0 z-50 transition-all duration-300 flex justify-between" :style="{
+      left: isSidePanelOpen ? '40vw' : '0',
+      right: '0'
+    }">
+      <!-- Left Controls Group -->
+      <div class="flex items-center gap-4 p-4">
+        <ThemeToggle />
+        <div class="flex items-center gap-4">
+          <!-- Zoom Level Display -->
+          <div class="px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg">
+            <span class="text-sm font-medium text-base-content">{{ Math.round(canvasZoom * 100) }}%</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button @click="graphControls.createNewConversation">New Chat</button>
+            <button @click="graphControls.saveCurrentConversation">Save</button>
+          </div>
+          <!-- Auto-center Toggle -->
+          <button
+            class="px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg hover:bg-base-300/90 transition-colors"
+            @click="toggleAutoZoom">
+            <span class="text-sm font-medium text-base-content">Auto-center: {{ canvasAutoZoom ? 'On' : 'Off' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Controls Group -->
+      <div class="flex items-center gap-2 p-4 mr-4">
+        <button @click="openSettings" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+          <Settings class="w-5 h-5" />
+        </button>
+        <ModelSelector :api-key="openRouterApiKey" :selected-model="selectedModel" @select="handleModelSelect" />
+      </div>
+    </div>
+
+    <!-- Canvas Container -->
+    <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
+      :model-type="modelType" :side-panel-open="isSidePanelOpen" :zoom="canvasZoom" v-model:zoom="canvasZoom"
+      v-model:auto-zoom-enabled="canvasAutoZoom" />
+
+    <!-- Settings Modal -->
+    <dialog ref="settingsDialog" class="modal">
+      <div class="modal-box max-w-lg">
+        <div class="flex items-center space-x-2 mb-4">
+          <button class="btn btn-sm" :class="{ 'btn-active': activeTab === 'api' }" @click="activeTab = 'api'">
+            API Settings
+          </button>
+          <button class="btn btn-sm" :class="{ 'btn-active': activeTab === 'tasks' }" @click="activeTab = 'tasks'">
+            Tasks
+          </button>
+        </div>
+
+        <div v-if="activeTab === 'api'" class="space-y-4">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text">OpenRouter API Key</span>
+            </label>
+            <input v-model="openRouterApiKey" type="password" placeholder="sk-or-..."
+              class="input input-bordered w-full" />
+            <label class="label">
+              <span class="label-text">Custom API URL</span>
+            </label>
+            <input v-model="customApiUrl" type="url" placeholder="http://localhost:8080/v1/chat/completions"
+              class="input input-bordered w-full" />
+          </div>
+        </div>
+
+        <div v-else-if="activeTab === 'tasks'">
+          <TaskManager />
+        </div>
+
+        <div class="modal-action">
+          <button class="btn" @click="closeSettings">Close</button>
+        </div>
+      </div>
+    </dialog>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Settings } from 'lucide-vue-next';
+import { Settings, ChevronRight } from 'lucide-vue-next';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
 import TangentLogo from './components/logo/TangentLogo.vue';
 import ModelSelector from './components/models/ModelSelector.vue';
 import TaskManager from './components/manager/TaskManager.vue';
+import TokenOptimizer from './components/tokenizer/DirectoryTokenizer.vue';
 import type { Model } from './components/models/ModelSelector.vue';
 import { useCanvasStore } from './stores/canvasStore';
+import { useGraphControlsStore } from '@/stores/graphControlStore';
+
+const graphControls = useGraphControlsStore();
+
+const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
+const canvasZoom = ref(1);
+const canvasAutoZoom = ref(true);
 
 // State - load from localStorage if present
 const selectedModel = ref<Model | null>(
@@ -75,7 +187,25 @@ const activeTab = ref<'api' | 'tasks'>('api');
 const canvasStore = useCanvasStore();
 const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
 
+// Side panel state
+const isSidePanelOpen = ref(false);
+
 // Methods
+const toggleSidePanel = () => {
+  isSidePanelOpen.value = !isSidePanelOpen.value;
+  // If panel is opening, wait for transition then center
+  setTimeout(() => {
+    canvasRef.value?.autoFitNodes();
+  }, 300); // Match the transition duration
+};
+
+const toggleAutoZoom = () => {
+  canvasAutoZoom.value = !canvasAutoZoom.value;
+  if (canvasAutoZoom.value) {
+    canvasRef.value?.autoFitNodes();
+  }
+};
+
 const handleModelSelect = (model: Model) => {
   console.log('Previous model:', selectedModel.value);
   console.log('New model:', model);
@@ -106,92 +236,17 @@ const closeSettings = () => {
 };
 </script>
 
-<template>
-  <div class="min-h-screen bg-background">
-    <!-- Logo - Centered at top -->
-    <div class="fixed top-4 left-1/2 -translate-x-1/2 z-10">
-      <TangentLogo />
-    </div>
+<style scoped>
+.modal {
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
 
-    <!-- Settings Modal -->
-    <dialog ref="settingsDialog" class="modal">
-      <div class="modal-box max-w-lg">
-        <div class="flex items-center space-x-2 mb-4">
-          <button 
-            class="btn btn-sm"
-            :class="{ 'btn-active': activeTab === 'api' }"
-            @click="activeTab = 'api'"
-          >
-            API Settings
-          </button>
-          <button 
-            class="btn btn-sm"
-            :class="{ 'btn-active': activeTab === 'tasks' }"
-            @click="activeTab = 'tasks'"
-          >
-            Tasks
-          </button>
-        </div>
-
-        <div v-if="activeTab === 'api'" class="space-y-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text">OpenRouter API Key</span>
-            </label>
-            <input
-              v-model="openRouterApiKey"
-              type="password"
-              placeholder="sk-or-..."
-              class="input input-bordered w-full"
-            />
-            <label class="label">
-            <span class="label-text">Custom API URL</span>
-          </label>
-          <input
-            v-model="customApiUrl"
-            type="url"
-            placeholder="http://localhost:8080/v1/chat/completions"
-            class="input input-bordered w-full"
-          />
-          </div>
-        </div>
-
-        <div v-else-if="activeTab === 'tasks'">
-          <TaskManager />
-        </div>
-
-        <div class="modal-action">
-          <button class="btn" @click="closeSettings">Close</button>
-        </div>
-      </div>
-    </dialog>
-
-    <!-- Model Selection Header -->
-    <div class="fixed top-0 right-0 p-4 z-20 flex items-center gap-2">
-      <button
-        @click="openSettings"
-        class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
-      >
-        <Settings class="w-5 h-5" />
-      </button>
-
-      <ModelSelector
-        :api-key="openRouterApiKey"
-        :selected-model="selectedModel"
-        @select="handleModelSelect"
-      />
-
-      <ThemeToggle />
-    </div>
-
-    <!-- Canvas -->
-    <InfiniteCanvas
-      :selected-model="selectedModel?.id || ''"
-      :open-router-api-key="openRouterApiKey"
-      :model-type="modelType"
-    />
-  </div>
-</template>
+/* Ensure side panel is above canvas */
+.side-panel {
+  isolation: isolate;
+}
+</style>
 === END FILE: ./src/App.vue ===
 
 
@@ -295,6 +350,8 @@ export const useCanvasStore = defineStore('canvas', () => {
   const viewMode = ref<'2d' | '3d'>('2d');
   const isTransitioning = ref(false);
   const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
+  const conversationId = ref<string | null>(null);
+  const isLoading = ref(false);
 
   // Constants
   const CARD_WIDTH = 672;
@@ -308,8 +365,8 @@ export const useCanvasStore = defineStore('canvas', () => {
   // Helper function to process SSE lines
   const processSSELine = (line: string, source: ModelSource) => {
     // Skip empty lines and known control messages
-    if (!line || line === 'data: [DONE]' || line === '[DONE]' || 
-        (source === 'openrouter' && line.startsWith(': OPENROUTER PROCESSING'))) {
+    if (!line || line === 'data: [DONE]' || line === '[DONE]' ||
+      (source === 'openrouter' && line.startsWith(': OPENROUTER PROCESSING'))) {
       return null;
     }
 
@@ -318,10 +375,19 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     try {
       const data = JSON.parse(jsonData);
-      if (source === 'openrouter') {
-        return data.choices?.[0]?.delta?.content || '';
-      } else {
-        return data.content || '';
+
+      // Handle different provider response structures
+      switch (source) {
+        case 'openrouter':
+          return data.choices?.[0]?.delta?.content || '';
+        case 'ollama':
+          // Ollama's response structure uses 'message' field
+          return data.message?.content || data.content || '';
+        case 'custom':
+          // Handle custom API formats
+          return data.content || data.response || data.output || '';
+        default:
+          return data.content || '';
       }
     } catch (e) {
       // Only log actual parsing errors for non-control messages
@@ -353,7 +419,7 @@ export const useCanvasStore = defineStore('canvas', () => {
 
         for (const line of lines) {
           const content = processSSELine(line, modelSource);
-          if (content) {
+          if (content !== null) { // Explicit null check
             accumulatedContent += content;
             setStreamingContent(nodeId, accumulatedContent);
           }
@@ -363,7 +429,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       // Process any remaining buffer content
       if (buffer) {
         const content = processSSELine(buffer, modelSource);
-        if (content) {
+        if (content !== null) {
           accumulatedContent += content;
           setStreamingContent(nodeId, accumulatedContent);
         }
@@ -375,6 +441,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       throw error;
     }
   };
+
 
   // Computed properties for 3D view
   const graphData = computed(() => {
@@ -415,6 +482,66 @@ export const useCanvasStore = defineStore('canvas', () => {
         return { parent, child: node };
       });
   });
+
+
+  const loadConversation = async (id: string) => {
+    isLoading.value = true;
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/api/conversations/${id}`);
+      if (!response.ok) throw new Error('Failed to load conversation');
+
+      const data = await response.json();
+      nodes.value = data.nodes;
+      conversationId.value = id;
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const saveCurrentConversation = async () => {
+    if (!conversationId.value) {
+      await createNewConversation();
+      return;
+    }
+
+    try {
+      await fetch(`http://127.0.0.1:5000/api/conversations/${conversationId.value}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes: nodes.value,
+          updatedAt: new Date().toISOString(),
+          title: nodes.value[0]?.title || 'Untitled Conversation'
+        })
+      });
+    } catch (error) {
+      console.error('Error saving conversation:', error);
+    }
+  };
+
+  const createNewConversation = async () => {
+    try {
+      const conversation = {
+        id: crypto.randomUUID(),
+        nodes: nodes.value,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        title: nodes.value[0]?.title || 'New Conversation'
+      };
+
+      await fetch('http://127.0.0.1:5000/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conversation)
+      });
+
+      conversationId.value = conversation.id;
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+    }
+  };
 
   const parseModelInfo = (selectedModel: string): ModelInfo => {
     if (selectedModel.includes('/')) {
@@ -540,18 +667,18 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     const requestBody = modelInfo.source === 'custom' && customApiUrl.value
       ? {
-          prompt: `${messageContext.map(m => `${m.role}: ${m.content}`).join('\n')}`,
-          stream: true,
-          model: modelInfo.id
-        }
+        prompt: `${messageContext.map(m => `${m.role}: ${m.content}`).join('\n')}`,
+        stream: true,
+        model: modelInfo.id
+      }
       : {
-          model: modelInfo.id,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messageContext
-          ],
-          stream: true
-        };
+        model: modelInfo.id,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messageContext
+        ],
+        stream: true
+      };
 
     return { endpoint, headers, requestBody };
   };
@@ -568,23 +695,13 @@ export const useCanvasStore = defineStore('canvas', () => {
   };
 
   // Node management functions
-  const addNode = (parentId: string, branchMessageIndex: number, position: { x: number, y: number }, initialData = {}) => {
-    const newId = (Math.max(...nodes.value.map(n => parseInt(n.id))) + 1).toString();
-    const parentNode = nodes.value.find(n => n.id === parentId);
-    const existingChildren = nodes.value.filter(n => n.parentId === parentId).length;
-
-    const parentMessages = parentNode?.messages || [];
-    const contextMessages = parentMessages.slice(0, branchMessageIndex + 1).map(msg => ({
-      ...msg,
-      timestamp: new Date().toISOString()
-    }));
-
-    const newNode: Node = {
-      id: newId,
+  const addNode = async (parentId: string, branchMessageIndex: number, position: { x: number, y: number }, initialData = {}) => {
+    const newNode = {
+      id: (Math.max(...nodes.value.map(n => parseInt(n.id))) + 1).toString(),
       x: position.x,
-      y: position.y + (existingChildren * (CARD_HEIGHT + 20)),
+      y: position.y,
       parentId,
-      messages: contextMessages,
+      messages: [],
       type: 'branch',
       branchMessageIndex,
       streamingContent: null,
@@ -592,24 +709,39 @@ export const useCanvasStore = defineStore('canvas', () => {
     };
 
     nodes.value.push(newNode);
+    await saveCurrentConversation();
     return newNode;
+  };
+
+  const updateNodePosition = async (id: string, position: { x: number, y: number }) => {
+    const node = nodes.value.find(n => n.id === id);
+    if (node) {
+      node.x = position.x;
+      node.y = position.y;
+      await saveCurrentConversation();
+    }
+  };
+
+  const removeNode = async (id: string) => {
+    nodes.value = nodes.value.filter(n => n.id !== id && n.parentId !== id);
+    await saveCurrentConversation();
   };
 
   const addMessage = (nodeId: string, message: string | Message) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
-      const newMessage: Message = typeof message === 'string' 
+      const newMessage: Message = typeof message === 'string'
         ? {
-            role: 'assistant',
-            content: message,
-            timestamp: new Date().toISOString(),
-            isStreaming: false
-          } 
+          role: 'assistant',
+          content: message,
+          timestamp: new Date().toISOString(),
+          isStreaming: false
+        }
         : {
-            ...message,
-            role: message.role as 'user' | 'assistant',
-            isStreaming: message.isStreaming ?? false
-          };
+          ...message,
+          role: message.role as 'user' | 'assistant',
+          isStreaming: message.isStreaming ?? false
+        };
 
       node.messages = [...(node.messages || []), newMessage];
     }
@@ -632,28 +764,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
-  const updateNodePosition = (id: string, position: { x: number, y: number }) => {
-    const node = nodes.value.find(n => n.id === id);
-    if (node) {
-      node.x = position.x;
-      node.y = position.y;
-    }
-  };
 
-  const removeNode = (id: string) => {
-    const topicId = nodeTopics.value.get(id);
-    if (topicId !== undefined) {
-      const cluster = topicClusters.value.get(topicId);
-      if (cluster) {
-        cluster.delete(id);
-        if (cluster.size === 0) {
-          topicClusters.value.delete(topicId);
-        }
-      }
-      nodeTopics.value.delete(id);
-    }
-    nodes.value = nodes.value.filter(n => n.id !== id && n.parentId !== id);
-  };
 
   const updateNodeTitle = (id: string, title: string) => {
     const node = nodes.value.find(n => n.id === id);
@@ -689,6 +800,8 @@ export const useCanvasStore = defineStore('canvas', () => {
     topicClusters,
     nodeTopics,
     customApiUrl,
+    conversationId,
+    isLoading,
 
     // Computed
     connections,
@@ -708,10 +821,201 @@ export const useCanvasStore = defineStore('canvas', () => {
     setStreamingContent,
     removeMessage,
     sendMessage,
-    setCustomApiUrl
+    setCustomApiUrl,
+    loadConversation,
+    createNewConversation,
+    saveCurrentConversation,
   };
 });
 === END FILE: ./src/stores/canvasStore.ts ===
+
+
+=== START FILE: ./src/stores/graphControlStore.ts ===
+=== TYPE: ts ===
+
+import { defineStore } from 'pinia';
+import { ref, computed, watch } from 'vue';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useTopicClusterStore } from '@/stores/topicClusterStore'
+
+export const useGraphControlsStore = defineStore('graphControls', () => {
+    const canvasStore = useCanvasStore();
+    const clusterStore = useTopicClusterStore();
+
+    const isLoading = ref(false);
+    const currentConvId = ref<string | null>(null);
+
+    const createNewConversation = async () => {
+        isLoading.value = true;
+        try {
+            const id = await canvasStore.createNewConversation();
+            if (id) {
+                currentConvId.value = id;
+                await clusterStore.clusterConversations(canvasStore.nodes);
+            }
+            return id;
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    const saveCurrentConversation = async () => {
+        if (!currentConvId.value) {
+            const id = await createNewConversation();
+            return id;
+        }
+        await canvasStore.saveCurrentConversation();
+
+        // Add this call
+        await fetch('http://127.0.0.1:5000/api/clusters/update', {
+            method: 'POST',
+            body: JSON.stringify({ nodes: canvasStore.nodes })
+        });
+
+        await clusterStore.clusterConversations(canvasStore.nodes);
+    };
+
+    const loadConversation = async (id: string) => {
+        isLoading.value = true;
+        try {
+            await canvasStore.loadConversation(id);
+            currentConvId.value = id;
+            await clusterStore.clusterConversations(canvasStore.nodes);
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    watch(() => canvasStore.nodes.length, async () => {
+        if (currentConvId.value) {
+            await saveCurrentConversation();
+        }
+    });
+
+    return {
+        isLoading,
+        currentConvId,
+        createNewConversation,
+        loadConversation,
+        saveCurrentConversation
+    };
+});
+=== END FILE: ./src/stores/graphControlStore.ts ===
+
+
+=== START FILE: ./src/stores/topicClusterStore.ts ===
+=== TYPE: ts ===
+
+import { defineStore } from 'pinia';
+import { ref, computed } from 'vue';
+import type { Node } from '../types/message';
+
+interface TopicCluster {
+    id: string;
+    topic: string;
+    nodes: Node[];
+    embedding: number[];
+    coherence: number;
+}
+
+export const useTopicClusterStore = defineStore('topicClusters', () => {
+    const clusters = ref<TopicCluster[]>([]);
+    const isProcessing = ref(false);
+
+    // Generate embeddings for a list of texts
+    const generateEmbeddings = async (texts: string[]) => {
+        const response = await fetch('http://localhost:11434/api/embed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'all-minilm',
+                input: texts
+            })
+        });
+
+        const data = await response.json();
+        return data.embeddings;
+    };
+
+    // Calculate cosine similarity between two embeddings
+    const cosineSimilarity = (a: number[], b: number[]) => {
+        const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+        const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+        const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+        return dotProduct / (magnitudeA * magnitudeB);
+    };
+
+    // Cluster conversations based on embeddings
+    const clusterConversations = async (nodes: Node[]) => {
+        isProcessing.value = true;
+        try {
+            // Get titles or first messages
+            const texts = nodes.map(node => {
+                const text = node.title || node.messages[0]?.content || '';
+                return text.slice(0, 2000); // Limit to first 2000 chars
+            });
+            const embeddings = await generateEmbeddings(texts);
+            
+            // Clustering using similarity threshold
+            const SIMILARITY_THRESHOLD = 0.8;
+            const newClusters: TopicCluster[] = [];
+
+            for (let i = 0; i < nodes.length; i++) {
+                const nodeEmbedding = embeddings[i];
+                let assignedToCluster = false;
+
+                // Try to assign to existing cluster
+                for (const cluster of newClusters) {
+                    const similarity = cosineSimilarity(nodeEmbedding, cluster.embedding);
+                    if (similarity > SIMILARITY_THRESHOLD) {
+                        cluster.nodes.push(nodes[i]);
+                        assignedToCluster = true;
+                        break;
+                    }
+                }
+
+                // Create new cluster if needed
+                if (!assignedToCluster) {
+                    newClusters.push({
+                        id: crypto.randomUUID(),
+                        topic: '',  // Will be generated
+                        nodes: [nodes[i]],
+                        embedding: nodeEmbedding,
+                        coherence: 1
+                    });
+                }
+            }
+
+            // Generate topic names
+            await Promise.all(newClusters.map(async cluster => {
+                const titles = cluster.nodes.map(n => n.title || '').join('\n');
+                const response = await fetch('http://localhost:11434/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'mistral',
+                        prompt: `These are related conversation titles:\n${titles}\n\nProvide a short (2-3 words) topic name that describes their common theme. Respond with just the topic name.`,
+                        stream: false
+                    })
+                });
+
+                const data = await response.json();
+                cluster.topic = data.response.trim();
+            }));
+
+            clusters.value = newClusters;
+        } finally {
+            isProcessing.value = false;
+        }
+    };
+
+    return {
+        clusters,
+        isProcessing,
+        clusterConversations
+    };
+});
+=== END FILE: ./src/stores/topicClusterStore.ts ===
 
 
 === START FILE: ./src/utils/api.ts ===
@@ -1507,6 +1811,502 @@ const formattedTime = computed(() => {
 === END FILE: ./src/components/messages/MessageTimestamp.vue ===
 
 
+=== START FILE: ./src/components/tokenizer/DirectoryTokenizer.vue ===
+=== TYPE: vue ===
+
+<template>
+    <div class="min-h-screen bg-background/40 backdrop-blur-md p-6 border border-border/40">
+      <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+          <div class="flex items-center space-x-4">
+            <h1 class="text-3xl font-bold text-foreground">Tokenic</h1>
+            <div class="relative flex space-x-2">
+              <select v-model="optimizationLevel"
+                      class="w-44 px-3 py-2 bg-background border rounded-lg shadow-sm">
+                <option value="low">Conservative</option>
+                <option value="medium">Standard</option>
+                <option value="aggressive">Aggressive</option>
+              </select>
+              <select v-model="selectedModel"
+                      class="w-full px-4 py-2 bg-background/80 backdrop-blur-sm border rounded-lg appearance-none cursor-pointer">
+                <optgroup v-for="(models, category) in groupedModels" :key="category" :label="category">
+                  <option v-for="model in models" :key="model" :value="model">
+                    {{ model }}
+                  </option>
+                </optgroup>
+              </select>
+              <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <span class="i-lucide-chevron-down h-4 w-4 text-muted-foreground" />
+              </div>
+            </div>
+          </div>
+        </div>
+  
+        <!-- Tab Selection -->
+        <div class="flex gap-4 border-b mb-6">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            @click="activeTab = tab.id"
+            class="px-4 py-2 -mb-px transition-colors relative"
+            :class="[
+              activeTab === tab.id
+                ? 'border-b-2 border-primary text-primary font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+            ]"
+          >
+            {{ tab.name }}
+          </button>
+        </div>
+  
+        <!-- File Processing -->
+        <div v-if="activeTab === 'file'" class="space-y-6">
+          <div class="flex items-center gap-4">
+            <div class="flex-1 relative">
+              <input
+                v-model="filePath"
+                type="text"
+                placeholder="Enter file path..."
+                class="w-full px-4 py-3 bg-background border rounded-lg pr-10"
+                @keyup.enter="optimizeFile"
+              />
+              <button
+                v-if="filePath"
+                @click="filePath = ''"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <span class="i-lucide-x h-4 w-4" />
+              </button>
+            </div>
+            <button
+              @click="optimizeFile"
+              class="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="isProcessing || !filePath"
+            >
+              {{ isProcessing ? 'Processing...' : 'Optimize' }}
+            </button>
+          </div>
+        </div>
+  
+        <!-- Directory Processing -->
+        <div v-if="activeTab === 'directory'" class="space-y-6">
+          <div class="flex items-center gap-4">
+            <div class="flex-1 relative">
+              <input
+                v-model="directory"
+                type="text"
+                placeholder="Enter directory path..."
+                class="w-full px-4 py-3 bg-background border rounded-lg pr-10"
+                @keyup.enter="processDirectory"
+              />
+              <button
+                v-if="directory"
+                @click="directory = ''"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <span class="i-lucide-x h-4 w-4" />
+              </button>
+            </div>
+            <button
+              @click="processDirectory"
+              class="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="isProcessing || !directory"
+            >
+              {{ isProcessing ? 'Processing...' : 'Process Directory' }}
+            </button>
+          </div>
+        </div>
+  
+        <!-- Raw Text Input -->
+        <div v-if="activeTab === 'raw'" class="space-y-6">
+          <div class="flex items-center gap-4 mb-4">
+            <select v-model="rawInputType" class="px-4 py-3 bg-background border rounded-lg">
+              <option value="system">System</option>
+              <option value="user">User</option>
+              <option value="assistant">Assistant</option>
+            </select>
+            <button
+              @click="optimizeRawText"
+              class="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="isProcessing || !rawText"
+            >
+              {{ isProcessing ? 'Processing...' : 'Optimize' }}
+            </button>
+          </div>
+          <div class="relative">
+            <textarea
+              v-model="rawText"
+              placeholder="Enter your text here..."
+              class="w-full h-48 p-4 bg-background border rounded-lg font-mono text-sm resize-none"
+              @keyup.ctrl.enter="optimizeRawText"
+            />
+            <div v-if="rawText" class="absolute top-2 right-2">
+              <button @click="rawText = ''" class="p-1 hover:bg-muted rounded">
+                <span class="i-lucide-x h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+        </div>
+  
+        <!-- Results Display -->
+        <div v-if="currentResult" class="mt-8 bg-card border rounded-lg shadow-sm">
+          <!-- Header Stats -->
+          <div class="p-4 border-b">
+            <div v-if="currentResult.filepath" class="mb-2 text-sm text-muted-foreground">
+              {{ currentResult.filepath }}
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="flex gap-6 text-sm">
+                <div>
+                  <span class="text-muted-foreground">Original Tokens:</span>
+                  <span class="ml-2 font-medium">{{ currentResult.token_map.original.token_count }}</span>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Optimized Tokens:</span>
+                  <span class="ml-2 font-medium">{{ currentResult.token_map.optimized.token_count }}</span>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Reduction:</span>
+                  <span class="ml-2 font-medium">
+                    {{
+                      (
+                        (currentResult.token_map.original.token_count -
+                          currentResult.token_map.optimized.token_count) /
+                        currentResult.token_map.original.token_count
+                      * 100).toFixed(1)
+                    }}%
+                  </span>
+                </div>
+              </div>
+              <div class="text-sm text-muted-foreground">
+                Model: {{ currentResult.model }}
+              </div>
+            </div>
+          </div>
+  
+          <!-- Token Visualization -->
+          <div class="grid grid-cols-2 gap-6 p-6">
+            <!-- Original Panel -->
+            <div>
+              <h4 class="font-medium mb-2">Original</h4>
+              <div class="max-h-[400px] overflow-auto">
+                <pre
+                  class="p-4 bg-muted rounded-lg font-mono text-sm whitespace-normal leading-tight"
+                  style="margin: 0;"
+                >
+  <template v-for="(token, idx) in currentResult.token_map.original.tokens" :key="idx">
+    <span
+      class="token"
+      :class="{
+        'bg-destructive/20 text-destructive': isRemovedToken(token),
+        'bg-success/20 text-success': isNewToken(token),
+        'opacity-50': isRemovedToken(token)
+      }"
+    >
+      {{ token.trim() }}
+    </span><span v-if="idx < currentResult.token_map.original.tokens.length - 1"> </span>
+  </template>
+                </pre>
+              </div>
+            </div>
+  
+            <!-- Removed Tokens Panel -->
+            <div>
+              <h4 class="font-medium mb-2">Removed Tokens</h4>
+              <div class="max-h-[400px] overflow-auto">
+                <pre
+                  class="p-4 bg-muted rounded-lg font-mono text-sm whitespace-normal leading-tight"
+                  style="margin: 0;"
+                >
+  <template v-for="(token, idx) in removedTokens" :key="idx">
+    <span class="token bg-destructive/20 text-destructive">
+      {{ token.trim() }}
+    </span><span v-if="idx < removedTokens.length - 1"> </span>
+  </template>
+                </pre>
+              </div>
+            </div>
+          </div>
+  
+          <!-- Token Analysis -->
+          <div class="p-4 border-t bg-muted">
+            <div class="grid grid-cols-3 gap-8">
+              <div>
+                <p class="text-sm text-muted-foreground mb-1">Removed Tokens</p>
+                <p class="text-2xl font-bold">{{ getRemovedTokenCount() }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground mb-1">New Tokens</p>
+                <p class="text-2xl font-bold">{{ getNewTokenCount() }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground mb-1">Token Savings</p>
+                <p class="text-2xl font-bold">{{ getTokenSavings() }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+  
+        <!-- Bundle Results -->
+        <div v-if="activeTab === 'directory' && processedFiles.length" class="mt-8 space-y-4">
+          <div class="bg-card border rounded-lg p-4">
+            <h3 class="text-lg font-medium mb-4">Bundle Summary</h3>
+            <div class="grid grid-cols-4 gap-6">
+              <div>
+                <p class="text-sm text-muted-foreground">Total Files</p>
+                <p class="text-2xl font-bold">{{ processedFiles.length }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground">Total Original Tokens</p>
+                <p class="text-2xl font-bold">{{ totalOriginalTokens }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground">Total Optimized Tokens</p>
+                <p class="text-2xl font-bold">{{ totalOptimizedTokens }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground">Average Reduction</p>
+                <p class="text-2xl font-bold">
+                  {{
+                    (
+                      (totalOriginalTokens - totalOptimizedTokens) /
+                        totalOriginalTokens
+                    * 100).toFixed(1)
+                  }}%
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+  
+      </div>
+    </div>
+  </template>
+  
+  <script setup lang="ts">
+  import { ref, computed, onMounted } from 'vue'
+  
+  interface TokenMap {
+    text: string
+    token_count: number
+    tokens: string[]
+  }
+  
+  interface ProcessedResult {
+    filepath?: string
+    token_map: {
+      original: TokenMap
+      optimized: TokenMap
+    }
+    optimization_level: string
+    model: string
+  }
+  
+  interface Tab {
+    id: 'file' | 'directory' | 'raw'
+    name: string
+  }
+  
+  const tabs: Tab[] = [
+    { id: 'file', name: 'Single File' },
+    { id: 'directory', name: 'Directory' },
+    { id: 'raw', name: 'Raw Text' }
+  ]
+  
+  const activeTab = ref<Tab['id']>('file')
+  const directory = ref('')
+  const filePath = ref('')
+  const rawText = ref('')
+  const rawInputType = ref<'system' | 'user' | 'assistant'>('user')
+  const optimizationLevel = ref('medium')
+  const isProcessing = ref(false)
+  const currentResult = ref<ProcessedResult | null>(null)
+  const processedFiles = ref<ProcessedResult[]>([])
+  const selectedModel = ref('gpt-4')
+  const availableModels = ref<string[]>([])
+  
+  const groupedModels = computed(() => {
+    return {
+      Popular: availableModels.value.filter(m =>
+        ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-1106-preview'].includes(m)
+      ),
+      'Open-Source Models': availableModels.value.filter(m =>
+        m.includes('llama') || m.includes('meta')
+      ),
+      'OpenAI Models': availableModels.value.filter(m =>
+        m.includes('gpt') && !['gpt-4','gpt-3.5-turbo','gpt-4-1106-preview'].includes(m)
+      ),
+      Legacy: availableModels.value.filter(m =>
+        ['davinci','curie','babbage','ada'].includes(m)
+      )
+    }
+  })
+  
+  const totalOriginalTokens = computed(() => {
+    return processedFiles.value.reduce((sum, file) =>
+      sum + file.token_map.original.token_count, 0
+    )
+  })
+  
+  const totalOptimizedTokens = computed(() => {
+    return processedFiles.value.reduce((sum, file) =>
+      sum + file.token_map.optimized.token_count, 0
+    )
+  })
+  
+  onMounted(async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/models')
+      const data = await response.json()
+      availableModels.value = data.models
+    } catch (error) {
+      console.error('Error fetching models:', error)
+    }
+  })
+  
+  const removedTokens = computed(() => {
+    if (!currentResult.value) return []
+    const original = currentResult.value.token_map.original.tokens
+    const optimized = currentResult.value.token_map.optimized.tokens
+    return original.filter(token => !optimized.includes(token))
+  })
+  
+  const isRemovedToken = (token: string) => {
+    if (!currentResult.value) return false
+    return !currentResult.value.token_map.optimized.tokens.includes(token)
+  }
+  
+  const isNewToken = (token: string) => {
+    if (!currentResult.value) return false
+    return (
+      currentResult.value.token_map.optimized.tokens.includes(token) &&
+      !currentResult.value.token_map.original.tokens.includes(token)
+    )
+  }
+  
+  const getRemovedTokenCount = () => {
+    if (!currentResult.value) return 0
+    return currentResult.value.token_map.original.tokens.filter(token =>
+      isRemovedToken(token)
+    ).length
+  }
+  
+  const getNewTokenCount = () => {
+    if (!currentResult.value) return 0
+    return currentResult.value.token_map.optimized.tokens.filter(token =>
+      isNewToken(token)
+    ).length
+  }
+  
+  const getTokenSavings = () => {
+    if (!currentResult.value) return 0
+    return (
+      currentResult.value.token_map.original.token_count -
+      currentResult.value.token_map.optimized.token_count
+    )
+  }
+  
+  const optimizeFile = async () => {
+    if (!filePath.value) return
+    isProcessing.value = true
+    try {
+      const response = await fetch('http://127.0.0.1:5000/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filepath: filePath.value,
+          level: optimizationLevel.value,
+          model: selectedModel.value
+        }),
+      })
+  
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to optimize file')
+      }
+  
+      const data = await response.json()
+      currentResult.value = data
+    } catch (error) {
+      console.error('Error optimizing file:', error)
+    } finally {
+      isProcessing.value = false
+    }
+  }
+  
+  const processDirectory = async () => {
+    if (!directory.value) return
+    isProcessing.value = true
+    try {
+      const response = await fetch('http://127.0.0.1:5000/bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          directory: directory.value,
+          level: optimizationLevel.value,
+          model: selectedModel.value
+        }),
+      })
+  
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to process directory')
+      }
+  
+      const data = await response.json()
+      processedFiles.value = data.files
+      if (data.files.length > 0) {
+        currentResult.value = data.files[0]
+      }
+    } catch (error) {
+      console.error('Error processing directory:', error)
+    } finally {
+      isProcessing.value = false
+    }
+  }
+  
+  const optimizeRawText = async () => {
+    if (!rawText.value) return
+    isProcessing.value = true
+    try {
+      const response = await fetch('http://127.0.0.1:5000/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: rawText.value,
+          type: rawInputType.value,
+          level: optimizationLevel.value,
+          model: selectedModel.value
+        }),
+      })
+  
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to optimize text')
+      }
+  
+      const data = await response.json()
+      currentResult.value = data
+    } catch (error) {
+      console.error('Error optimizing text:', error)
+    } finally {
+      isProcessing.value = false
+    }
+  }
+  </script>
+  
+  <style>
+  .token {
+    display: inline-block;
+    border-radius: 2px;
+    padding: 0 2px;
+    margin: 0 1px;
+  }
+  </style>
+  
+=== END FILE: ./src/components/tokenizer/DirectoryTokenizer.vue ===
+
+
 === START FILE: ./src/components/models/ModelSelector.vue ===
 === TYPE: vue ===
 
@@ -1859,16 +2659,530 @@ const fetchOpenRouterModels = async () => {
 === END FILE: ./src/components/models/ModelSelector.vue ===
 
 
+=== START FILE: ./src/components/canvas/clustermap/BottomSheetCluster.vue ===
+=== TYPE: vue ===
+
+<template>
+  <div>
+    <!-- Bottom Sheet Pull Tab -->
+    <div 
+      class="fixed bottom-0 left-1/2 -translate-x-1/2 w-24 h-1.5 rounded-full bg-base-300/50 cursor-pointer hover:bg-base-300 transition-colors mb-2"
+      @mouseenter="handleShowSheet"
+      @mouseleave="startHideTimer"
+    />
+
+    <!-- Bottom Sheet -->
+    <div 
+      class="fixed mx-4 left-0 right-0 bg-base-200/95 backdrop-blur border-t border-base-300 shadow-lg transition-all duration-300 ease-in-out rounded-t-lg"
+      :class="[
+        isOpen ? 'bottom-0' : '-bottom-[500px]',
+        'transform'
+      ]"
+      :style="{ height: '500px' }"
+      @mouseenter="handleShowSheet"
+      @mouseleave="handleHideSheet"
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-2 border-b border-base-300">
+        <h3 class="text-lg font-medium">Topic Clusters</h3>
+        <button 
+          class="p-1.5 hover:bg-base-300 rounded-lg transition-colors"
+          @click="handleHideSheet"
+        >
+          <span class="sr-only">Close</span>
+          <XIcon class="w-5 h-5" />
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-6 h-full">
+        <TopicClusterViz 
+          :width="vizWidth" 
+          :height="400"
+          :selected-topic="selectedTopic"
+          @select-node="handleTopicSelect"
+        />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { XIcon } from 'lucide-vue-next';
+import TopicClusterViz from './TopicClusterViz.vue';
+
+const props = defineProps<{
+  selectedTopic?: string;
+}>();
+
+const emit = defineEmits<{
+  (e: 'select-topic', topicId: string): void;
+}>();
+
+const isOpen = ref(false);
+const hideTimer = ref<number | null>(null);
+const windowWidth = ref(window.innerWidth);
+
+const vizWidth = computed(() => windowWidth.value - 80);
+
+const handleShowSheet = () => {
+  if (hideTimer.value) {
+    clearTimeout(hideTimer.value);
+    hideTimer.value = null;
+  }
+  isOpen.value = true;
+};
+
+const handleHideSheet = () => {
+  isOpen.value = false;
+};
+
+const startHideTimer = () => {
+  hideTimer.value = window.setTimeout(() => {
+    if (!isOpen.value) return;
+    handleHideSheet();
+  }, 300);
+};
+
+const handleTopicSelect = (node: any) => {
+  emit('select-topic', node.id);
+};
+
+onMounted(() => {
+  const handleResize = () => {
+    windowWidth.value = window.innerWidth;
+  };
+  
+  window.addEventListener('resize', handleResize);
+  
+  onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleResize);
+    if (hideTimer.value) {
+      clearTimeout(hideTimer.value);
+    }
+  });
+});
+</script>
+
+<style scoped>
+.bottom-sheet-enter-active,
+.bottom-sheet-leave-active {
+  transition: transform 0.3s ease-in-out;
+}
+
+.bottom-sheet-enter-from,
+.bottom-sheet-leave-to {
+  transform: translateY(100%);
+}
+</style>
+=== END FILE: ./src/components/canvas/clustermap/BottomSheetCluster.vue ===
+
+
+=== START FILE: ./src/components/canvas/clustermap/TopicClusterViz.vue ===
+=== TYPE: vue ===
+
+<template>
+    <div>
+      <!-- Graph Controls -->
+      <div class="absolute top-4 right-4 flex gap-2">
+        <button class="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90" :disabled="graphControls.isLoading"
+          @click="graphControls.createNewConversation">
+          {{ graphControls.isLoading ? 'Creating...' : 'New Chat' }}
+        </button>
+  
+        <span v-if="graphControls.currentConvId" class="px-4 py-2 bg-secondary text-white rounded">
+          {{ canvasStore.nodes[0]?.title || 'Untitled Chat' }}
+        </span>
+      </div>
+  
+      <!-- Visualization Container -->
+      <div ref="containerRef" class="topic-cluster-viz" :style="{ width: `${width || 800}px`, height: `${height || 600}px` }"
+        @click="handleNodeClick" />
+  
+      <!-- Loading Overlay -->
+      <div v-if="clusterStore.isProcessing"
+        class="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+        <div class="text-white text-lg">Processing clusters...</div>
+      </div>
+  
+      <!-- Selected Cluster Info -->
+      <div v-if="selectedCluster" class="absolute bottom-4 left-4 p-4 bg-card rounded-lg border shadow-lg">
+        <h3 class="text-lg font-semibold mb-2">{{ selectedCluster.topic }}</h3>
+        <div class="text-sm text-muted-foreground">
+          {{ selectedCluster.nodes.length }} conversations
+        </div>
+        <div class="mt-2 flex gap-2 flex-wrap">
+          <span v-for="node in selectedCluster.nodes" :key="node.id"
+            class="px-2 py-1 bg-muted rounded-full text-xs">
+            {{ node.title || 'Untitled' }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </template>
+  
+  <script setup lang="ts">
+  import { ref, computed, onMounted, shallowRef, onBeforeUnmount, watch } from 'vue';
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+  import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
+  import { useGraphControlsStore } from '@/stores/graphControlStore';
+  import { useTopicClusterStore } from '@/stores/topicClusterStore';
+  import { useCanvasStore } from '@/stores/canvasStore';
+  
+  const props = defineProps<{
+    width?: number;
+    height?: number;
+    selectedTopic?: string;
+  }>();
+  
+  const emit = defineEmits<{
+    (e: 'select-node', node: ClusterNode): void;
+  }>();
+  
+  // Store references
+  const graphControls = useGraphControlsStore();
+  const clusterStore = useTopicClusterStore();
+  const canvasStore = useCanvasStore();
+  
+  // Refs
+  const containerRef = ref<HTMLDivElement | null>(null);
+  const selectedCluster = ref<TopicCluster | null>(null);
+  
+  // Scene state using shallowRef for performance
+  const sceneObjects = shallowRef({
+    scene: null as THREE.Scene | null,
+    camera: null as THREE.PerspectiveCamera | null,
+    renderer: null as THREE.WebGLRenderer | null,
+    labelRenderer: null as CSS2DRenderer | null,
+    controls: null as OrbitControls | null,
+    nodeObjects: new Map<string, {
+      mesh: THREE.Mesh;
+      label: CSS2DObject;
+      position: THREE.Vector3;
+    }>()
+  });
+  
+  // Node types
+  interface ClusterNode {
+    id: string;
+    name: string;
+    type: 'topic' | 'conversation';
+    size: number;
+    cluster?: string;
+  }
+  
+  interface TopicCluster {
+    id: string;
+    topic: string;
+    nodes: any[];
+    coherence: number;
+  }
+  
+  // Computed nodes
+  const nodes = computed<ClusterNode[]>(() => {
+    const topicNodes = clusterStore.clusters.map(cluster => ({
+      id: cluster.id,
+      name: cluster.topic,
+      type: 'topic' as const,
+      size: 30 + (cluster.nodes.length * 2)
+    }));
+  
+    const conversationNodes = clusterStore.clusters.flatMap(cluster =>
+      cluster.nodes.map(node => ({
+        id: node.id,
+        name: node.title || 'Untitled',
+        type: 'conversation' as const,
+        size: 15,
+        cluster: cluster.id
+      }))
+    );
+  
+    return [...topicNodes, ...conversationNodes];
+  });
+  
+  // Scene setup functions
+  const createScene = () => {
+    if (!containerRef.value) return;
+  
+    const width = props.width || 800;
+    const height = props.height || 600;
+  
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+  
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+    camera.position.z = 500;
+  
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(width, height);
+    containerRef.value.appendChild(renderer.domElement);
+  
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(width, height);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0';
+    containerRef.value.appendChild(labelRenderer.domElement);
+  
+    const controls = new OrbitControls(camera, labelRenderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+  
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+  
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(0, 1, 1);
+    scene.add(directionalLight);
+  
+    sceneObjects.value = {
+      scene,
+      camera,
+      renderer,
+      labelRenderer,
+      controls,
+      nodeObjects: new Map()
+    };
+  };
+  
+  // Node creation and management
+  const createNodes = () => {
+    const { scene, nodeObjects } = sceneObjects.value;
+    if (!scene) return;
+  
+    nodeObjects.clear();
+    scene.clear();
+  
+    nodes.value.forEach((node, index) => {
+      const geometry = new THREE.SphereGeometry(node.size * 0.5, 32, 32);
+      const material = new THREE.MeshPhongMaterial({
+        color: node.type === 'topic' ? 0x60A5FA : 0xF87171,
+        transparent: true,
+        opacity: node.type === 'topic' ? 0.9 : 0.7,
+      });
+  
+      const mesh = new THREE.Mesh(geometry, material);
+  
+      const phi = Math.acos(-1 + (2 * index) / nodes.value.length);
+      const theta = Math.sqrt(nodes.value.length * Math.PI) * phi;
+      const radius = 200;
+  
+      const position = new THREE.Vector3(
+        radius * Math.cos(theta) * Math.sin(phi),
+        radius * Math.sin(theta) * Math.sin(phi),
+        radius * Math.cos(phi)
+      );
+  
+      mesh.position.copy(position);
+  
+      const labelDiv = document.createElement('div');
+      labelDiv.className = `node-label ${node.type}`;
+      labelDiv.textContent = node.name;
+  
+      const label = new CSS2DObject(labelDiv);
+      label.position.copy(position);
+  
+      scene.add(mesh);
+      scene.add(label);
+  
+      nodeObjects.set(node.id, { mesh, label, position });
+    });
+  
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+  
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(0, 1, 1);
+    scene.add(directionalLight);
+  };
+  
+  // Connection creation
+  const createConnections = () => {
+    const { scene, nodeObjects } = sceneObjects.value;
+    if (!scene) return;
+  
+    clusterStore.clusters.forEach(cluster => {
+      const topicNodeObj = nodeObjects.get(cluster.id);
+      
+      cluster.nodes.forEach(node => {
+        const convNodeObj = nodeObjects.get(node.id);
+  
+        if (topicNodeObj && convNodeObj) {
+          const geometry = new THREE.BufferGeometry().setFromPoints([
+            topicNodeObj.position,
+            convNodeObj.position
+          ]);
+  
+          const material = new THREE.LineBasicMaterial({
+            color: 0x4B5563,
+            transparent: true,
+            opacity: 0.4
+          });
+  
+          const line = new THREE.Line(geometry, material);
+          scene.add(line);
+        }
+      });
+    });
+  };
+  
+  // Animation loop
+  const animate = () => {
+    const { renderer, scene, camera, labelRenderer, controls } = sceneObjects.value;
+    if (!renderer || !scene || !camera || !labelRenderer || !controls) return;
+  
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  };
+  
+  // Event handlers
+  const handleNodeClick = (event: MouseEvent) => {
+    const { camera, scene, nodeObjects } = sceneObjects.value;
+    if (!camera || !scene) return;
+  
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / (props.width || 800)) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / (props.height || 600)) * 2 + 1;
+  
+    raycaster.setFromCamera(mouse, camera);
+  
+    const intersects = raycaster.intersectObjects(scene.children);
+    
+    if (intersects.length > 0) {
+      const clickedMesh = intersects[0].object as THREE.Mesh;
+      for (const [nodeId, nodeObj] of nodeObjects.entries()) {
+        if (nodeObj.mesh === clickedMesh) {
+          const clickedNode = nodes.value.find(node => node.id === nodeId);
+          if (clickedNode) {
+            emit('select-node', clickedNode);
+            if (clickedNode.type === 'topic') {
+              selectedCluster.value = clusterStore.clusters.find(c => c.id === clickedNode.id) || null;
+            } else if (clickedNode.cluster) {
+              selectedCluster.value = clusterStore.clusters.find(c => c.id === clickedNode.cluster) || null;
+            }
+          }
+          break;
+        }
+      }
+    }
+  };
+  
+  // Watchers
+  watch(() => clusterStore.clusters, () => {
+    if (sceneObjects.value.scene) {
+      createNodes();
+      createConnections();
+    }
+  }, { deep: true });
+  
+  watch(() => [props.width, props.height], () => {
+    const { camera, renderer, labelRenderer } = sceneObjects.value;
+    if (!camera || !renderer || !labelRenderer) return;
+  
+    camera.aspect = (props.width || 800) / (props.height || 600);
+    camera.updateProjectionMatrix();
+    renderer.setSize(props.width || 800, props.height || 600);
+    labelRenderer.setSize(props.width || 800, props.height || 600);
+  });
+  
+  watch(() => props.selectedTopic, (newTopic) => {
+    const { camera, controls, nodeObjects } = sceneObjects.value;
+    if (!camera || !controls || !newTopic) return;
+  
+    const selectedNodeObj = nodeObjects.get(newTopic);
+    if (selectedNodeObj) {
+      const position = selectedNodeObj.position.clone();
+      position.z += 100;
+  
+      const duration = 1000;
+      const startPosition = camera.position.clone();
+      const startTime = Date.now();
+  
+      const animateCamera = () => {
+        const currentTime = Date.now();
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+  
+        camera.position.lerpVectors(startPosition, position, progress);
+        controls.target.copy(selectedNodeObj.position);
+  
+        if (progress < 1) {
+          requestAnimationFrame(animateCamera);
+        }
+      };
+  
+      animateCamera();
+    }
+  });
+  
+  // Lifecycle
+  onMounted(() => {
+    createScene();
+    createNodes();
+    createConnections();
+    animate();
+  });
+  
+  onBeforeUnmount(() => {
+    const { scene, renderer, labelRenderer } = sceneObjects.value;
+    scene?.clear();
+    renderer?.dispose();
+    labelRenderer?.dispose();
+  });
+  </script>
+  
+  <style scoped>
+  .topic-cluster-viz {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  :deep(.node-label) {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 2px 4px;
+    pointer-events: none;
+    white-space: nowrap;
+    backdrop-filter: blur(8px);
+    color: white;
+    font-weight: 500;
+  }
+  
+  :deep(.node-label.topic) {
+    font-size: 14px;
+    background: rgba(96, 165, 250, 0.2);
+  }
+  
+  :deep(.node-label.conversation) {
+    font-size: 12px;
+    background: rgba(248, 113, 113, 0.2);
+  }
+  </style>
+=== END FILE: ./src/components/canvas/clustermap/TopicClusterViz.vue ===
+
+
 === START FILE: ./src/components/canvas/InfiniteCanvas.vue ===
 === TYPE: vue ===
 
-// src/components/canvas/InfiniteCanvas.vue
 <template>
-  <div class="fixed inset-0 w-full h-full overflow-hidden bg-background">
+  <div class="fixed overflow-hidden bg-background transition-all duration-300" :style="{
+    left: sidePanelOpen ? '40vw' : '0',
+    right: '0',
+    top: '0',
+    bottom: '0'
+  }">
     <!-- Main Canvas -->
     <div ref="canvasRef" class="absolute inset-0 transition-transform duration-500 ease-in-out"
       :class="{ '-translate-x-1/2': store.viewMode === '3d' }" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
       @mouseleave="handleMouseUp" @mousedown="handleCanvasMouseDown" tabindex="0" @keydown="handleKeyDown">
+
       <!-- Canvas Transform Container -->
       <div class="absolute transform-gpu" :style="transformStyle">
         <!-- SVG Layer for Connections -->
@@ -1901,21 +3215,8 @@ const fetchOpenRouterModels = async () => {
       </div>
     </div>
 
-    <!-- Zoom Level Display -->
-    <div
-      class="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg">
-      <span class="text-sm font-medium text-base-content">
-        {{ Math.round(zoom * 100) }}%
-      </span>
-    </div>
-
-    <button
-      class="fixed bottom-4 right-4 px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg hover:bg-base-300/90 transition-colors"
-      @click="autoZoomEnabled = !autoZoomEnabled">
-      <span class="text-sm font-medium text-base-content">
-        Auto-center: {{ autoZoomEnabled ? 'On' : 'Off' }}
-      </span>
-    </button>
+    <!-- Bottom Sheet Cluster Visualization -->
+    <BottomSheetCluster :selected-topic="focusedTopicId" @select-topic="handleTopicSelect" />
   </div>
 </template>
 
@@ -1924,24 +3225,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useCanvasStore } from '../../stores/canvasStore';
 import BranchNode from './node/BranchNode.vue';
 import SplineConnector from './spline/SplineConnector.vue';
-
-const props = defineProps({
-  selectedModel: {
-    type: String,
-    required: true,
-    default: ''
-  },
-  openRouterApiKey: {
-    type: String,
-    required: true
-  },
-  modelType: {
-    type: String,
-    required: true,
-    default: ''
-  }
-});
-
+import BottomSheetCluster from './clustermap/BottomSheetCluster.vue';
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
 
@@ -1957,18 +3241,73 @@ const store = useCanvasStore();
 const canvasRef = ref(null);
 
 // State
-const zoom = ref(1);
+const props = defineProps({
+  selectedModel: {
+    type: String,
+    required: true,
+    default: ''
+  },
+  openRouterApiKey: {
+    type: String,
+    required: true
+  },
+  modelType: {
+    type: String,
+    required: true,
+    default: ''
+  },
+  sidePanelOpen: {
+    type: Boolean,
+    required: true
+  },
+  autoZoomEnabled: {
+    type: Boolean,
+    required: true
+  },
+  zoom: {  // Add this prop definition
+    type: Number,
+    required: true,
+    default: 1
+  }
+});
+
+
+const emit = defineEmits(['update:zoom', 'update:autoZoomEnabled']);
+
+// Modify zoom ref to be computed
+const zoom = computed({
+  get: () => props.zoom,
+  set: (value) => emit('update:zoom', value)
+});
+
+// Modify autoZoomEnabled to use prop
+watch(() => props.autoZoomEnabled, (newValue) => {
+  if (newValue) {
+    autoFitNodes();
+  }
+});
+
 const panX = ref(0);
 const panY = ref(0);
 const isPanning = ref(false);
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
+const focusedTopicId = ref<string | null>(null);
+
 
 const lastActivityTimestamp = ref(Date.now());
 const autoZoomEnabled = ref(true);
 const isAutoZooming = ref(false);
-const AUTO_CENTER_DELAY = 30000; // 5 seconds
+const AUTO_CENTER_DELAY = 30000; // 30 seconds
 const inactivityTimer = ref(null);
+
+const isClusterVizFocused = ref(false);
+const windowSize = ref({
+  width: typeof window !== 'undefined' ? window.innerWidth : 1920,
+  height: typeof window !== 'undefined' ? window.innerHeight : 1080
+});
+
+const isBrowser = typeof window !== 'undefined';
 
 // Helper Functions
 const getNodeCenter = (node) => ({
@@ -1977,17 +3316,15 @@ const getNodeCenter = (node) => ({
 });
 
 
-
 const transformStyle = computed(() => ({
   transform: `scale(${zoom.value}) translate(${panX.value / zoom.value}px, ${panY.value / zoom.value}px)`,
   transformOrigin: '0 0',
   width: '100000px',
   height: '100000px',
-  background: 'transparent', // Changed from 'inherit'
+  background: 'transparent',
   transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
 }));
 
-// Add new computed properties for SVG and nodes layer
 const svgStyle = computed(() => ({
   width: '100000px',
   height: '100000px'
@@ -2000,10 +3337,9 @@ const nodesLayerStyle = computed(() => ({
   top: 0
 }));
 
+
 const handleNodeSelect = (nodeId: string) => {
-  // Center the view on the selected node
   centerOnNode(nodeId);
-  // Update the focused node
   focusedNodeId.value = nodeId;
 };
 
@@ -2013,53 +3349,48 @@ const handleWheel = (e) => {
   if (e.metaKey || e.ctrlKey) {
     e.preventDefault();
 
-    const ZOOM_SENSITIVITY = 0.001; // Increased for smoother zoom
+    const ZOOM_SENSITIVITY = 0.001;
     const ZOOM_MIN = 0.1;
     const ZOOM_MAX = 5;
 
     const rect = canvasRef.value.getBoundingClientRect();
-
-    // Get mouse position relative to viewport
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
-    // Calculate mouse position relative to content
     const mouseContentX = (mouseX - panX.value) / zoom.value;
     const mouseContentY = (mouseY - panY.value) / zoom.value;
 
-    // Calculate new zoom level
     const delta = -e.deltaY;
     const newZoom = Math.min(
       Math.max(zoom.value * (1 + delta * ZOOM_SENSITIVITY), ZOOM_MIN),
       ZOOM_MAX
     );
 
-    // Update the zoom level
     zoom.value = newZoom;
-
-    // Adjust pan to keep mouse position fixed
     panX.value = mouseX - mouseContentX * newZoom;
     panY.value = mouseY - mouseContentY * newZoom;
   } else {
-    // Regular panning
     panX.value -= e.deltaX;
     panY.value -= e.deltaY;
   }
 };
 
+const handleTopicSelect = (node: any) => {
+  focusedTopicId.value = node.id;
+};
+
 onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown);
-  if (canvasRef.value) {
-    canvasRef.value.addEventListener('wheel', handleWheel, { passive: false });
-  }
+  if (isBrowser) {
+    window.addEventListener('keydown', handleKeyDown);
+    if (canvasRef.value) {
+      canvasRef.value.addEventListener('wheel', handleWheel, { passive: false });
+    }
 
-  // Initial centering of nodes
-  if (store.nodes.length) {
-    autoFitNodes();
-  }
+    if (store.nodes.length) {
+      autoFitNodes();
+    }
 
-  // Start inactivity timer
-  resetInactivityTimer();
+    resetInactivityTimer();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -2096,6 +3427,38 @@ const centerOnNode = (nodeId) => {
   }, 300);
 };
 
+const handleCreateBranch = (parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any) => {
+  const parentNode = store.nodes.find(n => n.id === parentId);
+  if (!parentNode) return;
+
+  // Find existing branches from this parent
+  const existingBranches = store.nodes.filter(n => n.parentId === parentId);
+
+  // Determine initial vertical offset based on number of existing branches
+  const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
+
+  // Update position
+  const adjustedPosition = {
+    x: position.x,
+    y: parentNode.y + verticalOffset
+  };
+
+  // Create the new node
+  const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
+    ...initialData,
+    // Ensure vertical offset is preserved in node data
+    y: adjustedPosition.y
+  });
+
+  // First center on the new node
+  centerOnNode(newNode.id);
+
+  // Then after centering transition, auto fit to show all nodes
+  setTimeout(() => {
+    autoFitNodes();
+  }, 400); // Slightly longer than centerOnNode transition
+};
+
 const handleResend = async (nodeId: string, userMessageIndex: number) => {
   const node = store.nodes.find(n => n.id === nodeId);
   if (!node || !node.messages) return;
@@ -2108,19 +3471,19 @@ const handleResend = async (nodeId: string, userMessageIndex: number) => {
 
   // Set up model info in registry before sending
   let modelInfo: ModelInfo;
-   if(props.selectedModel === 'custom_model'){
+  if (props.selectedModel === 'custom_model') {
     modelInfo = {
       id: 'custom_model',
       name: 'Custom Model',
       source: 'custom'
     };
   } else {
-      modelInfo = {
-          id: props.selectedModel,
-          name: props.selectedModel.includes('/') ? props.selectedModel.split('/')[1] : props.selectedModel,
-          source: props.modelType === 'ollama' ? 'ollama' : 'openrouter',
-          provider: props.modelType === 'openrouter' ? props.selectedModel.split('/')[0] : undefined
-      };
+    modelInfo = {
+      id: props.selectedModel,
+      name: props.selectedModel.includes('/') ? props.selectedModel.split('/')[1] : props.selectedModel,
+      source: props.modelType === 'ollama' ? 'ollama' : 'openrouter',
+      provider: props.modelType === 'openrouter' ? props.selectedModel.split('/')[0] : undefined
+    };
   }
 
   modelRegistry.value.set(props.selectedModel, modelInfo);
@@ -2174,6 +3537,11 @@ const handleCanvasMouseDown = (e) => {
 const handleKeyDown = (e) => {
   if (store.isTransitioning) return;
 
+  if (e.key === 'Escape' && isClusterVizFocused.value) {
+    unfocusClusterViz();
+    return;
+  }
+
   const currentNode = store.nodes.find(n => n.id === focusedNodeId.value);
   if (!currentNode) return;
 
@@ -2199,6 +3567,33 @@ const handleKeyDown = (e) => {
   if (targetNodeId) {
     centerOnNode(targetNodeId);
   }
+};
+
+const handleClusterVizClick = (e: MouseEvent) => {
+  if (!isClusterVizFocused.value) {
+    e.stopPropagation();
+
+    store.isTransitioning = true;
+    isClusterVizFocused.value = true;
+    isPanning.value = false;
+    store.isDragging = false;
+  }
+};
+
+
+const unfocusClusterViz = () => {
+  // First step: Start unfocus transition
+  store.isTransitioning = true;
+
+  // Second step: Unfocus
+  isClusterVizFocused.value = false;
+  focusedTopicId.value = null;
+
+  // Third step: After transition, re-enable canvas and reset
+  setTimeout(() => {
+    store.isTransitioning = false;
+    autoFitNodes();
+  }, 700); // Match the transition duration
 };
 
 // Event Handlers
@@ -2260,6 +3655,11 @@ const autoFitNodes = () => {
   }, 300);
 };
 
+
+defineExpose({
+  autoFitNodes
+});
+
 // Function to reset inactivity timer
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) {
@@ -2277,16 +3677,17 @@ const resetInactivityTimer = () => {
 
 
 const handleMouseMove = (e) => {
+  if (isClusterVizFocused.value) return;
   resetInactivityTimer();
-  
+
   if (store.isDragging && store.activeNode) {
     // Handle node dragging
     const canvasRect = canvasRef.value.getBoundingClientRect();
-    
+
     // Calculate the new position in canvas space
     const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
     const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
-    
+
     // Update node position accounting for the initial click offset
     store.updateNodePosition(store.activeNode, {
       x: canvasX - store.dragOffset.x,
@@ -2318,33 +3719,6 @@ const handleDragStart = (e, node) => {
   };
 };
 
-const handleCreateBranch = (parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any) => {
-  const parentNode = store.nodes.find(n => n.id === parentId);
-  if (!parentNode) return;
-
-  // Find existing branches from this parent
-  const existingBranches = store.nodes.filter(n => n.parentId === parentId);
-
-  // Determine initial vertical offset based on number of existing branches
-  const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
-
-  // Update position
-  const adjustedPosition = {
-    x: position.x,
-    y: parentNode.y + verticalOffset
-  };
-
-  // Create the new node
-  const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
-    ...initialData,
-    // Ensure vertical offset is preserved in node data
-    y: adjustedPosition.y
-  });
-
-  // Center the view on the new node
-  centerOnNode(newNode.id);
-};
-
 // Active State Checks
 const isNodeFocused = (nodeId) => focusedNodeId.value === nodeId;
 
@@ -2370,14 +3744,38 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* GPU Acceleration */
 .transform-gpu {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   perspective: 1000px;
   overflow: hidden;
-  /* Add this line */
 }
 
+/* Layout & Positioning */
+.fixed {
+  overflow: hidden;
+  z-index: 40;
+}
+
+.absolute {
+  overflow: visible;
+}
+
+/* Basic Transitions */
+.transition-transform {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 500ms;
+}
+
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* Focus States */
 div:focus {
   outline: none;
 }
@@ -2387,13 +3785,72 @@ div:focus-visible {
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
-/* Add these new styles */
-.fixed {
-  overflow: hidden;
+/* Canvas Controls */
+.canvas-control {
+  position: fixed;
+  padding: 0.375rem 0.75rem;
+  background-color: rgb(var(--color-base-200) / 0.9);
+  backdrop-filter: blur(4px);
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--color-base-300));
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 }
 
-.absolute {
-  overflow: visible;
+.canvas-control:hover {
+  background-color: rgb(var(--color-base-300) / 0.9);
+}
+
+/* Transform Utilities */
+.will-change-transform {
+  will-change: transform;
+}
+
+.transform-smooth {
+  transition: transform 0.3s ease-out;
+}
+
+/* Container Styles */
+.canvas-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+}
+
+/* SVG Layer */
+.svg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Node Layer */
+.node-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+/* Animation States */
+.enter-active,
+.leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.enter-from,
+.leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* Performance Optimizations */
+.hardware-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 </style>
 === END FILE: ./src/components/canvas/InfiniteCanvas.vue ===
@@ -2404,29 +3861,29 @@ div:focus-visible {
 
 <template>
   <g>
-    <!-- Shadow path -->
-    <path :d="pathData" stroke="#94a3b8" stroke-width="4" fill="none" opacity="0.2" />
-    <!-- Main path -->
-    <path :d="pathData" :stroke="isActive ? '#2563eb' : '#94a3b8'" :stroke-width="isActive ? 3 : 2" fill="none"
-      marker-end="url(#arrowhead)" class="transition-all duration-200" />
+    <!-- Main dashed path -->
+    <path :d="pathData" :stroke="isActive ? '#2563eb' : '#94a3b8'" :stroke-width="strokeWidth" fill="none"
+      :stroke-dasharray="dashPattern" class="transition-all duration-200" opacity="0.4" />
+
+    <!-- Particles with scaled radius -->
+    <g v-for="particle in particles" :key="particle.id">
+      <circle :cx="particle.x" :cy="particle.y" :r="particleRadius" :fill="isActive ? '#2563eb' : '#94a3b8'">
+        <animate attributeName="opacity" values="1;0.3;1" :dur="particle.duration" repeatCount="indefinite" />
+      </circle>
+    </g>
+
 
     <!-- Hidden path for text alignment -->
-    <path :id="`connection-path-${startNode.id}-${endNode.id}`" :d="isLeftBranch ? reversedPathData : pathData" 
+    <path :id="`connection-path-${startNode.id}-${endNode.id}`" :d="isLeftBranch ? reversedPathData : pathData"
       fill="none" stroke="none" />
 
     <!-- Label Container -->
     <g class="label-container">
-      <!-- Background for better readability -->
       <text class="text-container">
-        <textPath :href="`#connection-path-${startNode.id}-${endNode.id}`" 
-                  startOffset="50%" 
-                  text-anchor="middle"
-                  :side="isLeftBranch ? 'right' : 'left'"
-                  :class="{ 'reversed': isLeftBranch }">
+        <textPath :href="`#connection-path-${startNode.id}-${endNode.id}`" startOffset="50%" text-anchor="middle"
+          :side="isLeftBranch ? 'right' : 'left'" :class="{ 'reversed': isLeftBranch }">
           <tspan :dy="-12" class="label-text" :style="labelStyle">
-            <tspan @dblclick.stop.prevent="handleLabelDoubleClick" 
-                   class="label-background" 
-                   v-if="!isEditing">
+            <tspan @dblclick.stop.prevent="handleLabelDoubleClick" class="label-background" v-if="!isEditing">
               {{ getLabelText() }}
             </tspan>
           </tspan>
@@ -2434,19 +3891,11 @@ div:focus-visible {
       </text>
 
       <!-- Edit Input -->
-      <foreignObject v-if="isEditing" 
-                     :x="calculateLabelPosition().x" 
-                     :y="calculateLabelPosition().y"
-                     :width="300 / Math.min(1, zoomLevel)" 
-                     :height="50 / Math.min(1, zoomLevel)" 
-                     @dblclick.stop.prevent>
+      <foreignObject v-if="isEditing" :x="calculateLabelPosition().x" :y="calculateLabelPosition().y"
+        :width="300 / Math.min(1, zoomLevel)" :height="50 / Math.min(1, zoomLevel)" @dblclick.stop.prevent>
         <div xmlns="http://www.w3.org/2000/svg" class="flex items-center justify-center w-full h-full">
-          <input ref="inputRef" 
-                 v-model="labelInput" 
-                 @blur="handleLabelBlur" 
-                 @keydown="handleKeyDown"
-                 class="bg-base-100 border border-base-300 rounded px-3 py-2 text-center w-full" 
-                 :style="inputStyle" />
+          <input ref="inputRef" v-model="labelInput" @blur="handleLabelBlur" @keydown="handleKeyDown"
+            class="bg-base-100 border border-base-300 rounded px-3 py-2 text-center w-full" :style="inputStyle" />
         </div>
       </foreignObject>
     </g>
@@ -2454,7 +3903,7 @@ div:focus-visible {
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 
 const props = defineProps({
   startNode: {
@@ -2483,20 +3932,54 @@ const props = defineProps({
   }
 });
 
+// State
 const isEditing = ref(false);
 const labelInput = ref('');
 const customLabel = ref('');
 const inputRef = ref(null);
+const particles = ref([]);
+let animationFrame = null;
+
+// Constants
+
+const baseStroke = 1.5;
+const baseFontSize = 14;
+const baseParticleRadius = 3;
+const baseParticleSpeed = 0.002;
+const numParticles = 4;
+
+const strokeWidth = computed(() => {
+  const scale = 1 / Math.pow(props.zoomLevel, 1.2); // More aggressive scaling
+  return baseStroke * Math.min(scale, 4); // Increased max scale
+});
+
+// Enhanced scaling for dash pattern
+const dashPattern = computed(() => {
+  const scale = 1 / Math.pow(props.zoomLevel, 1.2);
+  const dash = 4 * Math.min(scale, 4);
+  const gap = 6 * Math.min(scale, 4);
+  return `${dash} ${gap}`;
+});
+
+// Enhanced scaling for particles
+const particleRadius = computed(() => {
+  const scale = 1 / Math.pow(props.zoomLevel, 1.2);
+  return baseParticleRadius * Math.min(scale, 4);
+});
+
+// Adjust particle speed based on zoom
+const getParticleSpeed = () => {
+  const scale = 1 / Math.max(0.3, props.zoomLevel);
+  return baseParticleSpeed * Math.min(scale, 2);
+};
+
+const fontSize = computed(() => {
+  const scaleFactor = 1 / Math.min(1, props.zoomLevel);
+  return Math.max(baseFontSize * scaleFactor, baseFontSize);
+});
 
 const isLeftBranch = computed(() => {
   return props.endNode.type === 'left-branch';
-});
-
-// Compute font size based on zoom level
-const fontSize = computed(() => {
-  const baseSize = 14;
-  const scaleFactor = 1 / Math.min(1, props.zoomLevel);
-  return Math.max(baseSize * scaleFactor, baseSize);
 });
 
 const labelStyle = computed(() => ({
@@ -2511,14 +3994,16 @@ const inputStyle = computed(() => ({
   transformOrigin: 'center'
 }));
 
+// Path calculations
 const calculateConnectionPoints = () => {
   const messageIndex = props.endNode.branchMessageIndex || 0;
-  const messageYOffset = messageIndex * 120 + 40; // Base message height plus padding
+  const messageYOffset = messageIndex * 120 + 40;
+  const startOffset = 1;
 
   const startPoint = {
     x: isLeftBranch.value
-      ? props.startNode.x - 48 // Position for left branch button
-      : props.startNode.x + props.cardWidth + 48, // Position for right branch button
+      ? props.startNode.x - startOffset
+      : props.startNode.x + props.cardWidth + startOffset,
     y: props.startNode.y + messageYOffset
   };
 
@@ -2536,9 +4021,7 @@ const pathData = computed(() => {
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-
-  // Adjust control points based on branch direction and distance
-  const controlPointDistance = Math.min(80, distance * 0.4);
+  const controlPointDistance = Math.min(60, distance * 0.3);
 
   const controlPoint1 = {
     x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
@@ -2558,11 +4041,11 @@ const pathData = computed(() => {
 
 const reversedPathData = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints();
-  
+
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(80, distance * 0.4);
+  const controlPointDistance = Math.min(60, distance * 0.3);
 
   const controlPoint1 = {
     x: endPoint.x + controlPointDistance,
@@ -2580,17 +4063,111 @@ const reversedPathData = computed(() => {
             ${startPoint.x} ${startPoint.y}`;
 });
 
+// Particle animation
+const getPointOnCurve = (t, startPoint, controlPoint1, controlPoint2, endPoint) => {
+  const t1 = 1 - t;
+  return {
+    x: Math.pow(t1, 3) * startPoint.x +
+      3 * Math.pow(t1, 2) * t * controlPoint1.x +
+      3 * t1 * Math.pow(t, 2) * controlPoint2.x +
+      Math.pow(t, 3) * endPoint.x,
+    y: Math.pow(t1, 3) * startPoint.y +
+      3 * Math.pow(t1, 2) * t * controlPoint1.y +
+      3 * t1 * Math.pow(t, 2) * controlPoint2.y +
+      Math.pow(t, 3) * endPoint.y
+  };
+};
+
+const initializeParticles = () => {
+  const newParticles = [];
+  const baseSpeed = getParticleSpeed();
+
+  for (let i = 0; i < numParticles; i++) {
+    newParticles.push({
+      id: i,
+      progress: i / numParticles,
+      speed: baseSpeed + (Math.random() * baseSpeed * 0.5), // Add some randomness
+      duration: `${0.8 + Math.random() * 0.4}s`
+    });
+  }
+  particles.value = newParticles;
+};
+
+
+const animateParticles = () => {
+  const { startPoint, endPoint } = calculateConnectionPoints();
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const controlPointDistance = Math.min(60, distance * 0.3);
+
+  const controlPoint1 = {
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y
+  };
+
+  const controlPoint2 = {
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y
+  };
+
+  // Get current base speed based on zoom level
+  const baseSpeed = getParticleSpeed();
+
+  particles.value = particles.value.map(particle => {
+    // Update particle speed based on current zoom level while maintaining relative randomness
+    const relativeSpeedFactor = particle.speed / (particle.speed - (Math.random() * particle.speed * 0.5));
+    const newSpeed = baseSpeed + (Math.random() * baseSpeed * 0.5);
+    particle.speed = newSpeed * relativeSpeedFactor;
+
+    // Update progress with new speed
+    particle.progress += particle.speed;
+    if (particle.progress > 1) {
+      particle.progress = 0;
+    }
+
+    const point = getPointOnCurve(
+      particle.progress,
+      startPoint,
+      controlPoint1,
+      controlPoint2,
+      endPoint
+    );
+
+    return {
+      ...particle,
+      x: point.x,
+      y: point.y
+    };
+  });
+
+  animationFrame = requestAnimationFrame(animateParticles);
+};
+
+onMounted(() => {
+  initializeParticles();
+  animateParticles();
+});
+
+onUnmounted(() => {
+  if (animationFrame) {
+    cancelAnimationFrame(animationFrame);
+  }
+});
+
+// Label position calculation
 const calculateLabelPosition = () => {
   const { startPoint, endPoint } = calculateConnectionPoints();
   const midX = startPoint.x + (endPoint.x - startPoint.x) / 2;
   const midY = startPoint.y + (endPoint.y - startPoint.y) / 2;
-  
+
   return {
     x: midX - (150 / Math.min(1, props.zoomLevel)),
     y: midY - (25 / Math.min(1, props.zoomLevel))
   };
 };
 
+// Label text handling
 const getLabelText = () => {
   if (customLabel.value) {
     return customLabel.value;
@@ -3071,6 +4648,7 @@ const nodeStyles = computed(() => ({
    Drag event handlers
 ------------------ */
 const handleMouseDown = (e: MouseEvent) => {
+  
   if (props.node.type !== 'main') {
     dragStartPosition.value = { x: e.clientX, y: e.clientY };
     isDraggable.value = true;
@@ -3416,6 +4994,20 @@ onBeforeUnmount(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+
+.cluster-viz-container {
+  transform-origin: bottom left;
+}
+
+.cluster-viz-minimized {
+  cursor: pointer;
+}
+
+.cluster-viz-focused {
+  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.5);
 }
 </style>
 === END FILE: ./src/components/canvas/node/BranchNode.vue ===
@@ -3902,84 +5494,54 @@ onBeforeUnmount(() => {
 === TYPE: vue ===
 
 <template>
-  <div class="fixed top-4 left-4 z-20">
+  <div class="relative inline-block">
     <!-- Theme Dropdown -->
     <div class="relative">
-      <button
-        @click="isOpen = !isOpen"
-        class="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/80 backdrop-blur border shadow-sm hover:bg-muted/80 transition-all duration-200"
-      >
+      <button @click="isOpen = !isOpen"
+        class="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/80 backdrop-blur border shadow-sm hover:bg-muted/80 transition-all duration-200">
         <div class="flex items-center gap-2">
           <div class="flex -space-x-1">
-            <div 
-              class="w-4 h-4 rounded-full border-2 border-background shadow-sm" 
-              :style="{ backgroundColor: getThemeColors(currentTheme).primary }"
-            />
-            <div 
-              class="w-4 h-4 rounded-full border-2 border-background shadow-sm" 
-              :style="{ backgroundColor: getThemeColors(currentTheme).secondary }"
-            />
+            <div class="w-4 h-4 rounded-full border-2 border-background shadow-sm"
+              :style="{ backgroundColor: getThemeColors(currentTheme).primary }" />
+            <div class="w-4 h-4 rounded-full border-2 border-background shadow-sm"
+              :style="{ backgroundColor: getThemeColors(currentTheme).secondary }" />
           </div>
           <span class="text-sm font-medium">{{ currentTheme.charAt(0).toUpperCase() + currentTheme.slice(1) }}</span>
         </div>
-        <ChevronDown 
-          class="w-4 h-4 transition-transform duration-200"
-          :class="{ 'rotate-180': isOpen }"
-        />
+        <ChevronDown class="w-4 h-4 transition-transform duration-200" :class="{ 'rotate-180': isOpen }" />
       </button>
 
       <!-- Dropdown Menu -->
-      <div
-        v-if="isOpen"
-        class="absolute top-full left-0 mt-2 w-64 max-h-[60vh] overflow-y-auto rounded-lg border bg-background/95 backdrop-blur shadow-lg"
-        @click.outside="isOpen = false"
-      >
-        <div class="p-2">
-          <input
-            v-model="search"
-            type="text"
-            placeholder="Search themes..."
-            class="w-full px-3 py-2 text-sm rounded-md bg-muted/50 border-0 focus:ring-1 focus:ring-primary"
-          />
+      <div v-if="isOpen"
+        class="absolute left-0 mt-2 w-64 max-h-[60vh] overflow-y-auto rounded-lg border bg-background/95 backdrop-blur shadow-lg z-[100]">
+        <div class="p-2" @click.stop>
+          <input v-model="search" type="text" placeholder="Search themes..."
+            class="w-full px-3 py-2 text-sm rounded-md bg-muted/50 border-0 focus:ring-1 focus:ring-primary" />
         </div>
-        
+
         <div class="py-1">
-          <button
-            v-for="theme in filteredThemes"
-            :key="theme"
-            @click="selectTheme(theme)"
+          <button v-for="theme in filteredThemes" :key="theme" @click="selectTheme(theme)"
             class="w-full px-3 py-2 flex items-center gap-3 hover:bg-muted/50 transition-colors group"
-            :class="{ 'bg-primary/5': theme === currentTheme }"
-          >
+            :class="{ 'bg-primary/5': theme === currentTheme }">
             <!-- Theme Preview -->
             <div class="flex items-center gap-1.5">
-              <div 
-                class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200" 
-                :style="{ backgroundColor: getThemeColors(theme).primary }"
-              />
-              <div 
-                class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200" 
-                :style="{ backgroundColor: getThemeColors(theme).secondary }"
-              />
-              <div 
-                class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200" 
-                :style="{ backgroundColor: getThemeColors(theme).accent }"
-              />
+              <div class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200"
+                :style="{ backgroundColor: getThemeColors(theme).primary }" />
+              <div class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200"
+                :style="{ backgroundColor: getThemeColors(theme).secondary }" />
+              <div class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200"
+                :style="{ backgroundColor: getThemeColors(theme).accent }" />
             </div>
-            
+
             <span class="text-sm">{{ theme.charAt(0).toUpperCase() + theme.slice(1) }}</span>
-            
-            <Check 
-              v-if="theme === currentTheme"
-              class="w-4 h-4 ml-auto text-primary"
-            />
+
+            <Check v-if="theme === currentTheme" class="w-4 h-4 ml-auto text-primary" />
           </button>
         </div>
       </div>
     </div>
   </div>
 </template>
-
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { ChevronDown, Check } from 'lucide-vue-next';
@@ -3990,7 +5552,7 @@ type ThemeColors = {
   accent: string;
 };
 
-type ThemeName = 
+type ThemeName =
   | "light" | "dark" | "cupcake" | "bumblebee" | "emerald" | "corporate"
   | "synthwave" | "retro" | "cyberpunk" | "valentine" | "halloween" | "garden"
   | "forest" | "aqua" | "lofi" | "pastel" | "fantasy" | "wireframe" | "black"
@@ -4022,7 +5584,7 @@ const themeColors: ThemeColorMap = {
   fantasy: { primary: '#6D0A0A', secondary: '#A65D03', accent: '#2D5A27' },
   wireframe: { primary: '#B8B8B8', secondary: '#CDCDCD', accent: '#DEDEDE' },
   lemonade: { primary: '#519903', secondary: '#E9E92E', accent: '#94CE58' },
-  
+
   // Dark themes
   dark: { primary: '#793EF9', secondary: '#F471B5', accent: '#1FB2A5' },
   synthwave: { primary: '#E779C1', secondary: '#58C7F3', accent: '#F3CC30' },
@@ -4056,7 +5618,7 @@ const getThemeColors = (theme: ThemeName): ThemeColors => {
 
 const filteredThemes = computed(() => {
   const searchTerm = search.value.toLowerCase();
-  return themes.filter(theme => 
+  return themes.filter(theme =>
     theme.toLowerCase().includes(searchTerm)
   );
 });

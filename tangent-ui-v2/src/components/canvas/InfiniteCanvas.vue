@@ -1,15 +1,17 @@
-// InfiniteCanvas.vue
 <template>
   <div class="fixed overflow-hidden bg-background transition-all duration-300" :style="{
     left: sidePanelOpen ? '40vw' : '0',
     right: '0',
     top: '0',
     bottom: '0'
-  }">
+  }" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop">
+
     <!-- Main Canvas -->
     <div ref="canvasRef" class="absolute inset-0 transition-transform duration-500 ease-in-out"
       :class="{ '-translate-x-1/2': store.viewMode === '3d' }" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
       @mouseleave="handleMouseUp" @mousedown="handleCanvasMouseDown" tabindex="0" @keydown="handleKeyDown">
+
       <!-- Canvas Transform Container -->
       <div class="absolute transform-gpu" :style="transformStyle">
         <!-- SVG Layer for Connections -->
@@ -28,45 +30,83 @@
         </svg>
 
         <!-- Nodes Layer -->
+        <!-- Nodes Layer -->
         <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
-          <BranchNode v-for="node in store.nodes" :key="node.id" :open-router-api-key="openRouterApiKey" :node="node"
-            :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel" :zoom="zoom"
-            :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
-            @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
-            @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
-            @delete="() => store.removeNode(node.id)" :style="{
-              transform: `translate(${node.x}px, ${node.y}px)`,
-              transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-            }" />
+          <template v-for="node in store.nodes" :key="node.id">
+            <!-- Use MediaBranchNode for media nodes -->
+            <MediaBranchNode v-if="node.type === 'media'" :ref="(el) => { if (el) mediaNodesRef[node.id] = el }"
+              :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+              :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
+              @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+              @update-title="store.updateNodeTitle"
+              @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+              @delete="() => store.removeNode(node.id)" :style="{
+                transform: `translate(${node.x}px, ${node.y}px)`,
+                transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+              }" />
+
+            <!-- Use WebBranchNode for web nodes -->
+            <WebBranchNode v-else-if="node.type === 'web'" :node="node" :is-selected="isNodeFocused(node.id)"
+              :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :zoom="zoom"
+              :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
+              @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
+              @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+              @delete="() => store.removeNode(node.id)" :style="{
+                transform: `translate(${node.x}px, ${node.y}px)`,
+                transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+              }" />
+
+            <!-- Regular BranchNode for other nodes -->
+            <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+              :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
+              @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+              @update-title="store.updateNodeTitle"
+              @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+              @delete="() => store.removeNode(node.id)" :style="{
+                transform: `translate(${node.x}px, ${node.y}px)`,
+                transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+              }" />
+          </template>
         </div>
       </div>
     </div>
 
-    <!-- Zoom Level Display -->
-    <div
-      class="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg">
-      <span class="text-sm font-medium text-base-content">
-        {{ Math.round(zoom * 100) }}%
-      </span>
+    <!-- Drop Overlay -->
+    <div v-show="isDraggingFile"
+      class="absolute inset-0 bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none z-50">
+      <div class="text-2xl font-semibold text-primary">
+        Drop media to create a new node
+      </div>
     </div>
 
-    <button
-      class="fixed bottom-4 right-4 px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg hover:bg-base-300/90 transition-colors"
-      @click="autoZoomEnabled = !autoZoomEnabled">
-      <span class="text-sm font-medium text-base-content">
-        Auto-center: {{ autoZoomEnabled ? 'On' : 'Off' }}
-      </span>
-    </button>
+    <!-- Bottom Sheet Cluster Visualization -->
+    <BottomSheetCluster :selected-topic="focusedTopicId" @select-topic="handleTopicSelect" />
   </div>
 </template>
 
-
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useCanvasStore } from '../../stores/canvasStore';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 import BranchNode from './node/BranchNode.vue';
+import WebBranchNode from './node/WebBranchNode.vue';
+import MediaBranchNode from './node/MediaBranchNode.vue';
 import SplineConnector from './spline/SplineConnector.vue';
+import { useCanvasStore } from '../../stores/canvasStore';
+import BottomSheetCluster from './clustermap/BottomSheetCluster.vue';
+// Add near the top with other refs
+const modelRegistry = ref(new Map<string, ModelInfo>());
 
+// Add the ModelInfo interface
+interface ModelInfo {
+  id: string;
+  name: string;
+  source: 'ollama' | 'openrouter' | 'custom';
+  provider?: string;
+}
+
+const store = useCanvasStore();
+const canvasRef = ref(null);
+
+// State
 const props = defineProps({
   selectedModel: {
     type: String,
@@ -85,36 +125,61 @@ const props = defineProps({
   sidePanelOpen: {
     type: Boolean,
     required: true
+  },
+  autoZoomEnabled: {
+    type: Boolean,
+    required: true
+  },
+  zoom: {  // Add this prop definition
+    type: Number,
+    required: true,
+    default: 1
   }
 });
 
-// Add near the top with other refs
-const modelRegistry = ref(new Map<string, ModelInfo>());
 
-// Add the ModelInfo interface
-interface ModelInfo {
-  id: string;
-  name: string;
-  source: 'ollama' | 'openrouter' | 'custom';
-  provider?: string;
-}
+const emit = defineEmits(['update:zoom', 'update:autoZoomEnabled']);
 
-const store = useCanvasStore();
-const canvasRef = ref(null);
+// Modify zoom ref to be computed
+const zoom = computed({
+  get: () => props.zoom,
+  set: (value) => emit('update:zoom', value)
+});
 
-// State
-const zoom = ref(1);
+// Modify autoZoomEnabled to use prop
+watch(() => props.autoZoomEnabled, (newValue) => {
+  if (newValue) {
+    autoFitNodes();
+  }
+});
+
 const panX = ref(0);
 const panY = ref(0);
 const isPanning = ref(false);
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
+const focusedTopicId = ref<string | null>(null);
+const isDraggingFile = ref(false);
+const mediaNodesRef = ref<InstanceType<typeof MediaBranchNode>[]>([]);
+
 
 const lastActivityTimestamp = ref(Date.now());
 const autoZoomEnabled = ref(true);
 const isAutoZooming = ref(false);
-const AUTO_CENTER_DELAY = 30000; // 5 seconds
+const AUTO_CENTER_DELAY = 30000; // 30 seconds
 const inactivityTimer = ref(null);
+
+const isClusterVizFocused = ref(false);
+const windowSize = ref({
+  width: typeof window !== 'undefined' ? window.innerWidth : 1920,
+  height: typeof window !== 'undefined' ? window.innerHeight : 1080
+});
+
+const isBrowser = typeof window !== 'undefined';
+
+const isFocusedMode = ref(true);
+const rootNodeId = ref<string | null>(null);
+
 
 // Helper Functions
 const getNodeCenter = (node) => ({
@@ -123,17 +188,41 @@ const getNodeCenter = (node) => ({
 });
 
 
+// Modify the existing transformStyle computed property
+const transformStyle = computed(() => {
+  if (isFocusedMode.value && rootNodeId.value) {
+    // In focused mode, center the root node and make it 75% of viewport
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const nodeWidth = store.CARD_WIDTH;
+    const nodeHeight = store.CARD_HEIGHT;
 
-const transformStyle = computed(() => ({
-  transform: `scale(${zoom.value}) translate(${panX.value / zoom.value}px, ${panY.value / zoom.value}px)`,
-  transformOrigin: '0 0',
-  width: '100000px',
-  height: '100000px',
-  background: 'transparent', // Changed from 'inherit'
-  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-}));
+    // Calculate scale to fit 75% of viewport while maintaining aspect ratio
+    const scaleX = (vw * 0.75) / nodeWidth;
+    const scaleY = (vh * 0.75) / nodeHeight;
+    const scale = Math.min(scaleX, scaleY);
 
-// Add new computed properties for SVG and nodes layer
+    // Center the node
+    const translateX = (vw - nodeWidth * scale) / 2;
+    const translateY = (vh - nodeHeight * scale) / 2;
+
+    return {
+      transform: `translate(${translateX}px, ${translateY}px) scale(${scale})`,
+      transformOrigin: '0 0',
+      transition: 'transform 0.3s ease-out'
+    };
+  }
+
+  // Regular canvas transform for non-focused mode
+  return {
+    transform: `scale(${zoom.value}) translate(${panX.value / zoom.value}px, ${panY.value / zoom.value}px)`,
+    transformOrigin: '0 0',
+    width: '100000px',
+    height: '100000px',
+    transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+  };
+});
+
 const svgStyle = computed(() => ({
   width: '100000px',
   height: '100000px'
@@ -146,10 +235,9 @@ const nodesLayerStyle = computed(() => ({
   top: 0
 }));
 
+
 const handleNodeSelect = (nodeId: string) => {
-  // Center the view on the selected node
   centerOnNode(nodeId);
-  // Update the focused node
   focusedNodeId.value = nodeId;
 };
 
@@ -159,57 +247,52 @@ const handleWheel = (e) => {
   if (e.metaKey || e.ctrlKey) {
     e.preventDefault();
 
-    const ZOOM_SENSITIVITY = 0.001; // Increased for smoother zoom
+    const ZOOM_SENSITIVITY = 0.001;
     const ZOOM_MIN = 0.1;
     const ZOOM_MAX = 5;
 
     const rect = canvasRef.value.getBoundingClientRect();
-
-    // Get mouse position relative to viewport
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
-    // Calculate mouse position relative to content
     const mouseContentX = (mouseX - panX.value) / zoom.value;
     const mouseContentY = (mouseY - panY.value) / zoom.value;
 
-    // Calculate new zoom level
     const delta = -e.deltaY;
     const newZoom = Math.min(
       Math.max(zoom.value * (1 + delta * ZOOM_SENSITIVITY), ZOOM_MIN),
       ZOOM_MAX
     );
 
-    // Update the zoom level
     zoom.value = newZoom;
-
-    // Adjust pan to keep mouse position fixed
     panX.value = mouseX - mouseContentX * newZoom;
     panY.value = mouseY - mouseContentY * newZoom;
   } else {
-    // Regular panning
     panX.value -= e.deltaX;
     panY.value -= e.deltaY;
   }
 };
 
 onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown);
-  if (canvasRef.value) {
-    canvasRef.value.addEventListener('wheel', handleWheel, { passive: false });
-  }
+  if (isBrowser) {
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragleave', handleDragLeave);
+    if (canvasRef.value) {
+      canvasRef.value.addEventListener('wheel', handleWheel, { passive: false });
+    }
 
-  // Initial centering of nodes
-  if (store.nodes.length) {
-    autoFitNodes();
-  }
+    if (store.nodes.length) {
+      autoFitNodes();
+    }
 
-  // Start inactivity timer
-  resetInactivityTimer();
+    resetInactivityTimer();
+  }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('dragenter', handleDragEnter);
+  window.removeEventListener('dragleave', handleDragLeave);
   if (canvasRef.value) {
     canvasRef.value.removeEventListener('wheel', handleWheel);
   }
@@ -222,6 +305,155 @@ watch(() => store.nodes.length, () => {
   resetInactivityTimer();
 });
 
+watch(() => store.nodes.length, (newLength, oldLength) => {
+  if (newLength === 1 && oldLength === 0) {
+    rootNodeId.value = store.nodes[0].id;
+  }
+});
+
+const handleDragEnter = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Check for both files and URLs
+  if (e.dataTransfer?.types.includes('Files') || e.dataTransfer?.types.includes('text/uri-list')) {
+    isDraggingFile.value = true;
+    console.log('Drag enter with file or URL');
+  }
+};
+
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Set dropEffect to 'copy' to indicate we'll copy the file
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+};
+
+const handleDragLeave = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Only hide overlay if leaving the canvas container
+  const rect = e.currentTarget?.getBoundingClientRect();
+  if (rect) {
+    const { clientX, clientY } = e;
+    if (
+      clientX <= rect.left ||
+      clientX >= rect.right ||
+      clientY <= rect.top ||
+      clientY >= rect.bottom
+    ) {
+      isDraggingFile.value = false;
+      console.log('Drag leave canvas');
+    }
+  }
+};
+const handleDrop = async (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  isDraggingFile.value = false;
+  console.log('Drop event:', {
+    selectedModel: props.selectedModel,
+    modelType: props.modelType,
+    apiKey: !!props.openRouterApiKey
+  });
+
+  // Calculate drop position in canvas coordinates first since we'll need it for both cases
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) {
+    console.log('No canvas rect found');
+    return;
+  }
+
+  const x = (e.clientX - rect.left - panX.value) / zoom.value;
+  const y = (e.clientY - rect.top - panY.value) / zoom.value;
+
+  // Check for URL first
+  const url = e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain');
+  if (url && url.startsWith('http')) {
+    console.log('URL dropped:', url);
+
+    // Create new web node
+    const newNode = store.addNode(null, -1, { x, y }, {
+      type: 'web',
+      title: url,
+      url: url
+    });
+
+    // Center on new node
+    centerOnNode(newNode.id);
+    return;
+  }
+
+  // If not URL, check for files
+  const files = e.dataTransfer?.files;
+  if (!files?.length) {
+    console.log('No files or URLs in drop');
+    return;
+  }
+
+  const file = files[0];
+  console.log('File type:', file.type);
+
+  if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+    console.log('Invalid file type:', file.type);
+    alert('Only image and video files are supported');
+    return;
+  }
+
+  console.log('Creating media node at', { x, y });
+
+  // Create new media node
+  const newNode = store.addNode(null, -1, { x, y }, {
+    type: 'media',
+    title: file.name
+  });
+
+  // Wait for next tick to ensure refs are updated
+  await nextTick();
+
+  // Get the media node instance from our ref
+  const mediaNode = mediaNodesRef.value[newNode.id];
+  if (!mediaNode) {
+    console.error('Media node not found after creation');
+    store.removeNode(newNode.id);
+    return;
+  }
+
+  try {
+    const apiType = props.selectedModel.includes('gemini') ? 'gemini' :
+      props.selectedModel.includes('/') && !props.selectedModel.includes('gemini') ? 'openrouter' : 'ollama';
+
+    console.log('Processing media with:', {
+      apiType,
+      model: props.selectedModel
+    });
+
+    // Get the correct API key based on the API type
+    const apiKey = apiType === 'gemini'
+      ? localStorage.getItem('geminiApiKey')  // Use Gemini API key for Gemini models
+      : props.openRouterApiKey;               // Use OpenRouter API key for OpenRouter models
+
+    // Process the media file
+    await mediaNode.processMedia(
+      file,
+      apiType,
+      apiKey
+    );
+
+    // Center on new node
+    centerOnNode(newNode.id);
+
+  } catch (error) {
+    console.error('Error processing media:', error);
+    store.removeNode(newNode.id);
+    alert('Failed to process media file');
+  }
+};
 
 const centerOnNode = (nodeId) => {
   const node = store.nodes.find(n => n.id === nodeId);
@@ -240,6 +472,38 @@ const centerOnNode = (nodeId) => {
   setTimeout(() => {
     store.isTransitioning = false;
   }, 300);
+};
+
+const handleCreateBranch = (parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any) => {
+  // Exit focused mode when creating a branch
+  isFocusedMode.value = false;
+  
+  // Existing branch creation logic...
+  const parentNode = store.nodes.find(n => n.id === parentId);
+  if (!parentNode) return;
+  
+  const existingBranches = store.nodes.filter(n => n.parentId === parentId);
+  const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
+  
+  const adjustedPosition = {
+    x: position.x,
+    y: parentNode.y + verticalOffset
+  };
+  
+  // Create the new node
+  const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
+    ...initialData,
+    // Ensure vertical offset is preserved in node data
+    y: adjustedPosition.y
+  });
+
+  // First center on the new node
+  centerOnNode(newNode.id);
+  
+  // After creating branch, fit all nodes in view
+  setTimeout(() => {
+    autoFitNodes();
+  }, 400);
 };
 
 const handleResend = async (nodeId: string, userMessageIndex: number) => {
@@ -320,6 +584,11 @@ const handleCanvasMouseDown = (e) => {
 const handleKeyDown = (e) => {
   if (store.isTransitioning) return;
 
+  if (e.key === 'Escape' && isClusterVizFocused.value) {
+    unfocusClusterViz();
+    return;
+  }
+
   const currentNode = store.nodes.find(n => n.id === focusedNodeId.value);
   if (!currentNode) return;
 
@@ -345,6 +614,33 @@ const handleKeyDown = (e) => {
   if (targetNodeId) {
     centerOnNode(targetNodeId);
   }
+};
+
+const handleClusterVizClick = (e: MouseEvent) => {
+  if (!isClusterVizFocused.value) {
+    e.stopPropagation();
+
+    store.isTransitioning = true;
+    isClusterVizFocused.value = true;
+    isPanning.value = false;
+    store.isDragging = false;
+  }
+};
+
+
+const unfocusClusterViz = () => {
+  // First step: Start unfocus transition
+  store.isTransitioning = true;
+
+  // Second step: Unfocus
+  isClusterVizFocused.value = false;
+  focusedTopicId.value = null;
+
+  // Third step: After transition, re-enable canvas and reset
+  setTimeout(() => {
+    store.isTransitioning = false;
+    autoFitNodes();
+  }, 700); // Match the transition duration
 };
 
 // Event Handlers
@@ -428,6 +724,7 @@ const resetInactivityTimer = () => {
 
 
 const handleMouseMove = (e) => {
+  if (isClusterVizFocused.value) return;
   resetInactivityTimer();
 
   if (store.isDragging && store.activeNode) {
@@ -469,31 +766,9 @@ const handleDragStart = (e, node) => {
   };
 };
 
-const handleCreateBranch = (parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any) => {
-  const parentNode = store.nodes.find(n => n.id === parentId);
-  if (!parentNode) return;
-
-  // Find existing branches from this parent
-  const existingBranches = store.nodes.filter(n => n.parentId === parentId);
-
-  // Determine initial vertical offset based on number of existing branches
-  const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
-
-  // Update position
-  const adjustedPosition = {
-    x: position.x,
-    y: parentNode.y + verticalOffset
-  };
-
-  // Create the new node
-  const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
-    ...initialData,
-    // Ensure vertical offset is preserved in node data
-    y: adjustedPosition.y
-  });
-
-  // Center the view on the new node
-  centerOnNode(newNode.id);
+const handleTopicSelect = (topicId: string) => {
+  focusedTopicId.value = topicId;
+  centerOnNode(topicId);
 };
 
 // Active State Checks
@@ -521,14 +796,38 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* GPU Acceleration */
 .transform-gpu {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   perspective: 1000px;
   overflow: hidden;
-  /* Add this line */
 }
 
+/* Layout & Positioning */
+.fixed {
+  overflow: hidden;
+  z-index: 40;
+}
+
+.absolute {
+  overflow: visible;
+}
+
+/* Basic Transitions */
+.transition-transform {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 500ms;
+}
+
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* Focus States */
 div:focus {
   outline: none;
 }
@@ -538,12 +837,86 @@ div:focus-visible {
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
-/* Add these new styles */
-.fixed {
-  overflow: hidden;
+/* Canvas Controls */
+.canvas-control {
+  position: fixed;
+  padding: 0.375rem 0.75rem;
+  background-color: rgb(var(--color-base-200) / 0.9);
+  backdrop-filter: blur(4px);
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--color-base-300));
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 }
 
-.absolute {
-  overflow: visible;
+.canvas-control:hover {
+  background-color: rgb(var(--color-base-300) / 0.9);
+}
+
+/* Transform Utilities */
+.will-change-transform {
+  will-change: transform;
+}
+
+.transform-smooth {
+  transition: transform 0.3s ease-out;
+}
+
+/* Container Styles */
+.canvas-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+}
+
+/* SVG Layer */
+.svg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Node Layer */
+.node-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+/* Animation States */
+.enter-active,
+.leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.enter-from,
+.leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* Performance Optimizations */
+.hardware-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+
+.media-drop-overlay {
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Add these to ensure drag events are captured properly */
+.fixed {
+  touch-action: none;
+}
+
+[draggable="true"] {
+  cursor: move;
 }
 </style>

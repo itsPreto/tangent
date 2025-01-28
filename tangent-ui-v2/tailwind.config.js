@@ -1,4 +1,3 @@
-// tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -7,13 +6,34 @@ export default {
   ],
   darkMode: 'class',
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        'primary': '#007bff',
+        'muted': 'hsl(var(--muted))',
+        'border': 'hsl(var(--border))',
+      },
+    },
   },
   plugins: [require("daisyui")],
   daisyui: {
     themes: [
+      {
+        dark: {
+          "primary": "#3b82f6",
+          "secondary": "#14b8a6",
+          "accent": "#a855f7",
+          "neutral": "#1f2937",
+          "base-100": "#111827",
+          "base-200": "#1f2937",
+          "base-300": "#374151",
+          "base-content": "#f9fafb",
+          "info": "#3b82f6",
+          "success": "#22c55e",
+          "warning": "#facc15",
+          "error": "#ef4444",
+        },
+      },
       "light",
-      "dark",
       "cupcake",
       "bumblebee",
       "emerald",
@@ -40,7 +60,7 @@ export default {
       "lemonade",
       "night",
       "coffee",
-      "winter"
-    ]
-  }
+      "winter",
+    ],
+  },
 }
