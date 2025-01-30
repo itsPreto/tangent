@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed overflow-hidden bg-background transition-all duration-300" :style="{
+  <div class="fixed overflow-visible bg-background transition-all duration-300" :style="{
     left: sidePanelOpen ? '40vw' : '0',
     right: '0',
     top: '0',
@@ -8,90 +8,118 @@
     @drop.prevent="handleDrop">
 
     <!-- Main Canvas -->
-    <div ref="canvasRef" class="absolute inset-0 transition-transform duration-500 ease-in-out"
-      :class="{ '-translate-x-1/2': store.viewMode === '3d' }" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
-      @mouseleave="handleMouseUp" @mousedown="handleCanvasMouseDown" tabindex="0" @keydown="handleKeyDown">
-
+    <div ref="canvasRef"
+      class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
+      @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
+      @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
+      @keydown="handleKeyDown">
       <!-- Canvas Transform Container -->
-      <div class="absolute transform-gpu" :style="transformStyle">
-        <!-- SVG Layer for Connections -->
-        <svg class="absolute pointer-events-none overflow-visible" style="z-index: 1" :style="svgStyle"
-          viewBox="0 0 100000 100000" preserveAspectRatio="none">
-          <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
-            </marker>
-          </defs>
+      <div class="absolute transform-gpu" :style="transformStyle"
+        :class="{ 'transition-transform-overview': isWorkspaceOverview, overflow: 'visible' }">
+        <!-- Overview Mode -->
+        <template v-if="isWorkspaceOverview">
+          <div class="absolute" :style="nodesLayerStyle">
+            <div v-for="workspace in workspaces" :key="workspace.id"
+              class="workspace-node relative p-6 bg-base-200/90 backdrop-blur rounded-xl border border-base-300 transition-all duration-500 hover:shadow-lg hover:-translate-y-1 cursor-move"
+              :style="{
+                position: 'absolute',
+                left: `${workspace.x}px`,
+                top: `${workspace.y}px`,
+                transform: workspace.isExpanding ? 'scale(2)' : 'scale(1)',
+                opacity: workspace.isExpanding ? 0 : 1,
+                width: '300px'
+              }" :data-workspace-id="workspace.id" @mousedown="(e) => handleWorkspaceMouseDown(e, workspace)"
+              @click.stop="handleWorkspaceSelect(workspace)">
+              <div class="text-lg font-semibold mb-2">
+                {{ workspace.title }}
+              </div>
+              <div class="text-sm text-base-content/60 space-y-1">
+                <div>
+                  {{ workspace.nodeCount }} branches
+                </div>
+                <div>
+                  Last updated: {{ new Date(workspace.lastUpdated).toLocaleString() }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
 
-          <template v-for="connection in store.connections" :key="`${connection.parent.id}-${connection.child.id}`">
-            <SplineConnector :start-node="connection.parent" :end-node="connection.child" :card-width="store.CARD_WIDTH"
-              :card-height="store.CARD_HEIGHT" :is-active="isConnectionActive(connection)" :zoom-level="zoom" />
-          </template>
-        </svg>
+        <!-- Detailed Workspace View -->
+        <template v-else>
+          <!-- SVG Layer for Connections -->
+          <svg class="absolute pointer-events-none overflow-visible" style="z-index: 1" :style="svgStyle"
+            viewBox="0 0 100000 100000" preserveAspectRatio="none">
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
+              </marker>
+            </defs>
 
-        <!-- Nodes Layer -->
-        <!-- Nodes Layer -->
-        <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
-          <template v-for="node in store.nodes" :key="node.id">
-            <!-- Use MediaBranchNode for media nodes -->
-            <MediaBranchNode v-if="node.type === 'media'" :ref="(el) => { if (el) mediaNodesRef[node.id] = el }"
-              :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
-              :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
-              @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
-              @update-title="store.updateNodeTitle"
-              @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
-              @delete="() => store.removeNode(node.id)" :style="{
-                transform: `translate(${node.x}px, ${node.y}px)`,
-                transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-              }" />
+            <template v-for="connection in store.connections" :key="`${connection.parent.id}-${connection.child.id}`">
+              <SplineConnector :start-node="connection.parent" :end-node="connection.child"
+                :card-width="store.CARD_WIDTH" :card-height="store.CARD_HEIGHT"
+                :is-active="isConnectionActive(connection)" :zoom-level="zoom" />
+            </template>
+          </svg>
 
-            <!-- Use WebBranchNode for web nodes -->
-            <WebBranchNode v-else-if="node.type === 'web'" :node="node" :is-selected="isNodeFocused(node.id)"
-              :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :zoom="zoom"
-              :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
-              @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
-              @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
-              @delete="() => store.removeNode(node.id)" :style="{
-                transform: `translate(${node.x}px, ${node.y}px)`,
-                transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-              }" />
+          <!-- Nodes Layer -->
+          <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
+            <template v-for="node in store.nodes" :key="node.id">
+              <MediaBranchNode v-if="node.type === 'media'" :ref="(el) => { if (el) mediaNodesRef[node.id] = el }"
+                :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+                :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
+                @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+                @update-title="store.updateNodeTitle"
+                @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+                @delete="() => store.removeNode(node.id)" :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+                }" />
 
-            <!-- Regular BranchNode for other nodes -->
-            <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
-              :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
-              @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
-              @update-title="store.updateNodeTitle"
-              @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
-              @delete="() => store.removeNode(node.id)" :style="{
-                transform: `translate(${node.x}px, ${node.y}px)`,
-                transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-              }" />
-          </template>
-        </div>
+              <WebBranchNode v-else-if="node.type === 'web'" :node="node" :is-selected="isNodeFocused(node.id)"
+                :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :zoom="zoom"
+                :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
+                @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
+                @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+                @delete="() => store.removeNode(node.id)" :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+                }" />
+
+              <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+                :open-router-api-key="openRouterApiKey" @input-focus="zoomToInput" :zoom="zoom"
+                :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
+                @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
+                @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+                @delete="() => store.removeNode(node.id)" @update-position="handleNodePositionUpdate"
+                @snap="handleNodeSnap" @unsnap="handleNodeUnsnap" :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+                }" />
+            </template>
+          </div>
+        </template>
       </div>
     </div>
 
-    <!-- Drop Overlay -->
+    <!-- Overlays -->
     <div v-show="isDraggingFile"
       class="absolute inset-0 bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none z-50">
       <div class="text-2xl font-semibold text-primary">
         Drop media to create a new node
       </div>
     </div>
-
-    <!-- Bottom Sheet Cluster Visualization -->
-    <BottomSheetCluster :selected-topic="focusedTopicId" @select-topic="handleTopicSelect" />
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, PropType } from 'vue';
 import BranchNode from './node/BranchNode.vue';
 import WebBranchNode from './node/WebBranchNode.vue';
 import MediaBranchNode from './node/MediaBranchNode.vue';
 import SplineConnector from './spline/SplineConnector.vue';
 import { useCanvasStore } from '../../stores/canvasStore';
-import BottomSheetCluster from './clustermap/BottomSheetCluster.vue';
+import { useChatStore } from '../../stores/chatStore';
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
 
@@ -104,6 +132,7 @@ interface ModelInfo {
 }
 
 const store = useCanvasStore();
+const chatStore = useChatStore();
 const canvasRef = ref(null);
 
 // State
@@ -134,6 +163,11 @@ const props = defineProps({
     type: Number,
     required: true,
     default: 1
+  },
+  gestureMode: {
+    type: String as PropType<'scroll' | 'zoom'>,
+    required: true,
+    default: 'zoom'
   }
 });
 
@@ -175,7 +209,40 @@ const windowSize = ref({
   height: typeof window !== 'undefined' ? window.innerHeight : 1080
 });
 
+const workspaceDragState = ref({
+  isDragging: false,
+  activeId: null as string | null,
+  offset: { x: 0, y: 0 }
+});
+
+
+const isWorkspaceOverview = ref(true);  // Whether we're showing workspaces list
+const expandingWorkspaceId = ref<string | null>(null); // For transition animation
+const workspaces = computed(() => {
+  // Force recompute when isWorkspaceOverview changes
+  const showingOverview = isWorkspaceOverview.value;
+
+  return chatStore.chats.map((chat, index) => {
+    // Calculate grid position
+    const itemsPerRow = 3;
+    const gridX = (index % itemsPerRow) * 350; // 350px spacing
+    const gridY = Math.floor(index / itemsPerRow) * 250; // 250px spacing
+
+    return {
+      id: chat.id,
+      title: chat.title,
+      nodeCount: chat.nodeCount,
+      lastUpdated: chat.updatedAt,
+      x: chat.x || gridX + 100, // Add offset from left
+      y: chat.y || gridY + 100, // Add offset from top
+      isExpanding: expandingWorkspaceId.value === chat.id
+    };
+  });
+});
 const isBrowser = typeof window !== 'undefined';
+
+const snappedNodeId = ref<string | null>(null);
+const nodePositions = ref(new Map<string, { x: number, y: number }>());
 
 const isFocusedMode = ref(true);
 const rootNodeId = ref<string | null>(null);
@@ -190,6 +257,14 @@ const getNodeCenter = (node) => ({
 
 // Modify the existing transformStyle computed property
 const transformStyle = computed(() => {
+  if (isWorkspaceOverview.value) {
+    return {
+      transform: `scale(1) translate(0, 0)`,
+      transformOrigin: '0 0',
+      transition: 'transform 0.3s ease-out'
+    };
+  }
+
   if (isFocusedMode.value && rootNodeId.value) {
     // In focused mode, center the root node and make it 75% of viewport
     const vw = window.innerWidth;
@@ -235,42 +310,322 @@ const nodesLayerStyle = computed(() => ({
   top: 0
 }));
 
+// In Canvas component, modify handleNodeSnap:
+const handleNodeSnap = async ({ nodeId, originalPosition }) => {
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node) return;
 
-const handleNodeSelect = (nodeId: string) => {
-  centerOnNode(nodeId);
+  store.isTransitioning = true;
+  snappedNodeId.value = nodeId;
+  nodePositions.value.set(nodeId, originalPosition);
+
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  // First center the node in the viewport
+  const targetZoom = 0.8; // Slightly zoomed out to ensure visibility
+  const nodeCenter = {
+    x: node.x + store.CARD_WIDTH / 2,
+    y: node.y + store.CARD_HEIGHT / 2
+  };
+
+  // Center the node with slight vertical offset to account for header/input
+  const verticalOffset = rect.height * 0.1;
+  panX.value = (rect.width / 2) - (nodeCenter.x * targetZoom);
+  panY.value = (rect.height / 2) - (nodeCenter.y * targetZoom) + verticalOffset;
+  zoom.value = targetZoom;
+
+  // Let the centering animation complete
+  await new Promise(resolve => setTimeout(resolve, 300));
+  store.isTransitioning = false;
+};
+
+const handleNodeUnsnap = async ({ nodeId, originalPosition }) => {
+  snappedNodeId.value = null;
+
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  store.isTransitioning = true;
+
+  // Return to previous zoom/pan centered on the node
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (rect) {
+    const nodeCenter = {
+      x: node.x + store.CARD_WIDTH / 2,
+      y: node.y + store.CARD_HEIGHT / 2
+    };
+
+    // Use same zoom/pan logic as regular node selection
+    const bounds = calculateNodeBounds(node);
+    const newZoom = calculateRequiredZoom(bounds, rect);
+
+    const verticalOffset = rect.height * 0.1;
+    panX.value = (rect.width / 2) - (nodeCenter.x * newZoom);
+    panY.value = (rect.height / 2) - (nodeCenter.y * newZoom) + verticalOffset;
+    zoom.value = newZoom;
+  }
+
+  // Restore original position
+  store.updateNodePosition(nodeId, originalPosition);
+  nodePositions.value.delete(nodeId);
+
+  await new Promise(resolve => setTimeout(resolve, 300));
+  store.isTransitioning = false;
+};
+
+const handleWorkspaceMouseDown = (e: MouseEvent, workspace: { id: string }) => {
+  e.stopPropagation();
+  const canvasRect = canvasRef.value.getBoundingClientRect();
+
+  // Calculate the initial click position in canvas coordinates
+  const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
+  const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
+
+  // Find the workspace to get its current position
+  const currentWorkspace = chatStore.chats.find(chat => chat.id === workspace.id);
+  if (!currentWorkspace) return;
+
+  // Calculate offset from the workspace's position
+  workspaceDragState.value = {
+    isDragging: true,
+    activeId: workspace.id,
+    offset: {
+      x: canvasX - currentWorkspace.x,
+      y: canvasY - currentWorkspace.y
+    }
+  };
+
+  // Add dragging class for visual feedback
+  e.currentTarget.classList.add('dragging');
+};
+
+
+const calculateInputBounds = (nodeId: string) => {
+  const inputElement = document.querySelector(`[data-node-id="${nodeId}"] .message-input`);
+  if (!inputElement) return null;
+
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node) return null;
+
+  const inputRect = inputElement.getBoundingClientRect();
+  const PADDING = 40;
+
+  // Convert input height from screen to canvas coordinates
+  const heightInCanvasCoords = inputRect.height / zoom.value;
+
+  return {
+    minX: node.x - PADDING,
+    maxX: node.x + store.CARD_WIDTH + PADDING,
+    minY: node.y + store.CARD_HEIGHT - heightInCanvasCoords - PADDING,
+    maxY: node.y + store.CARD_HEIGHT + PADDING
+  };
+};
+
+const zoomToInput = async (nodeId: string) => {
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  // Don't zoom if node is snapped
+  if (document.querySelector(`[data-node-id="${nodeId}"].snapped`)) return;
+
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  store.isTransitioning = true;
   focusedNodeId.value = nodeId;
+
+  // Wait for next tick to ensure DOM is updated
+  await nextTick();
+
+  // Get input area bounds
+  const bounds = calculateInputBounds(nodeId);
+  if (!bounds) return;
+
+  // Calculate zoom level - we want the input area to take up about 30% of the viewport height
+  const desiredHeight = rect.height * 0.3;
+  const inputHeight = bounds.maxY - bounds.minY;
+  const newZoom = Math.min(Math.max(desiredHeight / inputHeight, 0.1), 2);
+
+  // Calculate center position of input area
+  const inputCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
+  const inputCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
+
+  // Center the input in the viewport, slightly towards the bottom
+  const verticalOffset = rect.height * 0.2; // 20% from bottom
+  panX.value = (rect.width / 2) - (inputCenterX * newZoom);
+  panY.value = (rect.height * 0.8) - (inputCenterY * newZoom);
+
+  // Update zoom level
+  zoom.value = newZoom;
+
+  // Reset transition state after animation
+  setTimeout(() => {
+    store.isTransitioning = false;
+  }, 300);
+};
+
+const calculateRequiredZoom = (bounds, containerRect) => {
+  const contentWidth = bounds.maxX - bounds.minX;
+  const contentHeight = bounds.maxY - bounds.minY;
+
+  // Calculate zoom levels needed for both dimensions
+  const zoomX = (containerRect.width * 0.9) / contentWidth; // Use 90% of container width
+  const zoomY = (containerRect.height * 0.9) / contentHeight; // Use 90% of container height
+
+  // Use the smaller zoom level to ensure the entire node fits
+  // Cap zoom between 0.1 and 2 to prevent extreme zoom levels
+  return Math.min(Math.max(Math.min(zoomX, zoomY), 0.1), 2);
+};
+
+// Updated handleNodeSelect function
+const handleNodeSelect = async (nodeId: string) => {
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  // Don't zoom if the node is snapped
+  if (document.querySelector(`[data-node-id="${nodeId}"].snapped`)) {
+    focusedNodeId.value = nodeId;
+    return;
+  }
+
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  store.isTransitioning = true;
+  focusedNodeId.value = nodeId;
+
+  // Wait for next tick to ensure DOM is updated
+  await nextTick();
+
+  // Calculate the bounds and required zoom
+  const bounds = calculateNodeBounds(node);
+  const newZoom = calculateRequiredZoom(bounds, rect);
+
+  // Calculate the node's center position
+  const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
+  const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
+
+  // Calculate the required pan position to center the node
+  // Add a slight vertical offset to account for the input area
+  const verticalOffset = rect.height * 0.1; // 10% of viewport height
+  panX.value = (rect.width / 2) - (nodeCenterX * newZoom);
+  panY.value = (rect.height / 2) - (nodeCenterY * newZoom) + verticalOffset;
+
+  // Update zoom level
+  zoom.value = newZoom;
+
+  // Reset transition state after animation
+  setTimeout(() => {
+    store.isTransitioning = false;
+  }, 300);
+};
+
+
+const calculateNodeBounds = (node) => {
+  // Get the actual DOM element of the node
+  const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+  if (!nodeElement) {
+    // Fallback to fixed dimensions if element not found
+    const PADDING = 100;
+    return {
+      minX: node.x - PADDING,
+      maxX: node.x + store.CARD_WIDTH + PADDING,
+      minY: node.y - PADDING,
+      maxY: node.y + store.CARD_HEIGHT + PADDING
+    };
+  }
+
+  // Get the actual dimensions from the DOM
+  const nodeRect = nodeElement.getBoundingClientRect();
+  const PADDING = 100; // Increased padding for better visibility
+
+  // Convert the height from screen coordinates to canvas coordinates
+  const heightInCanvasCoords = nodeRect.height / zoom.value;
+
+  return {
+    minX: node.x - PADDING,
+    maxX: node.x + store.CARD_WIDTH + PADDING,
+    minY: node.y - PADDING,
+    maxY: node.y + heightInCanvasCoords + PADDING
+  };
+};
+
+
+const handleNodePositionUpdate = (nodeId: string, position: { x: number, y: number }) => {
+  store.updateNodePosition(nodeId, position);
 };
 
 const handleWheel = (e) => {
+  if (document.querySelector('.branch-node.snapped') || snappedNodeId.value !== null) {
+    return;
+  }
   resetInactivityTimer();
-  // If it's a zoom event (Ctrl/Cmd + wheel)
-  if (e.metaKey || e.ctrlKey) {
-    e.preventDefault();
 
-    const ZOOM_SENSITIVITY = 0.001;
-    const ZOOM_MIN = 0.1;
-    const ZOOM_MAX = 5;
+  // Check if it's a two-finger gesture (trackpad)
+  if (e.deltaMode === 0 && Math.abs(e.deltaY) < 50) {
+    if (props.gestureMode === 'zoom') {
+      // Zoom mode - use two fingers to zoom
+      const ZOOM_SENSITIVITY = 0.005;
+      const ZOOM_MIN = 0.1;
+      const ZOOM_MAX = 5;
 
-    const rect = canvasRef.value.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const mouseContentX = (mouseX - panX.value) / zoom.value;
-    const mouseContentY = (mouseY - panY.value) / zoom.value;
+      const rect = canvasRef.value.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const mouseContentX = (mouseX - panX.value) / zoom.value;
+      const mouseContentY = (mouseY - panY.value) / zoom.value;
 
-    const delta = -e.deltaY;
-    const newZoom = Math.min(
-      Math.max(zoom.value * (1 + delta * ZOOM_SENSITIVITY), ZOOM_MIN),
-      ZOOM_MAX
-    );
+      const delta = -e.deltaY;
+      const newZoom = Math.min(
+        Math.max(zoom.value * (1 + delta * ZOOM_SENSITIVITY), ZOOM_MIN),
+        ZOOM_MAX
+      );
 
-    zoom.value = newZoom;
-    panX.value = mouseX - mouseContentX * newZoom;
-    panY.value = mouseY - mouseContentY * newZoom;
+      zoom.value = newZoom;
+      panX.value = mouseX - mouseContentX * newZoom;
+      panY.value = mouseY - mouseContentY * newZoom;
+    } else {
+      // Scroll mode - use two fingers to pan or zoom with CMD/CTRL key
+      if (e.metaKey || e.ctrlKey) {
+        // CMD/CTRL + wheel for zooming in any mode
+        const ZOOM_SENSITIVITY = 0.005;
+        const ZOOM_MIN = 0.1;
+        const ZOOM_MAX = 5;
+
+        const rect = canvasRef.value.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const mouseContentX = (mouseX - panX.value) / zoom.value;
+        const mouseContentY = (mouseY - panY.value) / zoom.value;
+
+        const delta = -e.deltaY;
+        const newZoom = Math.min(
+          Math.max(zoom.value * (1 + delta * ZOOM_SENSITIVITY), ZOOM_MIN),
+          ZOOM_MAX
+        );
+
+        zoom.value = newZoom;
+        panX.value = mouseX - mouseContentX * newZoom;
+        panY.value = mouseY - mouseContentY * newZoom;
+      } else {
+        // Pan mode - use two fingers to pan
+        panX.value -= e.deltaX;
+        panY.value -= e.deltaY;
+      }
+    }
   } else {
+    // Regular scroll for single-finger or non-trackpad
     panX.value -= e.deltaX;
     panY.value -= e.deltaY;
   }
 };
+
+const centerCanvas = () => {
+  zoom.value = 1;
+  panX.value = 0;
+  panY.value = 0;
+}
 
 onMounted(() => {
   if (isBrowser) {
@@ -282,7 +637,9 @@ onMounted(() => {
     }
 
     if (store.nodes.length) {
-      autoFitNodes();
+
+      centerCanvas();
+
     }
 
     resetInactivityTimer();
@@ -331,6 +688,90 @@ const handleDragOver = (e: DragEvent) => {
     e.dataTransfer.dropEffect = 'copy';
   }
 };
+
+
+const handleWorkspaceSelect = (workspace: { id: string }) => {
+  // Start expansion animation
+  expandingWorkspaceId.value = workspace.id;
+  isWorkspaceOverview.value = false;
+
+  // Calculate the workspace node's current center position
+  const workspaceNode = document.querySelector(
+    `[data-workspace-id="${workspace.id}"]`
+  );
+  const rect = workspaceNode?.getBoundingClientRect();
+  if (!rect) return;
+
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+
+  // Animate canvas to center on this point
+  const targetScale = 2;
+  const duration = 500;
+  const startPosition = {
+    x: panX.value,
+    y: panY.value,
+    scale: zoom.value
+  };
+
+  // Animation frame
+  const animate = (progress: number) => {
+    const easeProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease out
+
+    zoom.value = startPosition.scale +
+      (targetScale - startPosition.scale) * easeProgress;
+
+    panX.value = startPosition.x +
+      (centerX - startPosition.x) * easeProgress;
+    panY.value = startPosition.y +
+      (centerY - startPosition.y) * easeProgress;
+  };
+
+  // Run animation
+  store.isTransitioning = true;
+  const startTime = Date.now();
+
+  const tick = () => {
+    const progress = Math.min(1, (Date.now() - startTime) / duration);
+    animate(progress);
+
+    if (progress < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      // Animation complete - load workspace
+      store.loadChatState(workspace.id).then(() => {
+        store.isTransitioning = false;
+      });
+    }
+  };
+  requestAnimationFrame(tick);
+};
+
+const returnToOverview = async () => {
+  console.log('Returning to overview');
+
+  // First set overview mode before clearing state
+  isWorkspaceOverview.value = true;
+
+  // Clear canvas store state
+  store.clearCurrentWorkspace();
+
+  // Force a fresh reload of chats
+  await chatStore.loadChats();
+
+  // Reset view parameters
+  zoom.value = 1;
+  panX.value = 0;
+  panY.value = 0;
+  expandingWorkspaceId.value = null; // Reset expanding state
+
+  // Ensure DOM is updated before fitting nodes
+  await nextTick();
+  await chatStore.loadChats(); // Double-check chats are loaded
+  autoFitNodes();
+};
+
+
 
 const handleDragLeave = (e: DragEvent) => {
   e.preventDefault();
@@ -463,9 +904,14 @@ const centerOnNode = (nodeId) => {
   const center = getNodeCenter(node);
 
   const rect = canvasRef.value.getBoundingClientRect();
-  // Center the node in the viewport
+
+  // Calculate horizontal centering as before
   panX.value = (rect.width / 2) - (center.x * zoom.value);
-  panY.value = (rect.height / 2) - (center.y * zoom.value);
+
+  // Add vertical offset to account for input window
+  // Move the node up by 20% of viewport height
+  const verticalOffset = rect.height * 0.2;
+  panY.value = (rect.height / 2) - (center.y * zoom.value) + verticalOffset;
 
   focusedNodeId.value = nodeId;
 
@@ -477,19 +923,19 @@ const centerOnNode = (nodeId) => {
 const handleCreateBranch = (parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any) => {
   // Exit focused mode when creating a branch
   isFocusedMode.value = false;
-  
+
   // Existing branch creation logic...
   const parentNode = store.nodes.find(n => n.id === parentId);
   if (!parentNode) return;
-  
+
   const existingBranches = store.nodes.filter(n => n.parentId === parentId);
   const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
-  
+
   const adjustedPosition = {
     x: position.x,
     y: parentNode.y + verticalOffset
   };
-  
+
   // Create the new node
   const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
     ...initialData,
@@ -499,7 +945,7 @@ const handleCreateBranch = (parentId: string, messageIndex: number, position: { 
 
   // First center on the new node
   centerOnNode(newNode.id);
-  
+
   // After creating branch, fit all nodes in view
   setTimeout(() => {
     autoFitNodes();
@@ -569,15 +1015,68 @@ const findNodeInDirection = (currentNode, connections, direction) => {
 
 
 const handleMouseUp = () => {
+  if (workspaceDragState.value.isDragging) {
+    const { activeId } = workspaceDragState.value;
+    if (activeId) {
+      // Save workspace position
+      const workspace = chatStore.chats.find(chat => chat.id === activeId);
+      if (workspace) {
+        chatStore.updateChatMetadata(activeId, {
+          x: workspace.x,
+          y: workspace.y
+        });
+      }
+    }
+  }
+
+  workspaceDragState.value = {
+    isDragging: false,
+    activeId: null,
+    offset: { x: 0, y: 0 }
+  };
+
   store.isDragging = false;
   store.activeNode = null;
   isPanning.value = false;
 };
 
 const handleCanvasMouseDown = (e) => {
+  if (snappedNodeId.value !== null) return;
+  // Check if the click was within a branch node, if so, do not pan.
+  if (e.target instanceof Element && e.target.closest('.branch-node')) {
+    return;
+  }
+
   if (e.button === 0 && !store.isDragging) {
     isPanning.value = true;
     lastPanPosition.value = { x: e.clientX - panX.value, y: e.clientY - panY.value };
+  }
+};
+
+const handleTouchMove = (e: TouchEvent) => {
+  e.preventDefault(); // Prevent default browser behavior
+
+  if (isPanning.value && e.touches.length === 2) {
+    const touch1 = e.touches[0];
+    const touch2 = e.touches[1];
+    const centerX = (touch1.clientX + touch2.clientX) / 2;
+    const centerY = (touch1.clientY + touch2.clientY) / 2;
+
+    panX.value = centerX - lastPanPosition.value.x;
+    panY.value = centerY - lastPanPosition.value.y;
+  }
+};
+const handleTouchStart = (e: TouchEvent) => {
+  e.preventDefault(); // Prevent default browser behavior
+
+  if (e.touches.length === 2) {
+    // If two fingers, start panning
+    isPanning.value = true;
+    const touch1 = e.touches[0];
+    const touch2 = e.touches[1];
+    const centerX = (touch1.clientX + touch2.clientX) / 2;
+    const centerY = (touch1.clientY + touch2.clientY) / 2;
+    lastPanPosition.value = { x: centerX - panX.value, y: centerY - panY.value };
   }
 };
 
@@ -704,7 +1203,9 @@ const autoFitNodes = () => {
 
 
 defineExpose({
-  autoFitNodes
+  autoFitNodes,
+  isWorkspaceOverview,
+  returnToOverview
 });
 
 // Function to reset inactivity timer
@@ -722,12 +1223,29 @@ const resetInactivityTimer = () => {
   }, AUTO_CENTER_DELAY);
 };
 
-
 const handleMouseMove = (e) => {
+  if (snappedNodeId.value !== null) return;
   if (isClusterVizFocused.value) return;
   resetInactivityTimer();
 
-  if (store.isDragging && store.activeNode) {
+  if (workspaceDragState.value.isDragging && isWorkspaceOverview.value) {
+    const { activeId, offset } = workspaceDragState.value;
+    if (!activeId) return;
+
+    const canvasRect = canvasRef.value.getBoundingClientRect();
+
+    // Calculate the new position in canvas coordinates
+    const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
+    const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
+
+    // Update position in local state, using the same offset logic as node dragging
+    const workspace = chatStore.chats.find(chat => chat.id === activeId);
+    if (workspace) {
+      workspace.x = canvasX - offset.x;
+      workspace.y = canvasY - offset.y;
+    }
+
+  } else if (store.isDragging && store.activeNode) {
     // Handle node dragging
     const canvasRect = canvasRef.value.getBoundingClientRect();
 
@@ -740,6 +1258,7 @@ const handleMouseMove = (e) => {
       x: canvasX - store.dragOffset.x,
       y: canvasY - store.dragOffset.y
     });
+
   } else if (isPanning.value) {
     // Handle canvas panning
     const dx = e.clientX - lastPanPosition.value.x;
@@ -918,5 +1437,23 @@ div:focus-visible {
 
 [draggable="true"] {
   cursor: move;
+}
+
+/* Transition for Overview and Detailed Views */
+.transition-transform-overview {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 500ms;
+}
+
+.workspace-node {
+  position: absolute;
+  transition: transform 0.1s ease-out, opacity 0.3s ease-out;
+  will-change: transform;
+}
+
+.workspace-node.dragging {
+  transition: none;
+  cursor: grabbing;
 }
 </style>

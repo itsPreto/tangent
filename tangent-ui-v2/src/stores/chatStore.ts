@@ -8,6 +8,8 @@ interface ChatSummary {
     createdAt: string;
     updatedAt: string;
     nodeCount: number;
+    x?: number;  // Optional position
+    y?: number;  // Optional position
 }
 
 interface ChatData {
@@ -59,6 +61,21 @@ export const useChatStore = defineStore('chat', () => {
             return null;
         } finally {
             isLoading.value = false;
+        }
+    };
+
+    const updateChatMetadata = async (chatId: string, metadata: Partial<ChatSummary>) => {
+        try {
+            await fetch(`http://127.0.0.1:5000/chats/${chatId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(metadata)
+            });
+            await loadChats(); // Reload to get updated positions
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
         }
     };
 
@@ -174,6 +191,7 @@ export const useChatStore = defineStore('chat', () => {
         addNode,
         updateNode,
         removeNode,
-        autoSave
+        autoSave,
+        updateChatMetadata
     };
 });

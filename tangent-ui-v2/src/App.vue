@@ -12,7 +12,7 @@
       class="fixed left-0 top-0 h-full w-[40vw] bg-background shadow-lg transform transition-transform duration-300 z-40 border-r border-base-300"
       :class="isSidePanelOpen ? 'translate-x-0' : '-translate-x-full'">
       <div class="h-full pt-2 px-4 pb-4 bg-background">
-        <TokenOptimizer />
+        <TopicClusterViz />
       </div>
     </div>
 
@@ -24,26 +24,27 @@
     </button>
 
     <!-- Top Controls Container -->
-    <div class="fixed top-0 z-50 transition-all duration-300 flex justify-between" :style="{
+    <div class="fixed z-50 transition-all duration-300 flex justify-between" :style="{
       left: isSidePanelOpen ? '40vw' : '0',
       right: '0'
     }">
       <!-- Left Controls Group -->
-      <div class="flex items-center gap-4 p-4">
+      <div class="flex items-center px-4">
         <div class="flex items-center gap-4">
-          <WorkspaceMenu />
-          
+          <WorkspaceMenu @workspace-loaded="handleWorkspaceLoaded" />
+
           <!-- Canvas Controls -->
           <div class="flex items-center gap-2">
             <ThemeToggle />
-            <div class="px-3 py-1.5 bg-base-200/90 backdrop-blur text-sm rounded-full border border-base-300">
-              {{ Math.round(canvasZoom * 100) }}%
-            </div>
-            <button
-              class="px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 hover:bg-base-300/90"
-              @click="toggleAutoZoom"
-            >
+            <button class="px-3 bg-base-200/90 backdrop-blur rounded-full border border-base-300 hover:bg-base-300/90"
+              @click="toggleAutoZoom">
               <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
+            </button>
+            <button
+              class="px-3 bg-base-200/90 backdrop-blur rounded-full border border-base-300 hover:bg-base-300/90 flex items-center gap-2"
+              @click="gestureMode = gestureMode === 'zoom' ? 'scroll' : 'zoom'">
+              <component :is="gestureMode === 'zoom' ? ZoomIn : Move" class="w-4 h-4" />
+              <span class="text-sm">Two-finger {{ gestureMode === 'zoom' ? 'Zoom' : 'Pan' }}</span>
             </button>
           </div>
         </div>
@@ -58,17 +59,29 @@
       </div>
     </div>
 
+    <div class="fixed bottom-4 right-4 z-50 px-3 bg-base-200/90 backdrop-blur text-sm rounded-full border border-base-300">
+      {{ Math.round(canvasZoom * 100) }}%
+    </div>
     <!-- Canvas Container -->
-    <InfiniteCanvas 
-      ref="canvasRef" 
-      :selected-model="selectedModel?.id || ''" 
-      :open-router-api-key="openRouterApiKey"
-      :model-type="modelType" 
-      :side-panel-open="isSidePanelOpen" 
-      :zoom="canvasZoom" 
-      v-model:zoom="canvasZoom"
-      v-model:auto-zoom-enabled="canvasAutoZoom" 
-    />
+    <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
+      :model-type="modelType" :side-panel-open="isSidePanelOpen" :gesture-mode="gestureMode" v-model:zoom="canvasZoom"
+      v-model:auto-zoom-enabled="canvasAutoZoom" />
+
+    <!-- "Back to Workspaces" Button -->
+    <button v-if="showBackButton" class="fixed bottom-4 left-4 z-50 btn btn-sm btn-ghost gap-2"
+      @click="handleReturnToOverview">
+      <ArrowLeft class="w-4 h-4" />
+      Back to Workspaces
+    </button>
+
+    <!-- Workspace Overview Title -->
+    <div class="fixed bottom-4 z-50 w-full text-center transition-all duration-300"
+      :style="{ left: isSidePanelOpen ? '40vw' : '0', right: '0' }">
+      <div v-if="showOverviewTitle"
+        class="inline-block px-4 py-2 bg-base-200/90 backdrop-blur rounded-full border border-base-300 text-lg font-semibold">
+        Your Workspaces
+      </div>
+    </div>
 
     <!-- Settings Modal -->
     <dialog ref="settingsDialog" class="modal">
@@ -89,12 +102,11 @@
             </label>
             <input v-model="openRouterApiKey" type="password" placeholder="sk-or-..."
               class="input input-bordered w-full" />
-            
+
             <label class="label mt-2">
               <span class="label-text">Gemini API Key</span>
             </label>
-            <input v-model="geminiApiKey" type="password" placeholder="AIza..."
-              class="input input-bordered w-full" />
+            <input v-model="geminiApiKey" type="password" placeholder="AIza..." class="input input-bordered w-full" />
 
             <label class="label mt-2">
               <span class="label-text">Custom API URL</span>
@@ -115,49 +127,66 @@
     </dialog>
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { Settings, ChevronRight } from 'lucide-vue-next';
+import { ref, onMounted, computed } from 'vue';
+import { ArrowLeft, Settings, ChevronRight, ZoomIn, Move } from 'lucide-vue-next';
+
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
 import TangentLogo from './components/logo/TangentLogo.vue';
 import ModelSelector from './components/models/ModelSelector.vue';
 import TaskManager from './components/manager/TaskManager.vue';
-import TokenOptimizer from './components/tokenizer/DirectoryTokenizer.vue';
 import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
+import TopicClusterViz from './components/canvas/clustermap/TopicClusterViz.vue';
 import type { Model } from './stores/modelStore';
+
 import { useCanvasStore } from './stores/canvasStore';
 import { useModelStore } from './stores/modelStore';
 import { useChatStore } from './stores/chatStore';
 
+const gestureMode = ref<'scroll' | 'zoom'>('zoom');
+
+// Refs and reactive state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
 const canvasZoom = ref(1);
 const canvasAutoZoom = ref(true);
 
-// Stores
 const canvasStore = useCanvasStore();
 const modelStore = useModelStore();
 const chatStore = useChatStore();
 
+// Called once the component is mounted
 onMounted(() => {
-    canvasStore.initFromLocalStorage();
-    chatStore.loadChats();  // Add this line
+  canvasStore.initFromLocalStorage();
+  chatStore.loadChats();
 });
-// State
+
+// Model selection
 const selectedModel = ref<Model | null>(
   localStorage.getItem('selectedModel')
     ? JSON.parse(localStorage.getItem('selectedModel')!)
     : null
 );
 const modelType = ref<string>(localStorage.getItem('modelType') || '');
-const settingsDialog = ref<HTMLDialogElement | null>(null);
 const openRouterApiKey = ref(localStorage.getItem('openRouterApiKey') || '');
 const geminiApiKey = ref(localStorage.getItem('geminiApiKey') || '');
-const activeTab = ref<'api' | 'tasks'>('api');
 const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
+const activeTab = ref<'api' | 'tasks'>('api');
 const isSidePanelOpen = ref(false);
 
+// --- Computed to show/hide "Back to Workspaces" button safely ---
+const showBackButton = computed(() => {
+  return canvasRef.value && !canvasRef.value.isWorkspaceOverview;
+});
+
+// --- Computed to show/hide "Your Workspaces" title safely ---
+const showOverviewTitle = computed(() => {
+  return canvasRef.value && canvasRef.value.isWorkspaceOverview;
+});
+
+const handleWorkspaceLoaded = () => {
+  canvasRef.value?.autoFitNodes();
+};
 // Methods
 const toggleSidePanel = () => {
   isSidePanelOpen.value = !isSidePanelOpen.value;
@@ -165,6 +194,11 @@ const toggleSidePanel = () => {
     canvasRef.value?.autoFitNodes();
   }, 300);
 };
+
+function handleReturnToOverview() {
+  // Safely call the child's method
+  canvasRef.value?.returnToOverview();
+}
 
 const toggleAutoZoom = () => {
   canvasAutoZoom.value = !canvasAutoZoom.value;
@@ -180,7 +214,9 @@ const handleModelSelect = (model: Model) => {
   localStorage.setItem('modelType', model.source);
 };
 
-const openSettings = () => settingsDialog.value?.showModal();
+const openSettings = () => {
+  settingsDialog.value?.showModal();
+};
 
 const closeSettings = () => {
   settingsDialog.value?.close();
@@ -193,6 +229,7 @@ const closeSettings = () => {
   }
 };
 
+const settingsDialog = ref<HTMLDialogElement | null>(null);
 </script>
 
 <style scoped>

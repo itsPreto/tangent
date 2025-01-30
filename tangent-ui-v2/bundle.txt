@@ -53,68 +53,107 @@ export default defineConfig({
 <template>
   <div class="min-h-screen bg-background">
     <!-- Logo Container -->
-    <div class="fixed top-4 z-50 transition-all duration-300 w-[180px]" :style="{
-      left: isSidePanelOpen ? 'calc(40vw + (60vw - 180px) / 2)' : 'calc(50vw - 90px)'
-    }">
+    <div
+      class="fixed top-4 z-50 transition-all duration-300 w-[180px]"
+      :style="{
+        left: isSidePanelOpen ? 'calc(40vw + (60vw - 180px) / 2)' : 'calc(50vw - 90px)'
+      }"
+    >
       <TangentLogo />
     </div>
 
     <!-- Side Panel -->
     <div
       class="fixed left-0 top-0 h-full w-[40vw] bg-background shadow-lg transform transition-transform duration-300 z-40 border-r border-base-300"
-      :class="isSidePanelOpen ? 'translate-x-0' : '-translate-x-full'">
+      :class="isSidePanelOpen ? 'translate-x-0' : '-translate-x-full'"
+    >
       <div class="h-full pt-2 px-4 pb-4 bg-background">
-        <TokenOptimizer />
+        <TopicClusterViz />
       </div>
     </div>
 
     <!-- Toggle Button -->
-    <button @click="toggleSidePanel"
+    <button
+      @click="toggleSidePanel"
       class="fixed left-0 top-1/2 -translate-y-1/2 z-50 p-2 bg-background border border-l-0 border-base-300 rounded-r-md hover:bg-base-200 transition-all duration-300 shadow-md"
-      :class="{ 'translate-x-[40vw]': isSidePanelOpen }">
+      :class="{ 'translate-x-[40vw]': isSidePanelOpen }"
+    >
       <ChevronRight class="w-5 h-5 transition-transform" :class="{ 'rotate-180': isSidePanelOpen }" />
     </button>
 
     <!-- Top Controls Container -->
-    <div class="fixed top-0 z-50 transition-all duration-300 flex justify-between" :style="{
-      left: isSidePanelOpen ? '40vw' : '0',
-      right: '0'
-    }">
+    <div
+      class="fixed z-50 transition-all duration-300 flex justify-between"
+      :style="{
+        left: isSidePanelOpen ? '40vw' : '0',
+        right: '0'
+      }"
+    >
       <!-- Left Controls Group -->
-      <div class="flex items-center gap-4 p-4">
-        <ThemeToggle />
+      <div class="flex items-center px-4">
         <div class="flex items-center gap-4">
-          <!-- Zoom Level Display -->
-          <div class="px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg">
-            <span class="text-sm font-medium text-base-content">{{ Math.round(canvasZoom * 100) }}%</span>
-          </div>
+          <WorkspaceMenu />
 
-          <div class="flex items-center gap-2">
-            <button @click="graphControls.createNewConversation">New Chat</button>
-            <button @click="graphControls.saveCurrentConversation">Save</button>
+          <!-- Canvas Controls -->
+          <div class="flex items-center">
+            <ThemeToggle />
+            <div class="px-3 bg-base-200/90 backdrop-blur text-sm rounded-full border border-base-300">
+              {{ Math.round(canvasZoom * 100) }}%
+            </div>
+            <button
+              class="px-3 bg-base-200/90 backdrop-blur rounded-full border border-base-300 hover:bg-base-300/90"
+              @click="toggleAutoZoom"
+            >
+              <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
+            </button>
           </div>
-          <!-- Auto-center Toggle -->
-          <button
-            class="px-3 py-1.5 bg-base-200/90 backdrop-blur rounded-full border border-base-300 shadow-lg hover:bg-base-300/90 transition-colors"
-            @click="toggleAutoZoom">
-            <span class="text-sm font-medium text-base-content">Auto-center: {{ canvasAutoZoom ? 'On' : 'Off' }}</span>
-          </button>
         </div>
       </div>
 
       <!-- Right Controls Group -->
       <div class="flex items-center gap-2 p-4 mr-4">
-        <button @click="openSettings" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-          <Settings class="w-5 h-5" />
+        <button @click="openSettings" class="btn btn-sm btn-ghost">
+          <Settings class="w-4 h-4" />
         </button>
         <ModelSelector :api-key="openRouterApiKey" :selected-model="selectedModel" @select="handleModelSelect" />
       </div>
     </div>
 
     <!-- Canvas Container -->
-    <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
-      :model-type="modelType" :side-panel-open="isSidePanelOpen" :zoom="canvasZoom" v-model:zoom="canvasZoom"
-      v-model:auto-zoom-enabled="canvasAutoZoom" />
+    <InfiniteCanvas
+      ref="canvasRef"
+      :selected-model="selectedModel?.id || ''"
+      :open-router-api-key="openRouterApiKey"
+      :model-type="modelType"
+      :side-panel-open="isSidePanelOpen"
+      :zoom="canvasZoom"
+      v-model:zoom="canvasZoom"
+      v-model:auto-zoom-enabled="canvasAutoZoom"
+    />
+
+    <!-- "Back to Workspaces" Button -->
+    <button
+      v-if="showBackButton"
+      class="fixed bottom-4 left-4 z-50 btn btn-sm btn-ghost gap-2"
+      @click="handleReturnToOverview"
+    >
+      <ArrowLeft class="w-4 h-4" />
+      Back to Workspaces
+    </button>
+
+    <!-- Workspace Overview Title -->
+    <!-- We use showOverviewTitle to avoid reading .value on null -->
+    <div
+      class="fixed bottom-4 z-50 w-full text-center transition-all duration-300"
+      :style="{ left: isSidePanelOpen ? '40vw' : '0', right: '0' }"
+    >
+      <div
+        v-if="showOverviewTitle"
+        class="inline-block px-4 py-2 bg-base-200/90 backdrop-blur rounded-full border border-base-300 text-lg font-semibold"
+      >
+        Your Workspaces
+      </div>
+    </div>
 
     <!-- Settings Modal -->
     <dialog ref="settingsDialog" class="modal">
@@ -133,13 +172,32 @@ export default defineConfig({
             <label class="label">
               <span class="label-text">OpenRouter API Key</span>
             </label>
-            <input v-model="openRouterApiKey" type="password" placeholder="sk-or-..."
-              class="input input-bordered w-full" />
-            <label class="label">
+            <input
+              v-model="openRouterApiKey"
+              type="password"
+              placeholder="sk-or-..."
+              class="input input-bordered w-full"
+            />
+
+            <label class="label mt-2">
+              <span class="label-text">Gemini API Key</span>
+            </label>
+            <input
+              v-model="geminiApiKey"
+              type="password"
+              placeholder="AIza..."
+              class="input input-bordered w-full"
+            />
+
+            <label class="label mt-2">
               <span class="label-text">Custom API URL</span>
             </label>
-            <input v-model="customApiUrl" type="url" placeholder="http://localhost:8080/v1/chat/completions"
-              class="input input-bordered w-full" />
+            <input
+              v-model="customApiUrl"
+              type="url"
+              placeholder="http://localhost:8080/v1/chat/completions"
+              class="input input-bordered w-full"
+            />
           </div>
         </div>
 
@@ -156,48 +214,73 @@ export default defineConfig({
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import { Settings, ChevronRight } from 'lucide-vue-next';
+import { ref, onMounted, computed } from 'vue';
+import { ArrowLeft, Settings, ChevronRight } from 'lucide-vue-next';
+
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
 import TangentLogo from './components/logo/TangentLogo.vue';
 import ModelSelector from './components/models/ModelSelector.vue';
 import TaskManager from './components/manager/TaskManager.vue';
-import TokenOptimizer from './components/tokenizer/DirectoryTokenizer.vue';
-import type { Model } from './components/models/ModelSelector.vue';
+import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
+import TopicClusterViz from './components/canvas/clustermap/TopicClusterViz.vue';
+import type { Model } from './stores/modelStore';
+
 import { useCanvasStore } from './stores/canvasStore';
-import { useGraphControlsStore } from '@/stores/graphControlStore';
+import { useModelStore } from './stores/modelStore';
+import { useChatStore } from './stores/chatStore';
 
-const graphControls = useGraphControlsStore();
 
+// Refs and reactive state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
 const canvasZoom = ref(1);
 const canvasAutoZoom = ref(true);
 
-// State - load from localStorage if present
+const canvasStore = useCanvasStore();
+const modelStore = useModelStore();
+const chatStore = useChatStore();
+
+// Called once the component is mounted
+onMounted(() => {
+  canvasStore.initFromLocalStorage();
+  chatStore.loadChats();
+});
+
+// Model selection
 const selectedModel = ref<Model | null>(
   localStorage.getItem('selectedModel')
     ? JSON.parse(localStorage.getItem('selectedModel')!)
     : null
 );
 const modelType = ref<string>(localStorage.getItem('modelType') || '');
-const settingsDialog = ref<HTMLDialogElement | null>(null);
 const openRouterApiKey = ref(localStorage.getItem('openRouterApiKey') || '');
-const activeTab = ref<'api' | 'tasks'>('api');
-const canvasStore = useCanvasStore();
+const geminiApiKey = ref(localStorage.getItem('geminiApiKey') || '');
 const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
-
-// Side panel state
+const activeTab = ref<'api' | 'tasks'>('api');
 const isSidePanelOpen = ref(false);
+
+// --- Computed to show/hide "Back to Workspaces" button safely ---
+const showBackButton = computed(() => {
+  return canvasRef.value && !canvasRef.value.isWorkspaceOverview;
+});
+
+// --- Computed to show/hide "Your Workspaces" title safely ---
+const showOverviewTitle = computed(() => {
+  return canvasRef.value && canvasRef.value.isWorkspaceOverview;
+});
 
 // Methods
 const toggleSidePanel = () => {
   isSidePanelOpen.value = !isSidePanelOpen.value;
-  // If panel is opening, wait for transition then center
   setTimeout(() => {
     canvasRef.value?.autoFitNodes();
-  }, 300); // Match the transition duration
+  }, 300);
 };
+
+function handleReturnToOverview() {
+  // Safely call the child's method
+  canvasRef.value?.returnToOverview();
+}
 
 const toggleAutoZoom = () => {
   canvasAutoZoom.value = !canvasAutoZoom.value;
@@ -207,18 +290,10 @@ const toggleAutoZoom = () => {
 };
 
 const handleModelSelect = (model: Model) => {
-  console.log('Previous model:', selectedModel.value);
-  console.log('New model:', model);
-
   selectedModel.value = model;
   modelType.value = model.source;
-
-  try {
-    localStorage.setItem('selectedModel', JSON.stringify(model));
-    localStorage.setItem('modelType', model.source);
-  } catch (e) {
-    console.error('Error storing model:', e);
-  }
+  localStorage.setItem('selectedModel', JSON.stringify(model));
+  localStorage.setItem('modelType', model.source);
 };
 
 const openSettings = () => {
@@ -229,11 +304,14 @@ const closeSettings = () => {
   settingsDialog.value?.close();
   if (openRouterApiKey.value) {
     localStorage.setItem('openRouterApiKey', openRouterApiKey.value);
-  } else {
-    localStorage.removeItem('openRouterApiKey');
   }
-  canvasStore.setCustomApiUrl(customApiUrl.value)
+  if (geminiApiKey.value) {
+    localStorage.setItem('geminiApiKey', geminiApiKey.value);
+    modelStore.initialize();
+  }
 };
+
+const settingsDialog = ref<HTMLDialogElement | null>(null);
 </script>
 
 <style scoped>
@@ -242,12 +320,43 @@ const closeSettings = () => {
   z-index: 100;
 }
 
-/* Ensure side panel is above canvas */
 .side-panel {
   isolation: isolate;
 }
+
+/* Smooth transitions */
+.btn {
+  transition: all 0.2s ease;
+}
+
+.btn-ghost {
+  @apply hover:bg-base-200/90;
+}
 </style>
+
 === END FILE: ./src/App.vue ===
+
+
+=== START FILE: ./src/types/chat.ts ===
+=== TYPE: ts ===
+
+// src/types/chat.ts
+export interface ChatSummary {
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    nodeCount: number;
+  }
+  
+  export interface ChatData {
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    nodes: Node;
+  }
+=== END FILE: ./src/types/chat.ts ===
 
 
 === START FILE: ./src/types/message.ts ===
@@ -317,7 +426,8 @@ app.mount('#app')
 === TYPE: ts ===
 
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { useChatStore } from './chatStore';
+import { ref, watch, computed } from 'vue';
 import type { Message, Node } from '../types/message';
 
 // Helper types for model info
@@ -329,7 +439,27 @@ interface ModelInfo {
   provider?: string;
 }
 
+interface LocalStorageState {
+  nodes: Node[];
+  lastSavedWorkspaceId: string | null;
+}
+
+
 export const useCanvasStore = defineStore('canvas', () => {
+  const chatStore = useChatStore();
+  const lastSavedWorkspaceId = ref<string | null>(null);
+
+
+  const initFromLocalStorage = () => {
+    const savedState = localStorage.getItem('canvasState');
+    if (savedState) {
+      const state = JSON.parse(savedState) as LocalStorageState;
+      nodes.value = state.nodes;
+      lastSavedWorkspaceId.value = state.lastSavedWorkspaceId;
+    }
+  };
+
+
   // Main state
   const nodes = ref<Node[]>([{
     id: '1',
@@ -350,8 +480,6 @@ export const useCanvasStore = defineStore('canvas', () => {
   const viewMode = ref<'2d' | '3d'>('2d');
   const isTransitioning = ref(false);
   const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
-  const conversationId = ref<string | null>(null);
-  const isLoading = ref(false);
 
   // Constants
   const CARD_WIDTH = 672;
@@ -482,66 +610,6 @@ export const useCanvasStore = defineStore('canvas', () => {
         return { parent, child: node };
       });
   });
-
-
-  const loadConversation = async (id: string) => {
-    isLoading.value = true;
-    try {
-      const response = await fetch(`http://127.0.0.1:5000/api/conversations/${id}`);
-      if (!response.ok) throw new Error('Failed to load conversation');
-
-      const data = await response.json();
-      nodes.value = data.nodes;
-      conversationId.value = id;
-    } catch (error) {
-      console.error('Error loading conversation:', error);
-    } finally {
-      isLoading.value = false;
-    }
-  };
-
-  const saveCurrentConversation = async () => {
-    if (!conversationId.value) {
-      await createNewConversation();
-      return;
-    }
-
-    try {
-      await fetch(`http://127.0.0.1:5000/api/conversations/${conversationId.value}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nodes: nodes.value,
-          updatedAt: new Date().toISOString(),
-          title: nodes.value[0]?.title || 'Untitled Conversation'
-        })
-      });
-    } catch (error) {
-      console.error('Error saving conversation:', error);
-    }
-  };
-
-  const createNewConversation = async () => {
-    try {
-      const conversation = {
-        id: crypto.randomUUID(),
-        nodes: nodes.value,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        title: nodes.value[0]?.title || 'New Conversation'
-      };
-
-      await fetch('http://127.0.0.1:5000/api/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(conversation)
-      });
-
-      conversationId.value = conversation.id;
-    } catch (error) {
-      console.error('Error creating conversation:', error);
-    }
-  };
 
   const parseModelInfo = (selectedModel: string): ModelInfo => {
     if (selectedModel.includes('/')) {
@@ -695,39 +763,65 @@ export const useCanvasStore = defineStore('canvas', () => {
   };
 
   // Node management functions
-  const addNode = async (parentId: string, branchMessageIndex: number, position: { x: number, y: number }, initialData = {}) => {
-    const newNode = {
-      id: (Math.max(...nodes.value.map(n => parseInt(n.id))) + 1).toString(),
+  const addNode = async (
+    parentId: string | null,
+    branchMessageIndex: number,
+    position: { x: number, y: number },
+    initialData = {}
+  ) => {
+    const newId = (Math.max(...nodes.value.map(n => parseInt(n.id))) + 1).toString();
+    const parentNode = nodes.value.find(n => n.id === parentId);
+    const existingChildren = nodes.value.filter(n => n.parentId === parentId).length;
+
+    const parentMessages = parentNode?.messages || [];
+    const contextMessages = parentMessages.slice(0, branchMessageIndex + 1).map(msg => ({
+      ...msg,
+      timestamp: new Date().toISOString()
+    }));
+
+    const newNode: Node = {
+      id: newId,
       x: position.x,
-      y: position.y,
+      y: position.y + (existingChildren * (CARD_HEIGHT + 20)),
       parentId,
-      messages: [],
+      messages: contextMessages,
       type: 'branch',
       branchMessageIndex,
       streamingContent: null,
       ...initialData
     };
 
+    // Add to local state
     nodes.value.push(newNode);
-    await saveCurrentConversation();
+
+    // Auto-save if in a chat
+    if (chatStore.currentChatId) {
+      const nodeId = await chatStore.addNode(chatStore.currentChatId, {
+        ...newNode,
+        metadata: {
+          type: newNode.type,
+          url: (newNode as any).url,
+          mediaType: (newNode as any).mediaType
+        }
+      });
+      if (nodeId) {
+        newNode.id = nodeId;
+        // Auto-save the parent node's state as well
+        if (parentId) {
+          const parentNode = nodes.value.find(n => n.id === parentId);
+          if (parentNode) {
+            chatStore.autoSave(chatStore.currentChatId, parentId, {
+              children: [...(parentNode.children || []), nodeId]
+            });
+          }
+        }
+      }
+    }
+
     return newNode;
   };
 
-  const updateNodePosition = async (id: string, position: { x: number, y: number }) => {
-    const node = nodes.value.find(n => n.id === id);
-    if (node) {
-      node.x = position.x;
-      node.y = position.y;
-      await saveCurrentConversation();
-    }
-  };
-
-  const removeNode = async (id: string) => {
-    nodes.value = nodes.value.filter(n => n.id !== id && n.parentId !== id);
-    await saveCurrentConversation();
-  };
-
-  const addMessage = (nodeId: string, message: string | Message) => {
+  const addMessage = async (nodeId: string, message: string | Message) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
       const newMessage: Message = typeof message === 'string'
@@ -744,10 +838,17 @@ export const useCanvasStore = defineStore('canvas', () => {
         };
 
       node.messages = [...(node.messages || []), newMessage];
+
+      // Auto-save messages
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, nodeId, {
+          messages: node.messages
+        });
+      }
     }
   };
 
-  const removeMessage = (nodeId: string, messageIndex: number) => {
+  const removeMessage = async (nodeId: string, messageIndex: number) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node && node.messages) {
       node.messages = [
@@ -761,15 +862,71 @@ export const useCanvasStore = defineStore('canvas', () => {
           childNode.branchMessageIndex--;
         }
       });
+
+      // Persist changes if in a chat
+      if (chatStore.currentChatId) {
+        await chatStore.updateNode(chatStore.currentChatId, nodeId, {
+          messages: node.messages
+        });
+
+        // Update child nodes if branch indices changed
+        for (const childNode of childNodes) {
+          if (childNode.branchMessageIndex !== undefined) {
+            await chatStore.updateNode(chatStore.currentChatId, childNode.id, {
+              branchMessageIndex: childNode.branchMessageIndex
+            });
+          }
+        }
+      }
     }
   };
 
 
+  const updateNodePosition = async (id: string, position: { x: number, y: number }) => {
+    const node = nodes.value.find(n => n.id === id);
+    if (node) {
+      node.x = position.x;
+      node.y = position.y;
 
-  const updateNodeTitle = (id: string, title: string) => {
+      // Auto-save position if in a chat
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, id, { x: position.x, y: position.y });
+      }
+    }
+  };
+
+  const removeNode = async (id: string) => {
+    // Remove from topics if present
+    const topicId = nodeTopics.value.get(id);
+    if (topicId !== undefined) {
+      const cluster = topicClusters.value.get(topicId);
+      if (cluster) {
+        cluster.delete(id);
+        if (cluster.size === 0) {
+          topicClusters.value.delete(topicId);
+        }
+      }
+      nodeTopics.value.delete(id);
+    }
+
+    // Remove from backend if in a chat
+    if (chatStore.currentChatId) {
+      await chatStore.removeNode(chatStore.currentChatId, id);
+    }
+
+    // Remove from local state
+    nodes.value = nodes.value.filter(n => n.id !== id && n.parentId !== id);
+  };
+
+  const updateNodeTitle = async (id: string, title: string) => {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.title = title;
+
+      // Auto-save title
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, id, { title });
+      }
     }
   };
 
@@ -777,6 +934,140 @@ export const useCanvasStore = defineStore('canvas', () => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node) {
       node.streamingContent = content;
+    }
+  };
+
+  const loadChatState = async (chatId: string) => {
+    try {
+      const chatData = await chatStore.loadChat(chatId);
+      if (!chatData) throw new Error('Failed to load chat');
+
+      // Clear existing nodes
+      nodes.value = [];
+
+      // Convert and load nodes
+      const flattenNodes = (node: any): Node[] => {
+        const children = node.children || [];
+        return [
+          {
+            id: node.id,
+            type: node.type,
+            title: node.title,
+            x: node.x,
+            y: node.y,
+            parentId: node.parentId,
+            branchMessageIndex: node.branchMessageIndex,
+            messages: node.messages || [],
+            streamingContent: null,
+            ...node.metadata
+          },
+          ...children.flatMap(flattenNodes)
+        ];
+      };
+
+      // Load nodes and update state
+      nodes.value = flattenNodes(chatData.nodes);
+      lastSavedWorkspaceId.value = chatId;
+
+      // Update localStorage
+      const state: LocalStorageState = {
+        nodes: nodes.value,
+        lastSavedWorkspaceId: chatId
+      };
+      localStorage.setItem('canvasState', JSON.stringify(state));
+
+      return true;
+    } catch (error) {
+      console.error('Error loading chat state:', error);
+      return false;
+    }
+  };
+
+  const saveAsNewChat = async (title: string) => {
+    const rootNode = nodes.value.find(n => !n.parentId);
+    if (!rootNode) return null;
+
+    const chatId = await chatStore.createChat(title, {
+      type: rootNode.type,
+      title: rootNode.title,
+      x: rootNode.x,
+      y: rootNode.y,
+      messages: rootNode.messages,
+      metadata: {
+        type: rootNode.type,
+        url: (rootNode as any).url,
+        mediaType: (rootNode as any).mediaType
+      }
+    });
+
+    if (chatId) {
+      // Save all other nodes
+      const otherNodes = nodes.value.filter(n => n.parentId);
+      for (const node of otherNodes) {
+        await chatStore.addNode(chatId, {
+          ...node,
+          metadata: {
+            type: node.type,
+            url: (node as any).url,
+            mediaType: (node as any).mediaType
+          }
+        });
+      }
+    }
+
+    return chatId;
+  };
+
+  const saveWorkspace = async (title?: string) => {
+    try {
+      if (!title) {
+        title = `Workspace ${new Date().toLocaleString()}`;
+      }
+
+      // Save the root node and its state
+      const rootNode = nodes.value.find(n => !n.parentId);
+      if (!rootNode) return null;
+
+      const chatId = await chatStore.createChat(title, {
+        type: rootNode.type,
+        title: rootNode.title,
+        x: rootNode.x,
+        y: rootNode.y,
+        messages: rootNode.messages,
+        metadata: {
+          type: rootNode.type,
+          url: (rootNode as any).url,
+          mediaType: (rootNode as any).mediaType
+        }
+      });
+
+      if (!chatId) throw new Error('Failed to create chat');
+
+      // Save all other nodes
+      const otherNodes = nodes.value.filter(n => n.parentId);
+      for (const node of otherNodes) {
+        await chatStore.addNode(chatId, {
+          ...node,
+          metadata: {
+            type: node.type,
+            url: (node as any).url,
+            mediaType: (node as any).mediaType
+          }
+        });
+      }
+
+      // Update local state and localStorage
+      lastSavedWorkspaceId.value = chatId;
+      const state: LocalStorageState = {
+        nodes: nodes.value,
+        lastSavedWorkspaceId: chatId
+      };
+      localStorage.setItem('canvasState', JSON.stringify(state));
+
+      return chatId;
+    } catch (error) {
+      console.error('Error saving workspace:', error);
+      return null;
     }
   };
 
@@ -788,9 +1079,34 @@ export const useCanvasStore = defineStore('canvas', () => {
       localStorage.removeItem('customApiUrl');
     }
   };
+  watch(() => nodes.value, (newNodes) => {
+    // Save to localStorage
+    const state: LocalStorageState = {
+      nodes: newNodes,
+      lastSavedWorkspaceId: lastSavedWorkspaceId.value
+    };
+    localStorage.setItem('canvasState', JSON.stringify(state));
 
+    // Auto-save to backend if in a chat
+    if (chatStore.currentChatId) {
+      newNodes.forEach(node => {
+        chatStore.autoSave(chatStore.currentChatId!, node.id, {
+          x: node.x,
+          y: node.y,
+          messages: node.messages,
+          title: node.title,
+          metadata: {
+            type: node.type,
+            url: (node as any).url,
+            mediaType: (node as any).mediaType
+          }
+        });
+      });
+    }
+  }, { deep: true });  // Remove the extra "deep: true" text here
+
+  // Move the return statement inside the store definition
   return {
-    // State
     nodes,
     activeNode,
     isDragging,
@@ -800,222 +1116,411 @@ export const useCanvasStore = defineStore('canvas', () => {
     topicClusters,
     nodeTopics,
     customApiUrl,
-    conversationId,
-    isLoading,
-
-    // Computed
     connections,
     graphData,
+    lastSavedWorkspaceId,
 
-    // Constants
     CARD_WIDTH,
     CARD_HEIGHT,
     HORIZONTAL_SPACING,
 
-    // Methods
+    // Updated methods
     addNode,
     updateNodePosition,
     removeNode,
     updateNodeTitle,
     addMessage,
-    setStreamingContent,
     removeMessage,
+    setStreamingContent,
     sendMessage,
     setCustomApiUrl,
-    loadConversation,
-    createNewConversation,
-    saveCurrentConversation,
+    initFromLocalStorage,
+    saveWorkspace,
+    loadChatState,
+    saveAsNewChat
   };
-});
+}); // Move this closing parenthesis here
 === END FILE: ./src/stores/canvasStore.ts ===
 
 
-=== START FILE: ./src/stores/graphControlStore.ts ===
+=== START FILE: ./src/stores/modelStore.ts ===
 === TYPE: ts ===
 
 import { defineStore } from 'pinia';
-import { ref, computed, watch } from 'vue';
-import { useCanvasStore } from '@/stores/canvasStore';
-import { useTopicClusterStore } from '@/stores/topicClusterStore'
+import { ref, computed } from 'vue';
 
-export const useGraphControlsStore = defineStore('graphControls', () => {
-    const canvasStore = useCanvasStore();
-    const clusterStore = useTopicClusterStore();
+export interface Model {
+    id: string;
+    name: string;
+    source: 'ollama' | 'openrouter' | 'google';
+    description?: string;
+    provider?: string;
+    version?: string;
+    inputTokenLimit?: number;
+    outputTokenLimit?: number;
+    temperature?: number;
+    supportedGenerationMethods?: string[];
+}
 
-    const isLoading = ref(false);
-    const currentConvId = ref<string | null>(null);
+export const useModelStore = defineStore('models', () => {
+    // State
+    const ollamaModels = ref<Model[]>([]);
+    const openRouterModels = ref<Model[]>([]);
+    const googleModels = ref<Model[]>([]);
+    const selectedModel = ref<Model | null>(
+        localStorage.getItem('selectedModel')
+            ? JSON.parse(localStorage.getItem('selectedModel')!)
+            : null
+    );
 
-    const createNewConversation = async () => {
-        isLoading.value = true;
+    const initialize = async () => {
+        await Promise.all([
+            fetchOllamaModels(),
+            fetchOpenRouterModels(),
+            fetchGoogleModels()
+        ]);
+    };
+
+
+    // Fetch models from respective APIs
+    const fetchOllamaModels = async () => {
         try {
-            const id = await canvasStore.createNewConversation();
-            if (id) {
-                currentConvId.value = id;
-                await clusterStore.clusterConversations(canvasStore.nodes);
+            const response = await fetch('http://localhost:11434/api/tags');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data = await response.json();
+            if (Array.isArray(data.models)) {
+                ollamaModels.value = data.models.map((model: any) => ({
+                    id: model.name,
+                    name: model.name,
+                    source: 'ollama' as const
+                }));
             }
-            return id;
-        } finally {
-            isLoading.value = false;
+        } catch (error) {
+            console.error('Error fetching Ollama models:', error);
+            ollamaModels.value = [];
         }
     };
 
-    const saveCurrentConversation = async () => {
-        if (!currentConvId.value) {
-            const id = await createNewConversation();
-            return id;
-        }
-        await canvasStore.saveCurrentConversation();
+    const fetchOpenRouterModels = async () => {
+        const apiKey = localStorage.getItem('openRouterApiKey');
+        if (!apiKey) return;
 
-        // Add this call
-        await fetch('http://127.0.0.1:5000/api/clusters/update', {
-            method: 'POST',
-            body: JSON.stringify({ nodes: canvasStore.nodes })
-        });
-
-        await clusterStore.clusterConversations(canvasStore.nodes);
-    };
-
-    const loadConversation = async (id: string) => {
-        isLoading.value = true;
         try {
-            await canvasStore.loadConversation(id);
-            currentConvId.value = id;
-            await clusterStore.clusterConversations(canvasStore.nodes);
-        } finally {
-            isLoading.value = false;
+            const response = await fetch('https://openrouter.ai/api/v1/models', {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data = await response.json();
+            openRouterModels.value = data.data.map((model: any) => ({
+                id: model.id,
+                name: model.name.split(':')[1]?.trim() || model.name,
+                source: 'openrouter' as const,
+                provider: model.name.split(':')[0],
+                description: model.description
+            }));
+        } catch (error) {
+            console.error('Error fetching OpenRouter models:', error);
+            openRouterModels.value = [];
         }
     };
 
-    watch(() => canvasStore.nodes.length, async () => {
-        if (currentConvId.value) {
-            await saveCurrentConversation();
+    const fetchGoogleModels = async () => {
+        // Use geminiApiKey to match the component
+        const apiKey = localStorage.getItem('geminiApiKey');
+        if (!apiKey) {
+            console.log('No Gemini API key found');
+            return;
         }
+
+        try {
+            console.log('Fetching Google models...');
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('Received models:', data.models?.length || 0);
+
+            // Filter out non-Gemini models and transform the data
+            googleModels.value = data.models
+                .filter((model: any) => model.name.includes('gemini'))
+                .map((model: any) => ({
+                    id: model.name,
+                    name: model.displayName,
+                    source: 'google' as const,
+                    description: model.description,
+                    version: model.version,
+                    inputTokenLimit: model.inputTokenLimit,
+                    outputTokenLimit: model.outputTokenLimit,
+                    temperature: model.temperature,
+                    supportedGenerationMethods: model.supportedGenerationMethods
+                }))
+                .sort((a: Model, b: Model) => {
+                    const aIsExp = a.version?.includes('exp') || false;
+                    const bIsExp = b.version?.includes('exp') || false;
+                    if (aIsExp !== bIsExp) return aIsExp ? 1 : -1;
+                    return b.name.localeCompare(a.name);
+                });
+
+            console.log('Processed Gemini models:', googleModels.value.length);
+        } catch (error) {
+            console.error('Error fetching Google models:', error);
+            googleModels.value = [];
+        }
+    };
+
+    // Get filtered models based on provider and search query
+    const getFilteredModels = (provider: string, searchQuery: string) => {
+        const query = searchQuery.toLowerCase();
+        let models: Model[] = [];
+
+        switch (provider) {
+            case 'ollama':
+                models = ollamaModels.value;
+                break;
+            case 'openrouter':
+                models = openRouterModels.value;
+                break;
+            case 'google':
+                models = googleModels.value;
+                break;
+        }
+
+        return models.filter(model =>
+            model.name.toLowerCase().includes(query) ||
+            model.description?.toLowerCase().includes(query) ||
+            model.provider?.toLowerCase().includes(query)
+        );
+    };
+
+    // Set selected model and persist to localStorage
+    const setSelectedModel = (model: Model) => {
+        selectedModel.value = model;
+        try {
+            localStorage.setItem('selectedModel', JSON.stringify(model));
+            localStorage.setItem('modelType', model.source);
+        } catch (e) {
+            console.error('Error storing model:', e);
+        }
+    };
+
+    // Computed property to get the current model's capabilities
+    const selectedModelCapabilities = computed(() => {
+        if (!selectedModel.value) return null;
+
+        return {
+            supportsVision: selectedModel.value.name.toLowerCase().includes('vision'),
+            supportsChat: selectedModel.value.supportedGenerationMethods?.includes('generateContent') || false,
+            maxInputTokens: selectedModel.value.inputTokenLimit || 0,
+            maxOutputTokens: selectedModel.value.outputTokenLimit || 0
+        };
     });
 
     return {
-        isLoading,
-        currentConvId,
-        createNewConversation,
-        loadConversation,
-        saveCurrentConversation
+        selectedModel,
+        ollamaModels,
+        openRouterModels,
+        googleModels,
+        initialize,
+        getFilteredModels,
+        setSelectedModel,
+        selectedModelCapabilities
     };
 });
-=== END FILE: ./src/stores/graphControlStore.ts ===
+=== END FILE: ./src/stores/modelStore.ts ===
 
 
-=== START FILE: ./src/stores/topicClusterStore.ts ===
+=== START FILE: ./src/stores/chatStore.ts ===
 === TYPE: ts ===
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { Node } from '../types/message';
 
-interface TopicCluster {
+interface ChatSummary {
     id: string;
-    topic: string;
-    nodes: Node[];
-    embedding: number[];
-    coherence: number;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    nodeCount: number;
 }
 
-export const useTopicClusterStore = defineStore('topicClusters', () => {
-    const clusters = ref<TopicCluster[]>([]);
-    const isProcessing = ref(false);
+interface ChatData {
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    nodes: Node;
+}
 
-    // Generate embeddings for a list of texts
-    const generateEmbeddings = async (texts: string[]) => {
-        const response = await fetch('http://localhost:11434/api/embed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: 'all-minilm',
-                input: texts
-            })
-        });
+export const useChatStore = defineStore('chat', () => {
+    const currentChatId = ref<string | null>(null);
+    const chats = ref<ChatSummary[]>([]);
+    const isLoading = ref(false);
+    const error = ref<string | null>(null);
 
-        const data = await response.json();
-        return data.embeddings;
-    };
-
-    // Calculate cosine similarity between two embeddings
-    const cosineSimilarity = (a: number[], b: number[]) => {
-        const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
-        const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
-        const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
-        return dotProduct / (magnitudeA * magnitudeB);
-    };
-
-    // Cluster conversations based on embeddings
-    const clusterConversations = async (nodes: Node[]) => {
-        isProcessing.value = true;
+    // Load chat list
+    const loadChats = async () => {
+        isLoading.value = true;
+        error.value = null;
         try {
-            // Get titles or first messages
-            const texts = nodes.map(node => {
-                const text = node.title || node.messages[0]?.content || '';
-                return text.slice(0, 2000); // Limit to first 2000 chars
-            });
-            const embeddings = await generateEmbeddings(texts);
-            
-            // Clustering using similarity threshold
-            const SIMILARITY_THRESHOLD = 0.8;
-            const newClusters: TopicCluster[] = [];
-
-            for (let i = 0; i < nodes.length; i++) {
-                const nodeEmbedding = embeddings[i];
-                let assignedToCluster = false;
-
-                // Try to assign to existing cluster
-                for (const cluster of newClusters) {
-                    const similarity = cosineSimilarity(nodeEmbedding, cluster.embedding);
-                    if (similarity > SIMILARITY_THRESHOLD) {
-                        cluster.nodes.push(nodes[i]);
-                        assignedToCluster = true;
-                        break;
-                    }
-                }
-
-                // Create new cluster if needed
-                if (!assignedToCluster) {
-                    newClusters.push({
-                        id: crypto.randomUUID(),
-                        topic: '',  // Will be generated
-                        nodes: [nodes[i]],
-                        embedding: nodeEmbedding,
-                        coherence: 1
-                    });
-                }
-            }
-
-            // Generate topic names
-            await Promise.all(newClusters.map(async cluster => {
-                const titles = cluster.nodes.map(n => n.title || '').join('\n');
-                const response = await fetch('http://localhost:11434/api/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: 'mistral',
-                        prompt: `These are related conversation titles:\n${titles}\n\nProvide a short (2-3 words) topic name that describes their common theme. Respond with just the topic name.`,
-                        stream: false
-                    })
-                });
-
-                const data = await response.json();
-                cluster.topic = data.response.trim();
-            }));
-
-            clusters.value = newClusters;
+            const response = await fetch('http://127.0.0.1:5000/chats');
+            const data = await response.json();
+            chats.value = data.chats;
+        } catch (e) {
+            error.value = 'Failed to load chats';
+            console.error(e);
         } finally {
-            isProcessing.value = false;
+            isLoading.value = false;
         }
     };
 
+    // Create new chat
+    const createChat = async (title: string, initialNode: any) => {
+        isLoading.value = true;
+        error.value = null;
+        try {
+            const response = await fetch('http://127.0.0.1:5000/chats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, initialNode })
+            });
+            const data = await response.json();
+            await loadChats();
+            return data.chatId;
+        } catch (e) {
+            error.value = 'Failed to create chat';
+            console.error(e);
+            return null;
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    // Load specific chat
+    const loadChat = async (chatId: string) => {
+        isLoading.value = true;
+        error.value = null;
+        try {
+            const response = await fetch(`http://127.0.0.1:5000/chats/${chatId}`);
+            const data = await response.json();
+            currentChatId.value = chatId;
+            return data;
+        } catch (e) {
+            error.value = 'Failed to load chat';
+            console.error(e);
+            return null;
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    // Delete chat
+    const deleteChat = async (chatId: string) => {
+        isLoading.value = true;
+        error.value = null;
+        try {
+            await fetch(`http://127.0.0.1:5000/chats/${chatId}`, { method: 'DELETE' });
+            if (currentChatId.value === chatId) {
+                currentChatId.value = null;
+            }
+            await loadChats();
+            return true;
+        } catch (e) {
+            error.value = 'Failed to delete chat';
+            console.error(e);
+            return false;
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    // Add node
+    const addNode = async (chatId: string, nodeData: any) => {
+        try {
+            const response = await fetch(`http://127.0.0.1:5000/chats/${chatId}/nodes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(nodeData)
+            });
+            const data = await response.json();
+            return data.nodeId;
+        } catch (e) {
+            console.error(e);
+            return null;
+        }
+    };
+
+    // Update node
+    const updateNode = async (chatId: string, nodeId: string, data: any) => {
+        try {
+            await fetch(`http://127.0.0.1:5000/chats/${chatId}/nodes/${nodeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    };
+
+    // Remove node
+    const removeNode = async (chatId: string, nodeId: string) => {
+        try {
+            await fetch(`http://127.0.0.1:5000/chats/${chatId}/nodes/${nodeId}`, {
+                method: 'DELETE'
+            });
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    };
+
+    // Auto-save functionality
+    let saveTimeout: number | null = null;
+    const autoSave = async (chatId: string, nodeId: string, data: any) => {
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+        }
+
+        saveTimeout = window.setTimeout(async () => {
+            await updateNode(chatId, nodeId, data);
+        }, 2000); // Debounced save after 2 seconds of no changes
+    };
+
+    // Computed properties
+    const currentChat = computed(() =>
+        chats.value.find(chat => chat.id === currentChatId.value)
+    );
+
     return {
-        clusters,
-        isProcessing,
-        clusterConversations
+        currentChatId,
+        chats,
+        isLoading,
+        error,
+        currentChat,
+        loadChats,
+        createChat,
+        loadChat,
+        deleteChat,
+        addNode,
+        updateNode,
+        removeNode,
+        autoSave
     };
 });
-=== END FILE: ./src/stores/topicClusterStore.ts ===
+=== END FILE: ./src/stores/chatStore.ts ===
 
 
 === START FILE: ./src/utils/api.ts ===
@@ -2155,13 +2660,13 @@ const formattedTime = computed(() => {
   })
   
   onMounted(async () => {
-    try {
-      const response = await fetch('http://127.0.0.1:5000/models')
-      const data = await response.json()
-      availableModels.value = data.models
-    } catch (error) {
-      console.error('Error fetching models:', error)
-    }
+    // try {
+    //   const response = await fetch('http://127.0.0.1:5000/models')
+    //   const data = await response.json()
+    //   availableModels.value = data.models
+    // } catch (error) {
+    //   console.error('Error fetching models:', error)
+    // }
   })
   
   const removedTokens = computed(() => {
@@ -2307,184 +2812,418 @@ const formattedTime = computed(() => {
 === END FILE: ./src/components/tokenizer/DirectoryTokenizer.vue ===
 
 
+=== START FILE: ./src/components/workspace/WorkspaceMenu.vue ===
+=== TYPE: vue ===
+
+<template>
+    <div class="relative">
+        <!-- Main Button -->
+        <button @click="isOpen = !isOpen" class="btn btn-sm gap-2 bg-base-200/90 backdrop-blur hover:bg-base-300/90">
+            <FolderOpen class="w-4 h-4" />
+            <span v-if="currentWorkspace">{{ currentWorkspace.title }}</span>
+            <span v-else>Untitled Workspace</span>
+            <ChevronDown class="w-4 h-4 transition-transform" :class="{ 'rotate-180': isOpen }" />
+        </button>
+
+        <!-- Dropdown Menu -->
+        <div v-if="isOpen"
+            class="absolute top-full mt-2 left-0 w-80 bg-base-200/95 backdrop-blur border border-base-300 rounded-lg shadow-lg p-2 space-y-2"
+            v-click-outside="() => isOpen = false">
+            <!-- Save Current -->
+            <div v-if="!currentWorkspace || isEditing" class="p-2">
+                <input ref="titleInput" v-model="workspaceTitle" @keyup.enter="handleSave" class="input input-sm w-full"
+                    :placeholder="currentWorkspace ? 'Rename workspace...' : 'Name your workspace...'" />
+                <div class="flex justify-end gap-2 mt-2">
+                    <button @click="isEditing = false" class="btn btn-sm btn-ghost">
+                        Cancel
+                    </button>
+                    <button @click="handleSave" class="btn btn-sm btn-primary">
+                        {{ currentWorkspace ? 'Rename' : 'Save' }}
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div v-else class="flex gap-2 p-2">
+                <button @click="isEditing = true" class="btn btn-sm btn-ghost flex-1">
+                    {{ currentWorkspace ? 'Rename' : 'Save As...' }}
+                </button>
+                <button v-if="currentWorkspace" @click="handleDelete"
+                    class="btn btn-sm btn-ghost text-destructive hover:bg-destructive/10">
+                    Delete
+                </button>
+            </div>
+
+            <!-- Saved Workspaces -->
+            <div v-if="savedWorkspaces.length" class="border-t border-base-300">
+                <div class="py-2 px-3 text-sm text-base-content/60">
+                    Recent Workspaces
+                </div>
+                <button v-for="workspace in savedWorkspaces" :key="workspace.id" @click="loadWorkspace(workspace.id)"
+                    class="flex items-center gap-3 w-full p-2 hover:bg-base-300/50 rounded-md transition-colors"
+                    :class="{ 'bg-primary/10': workspace.id === currentWorkspace?.id }">
+                    <div class="flex-1 text-left">
+                        <div class="font-medium">{{ workspace.title }}</div>
+                        <div class="text-xs text-base-content/60">
+                            {{ new Date(workspace.updatedAt).toLocaleString() }}
+                        </div>
+                    </div>
+                    <ChevronRight class="w-4 h-4 text-base-content/40" />
+                </button>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
+import { FolderOpen, ChevronDown, ChevronRight } from 'lucide-vue-next';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useChatStore } from '@/stores/chatStore';
+import type { ChatSummary } from '@/types/chat'; // Make sure to create this type
+
+const canvasStore = useCanvasStore();
+const chatStore = useChatStore();
+
+onMounted(async () => {
+    await chatStore.loadChats();
+});
+
+const isOpen = ref(false);
+const isEditing = ref(false);
+const workspaceTitle = ref('');
+const titleInput = ref<HTMLInputElement>();
+
+// Use chats instead of workspaces
+const savedWorkspaces = computed(() =>
+    chatStore.chats.sort((a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )
+);
+
+const currentWorkspace = computed(() =>
+    chatStore.chats.find(chat => chat.id === canvasStore.lastSavedWorkspaceId)
+);
+
+const handleSave = async () => {
+    if (!workspaceTitle.value.trim()) return;
+
+    const workspaceId = await canvasStore.saveWorkspace(workspaceTitle.value);
+    if (workspaceId) {
+        await chatStore.loadChats();
+        workspaceTitle.value = '';
+        isEditing.value = false;
+        isOpen.value = false;
+    }
+};
+
+const loadWorkspace = async (id: string) => {
+    await canvasStore.loadChatState(id);
+    isOpen.value = false;
+};
+
+const handleDelete = async () => {
+    if (!currentWorkspace.value) return;
+
+    if (await window.confirm('Delete this workspace? This cannot be undone.')) {
+        await chatStore.deleteChat(currentWorkspace.value.id);
+        canvasStore.lastSavedWorkspaceId = null;
+        isOpen.value = false;
+    }
+};
+
+
+
+watch(isEditing, async (newValue) => {
+    if (newValue) {
+        workspaceTitle.value = currentWorkspace.value?.title || '';
+        await nextTick();
+        titleInput.value?.focus();
+    }
+});
+</script>
+=== END FILE: ./src/components/workspace/WorkspaceMenu.vue ===
+
+
 === START FILE: ./src/components/models/ModelSelector.vue ===
 === TYPE: vue ===
 
 <template>
   <div class="relative inline-block">
+    <!-- Provider Tabs Container -->
+    <div class="flex h-10 mb-2 bg-base-200 rounded-lg p-1">
+      <!-- Ollama Tab -->
+      <button @click="activeProvider = 'ollama'"
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
+        :class="{
+          'bg-base-100 shadow-sm flex-1': activeProvider === 'ollama',
+          'w-10 hover:bg-base-300': activeProvider !== 'ollama'
+        }">
+        <span class="w-6 h-6 flex items-center justify-center">
+          <img :src="ollama" alt="Ollama" class="w-5 h-5 object-contain" />
+        </span>
+        <span class="truncate transition-opacity duration-300"
+          :class="{ 'opacity-0 w-0': activeProvider !== 'ollama' }">
+          Ollama
+        </span>
+      </button>
+
+      <!-- OpenRouter Tab -->
+      <button @click="activeProvider = 'openrouter'"
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
+        :class="{
+          'bg-base-100 shadow-sm flex-1': activeProvider === 'openrouter',
+          'w-10 hover:bg-base-300': activeProvider !== 'openrouter'
+        }">
+        <span class="w-6 h-6 flex items-center justify-center">
+          <svg :width="activeProvider === 'openrouter' ? 20 : 12" :height="activeProvider === 'openrouter' ? 20 : 12"
+            viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" fill="currentColor" stroke="currentColor"
+            class="transition-all duration-300">
+            <g clip-path="url(#clip0_205_3)">
+              <path d="M3 248.945C18 248.945 76 236 106 219C136 202 136 202 198 158C276.497 102.293 332 120.945 423 120.945"
+                stroke-width="90" />
+              <path d="M511 121.5L357.25 210.268L357.25 32.7324L511 121.5Z" />
+              <path d="M0 249C15 249 73 261.945 103 278.945C133 295.945 133 295.945 195 339.945C273.497 395.652 329 377 420 377"
+                stroke-width="90" />
+              <path d="M508 376.445L354.25 287.678L354.25 465.213L508 376.445Z" />
+            </g>
+          </svg>
+        </span>
+        <span class="truncate transition-opacity duration-300"
+          :class="{ 'opacity-0 w-0': activeProvider !== 'openrouter' }">
+          OpenRouter
+        </span>
+      </button>
+
+      <!-- Google Tab -->
+      <button @click="activeProvider = 'google'"
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
+        :class="{
+          'bg-base-100 shadow-sm flex-1': activeProvider === 'google',
+          'w-10 hover:bg-base-300': activeProvider !== 'google'
+        }">
+        <span class="w-6 h-6 flex items-center justify-center">
+          <img :src="google" alt="Google" class="w-5 h-5 object-contain" />
+        </span>
+        <span class="truncate transition-opacity duration-300"
+          :class="{ 'opacity-0 w-0': activeProvider !== 'google' }">
+          Google
+        </span>
+      </button>
+
+      <!-- Custom Provider Tab -->
+      <button @click="activeProvider = 'custom'"
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
+        :class="{
+          'bg-base-100 shadow-sm flex-1': activeProvider === 'custom',
+          'w-10 hover:bg-base-300': activeProvider !== 'custom'
+        }">
+        <span class="w-6 h-6 flex items-center justify-center">
+          <Plus class="w-5 h-5" />
+        </span>
+        <span class="truncate transition-opacity duration-300"
+          :class="{ 'opacity-0 w-0': activeProvider !== 'custom' }">
+          Custom
+        </span>
+      </button>
+    </div>
+
     <!-- Model Selection Button -->
     <button @click="toggleDropdown" @keydown.space.prevent="toggleDropdown" @keydown.enter.prevent="toggleDropdown"
       @keydown.m.prevent="focusModelSelector"
-      class="w-64 bg-background border rounded-md px-3 py-2 text-sm flex items-center justify-between hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-950"
+      class="w-64 bg-base-100 border border-base-300 rounded-md px-3 py-2 text-sm flex items-center justify-between hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
       ref="modelButton">
       <div class="flex items-center gap-2 overflow-hidden">
-        <span v-if="selectedModel" class="flex items-center gap-2">
-          <Badge
-            :variant="selectedModel.source === 'ollama' ? 'default' : selectedModel.source === 'openrouter' ? 'secondary' : 'outline'"
-            class="text-xs">
-            {{ selectedModel.source === 'ollama' ? 'Local' : selectedModel.source === 'openrouter' ? 'Cloud' : 'Custom'
-            }}
+        <span v-if="modelStore.selectedModel" class="flex items-center gap-2">
+          <Badge :variant="getProviderVariant(modelStore.selectedModel.source)" class="text-xs">
+            {{ getProviderName(modelStore.selectedModel.source) }}
           </Badge>
-          <span class="font-medium truncate">{{ selectedModel.name }}</span>
+          <span class="font-medium truncate text-base-content">{{ modelStore.selectedModel.name }}</span>
         </span>
-        <span v-else>Select Model (M)</span>
+        <span v-else class="text-base-content">Select Model (M)</span>
       </div>
-      <ChevronDown class="w-4 h-4 transition-transform" :class="{ 'rotate-180': isOpen }" />
+      <ChevronDown class="w-4 h-4 transition-transform text-base-content" :class="{ 'rotate-180': isOpen }" />
     </button>
 
     <!-- Dropdown Menu -->
-    <div v-show="isOpen" class="absolute right-0 mt-2 w-96 bg-white dark:bg-gray-950 border rounded-md shadow-lg z-30"
-      role="dialog" aria-label="Model Selection">
-      <!-- Search and Filter Bar -->
-      <div class="p-3 border-b">
-        <div class="relative mb-2">
-          <Search class="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-          <input v-model="searchQuery" type="text" ref="searchInput"
-            class="w-full pl-9 pr-3 py-2 border rounded-md bg-white dark:bg-gray-950 text-sm placeholder:text-gray-400"
-            placeholder="Search models... (/)" @keydown.up.prevent="navigateList('up')"
-            @keydown.down.prevent="navigateList('down')" @keydown.enter.prevent="selectHighlighted"
-            @keydown.esc.prevent="closeDropdown" />
-        </div>
-        <!-- Price Filter -->
-        <div class="flex gap-2 mt-2">
-          <button v-for="filter in ['all', 'free', 'paid']" :key="filter" @click="priceFilter = filter"
-            @keydown.enter="priceFilter = filter" class="px-3 py-1 text-xs rounded-md"
-            :class="priceFilter === filter ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'"
-            tabindex="0">
-            {{ filter.charAt(0).toUpperCase() + filter.slice(1) }}
-          </button>
-        </div>
+    <div v-show="isOpen"
+      class="absolute right-0 mt-2 w-96 bg-base-100 border border-base-300 rounded-md shadow-lg z-30">
+      <!-- Custom Provider Form -->
+      <div v-if="activeProvider === 'custom'" class="p-4">
+        <h3 class="text-lg font-medium mb-4">Connect Custom Provider</h3>
+        <form @submit.prevent="handleCustomProviderSubmit">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">Provider</label>
+              <select v-model="customProvider" class="w-full p-2 border rounded-md bg-base-100">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">API Key</label>
+              <input type="password" v-model="apiKey" placeholder="Enter your API key"
+                class="w-full p-2 border rounded-md bg-base-100" />
+            </div>
+            <div v-if="customProvider === 'other'">
+              <label class="block text-sm font-medium mb-1">API Endpoint</label>
+              <input type="text" v-model="apiEndpoint" placeholder="https://api.example.com"
+                class="w-full p-2 border rounded-md bg-base-100" />
+            </div>
+            <button type="submit"
+              class="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors">
+              Connect Provider
+            </button>
+          </div>
+        </form>
       </div>
 
-      <!-- Models List -->
-      <div class="max-h-[60vh] overflow-y-auto bg-white dark:bg-gray-950" role="listbox" ref="modelsList">
-        <!-- Custom Model Option -->
-        <div class="border-b last:border-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-          :class="{ 'bg-blue-50 dark:bg-blue-900': highlightedIndex === filteredModels.length }"
-          @click="selectCustomModel()" @keydown.enter="selectCustomModel()"
-          @mouseover="highlightedIndex = filteredModels.length" role="option"
-          :aria-selected="highlightedIndex === filteredModels.length" tabindex="0" ref="modelItems">
-          <div class="p-3">
-            <div class="flex items-center gap-2">
-              <Badge variant="outline" class="text-xs">
-                Custom
-              </Badge>
-              <span class="font-medium">Custom Model</span>
-            </div>
+      <!-- Regular Model Selection -->
+      <template v-else>
+        <!-- Search Bar -->
+        <div class="p-3 border-b border-base-300">
+          <div class="relative">
+            <Search class="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+            <input v-model="searchQuery" type="text" ref="searchInput"
+              class="w-full pl-9 pr-3 py-2 border border-base-300 rounded-md bg-base-100 text-sm placeholder:text-gray-400 text-base-content"
+              placeholder="Search models... (/)" @keydown.up.prevent="navigateList('up')"
+              @keydown.down.prevent="navigateList('down')" @keydown.enter.prevent="selectHighlighted"
+              @keydown.esc.prevent="closeDropdown" />
           </div>
         </div>
 
-        <!-- Combined Models List -->
-        <div v-for="(model, index) in filteredModels" :key="model.id"
-          class="border-b last:border-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-          :class="{ 'bg-blue-50 dark:bg-blue-900': highlightedIndex === index }" @click="selectModel(model)"
-          @keydown.enter="selectModel(model)" @mouseover="highlightedIndex = index" role="option"
-          :aria-selected="highlightedIndex === index" tabindex="0" ref="modelItems">
-          <div class="p-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Badge :variant="model.source === 'ollama' ? 'default' : 'secondary'" class="text-xs">
-                  {{ model.source === 'ollama' ? 'Local' : model.provider }}
-                </Badge>
-                <span class="font-medium">{{ model.name }}</span>
+        <!-- Models List -->
+        <div class="max-h-[60vh] overflow-y-auto bg-base-100" role="listbox" ref="modelsList">
+          <div v-for="(model, index) in filteredModels" :key="model.id"
+            class="border-b border-base-300 last:border-0 cursor-pointer hover:bg-base-200"
+            :class="{ 'bg-blue-50 dark:bg-blue-900': highlightedIndex === index }" @click="selectModel(model)"
+            @keydown.enter="selectModel(model)" @mouseover="highlightedIndex = index" role="option"
+            :aria-selected="highlightedIndex === index" tabindex="0">
+            <div class="p-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Badge :variant="getProviderVariant(model.source)" class="text-xs">
+                    {{ getProviderName(model.source) }}
+                  </Badge>
+                  <span class="font-medium text-base-content">{{ model.name }}</span>
+                </div>
               </div>
-              <div v-if="isOpenRouterModel(model)" class="text-xs text-gray-500">
-                ${{ model.pricing?.prompt }}/1K
-              </div>
-            </div>
-            <p v-if="isOpenRouterModel(model) && model.description" class="mt-1 text-xs text-gray-500 line-clamp-2">
-              {{ model.description }}
-            </p>
-            <div v-if="isOpenRouterModel(model) && model.tags?.length" class="flex gap-2 mt-2">
-              <span v-for="tag in model.tags" :key="tag"
-                class="px-1.5 py-0.5 text-[10px] rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                {{ tag }}
-              </span>
+              <p v-if="model.description" class="mt-1 text-xs text-gray-500 text-base-content line-clamp-2">
+                {{ model.description }}
+              </p>
             </div>
           </div>
-        </div>
 
-        <!-- Empty State -->
-        <div v-if="filteredModels.length === 0 && searchQuery" class="p-8 text-center text-gray-500">
-          <p class="text-sm">No models found matching "{{ searchQuery }}"</p>
+          <!-- Empty State -->
+          <div v-if="filteredModels.length === 0" class="p-8 text-center text-gray-500 text-base-content">
+            <p class="text-sm">No models available for {{ getProviderName(activeProvider) }}</p>
+          </div>
         </div>
-        <div v-else-if="filteredModels.length === 0" class="p-8 text-center text-gray-500">
-          <p class="text-sm">No models available</p>
-        </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-import { ChevronDown, Search } from 'lucide-vue-next';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ChevronDown, Search, Plus } from 'lucide-vue-next';
 import Badge from '../ui/Badge.vue';
-import type { Model, OllamaModel, OpenRouterModel } from '../../types';
+import { useModelStore } from '../../stores/modelStore';
+import type { Model } from '../../stores/modelStore';
+import google from '@/assets/google.jpeg';
+import ollama from '@/assets/ollama.jpeg';
 
+// Define props
 const props = defineProps<{
   apiKey?: string;
-  selectedModel: Model | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'select', model: Model): void;
 }>();
 
+const modelStore = useModelStore();
+
 // Refs
 const isOpen = ref(false);
 const searchQuery = ref('');
-const priceFilter = ref<'all' | 'free' | 'paid'>('all');
-const ollamaModels = ref<OllamaModel[]>([]);
-const openRouterModels = ref<OpenRouterModel[]>([]);
 const highlightedIndex = ref(0);
 const modelButton = ref<HTMLButtonElement | null>(null);
 const searchInput = ref<HTMLInputElement | null>(null);
 const modelsList = ref<HTMLDivElement | null>(null);
-const modelItems = ref<HTMLDivElement[]>([]);
-const isChatInputFocused = ref(false);
+const activeProvider = ref<'ollama' | 'openrouter' | 'google' | 'custom'>('ollama');
 
-// Navigation
+// Custom provider form state
+const customProvider = ref('anthropic');
+const apiKey = ref('');
+const apiEndpoint = ref('');
+
+// Provider helpers
+const getProviderName = (source: string) => {
+  switch (source) {
+    case 'ollama': return 'Local';
+    case 'openrouter': return 'Cloud';
+    case 'google': return 'Google';
+    case 'anthropic': return 'Anthropic';
+    case 'openai': return 'OpenAI';
+    default: return source;
+  }
+};
+
+const getProviderVariant = (source: string) => {
+  switch (source) {
+    case 'ollama': return 'default';
+    case 'openrouter': return 'secondary';
+    case 'google': return 'outline';
+    case 'anthropic': return 'secondary';
+    case 'openai': return 'default';
+    default: return 'default';
+  }
+};
+
+// Computed
+const filteredModels = computed(() => {
+  return modelStore.getFilteredModels(activeProvider.value, searchQuery.value);
+});
+
+// Methods
+const handleCustomProviderSubmit = () => {
+  console.log('Connecting to custom provider:', {
+    provider: customProvider.value,
+    apiKey: apiKey.value,
+    endpoint: apiEndpoint.value
+  });
+  apiKey.value = '';
+  apiEndpoint.value = '';
+  closeDropdown();
+};
+
 const navigateList = (direction: 'up' | 'down') => {
-  const maxIndex = filteredModels.value.length;
+  const maxIndex = filteredModels.value.length - 1;
   if (direction === 'up') {
     highlightedIndex.value = highlightedIndex.value <= 0 ? maxIndex : highlightedIndex.value - 1;
   } else {
     highlightedIndex.value = highlightedIndex.value >= maxIndex ? 0 : highlightedIndex.value + 1;
   }
-
-  // Scroll highlighted item into view
-  const highlightedElement = modelItems.value[highlightedIndex.value];
-  if (highlightedElement && modelsList.value) {
-    highlightedElement.scrollIntoView({ block: 'nearest' });
-  }
 };
 
 const selectHighlighted = () => {
-  if (highlightedIndex.value === filteredModels.value.length) {
-    selectCustomModel()
-  } else {
-    const model = filteredModels.value[highlightedIndex.value];
-    if (model) {
-      selectModel(model);
-    }
+  const model = filteredModels.value[highlightedIndex.value];
+  if (model) {
+    selectModel(model);
   }
 };
 
-// Toggle and focus management
-const focusModelSelector = () => {
-  toggleDropdown();
-  nextTick(() => {
-    if (isOpen.value) {
-      searchInput.value?.focus();
-    }
-  });
+const selectModel = (model: Model) => {
+  modelStore.setSelectedModel(model);
+  emit('select', model);
+  closeDropdown();
 };
 
 const toggleDropdown = () => {
   isOpen.value = !isOpen.value;
   if (isOpen.value) {
-    highlightedIndex.value = 0;
     nextTick(() => {
       searchInput.value?.focus();
     });
@@ -2497,162 +3236,41 @@ const closeDropdown = () => {
   modelButton.value?.focus();
 };
 
-// Model selection
-const selectModel = (model: Model) => {
-  emit('select', model);
-  closeDropdown();
+const focusModelSelector = () => {
+  toggleDropdown();
 };
 
-
-const selectCustomModel = () => {
-  emit('select', {
-    id: 'custom_model', // A generic ID for custom models
-    name: 'Custom Model',
-    source: 'custom'
-  });
-  closeDropdown();
-};
-
-// Computed and utilities
-const filteredModels = computed(() => {
-  const query = searchQuery.value.toLowerCase();
-  const allModels = [...ollamaModels.value, ...openRouterModels.value];
-
-  return allModels
-    .filter(model => {
-      const matchesSearch = model.name.toLowerCase().includes(query) ||
-        (model.source === 'openrouter' &&
-          ((model as OpenRouterModel).description?.toLowerCase().includes(query) ||
-            (model as OpenRouterModel).provider.toLowerCase().includes(query)));
-
-      if (priceFilter.value === 'all') return matchesSearch;
-
-      if (model.source === 'ollama') {
-        return priceFilter.value === 'free' && matchesSearch;
-      } else {
-        const openRouterModel = model as OpenRouterModel;
-        const isFree = openRouterModel.pricing.prompt === "0";
-        return (
-          (priceFilter.value === 'free' && isFree && matchesSearch) ||
-          (priceFilter.value === 'paid' && !isFree && matchesSearch)
-        );
-      }
-    })
-    .sort((a, b) => {
-      if (a.source !== b.source) {
-        return a.source === 'ollama' ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
+// Lifecycle hooks
+onMounted(async () => {
+  await modelStore.initialize();
+  document.addEventListener('keydown', handleGlobalKeydown);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown);
 });
 
-const isOpenRouterModel = (model: Model): model is OpenRouterModel => {
-  return model.source === 'openrouter';
-};
-
 const handleGlobalKeydown = (e: KeyboardEvent) => {
-  // Check if any input or textarea is focused
+  // Check if the active element is an input, textarea, or contenteditable element
   const activeElement = document.activeElement;
-  const isInputFocused = activeElement instanceof HTMLInputElement ||
-    activeElement instanceof HTMLTextAreaElement;
+  const isTyping = activeElement instanceof HTMLInputElement || 
+                   activeElement instanceof HTMLTextAreaElement || 
+                   activeElement?.getAttribute('contenteditable') === 'true';
 
-  // Immediately prevent model selector if we're typing in an input
-  if (isInputFocused) {
-    // Still allow Escape to close the dropdown if it's open
-    if (e.key === 'Escape' && isOpen.value) {
-      closeDropdown();
-    }
-    return;
-  }
-
-  // Handle model selector shortcuts only if no input is focused
-  if (e.key === 'm' && !isOpen.value) {
+  // Only handle 'M' shortcut if user is not typing
+  if (e.key === 'm' && !isOpen.value && !isTyping) {
     e.preventDefault();
     focusModelSelector();
   }
 
-  // Focus search with '/' key
-  if (e.key === '/' && isOpen.value) {
-    e.preventDefault();
-    searchInput.value?.focus();
-  }
-
-  // Close with Escape
-  if (e.key === 'Escape' && isOpen.value) {
-    closeDropdown();
-  }
-};
-
-// Remove the chat input focus tracking since we're now checking actively
-onMounted(() => {
-  document.addEventListener('keydown', handleGlobalKeydown);
-  fetchOllamaModels();
-  if (props.apiKey) {
-    fetchOpenRouterModels();
-  }
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener('keydown', handleGlobalKeydown);
-});
-// Reset highlighted index when filtered models change
-watch(filteredModels, () => {
-  highlightedIndex.value = 0;
-});
-
-// API calls
-const fetchOllamaModels = async () => {
-  try {
-    const response = await fetch('http://localhost:11434/api/tags');
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-    const data = await response.json();
-    if (Array.isArray(data.models)) {
-      ollamaModels.value = data.models.map((model: any) => ({
-        id: model.name,
-        name: model.name,
-        source: 'ollama' as const
-      }));
+  // These shortcuts should still work when the dropdown is open
+  if (isOpen.value) {
+    if (e.key === '/') {
+      e.preventDefault();
+      searchInput.value?.focus();
     }
-  } catch (error) {
-    console.error('Error fetching Ollama models:', error);
-    ollamaModels.value = [];
-  }
-};
-
-const fetchOpenRouterModels = async () => {
-  if (!props.apiKey) return;
-
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
-      headers: {
-        'Authorization': `Bearer ${props.apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-    const data = await response.json();
-    openRouterModels.value = data.data.map((model: any) => ({
-      id: model.id,
-      name: model.name.split(':')[1]?.trim() || model.name,
-      source: 'openrouter' as const,
-      provider: model.name.split(':')[0],
-      description: model.description,
-      pricing: {
-        prompt: model.pricing.prompt,
-        completion: model.pricing.completion
-      },
-      tags: [
-        `${model.context_length}k context`,
-        model.pricing.prompt === "0" ? "Free" : "Paid",
-      ],
-      context_length: model.context_length
-    }));
-  } catch (error) {
-    console.error('Error fetching OpenRouter models:', error);
-    openRouterModels.value = [];
+    if (e.key === 'Escape') {
+      closeDropdown();
+    }
   }
 };
 </script>
@@ -2783,388 +3401,457 @@ onMounted(() => {
 === TYPE: vue ===
 
 <template>
-    <div>
-      <!-- Graph Controls -->
-      <div class="absolute top-4 right-4 flex gap-2">
-        <button class="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90" :disabled="graphControls.isLoading"
-          @click="graphControls.createNewConversation">
-          {{ graphControls.isLoading ? 'Creating...' : 'New Chat' }}
-        </button>
-  
-        <span v-if="graphControls.currentConvId" class="px-4 py-2 bg-secondary text-white rounded">
-          {{ canvasStore.nodes[0]?.title || 'Untitled Chat' }}
-        </span>
-      </div>
-  
-      <!-- Visualization Container -->
-      <div ref="containerRef" class="topic-cluster-viz" :style="{ width: `${width || 800}px`, height: `${height || 600}px` }"
-        @click="handleNodeClick" />
-  
-      <!-- Loading Overlay -->
-      <div v-if="clusterStore.isProcessing"
-        class="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-        <div class="text-white text-lg">Processing clusters...</div>
-      </div>
-  
-      <!-- Selected Cluster Info -->
-      <div v-if="selectedCluster" class="absolute bottom-4 left-4 p-4 bg-card rounded-lg border shadow-lg">
-        <h3 class="text-lg font-semibold mb-2">{{ selectedCluster.topic }}</h3>
-        <div class="text-sm text-muted-foreground">
-          {{ selectedCluster.nodes.length }} conversations
+    <div ref="containerRef" class="topic-cluster-viz h-full w-full">
+        <!-- Granularity Toggle -->
+        <div class="absolute top-4 left-4 z-10 flex gap-2">
+            <button v-for="level in ['message', 'branch', 'workspace']" :key="level"
+                class="px-3 py-1.5 text-sm rounded-full transition-colors" :class="[
+                    granularity === level
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-base-200/90 backdrop-blur hover:bg-base-300/90'
+                ]" @click="granularity = level">
+                {{ level.charAt(0).toUpperCase() + level.slice(1) }}
+            </button>
         </div>
-        <div class="mt-2 flex gap-2 flex-wrap">
-          <span v-for="node in selectedCluster.nodes" :key="node.id"
-            class="px-2 py-1 bg-muted rounded-full text-xs">
-            {{ node.title || 'Untitled' }}
-          </span>
+
+        <!-- Loading State -->
+        <div v-if="isLoading"
+            class="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur z-20">
+            <div class="loading loading-spinner loading-lg text-primary"></div>
         </div>
-      </div>
+
+        <!-- Topic Labels Layer -->
+        <div ref="labelRendererRef" class="absolute inset-0 pointer-events-none z-10"></div>
     </div>
-  </template>
-  
-  <script setup lang="ts">
-  import { ref, computed, onMounted, shallowRef, onBeforeUnmount, watch } from 'vue';
-  import * as THREE from 'three';
-  import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-  import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
-  import { useGraphControlsStore } from '@/stores/graphControlStore';
-  import { useTopicClusterStore } from '@/stores/topicClusterStore';
-  import { useCanvasStore } from '@/stores/canvasStore';
-  
-  const props = defineProps<{
-    width?: number;
-    height?: number;
+</template>
+
+<script setup lang="ts">
+import { ref, shallowRef, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
+
+interface Topic {
+    id: string;
+    label: string;
+    score: number;
+    messageCount: number;
+    children?: Topic[];
+}
+
+interface Props {
     selectedTopic?: string;
-  }>();
-  
-  const emit = defineEmits<{
-    (e: 'select-node', node: ClusterNode): void;
-  }>();
-  
-  // Store references
-  const graphControls = useGraphControlsStore();
-  const clusterStore = useTopicClusterStore();
-  const canvasStore = useCanvasStore();
-  
-  // Refs
-  const containerRef = ref<HTMLDivElement | null>(null);
-  const selectedCluster = ref<TopicCluster | null>(null);
-  
-  // Scene state using shallowRef for performance
-  const sceneObjects = shallowRef({
-    scene: null as THREE.Scene | null,
+}
+
+const props = defineProps<Props>();
+const emit = defineEmits<{
+    (e: 'select-topic', topic: Topic): void;
+}>();
+
+// Refs
+const containerRef = ref<HTMLDivElement | null>(null);
+const labelRendererRef = ref<HTMLDivElement | null>(null);
+const isLoading = ref(true);
+const granularity = ref<'message' | 'branch' | 'workspace'>('workspace');
+
+// Scene objects using shallowRef to avoid reactivity issues
+const sceneObjects = shallowRef({
+    scene: new THREE.Scene(),
     camera: null as THREE.PerspectiveCamera | null,
     renderer: null as THREE.WebGLRenderer | null,
     labelRenderer: null as CSS2DRenderer | null,
     controls: null as OrbitControls | null,
-    nodeObjects: new Map<string, {
-      mesh: THREE.Mesh;
-      label: CSS2DObject;
-      position: THREE.Vector3;
-    }>()
-  });
-  
-  // Node types
-  interface ClusterNode {
-    id: string;
-    name: string;
-    type: 'topic' | 'conversation';
-    size: number;
-    cluster?: string;
-  }
-  
-  interface TopicCluster {
-    id: string;
-    topic: string;
-    nodes: any[];
-    coherence: number;
-  }
-  
-  // Computed nodes
-  const nodes = computed<ClusterNode[]>(() => {
-    const topicNodes = clusterStore.clusters.map(cluster => ({
-      id: cluster.id,
-      name: cluster.topic,
-      type: 'topic' as const,
-      size: 30 + (cluster.nodes.length * 2)
-    }));
-  
-    const conversationNodes = clusterStore.clusters.flatMap(cluster =>
-      cluster.nodes.map(node => ({
-        id: node.id,
-        name: node.title || 'Untitled',
-        type: 'conversation' as const,
-        size: 15,
-        cluster: cluster.id
-      }))
+    topicObjects: new Map<string, {
+        mesh: THREE.Mesh,
+        label: CSS2DObject,
+        position: THREE.Vector3,
+        connections: THREE.Line[]
+    }>(),
+});
+
+// Mock data - replace with real data fetching
+const topics = ref<Topic[]>([
+    {
+        id: '1',
+        label: 'React Components',
+        score: 0.85,
+        messageCount: 15,
+        children: []
+    },
+    {
+        id: '2',
+        label: 'Neural Networks',
+        score: 0.92,
+        messageCount: 8,
+        children: []
+    }
+]);
+
+const initScene = () => {
+    if (!containerRef.value || !labelRendererRef.value) return;
+
+    const width = containerRef.value.clientWidth;
+    const height = containerRef.value.clientHeight;
+
+    // Scene setup with fog for depth effect
+    sceneObjects.value.scene.background = new THREE.Color(0xf0f0f0);
+    sceneObjects.value.scene.fog = new THREE.Fog(0xf0f0f0, 200, 800);
+
+    // Camera
+    sceneObjects.value.camera = new THREE.PerspectiveCamera(60, width / height, 1, 1000);
+    sceneObjects.value.camera.position.set(200, 100, 200);
+    sceneObjects.value.camera.lookAt(0, 0, 0);
+
+    // Renderer
+    sceneObjects.value.renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true
+    });
+    sceneObjects.value.renderer.setSize(width, height);
+    sceneObjects.value.renderer.setPixelRatio(window.devicePixelRatio);
+    sceneObjects.value.renderer.shadowMap.enabled = true;
+    containerRef.value.appendChild(sceneObjects.value.renderer.domElement);
+
+    // Label renderer
+    sceneObjects.value.labelRenderer = new CSS2DRenderer();
+    sceneObjects.value.labelRenderer.setSize(width, height);
+    sceneObjects.value.labelRenderer.domElement.style.position = 'absolute';
+    sceneObjects.value.labelRenderer.domElement.style.top = '0';
+    sceneObjects.value.labelRenderer.domElement.style.pointerEvents = 'none';
+    labelRendererRef.value.appendChild(sceneObjects.value.labelRenderer.domElement);
+
+    // Controls
+    sceneObjects.value.controls = new OrbitControls(
+        sceneObjects.value.camera,
+        sceneObjects.value.renderer.domElement
     );
-  
-    return [...topicNodes, ...conversationNodes];
-  });
-  
-  // Scene setup functions
-  const createScene = () => {
-    if (!containerRef.value) return;
-  
-    const width = props.width || 800;
-    const height = props.height || 600;
-  
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
-  
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.z = 500;
-  
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(width, height);
-    containerRef.value.appendChild(renderer.domElement);
-  
-    const labelRenderer = new CSS2DRenderer();
-    labelRenderer.setSize(width, height);
-    labelRenderer.domElement.style.position = 'absolute';
-    labelRenderer.domElement.style.top = '0';
-    containerRef.value.appendChild(labelRenderer.domElement);
-  
-    const controls = new OrbitControls(camera, labelRenderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-  
+    sceneObjects.value.controls.enableDamping = true;
+    sceneObjects.value.controls.dampingFactor = 0.05;
+    sceneObjects.value.controls.enableZoom = true;
+    sceneObjects.value.controls.enablePan = true;
+    sceneObjects.value.controls.minDistance = 100;
+    sceneObjects.value.controls.maxDistance = 500;
+    sceneObjects.value.controls.maxPolarAngle = Math.PI / 1.5;
+    sceneObjects.value.controls.autoRotate = true;
+    sceneObjects.value.controls.autoRotateSpeed = 0.5;
+
+    // Lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-  
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(0, 1, 1);
-    scene.add(directionalLight);
-  
-    sceneObjects.value = {
-      scene,
-      camera,
-      renderer,
-      labelRenderer,
-      controls,
-      nodeObjects: new Map()
-    };
-  };
-  
-  // Node creation and management
-  const createNodes = () => {
-    const { scene, nodeObjects } = sceneObjects.value;
-    if (!scene) return;
-  
-    nodeObjects.clear();
-    scene.clear();
-  
-    nodes.value.forEach((node, index) => {
-      const geometry = new THREE.SphereGeometry(node.size * 0.5, 32, 32);
-      const material = new THREE.MeshPhongMaterial({
-        color: node.type === 'topic' ? 0x60A5FA : 0xF87171,
+    sceneObjects.value.scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(200, 200, 200);
+    directionalLight.castShadow = true;
+    sceneObjects.value.scene.add(directionalLight);
+
+    // Add subtle hemisphere light
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.2);
+    sceneObjects.value.scene.add(hemiLight);
+};
+
+const handleResize = () => {
+    if (!containerRef.value || !sceneObjects.value.camera || !sceneObjects.value.renderer || !sceneObjects.value.labelRenderer) return;
+
+    const width = containerRef.value.clientWidth;
+    const height = containerRef.value.clientHeight;
+
+    sceneObjects.value.camera.aspect = width / height;
+    sceneObjects.value.camera.updateProjectionMatrix();
+
+    sceneObjects.value.renderer.setSize(width, height);
+    sceneObjects.value.labelRenderer.setSize(width, height);
+};
+
+const createTopicSphere = (topic: Topic, index: number, total: number) => {
+    const { scene } = sceneObjects.value;
+    if (!scene || !containerRef.value) return;
+
+    // Calculate sphere size based on score and message count
+    const maxSize = 15;
+    const minSize = 5;
+    const size = minSize + (maxSize - minSize) * topic.score;
+
+    // Create sphere with custom geometry
+    const geometry = new THREE.SphereGeometry(size, 32, 32);
+    const material = new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color().setHSL(index / total, 0.7, 0.6),
         transparent: true,
-        opacity: node.type === 'topic' ? 0.9 : 0.7,
-      });
-  
-      const mesh = new THREE.Mesh(geometry, material);
-  
-      const phi = Math.acos(-1 + (2 * index) / nodes.value.length);
-      const theta = Math.sqrt(nodes.value.length * Math.PI) * phi;
-      const radius = 200;
-  
-      const position = new THREE.Vector3(
-        radius * Math.cos(theta) * Math.sin(phi),
-        radius * Math.sin(theta) * Math.sin(phi),
-        radius * Math.cos(phi)
-      );
-  
-      mesh.position.copy(position);
-  
-      const labelDiv = document.createElement('div');
-      labelDiv.className = `node-label ${node.type}`;
-      labelDiv.textContent = node.name;
-  
-      const label = new CSS2DObject(labelDiv);
-      label.position.copy(position);
-  
-      scene.add(mesh);
-      scene.add(label);
-  
-      nodeObjects.set(node.id, { mesh, label, position });
+        opacity: 0.8,
+        metalness: 0.2,
+        roughness: 0.3,
+        clearcoat: 0.4
     });
-  
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-  
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(0, 1, 1);
-    scene.add(directionalLight);
-  };
-  
-  // Connection creation
-  const createConnections = () => {
-    const { scene, nodeObjects } = sceneObjects.value;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Calculate position on a 3D spiral
+    const turns = 1;  // Number of turns around the spiral
+    const heightScale = 100;  // Vertical scale of the spiral
+
+    const theta = (index / total) * Math.PI * 2 * turns;
+    const radius = 100 + (index / total) * 50;  // Increasing radius
+    const y = ((index / total) - 0.5) * heightScale;
+
+    const position = new THREE.Vector3(
+        Math.cos(theta) * radius,
+        y,
+        Math.sin(theta) * radius
+    );
+    mesh.position.copy(position);
+
+    // Create label
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'topic-label px-2 py-1 bg-base-200/90 backdrop-blur rounded text-sm pointer-events-auto cursor-pointer';
+    labelDiv.textContent = `${topic.label} (${topic.messageCount})`;
+    labelDiv.addEventListener('click', () => emit('select-topic', topic));
+
+    const label = new CSS2DObject(labelDiv);
+    label.position.set(0, size + 5, 0);
+    mesh.add(label);
+
+    scene.add(mesh);
+    sceneObjects.value.topicObjects.set(topic.id, {
+        mesh,
+        label,
+        position,
+        connections: []
+    });
+};
+
+const createConnections = () => {
+    const { scene } = sceneObjects.value;
     if (!scene) return;
-  
-    clusterStore.clusters.forEach(cluster => {
-      const topicNodeObj = nodeObjects.get(cluster.id);
-      
-      cluster.nodes.forEach(node => {
-        const convNodeObj = nodeObjects.get(node.id);
-  
-        if (topicNodeObj && convNodeObj) {
-          const geometry = new THREE.BufferGeometry().setFromPoints([
-            topicNodeObj.position,
-            convNodeObj.position
-          ]);
-  
-          const material = new THREE.LineBasicMaterial({
-            color: 0x4B5563,
-            transparent: true,
-            opacity: 0.4
-          });
-  
-          const line = new THREE.Line(geometry, material);
-          scene.add(line);
+
+    // Create connections between topics
+    topics.value.forEach((topic, i) => {
+        if (i === 0) return;
+
+        const startObj = sceneObjects.value.topicObjects.get(topics.value[i - 1].id);
+        const endObj = sceneObjects.value.topicObjects.get(topic.id);
+
+        if (startObj && endObj) {
+            // Create curved connection
+            const midPoint = new THREE.Vector3().addVectors(
+                startObj.position,
+                endObj.position
+            ).multiplyScalar(0.5);
+
+            // Add some height to the midpoint
+            midPoint.y += 20;
+
+            const curve = new THREE.QuadraticBezierCurve3(
+                startObj.position,
+                midPoint,
+                endObj.position
+            );
+
+            const points = curve.getPoints(50);
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+            const material = new THREE.LineBasicMaterial({
+                color: 0x999999,
+                transparent: true,
+                opacity: 0.3,
+                linewidth: 1
+            });
+
+            const connection = new THREE.Line(geometry, material);
+            scene.add(connection);
+
+            // Store connection reference
+            startObj.connections.push(connection);
+            endObj.connections.push(connection);
         }
-      });
     });
-  };
-  
-  // Animation loop
-  const animate = () => {
-    const { renderer, scene, camera, labelRenderer, controls } = sceneObjects.value;
-    if (!renderer || !scene || !camera || !labelRenderer || !controls) return;
-  
+};
+
+const animate = () => {
+    if (!sceneObjects.value.renderer || !sceneObjects.value.scene || !sceneObjects.value.camera) return;
+
     requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-    labelRenderer.render(scene, camera);
-  };
-  
-  // Event handlers
-  const handleNodeClick = (event: MouseEvent) => {
-    const { camera, scene, nodeObjects } = sceneObjects.value;
-    if (!camera || !scene) return;
-  
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    
-    const rect = (event.target as HTMLElement).getBoundingClientRect();
-    mouse.x = ((event.clientX - rect.left) / (props.width || 800)) * 2 - 1;
-    mouse.y = -((event.clientY - rect.top) / (props.height || 600)) * 2 + 1;
-  
-    raycaster.setFromCamera(mouse, camera);
-  
-    const intersects = raycaster.intersectObjects(scene.children);
-    
-    if (intersects.length > 0) {
-      const clickedMesh = intersects[0].object as THREE.Mesh;
-      for (const [nodeId, nodeObj] of nodeObjects.entries()) {
-        if (nodeObj.mesh === clickedMesh) {
-          const clickedNode = nodes.value.find(node => node.id === nodeId);
-          if (clickedNode) {
-            emit('select-node', clickedNode);
-            if (clickedNode.type === 'topic') {
-              selectedCluster.value = clusterStore.clusters.find(c => c.id === clickedNode.id) || null;
-            } else if (clickedNode.cluster) {
-              selectedCluster.value = clusterStore.clusters.find(c => c.id === clickedNode.cluster) || null;
-            }
-          }
-          break;
-        }
-      }
+
+    if (sceneObjects.value.controls) {
+        sceneObjects.value.controls.update();
     }
-  };
-  
-  // Watchers
-  watch(() => clusterStore.clusters, () => {
-    if (sceneObjects.value.scene) {
-      createNodes();
-      createConnections();
+
+    sceneObjects.value.renderer.render(sceneObjects.value.scene, sceneObjects.value.camera);
+
+    if (sceneObjects.value.labelRenderer) {
+        sceneObjects.value.labelRenderer.render(sceneObjects.value.scene, sceneObjects.value.camera);
     }
-  }, { deep: true });
-  
-  watch(() => [props.width, props.height], () => {
-    const { camera, renderer, labelRenderer } = sceneObjects.value;
-    if (!camera || !renderer || !labelRenderer) return;
-  
-    camera.aspect = (props.width || 800) / (props.height || 600);
-    camera.updateProjectionMatrix();
-    renderer.setSize(props.width || 800, props.height || 600);
-    labelRenderer.setSize(props.width || 800, props.height || 600);
-  });
-  
-  watch(() => props.selectedTopic, (newTopic) => {
-    const { camera, controls, nodeObjects } = sceneObjects.value;
-    if (!camera || !controls || !newTopic) return;
-  
-    const selectedNodeObj = nodeObjects.get(newTopic);
-    if (selectedNodeObj) {
-      const position = selectedNodeObj.position.clone();
-      position.z += 100;
-  
-      const duration = 1000;
-      const startPosition = camera.position.clone();
-      const startTime = Date.now();
-  
-      const animateCamera = () => {
-        const currentTime = Date.now();
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-  
-        camera.position.lerpVectors(startPosition, position, progress);
-        controls.target.copy(selectedNodeObj.position);
-  
-        if (progress < 1) {
-          requestAnimationFrame(animateCamera);
-        }
-      };
-  
-      animateCamera();
-    }
-  });
-  
-  // Lifecycle
-  onMounted(() => {
-    createScene();
-    createNodes();
+};
+
+// Lifecycle hooks
+onMounted(async () => {
+    await nextTick();
+    initScene();
+
+    // Create topic spheres
+    topics.value.forEach((topic, index) => {
+        createTopicSphere(topic, index, topics.value.length);
+    });
+
+    // Create connections after all spheres are created
     createConnections();
+
+    // Start animation loop
     animate();
-  });
-  
-  onBeforeUnmount(() => {
-    const { scene, renderer, labelRenderer } = sceneObjects.value;
-    scene?.clear();
-    renderer?.dispose();
-    labelRenderer?.dispose();
-  });
-  </script>
-  
-  <style scoped>
-  .topic-cluster-viz {
+
+    // Add resize observer
+    const resizeObserver = new ResizeObserver(handleResize);
+    if (containerRef.value) {
+        resizeObserver.observe(containerRef.value);
+    }
+
+    isLoading.value = false;
+
+    // Cleanup
+    onBeforeUnmount(() => {
+        resizeObserver.disconnect();
+
+        // Dispose of all Three.js objects
+        sceneObjects.value.topicObjects.forEach((obj) => {
+            obj.mesh.geometry.dispose();
+            (obj.mesh.material as THREE.Material).dispose();
+            obj.connections.forEach(connection => {
+                connection.geometry.dispose();
+                (connection.material as THREE.Material).dispose();
+                sceneObjects.value.scene.remove(connection);
+            });
+            sceneObjects.value.scene.remove(obj.mesh);
+        });
+
+        sceneObjects.value.renderer?.dispose();
+        sceneObjects.value.scene.clear();
+    });
+});
+
+// Watch for topic selection
+watch(() => props.selectedTopic, (newTopic) => {
+    if (!newTopic || !sceneObjects.value.camera || !sceneObjects.value.controls) return;
+
+    const selectedObject = sceneObjects.value.topicObjects.get(newTopic);
+    if (selectedObject) {
+        // Disable auto-rotation when focusing on a topic
+        sceneObjects.value.controls.autoRotate = false;
+
+        const targetPosition = selectedObject.position.clone();
+        const distance = 100; // Distance to view from
+        const offset = new THREE.Vector3(distance, distance / 2, distance);
+
+        const duration = 1000;
+        const startPosition = sceneObjects.value.camera.position.clone();
+        const startTime = Date.now();
+
+        const animateCamera = () => {
+            const currentTime = Date.now();
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Smooth easing
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+            sceneObjects.value.camera!.position.lerpVectors(
+                startPosition,
+                targetPosition.clone().add(offset),
+                easeProgress
+            );
+
+            sceneObjects.value.controls!.target.lerpVectors(
+                sceneObjects.value.controls!.target,
+                targetPosition,
+                easeProgress
+            );
+
+            if (progress < 1) {
+                requestAnimationFrame(animateCamera);
+            } else {
+                // Re-enable auto-rotation after animation
+                setTimeout(() => {
+                    if (sceneObjects.value.controls) {
+                        sceneObjects.value.controls.autoRotate = true;
+                    }
+                }, 1000);
+            }
+        };
+
+        animateCamera();
+    }
+});
+
+// Watch for granularity changes
+watch(granularity, (newGranularity) => {
+    console.log(`Updating visualization for ${newGranularity} granularity`);
+    // Here you would fetch and update topics based on granularity
+});
+</script>
+
+<style scoped>
+.topic-cluster-viz {
     position: relative;
     overflow: hidden;
-  }
-  
-  :deep(.node-label) {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    cursor: pointer;
-    padding: 2px 4px;
-    pointer-events: none;
+    touch-action: none;
+}
+
+.topic-label {
+    transition: all 0.2s ease;
+    pointer-events: all;
+    user-select: none;
     white-space: nowrap;
-    backdrop-filter: blur(8px);
-    color: white;
-    font-weight: 500;
-  }
-  
-  :deep(.node-label.topic) {
-    font-size: 14px;
-    background: rgba(96, 165, 250, 0.2);
-  }
-  
-  :deep(.node-label.conversation) {
-    font-size: 12px;
-    background: rgba(248, 113, 113, 0.2);
-  }
-  </style>
+}
+
+.topic-label:hover {
+    transform: scale(1.1);
+    background-color: rgb(var(--color-primary) / 0.1);
+}
+
+/* Ensure proper rendering of Three.js canvas */
+:deep(canvas) {
+    width: 100% !important;
+    height: 100% !important;
+    touch-action: none;
+    outline: none;
+}
+
+/* Label renderer styling */
+:deep(.css2drenderer) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+/* Make labels interactive while keeping parent non-interactive */
+:deep(.css2drenderer *) {
+    pointer-events: all;
+}
+
+/* Ensure controls work properly */
+:deep(.orbit-controls) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* GPU acceleration */
+:deep(canvas),
+.topic-cluster-viz {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+}
+
+/* Loading state */
+.loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+</style>
 === END FILE: ./src/components/canvas/clustermap/TopicClusterViz.vue ===
 
 
@@ -3177,55 +3864,119 @@ onMounted(() => {
     right: '0',
     top: '0',
     bottom: '0'
-  }">
+  }" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop">
+
     <!-- Main Canvas -->
     <div ref="canvasRef" class="absolute inset-0 transition-transform duration-500 ease-in-out"
-      :class="{ '-translate-x-1/2': store.viewMode === '3d' }" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
-      @mouseleave="handleMouseUp" @mousedown="handleCanvasMouseDown" tabindex="0" @keydown="handleKeyDown">
+      @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
+      @mousedown="handleCanvasMouseDown" tabindex="0" @keydown="handleKeyDown">
 
       <!-- Canvas Transform Container -->
-      <div class="absolute transform-gpu" :style="transformStyle">
-        <!-- SVG Layer for Connections -->
-        <svg class="absolute pointer-events-none overflow-visible" style="z-index: 1" :style="svgStyle"
-          viewBox="0 0 100000 100000" preserveAspectRatio="none">
-          <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
-            </marker>
-          </defs>
+      <div class="absolute transform-gpu" :style="transformStyle"
+        :class="{ 'transition-transform-overview': isWorkspaceOverview }">
+        <!-- Overview Mode -->
+        <template v-if="isWorkspaceOverview">
+          <div class="absolute" :style="nodesLayerStyle">
+            <div v-for="workspace in workspaces" :key="workspace.id"
+              class="workspace-node relative p-6 bg-base-200/90 backdrop-blur rounded-xl border border-base-300 transition-all duration-500 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
+              :style="{
+                position: 'absolute',
+                left: `${workspace.x}px`,
+                top: `${workspace.y}px`,
+                transform: workspace.isExpanding ? 'scale(2)' : 'scale(1)',
+                opacity: workspace.isExpanding ? 0 : 1,
+                width: '300px'
+              }" :data-workspace-id="workspace.id" @click="handleWorkspaceSelect(workspace)">
+              <div class="text-lg font-semibold mb-2">
+                {{ workspace.title }}
+              </div>
+              <div class="text-sm text-base-content/60 space-y-1">
+                <div>
+                  {{ workspace.nodeCount }} branches
+                </div>
+                <div>
+                  Last updated: {{ new Date(workspace.lastUpdated).toLocaleString() }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
 
-          <template v-for="connection in store.connections" :key="`${connection.parent.id}-${connection.child.id}`">
-            <SplineConnector :start-node="connection.parent" :end-node="connection.child" :card-width="store.CARD_WIDTH"
-              :card-height="store.CARD_HEIGHT" :is-active="isConnectionActive(connection)" :zoom-level="zoom" />
-          </template>
-        </svg>
+        <!-- Detailed Workspace View -->
+        <template v-else>
+          <!-- SVG Layer for Connections -->
+          <svg class="absolute pointer-events-none overflow-visible" style="z-index: 1" :style="svgStyle"
+            viewBox="0 0 100000 100000" preserveAspectRatio="none">
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
+              </marker>
+            </defs>
 
-        <!-- Nodes Layer -->
-        <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
-          <BranchNode v-for="node in store.nodes" :key="node.id" :open-router-api-key="openRouterApiKey" :node="node"
-            :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel" :zoom="zoom"
-            :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
-            @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
-            @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
-            @delete="() => store.removeNode(node.id)" :style="{
-              transform: `translate(${node.x}px, ${node.y}px)`,
-              transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-            }" />
-        </div>
+            <template v-for="connection in store.connections" :key="`${connection.parent.id}-${connection.child.id}`">
+              <SplineConnector :start-node="connection.parent" :end-node="connection.child"
+                :card-width="store.CARD_WIDTH" :card-height="store.CARD_HEIGHT"
+                :is-active="isConnectionActive(connection)" :zoom-level="zoom" />
+            </template>
+          </svg>
+
+          <!-- Nodes Layer -->
+          <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
+            <template v-for="node in store.nodes" :key="node.id">
+              <MediaBranchNode v-if="node.type === 'media'" :ref="(el) => { if (el) mediaNodesRef[node.id] = el }"
+                :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+                :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
+                @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+                @update-title="store.updateNodeTitle"
+                @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+                @delete="() => store.removeNode(node.id)" :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+                }" />
+
+              <WebBranchNode v-else-if="node.type === 'web'" :node="node" :is-selected="isNodeFocused(node.id)"
+                :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :zoom="zoom"
+                :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
+                @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
+                @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+                @delete="() => store.removeNode(node.id)" :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+                }" />
+
+              <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+                :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
+                @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+                @update-title="store.updateNodeTitle"
+                @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
+                @delete="() => store.removeNode(node.id)" :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+                }" />
+            </template>
+          </div>
+        </template>
       </div>
     </div>
 
-    <!-- Bottom Sheet Cluster Visualization -->
-    <BottomSheetCluster :selected-topic="focusedTopicId" @select-topic="handleTopicSelect" />
+    <!-- Overlays -->
+    <div v-show="isDraggingFile"
+      class="absolute inset-0 bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none z-50">
+      <div class="text-2xl font-semibold text-primary">
+        Drop media to create a new node
+      </div>
+    </div>
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useCanvasStore } from '../../stores/canvasStore';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 import BranchNode from './node/BranchNode.vue';
+import WebBranchNode from './node/WebBranchNode.vue';
+import MediaBranchNode from './node/MediaBranchNode.vue';
 import SplineConnector from './spline/SplineConnector.vue';
-import BottomSheetCluster from './clustermap/BottomSheetCluster.vue';
+import { useCanvasStore } from '../../stores/canvasStore';
+import { useChatStore } from '../../stores/chatStore';
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
 
@@ -3238,6 +3989,7 @@ interface ModelInfo {
 }
 
 const store = useCanvasStore();
+const chatStore = useChatStore();
 const canvasRef = ref(null);
 
 // State
@@ -3293,6 +4045,8 @@ const isPanning = ref(false);
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
 const focusedTopicId = ref<string | null>(null);
+const isDraggingFile = ref(false);
+const mediaNodesRef = ref<InstanceType<typeof MediaBranchNode>[]>([]);
 
 
 const lastActivityTimestamp = ref(Date.now());
@@ -3307,7 +4061,23 @@ const windowSize = ref({
   height: typeof window !== 'undefined' ? window.innerHeight : 1080
 });
 
+const isWorkspaceOverview = ref(true);  // Whether we're showing workspaces list
+const expandingWorkspaceId = ref<string | null>(null); // For transition animation
+const workspaces = computed(() => chatStore.chats.map(chat => ({
+  id: chat.id,
+  title: chat.title,
+  nodeCount: chat.nodeCount,
+  lastUpdated: chat.updatedAt,
+  x: chat.x || Math.random() * 1000, // We'll need to store/persist positions
+  y: chat.y || Math.random() * 1000,
+  isExpanding: expandingWorkspaceId.value === chat.id
+})));
+
 const isBrowser = typeof window !== 'undefined';
+
+const isFocusedMode = ref(true);
+const rootNodeId = ref<string | null>(null);
+
 
 // Helper Functions
 const getNodeCenter = (node) => ({
@@ -3316,14 +4086,48 @@ const getNodeCenter = (node) => ({
 });
 
 
-const transformStyle = computed(() => ({
-  transform: `scale(${zoom.value}) translate(${panX.value / zoom.value}px, ${panY.value / zoom.value}px)`,
-  transformOrigin: '0 0',
-  width: '100000px',
-  height: '100000px',
-  background: 'transparent',
-  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-}));
+// Modify the existing transformStyle computed property
+const transformStyle = computed(() => {
+  if (isWorkspaceOverview.value) {
+    return {
+      transform: `scale(1) translate(0, 0)`,
+      transformOrigin: '0 0',
+      transition: 'transform 0.3s ease-out'
+    };
+  }
+
+  if (isFocusedMode.value && rootNodeId.value) {
+    // In focused mode, center the root node and make it 75% of viewport
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const nodeWidth = store.CARD_WIDTH;
+    const nodeHeight = store.CARD_HEIGHT;
+
+    // Calculate scale to fit 75% of viewport while maintaining aspect ratio
+    const scaleX = (vw * 0.75) / nodeWidth;
+    const scaleY = (vh * 0.75) / nodeHeight;
+    const scale = Math.min(scaleX, scaleY);
+
+    // Center the node
+    const translateX = (vw - nodeWidth * scale) / 2;
+    const translateY = (vh - nodeHeight * scale) / 2;
+
+    return {
+      transform: `translate(${translateX}px, ${translateY}px) scale(${scale})`,
+      transformOrigin: '0 0',
+      transition: 'transform 0.3s ease-out'
+    };
+  }
+
+  // Regular canvas transform for non-focused mode
+  return {
+    transform: `scale(${zoom.value}) translate(${panX.value / zoom.value}px, ${panY.value / zoom.value}px)`,
+    transformOrigin: '0 0',
+    width: '100000px',
+    height: '100000px',
+    transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none'
+  };
+});
 
 const svgStyle = computed(() => ({
   width: '100000px',
@@ -3374,19 +4178,25 @@ const handleWheel = (e) => {
   }
 };
 
-const handleTopicSelect = (node: any) => {
-  focusedTopicId.value = node.id;
-};
+const centerCanvas = () => {
+  zoom.value = 1;
+  panX.value = 0;
+  panY.value = 0;
+}
 
 onMounted(() => {
   if (isBrowser) {
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragleave', handleDragLeave);
     if (canvasRef.value) {
       canvasRef.value.addEventListener('wheel', handleWheel, { passive: false });
     }
 
     if (store.nodes.length) {
-      autoFitNodes();
+
+      centerCanvas();
+
     }
 
     resetInactivityTimer();
@@ -3395,6 +4205,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('dragenter', handleDragEnter);
+  window.removeEventListener('dragleave', handleDragLeave);
   if (canvasRef.value) {
     canvasRef.value.removeEventListener('wheel', handleWheel);
   }
@@ -3407,6 +4219,231 @@ watch(() => store.nodes.length, () => {
   resetInactivityTimer();
 });
 
+watch(() => store.nodes.length, (newLength, oldLength) => {
+  if (newLength === 1 && oldLength === 0) {
+    rootNodeId.value = store.nodes[0].id;
+  }
+});
+
+const handleDragEnter = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Check for both files and URLs
+  if (e.dataTransfer?.types.includes('Files') || e.dataTransfer?.types.includes('text/uri-list')) {
+    isDraggingFile.value = true;
+    console.log('Drag enter with file or URL');
+  }
+};
+
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Set dropEffect to 'copy' to indicate we'll copy the file
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+};
+
+
+const handleWorkspaceSelect = (workspace: { id: string }) => {
+  // Start expansion animation
+  expandingWorkspaceId.value = workspace.id;
+  isWorkspaceOverview.value = false;
+
+  // Calculate the workspace node's current center position
+  const workspaceNode = document.querySelector(
+    `[data-workspace-id="${workspace.id}"]`
+  );
+  const rect = workspaceNode?.getBoundingClientRect();
+  if (!rect) return;
+
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+
+  // Animate canvas to center on this point
+  const targetScale = 2;
+  const duration = 500;
+  const startPosition = {
+    x: panX.value,
+    y: panY.value,
+    scale: zoom.value
+  };
+
+  // Animation frame
+  const animate = (progress: number) => {
+    const easeProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease out
+
+    zoom.value = startPosition.scale +
+      (targetScale - startPosition.scale) * easeProgress;
+
+    panX.value = startPosition.x +
+      (centerX - startPosition.x) * easeProgress;
+    panY.value = startPosition.y +
+      (centerY - startPosition.y) * easeProgress;
+  };
+
+  // Run animation
+  store.isTransitioning = true;
+  const startTime = Date.now();
+
+  const tick = () => {
+    const progress = Math.min(1, (Date.now() - startTime) / duration);
+    animate(progress);
+
+    if (progress < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      // Animation complete - load workspace
+      store.loadChatState(workspace.id).then(() => {
+        store.isTransitioning = false;
+      });
+    }
+  };
+  requestAnimationFrame(tick);
+};
+
+const returnToOverview = () => {
+  console.log('Returning to overview');
+  isWorkspaceOverview.value = true;
+
+  // Refresh the chat list so the overview has up-to-date data
+  chatStore.loadChats();
+
+  // Reset pan/zoom
+  zoom.value = 1;
+  panX.value = 0;
+  panY.value = 0;
+
+  // Then auto-fit so the random positions get centered nicely
+  nextTick(() => {
+    autoFitNodes();
+  });
+};
+
+const handleDragLeave = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Only hide overlay if leaving the canvas container
+  const rect = e.currentTarget?.getBoundingClientRect();
+  if (rect) {
+    const { clientX, clientY } = e;
+    if (
+      clientX <= rect.left ||
+      clientX >= rect.right ||
+      clientY <= rect.top ||
+      clientY >= rect.bottom
+    ) {
+      isDraggingFile.value = false;
+      console.log('Drag leave canvas');
+    }
+  }
+};
+const handleDrop = async (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  isDraggingFile.value = false;
+  console.log('Drop event:', {
+    selectedModel: props.selectedModel,
+    modelType: props.modelType,
+    apiKey: !!props.openRouterApiKey
+  });
+
+  // Calculate drop position in canvas coordinates first since we'll need it for both cases
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) {
+    console.log('No canvas rect found');
+    return;
+  }
+
+  const x = (e.clientX - rect.left - panX.value) / zoom.value;
+  const y = (e.clientY - rect.top - panY.value) / zoom.value;
+
+  // Check for URL first
+  const url = e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain');
+  if (url && url.startsWith('http')) {
+    console.log('URL dropped:', url);
+
+    // Create new web node
+    const newNode = store.addNode(null, -1, { x, y }, {
+      type: 'web',
+      title: url,
+      url: url
+    });
+
+    // Center on new node
+    centerOnNode(newNode.id);
+    return;
+  }
+
+  // If not URL, check for files
+  const files = e.dataTransfer?.files;
+  if (!files?.length) {
+    console.log('No files or URLs in drop');
+    return;
+  }
+
+  const file = files[0];
+  console.log('File type:', file.type);
+
+  if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+    console.log('Invalid file type:', file.type);
+    alert('Only image and video files are supported');
+    return;
+  }
+
+  console.log('Creating media node at', { x, y });
+
+  // Create new media node
+  const newNode = store.addNode(null, -1, { x, y }, {
+    type: 'media',
+    title: file.name
+  });
+
+  // Wait for next tick to ensure refs are updated
+  await nextTick();
+
+  // Get the media node instance from our ref
+  const mediaNode = mediaNodesRef.value[newNode.id];
+  if (!mediaNode) {
+    console.error('Media node not found after creation');
+    store.removeNode(newNode.id);
+    return;
+  }
+
+  try {
+    const apiType = props.selectedModel.includes('gemini') ? 'gemini' :
+      props.selectedModel.includes('/') && !props.selectedModel.includes('gemini') ? 'openrouter' : 'ollama';
+
+    console.log('Processing media with:', {
+      apiType,
+      model: props.selectedModel
+    });
+
+    // Get the correct API key based on the API type
+    const apiKey = apiType === 'gemini'
+      ? localStorage.getItem('geminiApiKey')  // Use Gemini API key for Gemini models
+      : props.openRouterApiKey;               // Use OpenRouter API key for OpenRouter models
+
+    // Process the media file
+    await mediaNode.processMedia(
+      file,
+      apiType,
+      apiKey
+    );
+
+    // Center on new node
+    centerOnNode(newNode.id);
+
+  } catch (error) {
+    console.error('Error processing media:', error);
+    store.removeNode(newNode.id);
+    alert('Failed to process media file');
+  }
+};
 
 const centerOnNode = (nodeId) => {
   const node = store.nodes.find(n => n.id === nodeId);
@@ -3416,9 +4453,14 @@ const centerOnNode = (nodeId) => {
   const center = getNodeCenter(node);
 
   const rect = canvasRef.value.getBoundingClientRect();
-  // Center the node in the viewport
+
+  // Calculate horizontal centering as before
   panX.value = (rect.width / 2) - (center.x * zoom.value);
-  panY.value = (rect.height / 2) - (center.y * zoom.value);
+
+  // Add vertical offset to account for input window
+  // Move the node up by 20% of viewport height
+  const verticalOffset = rect.height * 0.2;
+  panY.value = (rect.height / 2) - (center.y * zoom.value) + verticalOffset;
 
   focusedNodeId.value = nodeId;
 
@@ -3428,16 +4470,16 @@ const centerOnNode = (nodeId) => {
 };
 
 const handleCreateBranch = (parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any) => {
+  // Exit focused mode when creating a branch
+  isFocusedMode.value = false;
+
+  // Existing branch creation logic...
   const parentNode = store.nodes.find(n => n.id === parentId);
   if (!parentNode) return;
 
-  // Find existing branches from this parent
   const existingBranches = store.nodes.filter(n => n.parentId === parentId);
-
-  // Determine initial vertical offset based on number of existing branches
   const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
 
-  // Update position
   const adjustedPosition = {
     x: position.x,
     y: parentNode.y + verticalOffset
@@ -3453,10 +4495,10 @@ const handleCreateBranch = (parentId: string, messageIndex: number, position: { 
   // First center on the new node
   centerOnNode(newNode.id);
 
-  // Then after centering transition, auto fit to show all nodes
+  // After creating branch, fit all nodes in view
   setTimeout(() => {
     autoFitNodes();
-  }, 400); // Slightly longer than centerOnNode transition
+  }, 400);
 };
 
 const handleResend = async (nodeId: string, userMessageIndex: number) => {
@@ -3657,7 +4699,9 @@ const autoFitNodes = () => {
 
 
 defineExpose({
-  autoFitNodes
+  autoFitNodes,
+  isWorkspaceOverview,
+  returnToOverview
 });
 
 // Function to reset inactivity timer
@@ -3717,6 +4761,11 @@ const handleDragStart = (e, node) => {
     x: canvasX - node.x,
     y: canvasY - node.y
   };
+};
+
+const handleTopicSelect = (topicId: string) => {
+  focusedTopicId.value = topicId;
+  centerOnNode(topicId);
 };
 
 // Active State Checks
@@ -3852,6 +4901,28 @@ div:focus-visible {
   transform: translateZ(0);
   backface-visibility: hidden;
 }
+
+
+.media-drop-overlay {
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Add these to ensure drag events are captured properly */
+.fixed {
+  touch-action: none;
+}
+
+[draggable="true"] {
+  cursor: move;
+}
+
+/* Transition for Overview and Detailed Views */
+.transition-transform-overview {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 500ms;
+}
 </style>
 === END FILE: ./src/components/canvas/InfiniteCanvas.vue ===
 
@@ -3967,10 +5038,90 @@ const particleRadius = computed(() => {
   return baseParticleRadius * Math.min(scale, 4);
 });
 
-// Adjust particle speed based on zoom
+// First, update the animateParticles function to correctly calculate control points
+const animateParticles = () => {
+  const { startPoint, endPoint } = calculateConnectionPoints();
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // Use the same curve calculations as the main path
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
+  const controlPoint1 = {
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y + verticalOffset
+  };
+
+  const controlPoint2 = {
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y - verticalOffset
+  };
+
+  // Get current base speed based on zoom level
+  const baseSpeed = getParticleSpeed();
+
+  particles.value = particles.value.map(particle => {
+    // Update particle speed based on current zoom level while maintaining relative randomness
+    const relativeSpeedFactor = particle.speed / (particle.speed - (Math.random() * particle.speed * 0.5));
+    const newSpeed = baseSpeed + (Math.random() * baseSpeed * 0.5);
+    particle.speed = newSpeed * relativeSpeedFactor;
+
+    // Update progress with new speed
+    particle.progress += particle.speed;
+    if (particle.progress > 1) {
+      particle.progress = 0;
+    }
+
+    // Get point on curve using the updated control points
+    const t = particle.progress;
+    const t1 = 1 - t;
+    const point = {
+      x: Math.pow(t1, 3) * startPoint.x +
+         3 * Math.pow(t1, 2) * t * controlPoint1.x +
+         3 * t1 * Math.pow(t, 2) * controlPoint2.x +
+         Math.pow(t, 3) * endPoint.x,
+      y: Math.pow(t1, 3) * startPoint.y +
+         3 * Math.pow(t1, 2) * t * controlPoint1.y +
+         3 * t1 * Math.pow(t, 2) * controlPoint2.y +
+         Math.pow(t, 3) * endPoint.y
+    };
+
+    return {
+      ...particle,
+      x: point.x,
+      y: point.y
+    };
+  });
+
+  animationFrame = requestAnimationFrame(animateParticles);
+};
+
+// Update the getParticleSpeed function to adjust for the longer curve
 const getParticleSpeed = () => {
   const scale = 1 / Math.max(0.3, props.zoomLevel);
-  return baseParticleSpeed * Math.min(scale, 2);
+  // Reduce base speed since the curve is longer
+  return (baseParticleSpeed * 0.7) * Math.min(scale, 2);
+};
+
+// Adjust the number of particles and their initialization
+const initializeParticles = () => {
+  const newParticles = [];
+  const baseSpeed = getParticleSpeed();
+  
+  // Increase number of particles since the curve is longer
+  const adjustedNumParticles = Math.ceil(numParticles * 1.5);
+
+  for (let i = 0; i < adjustedNumParticles; i++) {
+    newParticles.push({
+      id: i,
+      progress: i / adjustedNumParticles,
+      speed: baseSpeed + (Math.random() * baseSpeed * 0.5),
+      duration: `${0.8 + Math.random() * 0.4}s`
+    });
+  }
+  particles.value = newParticles;
 };
 
 const fontSize = computed(() => {
@@ -4014,23 +5165,28 @@ const calculateConnectionPoints = () => {
 
   return { startPoint, endPoint };
 };
-
+// Find the pathData computed property and replace it with this enhanced version
 const pathData = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints();
 
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(60, distance * 0.3);
-
+  
+  // Increase the control point distance significantly
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  
+  // Add vertical offset to control points to create more curve
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
   const controlPoint1 = {
     x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
-    y: startPoint.y
+    y: startPoint.y + verticalOffset
   };
 
   const controlPoint2 = {
     x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
-    y: endPoint.y
+    y: endPoint.y - verticalOffset
   };
 
   return `M ${startPoint.x} ${startPoint.y} 
@@ -4039,22 +5195,26 @@ const pathData = computed(() => {
             ${endPoint.x} ${endPoint.y}`;
 });
 
+// Also update the reversedPathData computed property for consistency
 const reversedPathData = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints();
 
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(60, distance * 0.3);
+  
+  // Use the same enhanced curving logic
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
 
   const controlPoint1 = {
-    x: endPoint.x + controlPointDistance,
-    y: endPoint.y
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y - verticalOffset
   };
 
   const controlPoint2 = {
-    x: startPoint.x - controlPointDistance,
-    y: startPoint.y
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y + verticalOffset
   };
 
   return `M ${endPoint.x} ${endPoint.y} 
@@ -4063,8 +5223,25 @@ const reversedPathData = computed(() => {
             ${startPoint.x} ${startPoint.y}`;
 });
 
-// Particle animation
-const getPointOnCurve = (t, startPoint, controlPoint1, controlPoint2, endPoint) => {
+// Update the getPointOnCurve function to match the new curving logic
+const getPointOnCurve = (t, startPoint, endPoint) => {
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  const controlPointDistance = Math.min(distance * 0.8, 200);
+  const verticalOffset = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
+  const controlPoint1 = {
+    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
+    y: startPoint.y + verticalOffset
+  };
+
+  const controlPoint2 = {
+    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
+    y: endPoint.y - verticalOffset
+  };
+
   const t1 = 1 - t;
   return {
     x: Math.pow(t1, 3) * startPoint.x +
@@ -4076,72 +5253,6 @@ const getPointOnCurve = (t, startPoint, controlPoint1, controlPoint2, endPoint) 
       3 * t1 * Math.pow(t, 2) * controlPoint2.y +
       Math.pow(t, 3) * endPoint.y
   };
-};
-
-const initializeParticles = () => {
-  const newParticles = [];
-  const baseSpeed = getParticleSpeed();
-
-  for (let i = 0; i < numParticles; i++) {
-    newParticles.push({
-      id: i,
-      progress: i / numParticles,
-      speed: baseSpeed + (Math.random() * baseSpeed * 0.5), // Add some randomness
-      duration: `${0.8 + Math.random() * 0.4}s`
-    });
-  }
-  particles.value = newParticles;
-};
-
-
-const animateParticles = () => {
-  const { startPoint, endPoint } = calculateConnectionPoints();
-  const dx = endPoint.x - startPoint.x;
-  const dy = endPoint.y - startPoint.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  const controlPointDistance = Math.min(60, distance * 0.3);
-
-  const controlPoint1 = {
-    x: startPoint.x + (isLeftBranch.value ? -controlPointDistance : controlPointDistance),
-    y: startPoint.y
-  };
-
-  const controlPoint2 = {
-    x: endPoint.x + (isLeftBranch.value ? controlPointDistance : -controlPointDistance),
-    y: endPoint.y
-  };
-
-  // Get current base speed based on zoom level
-  const baseSpeed = getParticleSpeed();
-
-  particles.value = particles.value.map(particle => {
-    // Update particle speed based on current zoom level while maintaining relative randomness
-    const relativeSpeedFactor = particle.speed / (particle.speed - (Math.random() * particle.speed * 0.5));
-    const newSpeed = baseSpeed + (Math.random() * baseSpeed * 0.5);
-    particle.speed = newSpeed * relativeSpeedFactor;
-
-    // Update progress with new speed
-    particle.progress += particle.speed;
-    if (particle.progress > 1) {
-      particle.progress = 0;
-    }
-
-    const point = getPointOnCurve(
-      particle.progress,
-      startPoint,
-      controlPoint1,
-      controlPoint2,
-      endPoint
-    );
-
-    return {
-      ...particle,
-      x: point.x,
-      y: point.y
-    };
-  });
-
-  animationFrame = requestAnimationFrame(animateParticles);
 };
 
 onMounted(() => {
@@ -4277,8 +5388,8 @@ textPath.reversed {
     }">
       <!-- Model Avatars -->
       <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 flex -space-x-2 px-2">
-        <div v-for="model in uniqueModels" :key="model.id" class="relative group w-9 h-9">
-          <img :src="getAvatarUrl(model)" alt="Provider Avatar"
+        <div v-if="lastModel" class="relative group w-9 h-9">
+          <img :src="getAvatarUrl(lastModel)" alt="Provider Avatar"
             class="w-9 h-9 rounded-full border-2 border-base-100 shadow-md object-cover" />
           <div
             class="avatar-overlay transition-opacity duration-200 opacity-0 absolute inset-0 rounded-full bg-black/30 group-hover:opacity-100">
@@ -4286,7 +5397,7 @@ textPath.reversed {
           <div class="absolute bottom-full mb-2 hidden group-hover:block z-50"
             style="left: 50%; transform: translateX(-50%);">
             <div class="bg-base-100 border rounded-md shadow-lg px-2 py-1 text-xs whitespace-nowrap text-base-content">
-              {{ model.name }}
+              {{ lastModel.name }}
             </div>
           </div>
         </div>
@@ -4336,6 +5447,9 @@ textPath.reversed {
             <X class="w-5 h-5" />
           </button>
         </div>
+
+        <!-- Slot for media content -->
+        <slot></slot>
 
         <!-- Messages -->
         <div v-if="isExpanded && node.messages" class="space-y-4">
@@ -4506,7 +5620,7 @@ const props = defineProps({
   modelRegistry: {
     type: Object as PropType<Map<string, ModelInfo>>,
     required: true
-  }
+  },
 });
 
 
@@ -4519,10 +5633,12 @@ const titleInput = ref('');
 const expandedMessages = ref(new Set<number>());
 const titleInputRef = ref<HTMLElement | null>(null);
 const isDraggable = ref(false);
+const isDragging = ref(false);
 const dragStartPosition = ref({ x: 0, y: 0 });
 const DRAG_THRESHOLD = 5; // Pixels to move before initiating drag
 const isStreaming = ref(false);
 const fadeTimeout = ref<number | null>(null);
+const lastModel = ref<ModelInfo | undefined>(undefined)
 
 // Store
 const store = useCanvasStore();
@@ -4600,17 +5716,10 @@ function getAvatarUrl(model?: ModelInfo): string {
   return avatar || providerAvatars['Unknown'];
 }
 
+// The computed models no longer needs to be a set
 const uniqueModels = computed(() => {
-  const models = new Set<ModelInfo>();
-  if (!props.node.messages) return [];
-
-  props.node.messages.forEach((msg) => {
-    if (msg.modelId) {
-      const model = getModelInfo(msg.modelId);
-      if (model) models.add(model);
-    }
-  });
-  return Array.from(models);
+  if (!lastModel.value) return [];
+  return [lastModel.value];
 });
 
 
@@ -4648,29 +5757,37 @@ const nodeStyles = computed(() => ({
    Drag event handlers
 ------------------ */
 const handleMouseDown = (e: MouseEvent) => {
-  
   if (props.node.type !== 'main') {
     dragStartPosition.value = { x: e.clientX, y: e.clientY };
     isDraggable.value = true;
+    isDragging.value = false; // Reset drag state on mouse down
   }
 };
 
 const handleMouseMove = (e: MouseEvent) => {
   if (!isDraggable.value) return;
+
   const dx = Math.abs(e.clientX - dragStartPosition.value.x);
   const dy = Math.abs(e.clientY - dragStartPosition.value.y);
 
   if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
     e.stopPropagation();
     isDraggable.value = false;
+    isDragging.value = true; // Set dragging state when threshold is exceeded
     emit('drag-start', e, props.node);
   }
 };
 
 const handleMouseUp = () => {
+  const wasDragging = isDragging.value;
   isDraggable.value = false;
-};
+  isDragging.value = false;
 
+  // Only emit select if we weren't dragging
+  if (!wasDragging) {
+    emit('select');
+  }
+};
 /* ------------------
    Title editing
 ------------------ */
@@ -4725,10 +5842,13 @@ const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
 async function handleMessageSend(message: string) {
   isLoading.value = true;
   try {
-    await store.sendMessage(props.node.id, message, props.selectedModel, props.openRouterApiKey);
+    const modelId = await store.sendMessage(props.node.id, message, props.selectedModel, props.openRouterApiKey);
     // Auto-generate title for new conversations
     if (props.node.messages.length === 2 && !props.node.title) {
       generateTitle();
+    }
+    if (modelId) {
+      lastModel.value = getModelInfo(modelId);
     }
   } catch (error) {
     console.error('Error sending message:', error);
@@ -4817,10 +5937,18 @@ onMounted(() => {
   if (!props.node.title) {
     isEditing.value = true;
   }
+  // Initialize last model using all the messages
+  if (props.node.messages && props.node.messages.length > 0) {
+    let lastMessage = props.node.messages[props.node.messages.length - 1];
+    if (lastMessage.modelId) {
+      lastModel.value = getModelInfo(lastMessage.modelId);
+    }
+  }
 });
 
 onBeforeUnmount(() => {
   isDraggable.value = false;
+  isDragging.value = false;
   if (fadeTimeout.value) {
     clearTimeout(fadeTimeout.value);
   }
@@ -5011,6 +6139,414 @@ onBeforeUnmount(() => {
 }
 </style>
 === END FILE: ./src/components/canvas/node/BranchNode.vue ===
+
+
+=== START FILE: ./src/components/canvas/node/MediaBranchNode.vue ===
+=== TYPE: vue ===
+
+<template>
+    <div class="media-branch-node" :class="{ 'processing': isProcessing }">
+        <BranchNode 
+            :node="node" 
+            :is-selected="isSelected" 
+            :selected-model="selectedModel"
+            :open-router-api-key="openRouterApiKey" 
+            :zoom="zoom" 
+            :model-registry="modelRegistry"
+            @select="$emit('select')" 
+            @drag-start="(e, node) => $emit('drag-start', e, node)"
+            @create-branch="(parentId, index, pos, data) => $emit('create-branch', parentId, index, pos, data)"
+            @update-title="(id, title) => $emit('update-title', id, title)"
+            @resend="messageIndex => $emit('resend', messageIndex)" 
+            @delete="$emit('delete')"
+            @send="handleMessageSend">
+            <template #default>
+                <!-- Media preview content -->
+                <div v-if="mediaContent" class="media-preview p-4 border-b border-base-300">
+                    <!-- Image preview -->
+                    <img v-if="isImage" 
+                         :src="mediaUrl" 
+                         class="max-w-full h-auto rounded-lg"
+                         :alt="mediaContent.filename" />
+
+                    <!-- Video preview -->
+                    <video v-else-if="isVideo" controls class="max-w-full h-auto rounded-lg">
+                        <source :src="mediaUrl" :type="mediaContent.mime_type">
+                        Your browser does not support the video tag.
+                    </video>
+
+                    <!-- Analysis status -->
+                    <div v-if="isProcessing" class="mt-4 text-sm text-base-content/60">
+                        Processing media...
+                    </div>
+                </div>
+
+                <!-- Chat messages will be rendered by BranchNode -->
+            </template>
+        </BranchNode>
+    </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+import BranchNode from './BranchNode.vue';
+import type { PropType } from 'vue';
+import type { Node } from '../../../types/message';
+
+// Enhanced types to support media chat
+interface MediaContent {
+    media_id: string;
+    filename: string;
+    mime_type: string;
+    analysis: string;
+    type: 'image' | 'video';
+    previewUrl?: string;
+}
+
+interface MediaNode extends Node {
+    mediaContent?: MediaContent;
+}
+
+interface ModelInfo {
+    id: string;
+    name: string;
+    source: 'ollama' | 'openrouter' | 'custom';
+    provider?: string;
+}
+
+// Props
+const props = defineProps({
+    node: {
+        type: Object as PropType<MediaNode>,
+        required: true
+    },
+    isSelected: {
+        type: Boolean,
+        required: true
+    },
+    selectedModel: {
+        type: String,
+        required: true
+    },
+    openRouterApiKey: {
+        type: String,
+        required: true
+    },
+    zoom: {
+        type: Number,
+        required: true
+    },
+    modelRegistry: {
+        type: Object as PropType<Map<string, ModelInfo>>,
+        required: true
+    }
+});
+
+// Emits
+const emit = defineEmits<{
+    (e: 'select'): void;
+    (e: 'drag-start', event: MouseEvent, node: MediaNode): void;
+    (e: 'create-branch', parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any): void;
+    (e: 'update-title', id: string, title: string): void;
+    (e: 'resend', messageIndex: number): void;
+    (e: 'delete'): void;
+}>();
+
+// State
+const isProcessing = ref(false);
+const mediaContent = computed(() => props.node.mediaContent);
+const isImage = computed(() => mediaContent.value?.mime_type.startsWith('image/'));
+const isVideo = computed(() => mediaContent.value?.mime_type.startsWith('video/'));
+const mediaUrl = computed(() => 
+    mediaContent.value
+        ? mediaContent.value.previewUrl || `http://127.0.0.1:5000/media/${mediaContent.value.media_id}`
+        : null
+);
+
+// Enhanced media processing with chat support
+const processMedia = async (file: File, apiType: string, apiKey?: string) => {
+    isProcessing.value = true;
+
+    try {
+        // Create immediate preview URL
+        const previewUrl = URL.createObjectURL(file);
+
+        // Set initial media content with preview URL
+        props.node.mediaContent = {
+            media_id: 'preview',
+            filename: file.name,
+            mime_type: file.type,
+            analysis: 'Analyzing...',
+            type: file.type.startsWith('image/') ? 'image' : 'video',
+            previewUrl
+        };
+
+        // Prepare and send to backend
+        const formData = new FormData();
+        formData.append('file', file);
+        const modelType = props.selectedModel.includes('gemini') ? 'gemini' :
+            props.selectedModel.includes('/') ? 'openrouter' : 'ollama';
+
+        formData.append('api_type', modelType);
+        formData.append('model', props.selectedModel);
+
+        if (apiKey) {
+            formData.append('api_key', apiKey);
+        }
+
+        const response = await fetch('http://127.0.0.1:5000/process-media', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to process media');
+        }
+
+        const result = await response.json();
+
+        // Update media content with result and keep preview URL
+        props.node.mediaContent = {
+            ...result,
+            previewUrl
+        };
+
+        // Add initial analysis message
+        if (!props.node.messages) {
+            props.node.messages = [];
+        }
+
+        props.node.messages.push({
+            role: 'assistant',
+            content: result.analysis,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error processing media:', error);
+        throw error;
+    } finally {
+        isProcessing.value = false;
+    }
+};
+
+// New method to handle follow-up messages
+const handleMessageSend = async (message: string) => {
+    if (!props.node.mediaContent?.media_id) {
+        console.error('No media ID found');
+        return;
+    }
+
+    try {
+        // Add user message to the chat
+        props.node.messages.push({
+            role: 'user',
+            content: message,
+            timestamp: new Date().toISOString()
+        });
+
+        // Send follow-up request to backend
+        const response = await fetch('http://127.0.0.1:5000/chat-follow-up', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                media_id: props.node.mediaContent.media_id,
+                message: message,
+                api_key: props.openRouterApiKey
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get response');
+        }
+
+        const result = await response.json();
+
+        // Add AI response to the chat
+        props.node.messages.push({
+            role: 'assistant',
+            content: result.response,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error in chat follow-up:', error);
+        // Add error message to chat
+        props.node.messages.push({
+            role: 'assistant',
+            content: 'Sorry, I encountered an error processing your message.',
+            timestamp: new Date().toISOString()
+        });
+    }
+};
+
+// Expose methods
+defineExpose({
+    processMedia
+});
+</script>
+
+<style scoped>
+.media-branch-node {
+    position: relative;
+}
+
+.media-branch-node.processing::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.2rem;
+}
+
+.media-preview {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5rem;
+}
+
+.media-preview img,
+.media-preview video {
+    max-height: 400px;
+    object-fit: contain;
+    width: 100%;
+}
+</style>
+=== END FILE: ./src/components/canvas/node/MediaBranchNode.vue ===
+
+
+=== START FILE: ./src/components/canvas/node/WebBranchNode.vue ===
+=== TYPE: vue ===
+
+<template>
+    <div class="web-branch-node">
+        <BranchNode :node="node" :is-selected="isSelected" :selected-model="selectedModel"
+            :open-router-api-key="openRouterApiKey" :zoom="zoom" :model-registry="modelRegistry"
+            @select="$emit('select')" @drag-start="(e, node) => $emit('drag-start', e, node)"
+            @create-branch="(parentId, index, pos, data) => $emit('create-branch', parentId, index, pos, data)"
+            @update-title="(id, title) => $emit('update-title', id, title)"
+            @resend="messageIndex => $emit('resend', messageIndex)" @delete="$emit('delete')">
+            <template #default>
+                <!-- Web preview content -->
+                <div class="web-preview p-4 border-b border-base-300">
+                    <div class="web-container bg-white rounded-lg overflow-hidden" style="height: 400px;">
+                        <iframe 
+                            :src="node.url" 
+                            class="w-full h-full"
+                            frameborder="0"
+                            sandbox="allow-scripts allow-same-origin allow-popups"
+                            loading="lazy"
+                        ></iframe>
+                    </div>
+                    <div class="mt-2 text-sm text-base-content opacity-75">
+                        <a :href="node.url" target="_blank" rel="noopener noreferrer" 
+                           class="hover:underline flex items-center gap-2">
+                            <ExternalLink class="w-4 h-4" />
+                            {{ node.url }}
+                        </a>
+                    </div>
+                </div>
+            </template>
+        </BranchNode>
+    </div>
+</template>
+
+<script setup lang="ts">
+import { ExternalLink } from 'lucide-vue-next';
+import BranchNode from './BranchNode.vue';
+import type { PropType } from 'vue';
+import type { Node } from '../../../types/message';
+
+interface WebNode extends Node {
+    url: string;
+}
+
+interface ModelInfo {
+    id: string;
+    name: string;
+    source: 'ollama' | 'openrouter' | 'custom';
+    provider?: string;
+}
+
+// Props
+const props = defineProps({
+    node: {
+        type: Object as PropType<WebNode>,
+        required: true
+    },
+    isSelected: {
+        type: Boolean,
+        required: true
+    },
+    selectedModel: {
+        type: String,
+        required: true
+    },
+    openRouterApiKey: {
+        type: String,
+        required: true
+    },
+    zoom: {
+        type: Number,
+        required: true
+    },
+    modelRegistry: {
+        type: Object as PropType<Map<string, ModelInfo>>,
+        required: true
+    }
+});
+
+// Events
+const emit = defineEmits<{
+    (e: 'select'): void;
+    (e: 'drag-start', event: MouseEvent, node: WebNode): void;
+    (e: 'create-branch', parentId: string, messageIndex: number, position: { x: number, y: number }, initialData: any): void;
+    (e: 'update-title', id: string, title: string): void;
+    (e: 'resend', messageIndex: number): void;
+    (e: 'delete'): void;
+}>();
+</script>
+
+<style scoped>
+.web-branch-node {
+    position: relative;
+}
+
+.web-preview {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5rem;
+}
+
+.web-container {
+    position: relative;
+    width: 100%;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+.web-container::before {
+    content: '';
+    display: block;
+    padding-top: 56.25%; /* 16:9 Aspect Ratio */
+}
+
+.web-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: white;
+}
+</style>
+=== END FILE: ./src/components/canvas/node/WebBranchNode.vue ===
 
 
 === START FILE: ./src/components/manager/TaskManager.vue ===

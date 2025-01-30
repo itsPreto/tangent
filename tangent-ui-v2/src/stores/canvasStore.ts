@@ -15,6 +15,7 @@ interface ModelInfo {
 interface LocalStorageState {
   nodes: Node[];
   lastSavedWorkspaceId: string | null;
+  isOverviewMode?: boolean;
 }
 
 
@@ -29,9 +30,10 @@ export const useCanvasStore = defineStore('canvas', () => {
       const state = JSON.parse(savedState) as LocalStorageState;
       nodes.value = state.nodes;
       lastSavedWorkspaceId.value = state.lastSavedWorkspaceId;
+      isOverviewMode.value = state.isOverviewMode ?? true; // Default to true if not present
     }
   };
-
+  const isOverviewMode = ref(true);
 
   // Main state
   const nodes = ref<Node[]>([{
@@ -141,6 +143,44 @@ export const useCanvasStore = defineStore('canvas', () => {
       console.error('Error in streaming response:', error);
       throw error;
     }
+  };
+
+  const clearCurrentWorkspace = () => {
+    // Reset nodes array back to just a root node
+    nodes.value = [{
+      id: '1',
+      x: 100,
+      y: 100,
+      title: 'Root Thread',
+      parentId: null,
+      messages: [],
+      type: 'main',
+      branchMessageIndex: null,
+      streamingContent: null
+    }];
+
+    // Reset UI state
+    activeNode.value = null;
+    isDragging.value = false;
+    dragOffset.value = { x: 0, y: 0 };
+    isTransitioning.value = false;
+
+    // Reset topic clustering state
+    topicClusters.value = new Map();
+    nodeTopics.value = new Map();
+
+    // Set overview mode
+    isOverviewMode.value = true;
+
+    // Clear workspace ID
+    lastSavedWorkspaceId.value = null;
+
+    const state: LocalStorageState = {
+      nodes: nodes.value,
+      lastSavedWorkspaceId: null,
+      isOverviewMode: true
+    };
+    localStorage.setItem('canvasState', JSON.stringify(state));
   };
 
 
@@ -692,6 +732,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     connections,
     graphData,
     lastSavedWorkspaceId,
+    isOverviewMode,
 
     CARD_WIDTH,
     CARD_HEIGHT,
@@ -710,6 +751,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     initFromLocalStorage,
     saveWorkspace,
     loadChatState,
-    saveAsNewChat
+    saveAsNewChat,
+    clearCurrentWorkspace
   };
 }); // Move this closing parenthesis here

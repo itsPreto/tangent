@@ -6,8 +6,6 @@
 /venv/
 /**/node_modules/
 .DS_Store
-
-
 output.wav
 **/reflection/
 **/test/
@@ -18,8 +16,10 @@ output.wav
 **/src/config.js
 **/webpack.config.js
 utils/voice_assistant.py
-
-**/__pycache__/**
+**/__pycache__/
 yarn.lock
 npm.lock
 .vscode/
+v2_env/
+*.pyc
+.env

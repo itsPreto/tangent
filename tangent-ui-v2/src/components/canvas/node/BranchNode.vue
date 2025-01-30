@@ -4,11 +4,15 @@
     'streaming': node.streamingContent,
     'active': isStreaming,
     'fading-out': !node.streamingContent && isStreaming,
-    'draggable': isDraggable
-  }" @click="$emit('select')" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp">
+    'draggable': isDraggable,
+    'snapped': isSnapped,
+    'transition-snap': isTransitioningSnap
+  }" @click="$emit('select')" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
+    :style="nodePositionStyle">
     <Card :class="[
-      'node-card max-w-2xl w-[42rem]',
-      'backdrop-blur transition-all duration-300'
+      'node-card',
+      'backdrop-blur transition-all duration-300',
+      isSnapped ? 'snapped-card' : 'max-w-2xl w-[42rem]'
     ]" :style="{
       ...nodeStyles,
       backgroundColor: `${threadColor}05`,
@@ -32,7 +36,7 @@
         </div>
       </div>
 
-      <div class="p-4">
+      <div :class="['p-4', isSnapped ? 'snapped-content' : '']">
         <div class="flex items-center justify-between mb-4">
           <!-- Header Content -->
           <div class="flex items-center gap-3">
@@ -69,125 +73,139 @@
             </div>
           </div>
 
-          <!-- Delete Button -->
-          <button v-if="node.type !== 'main'"
-            class="p-2 rounded-full hover:bg-destructive/10 text-base-content/60 hover:text-destructive flex-shrink-0"
-            @click.stop="$emit('delete')">
-            <X class="w-5 h-5" />
-          </button>
+          <!-- Control Buttons -->
+          <div class="flex items-center gap-2">
+            <!-- Snap/Unsnap Toggle -->
+            <button @click.stop="toggleSnap" class="p-2 rounded-full hover:bg-white/10 transition-colors"
+              :title="isSnapped ? 'Unsnap from viewport' : 'Snap to viewport'">
+              <Maximize2 v-if="!isSnapped" class="w-5 h-5 text-base-content/60" />
+              <Minimize2 v-else class="w-5 h-5 text-base-content/60" />
+            </button>
+
+            <!-- Delete Button -->
+            <button v-if="node.type !== 'main'"
+              class="p-2 rounded-full hover:bg-destructive/10 text-base-content/60 hover:text-destructive flex-shrink-0"
+              @click.stop="$emit('delete')">
+              <X class="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <!-- Slot for media content -->
         <slot></slot>
 
         <!-- Messages -->
-        <div v-if="isExpanded && node.messages" class="space-y-4">
-          <div v-for="(msg, i) in displayMessages" :key="i" class="relative group message-container"
-            :style="getMessageStyles(i)">
-            <MessageTimestamp :timestamp="msg.timestamp" :side="node.type === 'branch' ? 'left' : 'right'" />
+        <div :class="[
+          isSnapped ? 'snapped-messages-container' : '',
+          isExpanded && node.messages ? 'space-y-4' : ''
+        ]">
+          <div v-if="isExpanded && node.messages" class="space-y-4">
+            <div v-for="(msg, i) in displayMessages" :key="i" class="relative group message-container"
+              :style="getMessageStyles(i)">
+              <MessageTimestamp :timestamp="msg.timestamp" :side="node.type === 'branch' ? 'left' : 'right'" />
 
-            <!-- Branch Buttons -->
-            <div
-              class="absolute inset-y-0 -left-12 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out z-20">
-              <button @click.stop="createBranch(i, 'left')"
-                class="p-2 rounded-full hover:bg-white/10 transition-colors group/btn" :style="{ color: threadColor }"
-                title="Branch left">
-                <div class="relative">
-                  <GitBranch class="w-5 h-5 transform -scale-x-100" />
-                  <div
-                    class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 backdrop-blur px-2 py-1 rounded">
-                    Branch left
+              <!-- Branch Buttons -->
+              <div
+                class="absolute inset-y-0 -left-12 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out z-20">
+                <button @click.stop="createBranch(i, 'left')"
+                  class="p-2 rounded-full hover:bg-white/10 transition-colors group/btn" :style="{ color: threadColor }"
+                  title="Branch left">
+                  <div class="relative">
+                    <GitBranch class="w-5 h-5 transform -scale-x-100" />
+                    <div
+                      class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 backdrop-blur px-2 py-1 rounded">
+                      Branch left
+                    </div>
                   </div>
-                </div>
-              </button>
-            </div>
-
-            <div
-              class="absolute inset-y-0 -right-12 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out z-20">
-              <button @click.stop="createBranch(i, 'right')"
-                class="p-2 rounded-full hover:bg-white/10 transition-colors group/btn" :style="{ color: threadColor }"
-                title="Branch right">
-                <div class="relative">
-                  <GitBranch class="w-5 h-5" />
-                  <div
-                    class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 backdrop-blur px-2 py-1 rounded">
-                    Branch right
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            <div class="p-4 relative z-10">
-              <!-- Message Header -->
-              <div class="flex items-center justify-between mb-2">
-                <Badge :variant="msg.role === 'user' ? 'default' : msg.isStreaming ? 'outline' : 'secondary'"
-                  class="text-xs">
-                  {{ msg.role === 'user' ? 'You' : msg.isStreaming ? 'AI Typing...' : 'AI' }}
-                </Badge>
-
-                <div class="flex items-center gap-2" v-if="!msg.isStreaming">
-                  <button @click.stop="expandMessage(i)" class="p-1.5 rounded-full hover:bg-white/10">
-                    <component :is="expandedMessages.has(i) ? Maximize2 : Minimize2"
-                      class="w-4 h-4 text-base-content/60" />
-                  </button>
-                </div>
+                </button>
               </div>
 
-              <!-- Message Content -->
-              <div class="text-sm break-words overflow-hidden" :class="{
-                'line-clamp-2': expandedMessages.has(i),
-                'whitespace-pre-wrap': !msg.isStreaming,
-                'whitespace-normal': msg.isStreaming
-              }">
-                <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" />
+              <div
+                class="absolute inset-y-0 -right-12 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out z-20">
+                <button @click.stop="createBranch(i, 'right')"
+                  class="p-2 rounded-full hover:bg-white/10 transition-colors group/btn" :style="{ color: threadColor }"
+                  title="Branch right">
+                  <div class="relative">
+                    <GitBranch class="w-5 h-5" />
+                    <div
+                      class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 backdrop-blur px-2 py-1 rounded">
+                      Branch right
+                    </div>
+                  </div>
+                </button>
               </div>
 
-              <!-- Message Actions -->
-              <div class="mt-3 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <button v-if="msg.isStreaming"
-                    class="flex items-center gap-2 text-sm text-red-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                    @click.stop="stopStreaming">
-                    <XCircle class="w-4 h-4" />
-                    Stop
-                  </button>
+              <div class=" relative z-10">
+                <!-- Message Header -->
+                <div class="flex items-center justify-between mb-2">
+                  <Badge :variant="msg.role === 'user' ? 'default' : msg.isStreaming ? 'outline' : 'secondary'"
+                    class="text-xs">
+                    {{ msg.role === 'user' ? 'You' : msg.isStreaming ? 'AI Typing...' : 'AI' }}
+                  </Badge>
 
-                  <button v-else-if="msg.role === 'assistant'"
-                    class="flex items-center gap-2 text-sm hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                    :style="{ color: threadColor }" @click.stop="$emit('resend', i - 1)">
-                    <RotateCw class="w-4 h-4" />
-                    Resend
-                  </button>
+                  <div class="flex items-center gap-2" v-if="!msg.isStreaming">
+                    <button @click.stop="expandMessage(i)" class="p-1.5 rounded-full hover:bg-white/10">
+                      <component :is="expandedMessages.has(i) ? Maximize2 : Minimize2"
+                        class="w-4 h-4 text-base-content/60" />
+                    </button>
+                  </div>
                 </div>
 
-                <!-- Model Badge -->
-                <div v-if="msg.role === 'assistant'"
-                  class="model-badge opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-base-100/90 border border-base-200">
-                  <img :src="getAvatarUrl(getModelInfo(msg.modelId))" alt="Model Avatar"
-                    class="w-4 h-4 rounded-full object-cover" />
-                  <span class="text-base-content">
-                    {{ getModelInfo(msg.modelId)?.name || 'Unknown Model' }}
-                  </span>
+                <!-- Message Content -->
+                <div class="text-sm break-words overflow-hidden" :class="{
+                  'line-clamp-2': expandedMessages.has(i),
+                  'whitespace-pre-wrap': !msg.isStreaming,
+                  'whitespace-normal': msg.isStreaming
+                }">
+                  <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" />
+                </div>
+
+                <!-- Message Actions -->
+                <div class="mt-3 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <button v-if="msg.isStreaming"
+                      class="flex items-center gap-2 text-sm text-red-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                      @click.stop="stopStreaming">
+                      <XCircle class="w-4 h-4" />
+                      Stop
+                    </button>
+
+                    <button v-else-if="msg.role === 'assistant'"
+                      class="flex items-center gap-2 text-sm hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                      :style="{ color: threadColor }" @click.stop="$emit('resend', i - 1)">
+                      <RotateCw class="w-4 h-4" />
+                      Resend
+                    </button>
+                  </div>
+
+                  <!-- Model Badge -->
+                  <div v-if="msg.role === 'assistant'"
+                    class="model-badge opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-base-100/90 border border-base-200">
+                    <img :src="getAvatarUrl(getModelInfo(msg.modelId))" alt="Model Avatar"
+                      class="w-4 h-4 rounded-full object-cover" />
+                    <span class="text-base-content">
+                      {{ getModelInfo(msg.modelId)?.name || 'Unknown Model' }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Collapsed View -->
-        <div v-else-if="node.messages?.length" class="mt-2 text-sm text-base-content/60">
-          <div class="line-clamp-2 break-words overflow-hidden">
-            Last message:
-            {{ node.streamingContent || node.messages[node.messages.length - 1]?.content }}
+          <!-- Collapsed View -->
+          <div v-else-if="node.messages?.length" class="mt-2 text-sm text-base-content/60">
+            <div class="line-clamp-2 break-words overflow-hidden">
+              Last message:
+              {{ node.streamingContent || node.messages[node.messages.length - 1]?.content }}
+            </div>
           </div>
         </div>
       </div>
 
-      <MessageInput :is-loading="isLoading" @send="handleMessageSend" @stop="stopStreaming" />
+      <MessageInput :is-loading="isLoading" @send="handleMessageSend" @stop="stopStreaming" @click="handleInputClick" />
     </Card>
   </div>
 </template>
-
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue';
 import type { PropType } from 'vue';
@@ -249,13 +267,23 @@ const props = defineProps({
   modelRegistry: {
     type: Object as PropType<Map<string, ModelInfo>>,
     required: true
-  }
+  },
 });
 
 
-const emit = defineEmits(['select', 'drag-start', 'create-branch', 'update-title', 'delete', 'resend']);
+const emit = defineEmits([
+  'select',
+  'drag-start',
+  'create-branch',
+  'update-title',
+  'delete',
+  'resend',
+  'update-position',
+  'snap',     // New emit for snap state
+  'unsnap',   // New emit for unsnap state
+  'input-focus'
+]);
 
-// UI states
 const isExpanded = ref(true);
 const isEditing = ref(false);
 const titleInput = ref('');
@@ -268,6 +296,10 @@ const DRAG_THRESHOLD = 5; // Pixels to move before initiating drag
 const isStreaming = ref(false);
 const fadeTimeout = ref<number | null>(null);
 const lastModel = ref<ModelInfo | undefined>(undefined)
+
+const isSnapped = ref(false);
+const isTransitioningSnap = ref(false);
+const originalPosition = ref({ x: 0, y: 0 });
 
 // Store
 const store = useCanvasStore();
@@ -333,6 +365,86 @@ const providerAvatars: Record<string, string> = {
   ollama: ollama
 };
 
+const handleInputClick = (e: MouseEvent) => {
+  e.stopPropagation(); // Prevent node selection
+  emit('input-focus', props.node.id);
+};
+
+const toggleSnap = async () => {
+  if (!isSnapped.value) {
+    // Store original position before snapping
+    originalPosition.value = {
+      x: props.node.x,
+      y: props.node.y
+    };
+
+    // First emit snap event and wait for canvas to center
+    emit('snap', {
+      nodeId: props.node.id,
+      originalPosition: originalPosition.value
+    });
+
+    // Short delay to allow canvas transition
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Then handle local state changes
+    document.body.classList.add('has-snapped-node');
+    isTransitioningSnap.value = true;
+    isSnapped.value = true;
+
+    setTimeout(() => {
+      isTransitioningSnap.value = false;
+    }, 300);
+  } else {
+    // For unsnapping, reverse the order
+    isTransitioningSnap.value = true;
+
+    // Emit unsnap event first
+    emit('unsnap', {
+      nodeId: props.node.id,
+      originalPosition: originalPosition.value
+    });
+
+    // Wait for canvas to adjust
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Then handle local state
+    document.body.classList.remove('has-snapped-node');
+    isSnapped.value = false;
+
+    setTimeout(() => {
+      isTransitioningSnap.value = false;
+    }, 300);
+  }
+};
+
+// Computed style for the node based on snap state
+const nodePositionStyle = computed(() => {
+  if (isSnapped.value) {
+    return {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      right: '0',
+      bottom: '0',
+      width: '100vw',
+      height: '100vh',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1000,
+      transition: 'all 0.3s ease-out 0.05s', // Added small delay
+      transform: 'none'
+    };
+  }
+
+  return {
+    transform: `translate(${props.node.x}px, ${props.node.y}px)`,
+    transition: isTransitioningSnap.value ? 'transform 0.3s ease-out' : 'none'
+  };
+});
+
+
 function getAvatarUrl(model?: ModelInfo): string {
   if (!model) return providerAvatars['Unknown'];
 
@@ -386,13 +498,12 @@ const nodeStyles = computed(() => ({
    Drag event handlers
 ------------------ */
 const handleMouseDown = (e: MouseEvent) => {
-  if (props.node.type !== 'main') {
+  if (props.node.type !== 'main' && !isSnapped.value) {
     dragStartPosition.value = { x: e.clientX, y: e.clientY };
     isDraggable.value = true;
-    isDragging.value = false; // Reset drag state on mouse down
+    isDragging.value = false;
   }
 };
-
 const handleMouseMove = (e: MouseEvent) => {
   if (!isDraggable.value) return;
 
@@ -576,6 +687,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.body.classList.remove('has-snapped-node');
+  isSnapped.value = false;
+  isTransitioningSnap.value = false;
   isDraggable.value = false;
   isDragging.value = false;
   if (fadeTimeout.value) {
@@ -587,7 +701,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .branch-node {
   position: absolute;
-  transition: transform 0.2s ease;
+  transition: all 0.3s ease-out;
   user-select: none;
 }
 
@@ -637,20 +751,14 @@ onBeforeUnmount(() => {
 
 .streaming .node-card::before {
   inset: -2px;
-  /* Reduced from -4px */
   padding: 2px;
-  /* Reduced from 4px */
   filter: blur(3px);
-  /* Slightly reduced blur */
 }
 
 .streaming .node-card::after {
   inset: -1px;
-  /* Reduced from -2px */
   padding: 1px;
-  /* Reduced from 2px */
   filter: blur(1px);
-  /* Reduced blur for sharper inner border */
 }
 
 /* Animation states */
@@ -699,6 +807,9 @@ onBeforeUnmount(() => {
 .message-container {
   position: relative;
   transition: all 0.2s ease-in-out;
+  max-width: 1000px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .message-container:hover {
@@ -753,17 +864,88 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-
-.cluster-viz-container {
-  transform-origin: bottom left;
+.branch-node.snapped {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1000;
+  padding: 2rem;
+  pointer-events: auto;
+  overflow: hidden;
+  transform: scale(1) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.cluster-viz-minimized {
-  cursor: pointer;
+.snapped-card {
+  width: min(100%, 1200px) !important;
+  height: 70vh !important;
+  max-width: none !important;
+  display: flex;
+  flex-direction: column;
+  position: relative !important;
+  margin: 2rem;
 }
 
-.cluster-viz-focused {
-  backdrop-filter: blur(8px);
-  background: rgba(0, 0, 0, 0.5);
+.snapped-content {
+  flex: 1;
+  overflow: hidden;
+  /* padding: 1.5rem !important; */
+  height: 70vh;
+
 }
-</style>
+
+.snapped-messages-container {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  width: 100%;
+  height: 70vh;
+  padding: 20px;
+}
+
+/* Additional styles to ensure proper scaling */
+.branch-node.snapped .node-card {
+  transform: none !important;
+  scale: 1 !important;
+}
+
+/* Ensure proper message container width */
+.branch-node.snapped .message-container {
+  max-width: 100%;
+  padding: 20px;
+  transform: none !important;
+}
+
+/* Webkit scrollbar styles */
+.snapped-messages-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.snapped-messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.snapped-messages-container::-webkit-scrollbar-thumb {
+  background-color: rgba(155, 155, 155, 0.5);
+  border-radius: 3px;
+}
+
+/* Message Input in snapped mode */
+.snapped-card> :last-child {
+  margin-top: auto;
+  padding: 1rem;
+  border-top: 1px solid var(--border-color-light);
+  background: var(--background);
+}
+
+/* Global styles for body when node is snapped */
+:global(body.has-snapped-node) {
+  overflow: hidden !important;
+}
+</style>ƒ
