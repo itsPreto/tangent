@@ -7,6 +7,9 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      backgroundColor: {
+        'success-focus': '#16a34a', // Replace with your desired color
+      },
       colors: {
         'primary': '#007bff',
         'muted': 'hsl(var(--muted))',

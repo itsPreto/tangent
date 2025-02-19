@@ -25,8 +25,8 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["prismjs",  "@tresjs/core"]
+    "types": ["prismjs",  "@tresjs/core", "sandpack-vue3/global"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "src/components/editor/MonacoEditor.js"],
   "exclude": ["node_modules"]
 }

@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import tiktoken
 import os
+from pathlib import Path
 import re
 import time
 import json
@@ -12,12 +13,26 @@ import base64
 from PIL import Image
 import io
 import google.generativeai as genai
-from ChatPersistenceService import ChatPersistenceService  # Updated import
+from ChatgptChatProcessor import ChatGPTDataProcessor
+from ChatPersistenceService import ChatPersistenceService, Chat, db
 import tempfile
 import uuid
 
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS with specific settings
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",  # Vite dev server
+            "http://localhost:5173",  # Another Vite port if needed
+        ],
+        "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        # If you're using cookies or tokens that require credentials:
+        "supports_credentials": True
+    }
+})
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -341,7 +356,47 @@ class EnhancedMediaProcessor:
 
 # Initialize processor
 media_processor = EnhancedMediaProcessor()
+chat_processor = ChatGPTDataProcessor()
 
+
+@app.route('/api/process', methods=['POST'])
+def process_uploaded_data():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if not file.filename.endswith('.json'):
+            return jsonify({'error': 'Invalid file type'}), 400
+
+        # Save uploaded file (you already have this)
+        data_dir = Path('./unprocessed')  # Use pathlib for better path handling
+        data_dir.mkdir(exist_ok=True)
+        file_path = data_dir / 'chat_data.json'
+        file.save(file_path)
+
+        # --- USE THE PROCESSOR HERE ---
+        try:
+            processed_messages = chat_processor.process_data(str(file_path))
+            # processed_messages is now a list of dictionaries,
+            # each representing a message with branching information.
+            print(processed_messages) #for debugging
+
+        # Instead of starting background processing, return the processed messages:
+            return jsonify({
+                'messages': processed_messages,  # Send the processed messages
+                'message': 'Data processed successfully' #update message
+            })
+
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400  # Specific error for bad data
+        except Exception as e:
+          logger.error(f"Error processing data in /api/process route: {str(e)}")
+          return jsonify({'error': str(e)}), 500
+
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/chats', methods=['POST'])
 def create_chat():
@@ -478,6 +533,32 @@ def chat_follow_up():
         logger.error(f"Error in chat follow-up: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/chats/<chat_id>', methods=['PUT'])
+def update_chat(chat_id):
+    try:
+        data = request.json
+        # Find the chat
+        chat = Chat.query.get(chat_id)
+        if not chat:
+            return jsonify({'error': 'Chat not found'}), 404
+            
+        # Update positions if provided
+        if 'x' in data:
+            chat.x = data['x']
+        if 'y' in data:
+            chat.y = data['y']
+        
+        # Update other metadata as needed
+        if 'title' in data:
+            chat.title = data['title']
+            
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error updating chat: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
 @app.route('/media/<media_id>', methods=['GET'])
 def get_media(media_id):
     try:

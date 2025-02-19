@@ -4,8 +4,7 @@
     <div class="flex h-10 mb-2 bg-base-200 rounded-lg p-1">
       <!-- Ollama Tab -->
       <button @click="activeProvider = 'ollama'"
-        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
-        :class="{
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300" :class="{
           'bg-base-100 shadow-sm flex-1': activeProvider === 'ollama',
           'w-10 hover:bg-base-300': activeProvider !== 'ollama'
         }">
@@ -20,8 +19,7 @@
 
       <!-- OpenRouter Tab -->
       <button @click="activeProvider = 'openrouter'"
-        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
-        :class="{
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300" :class="{
           'bg-base-100 shadow-sm flex-1': activeProvider === 'openrouter',
           'w-10 hover:bg-base-300': activeProvider !== 'openrouter'
         }">
@@ -30,10 +28,12 @@
             viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" fill="currentColor" stroke="currentColor"
             class="transition-all duration-300">
             <g clip-path="url(#clip0_205_3)">
-              <path d="M3 248.945C18 248.945 76 236 106 219C136 202 136 202 198 158C276.497 102.293 332 120.945 423 120.945"
+              <path
+                d="M3 248.945C18 248.945 76 236 106 219C136 202 136 202 198 158C276.497 102.293 332 120.945 423 120.945"
                 stroke-width="90" />
               <path d="M511 121.5L357.25 210.268L357.25 32.7324L511 121.5Z" />
-              <path d="M0 249C15 249 73 261.945 103 278.945C133 295.945 133 295.945 195 339.945C273.497 395.652 329 377 420 377"
+              <path
+                d="M0 249C15 249 73 261.945 103 278.945C133 295.945 133 295.945 195 339.945C273.497 395.652 329 377 420 377"
                 stroke-width="90" />
               <path d="M508 376.445L354.25 287.678L354.25 465.213L508 376.445Z" />
             </g>
@@ -47,8 +47,7 @@
 
       <!-- Google Tab -->
       <button @click="activeProvider = 'google'"
-        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
-        :class="{
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300" :class="{
           'bg-base-100 shadow-sm flex-1': activeProvider === 'google',
           'w-10 hover:bg-base-300': activeProvider !== 'google'
         }">
@@ -63,8 +62,7 @@
 
       <!-- Custom Provider Tab -->
       <button @click="activeProvider = 'custom'"
-        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300"
-        :class="{
+        class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300" :class="{
           'bg-base-100 shadow-sm flex-1': activeProvider === 'custom',
           'w-10 hover:bg-base-300': activeProvider !== 'custom'
         }">
@@ -146,10 +144,11 @@
         <!-- Models List -->
         <div class="max-h-[60vh] overflow-y-auto bg-base-100" role="listbox" ref="modelsList">
           <div v-for="(model, index) in filteredModels" :key="model.id"
-            class="border-b border-base-300 last:border-0 cursor-pointer hover:bg-base-200"
-            :class="{ 'bg-blue-50 dark:bg-blue-900': highlightedIndex === index }" @click="selectModel(model)"
-            @keydown.enter="selectModel(model)" @mouseover="highlightedIndex = index" role="option"
-            :aria-selected="highlightedIndex === index" tabindex="0">
+            class="border-b border-base-300 last:border-0 cursor-pointer hover:bg-base-200 transition-all duration-200"
+            :class="{
+              'bg-blue-50 dark:bg-blue-900 ring ring-blue-500': selectedModel && selectedModel.id === model.id,
+              'bg-white': !(selectedModel && selectedModel.id === model.id)
+            }" @click="selectModelFromList(model)" @mouseover="highlightedIndex = index">
             <div class="p-3">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -164,6 +163,7 @@
               </p>
             </div>
           </div>
+
 
           <!-- Empty State -->
           <div v-if="filteredModels.length === 0" class="p-8 text-center text-gray-500 text-base-content">
@@ -180,7 +180,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { ChevronDown, Search, Plus } from 'lucide-vue-next';
 import Badge from '../ui/Badge.vue';
 import { useModelStore } from '../../stores/modelStore';
-import type { Model } from '../../stores/modelStore';
+import type { ModelInfo } from '@/types/model';
 import google from '@/assets/google.jpeg';
 import ollama from '@/assets/ollama.jpeg';
 
@@ -190,7 +190,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', model: Model): void;
+  (e: 'select', model: ModelInfo): void;
 }>();
 
 const modelStore = useModelStore();
@@ -265,7 +265,7 @@ const selectHighlighted = () => {
   }
 };
 
-const selectModel = (model: Model) => {
+const selectModel = (model: ModelInfo) => {
   modelStore.setSelectedModel(model);
   emit('select', model);
   closeDropdown();
@@ -302,9 +302,9 @@ onBeforeUnmount(() => {
 const handleGlobalKeydown = (e: KeyboardEvent) => {
   // Check if the active element is an input, textarea, or contenteditable element
   const activeElement = document.activeElement;
-  const isTyping = activeElement instanceof HTMLInputElement || 
-                   activeElement instanceof HTMLTextAreaElement || 
-                   activeElement?.getAttribute('contenteditable') === 'true';
+  const isTyping = activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement?.getAttribute('contenteditable') === 'true';
 
   // Only handle 'M' shortcut if user is not typing
   if (e.key === 'm' && !isOpen.value && !isTyping) {

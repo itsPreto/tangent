@@ -9,6 +9,7 @@
 output.wav
 **/reflection/
 **/test/
+bundle.txt
 **/build/
 **/dist/
 **/electron-builder.json

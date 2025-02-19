@@ -13,6 +13,8 @@ class Chat(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     nodes = db.relationship('Node', backref='chat', cascade='all, delete-orphan')
+    x = db.Column(db.Float, nullable=True)
+    y = db.Column(db.Float, nullable=True)
 
 class Node(db.Model):
     __tablename__ = 'nodes'
@@ -43,7 +45,7 @@ class ChatPersistenceService:
             id=str(uuid.uuid4()),
             title=title
         )
-        
+
         main_node = Node(
             id=str(uuid.uuid4()),
             chat_id=chat.id,
@@ -51,14 +53,14 @@ class ChatPersistenceService:
             title=initial_node_data.get('title', 'Root Thread'),
             x=initial_node_data.get('x', 100),
             y=initial_node_data.get('y', 100),
-            messages=initial_node_data.get('messages', []),
+            messages=initial_node_data.get('messages', []), # Make sure this is passed!
             node_metadata=initial_node_data.get('metadata', {})  # Updated to use node_metadata
         )
-        
+
         db.session.add(chat)
         db.session.add(main_node)
         db.session.commit()
-        
+
         return chat.id
 
     def get_chat(self, chat_id: str) -> Optional[Dict]:
@@ -92,15 +94,16 @@ class ChatPersistenceService:
         }
 
     def list_chats(self) -> List[Dict]:
-        """Get list of all chats with basic info"""
-        chats = Chat.query.order_by(Chat.updated_at.desc()).all()
-        return [{
-            'id': chat.id,
-            'title': chat.title,
-            'createdAt': chat.created_at.isoformat(),
-            'updatedAt': chat.updated_at.isoformat(),
-            'nodeCount': len(chat.nodes)
-        } for chat in chats]
+            """Get list of all chats with basic info"""
+            chats = Chat.query.order_by(Chat.updated_at.desc()).all()
+            print(f"Chats from DB: {chats}")  # ADD THIS LINE for debugging
+            return [{
+                'id': chat.id,
+                'title': chat.title,
+                'createdAt': chat.created_at.isoformat(),
+                'updatedAt': chat.updated_at.isoformat(),
+                'nodeCount': len(chat.nodes)
+            } for chat in chats]
 
     def delete_chat(self, chat_id: str) -> bool:
         """Delete a chat and all its nodes"""

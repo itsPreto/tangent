@@ -3,7 +3,7 @@
     <!-- Theme Dropdown -->
     <div class="relative">
       <button @click="isOpen = !isOpen"
-        class="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/80 backdrop-blur border shadow-sm hover:bg-muted/80 transition-all duration-200">
+        class="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/80 backdrop-blur shadow-sm hover:bg-muted/80 transition-all duration-200">
         <div class="flex items-center gap-2">
           <div class="flex -space-x-1">
             <div class="w-4 h-4 rounded-full border-2 border-background shadow-sm"

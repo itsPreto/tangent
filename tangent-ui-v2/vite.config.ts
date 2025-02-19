@@ -1,13 +1,19 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import path from 'path'
+import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': resolve(__dirname, './src'),
+      'react': resolve(__dirname, 'node_modules/react'),
+      'react-dom': resolve(__dirname, 'node_modules/react-dom'),
+      'eslint/conf/eslint-all': resolve(__dirname, 'node_modules/eslint/conf/eslint-all.js')
     },
+  },
+  define: {
+    process: { env: {} }
   },
   server: {
     port: 3000,
@@ -18,10 +24,16 @@ export default defineConfig({
       },
     },
   },
+  worker: {
+    format: 'es'
+  },
   optimizeDeps: {
     esbuildOptions: {
       target: 'esnext'
-    }
+    },
+    include: [
+      'monaco-editor'
+    ]
   },
   build: {
     target: 'esnext',
@@ -35,7 +47,7 @@ export default defineConfig({
           'prism': ['prismjs'],
           'marked': ['marked'],
           'dompurify': ['dompurify'],
-          'monaco': ['@monaco-editor/loader']
+          'monaco': ['monaco-editor']
         }
       }
     }

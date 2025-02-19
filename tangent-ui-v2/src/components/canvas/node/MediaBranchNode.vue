@@ -4,6 +4,7 @@
             :node="node" 
             :is-selected="isSelected" 
             :selected-model="selectedModel"
+            :modelType="modelType"
             :open-router-api-key="openRouterApiKey" 
             :zoom="zoom" 
             :model-registry="modelRegistry"
@@ -82,6 +83,10 @@ const props = defineProps({
         type: String,
         required: true
     },
+    modelType: {
+        type: String,
+        required: true
+    },
     openRouterApiKey: {
         type: String,
         required: true
@@ -117,72 +122,43 @@ const mediaUrl = computed(() =>
         : null
 );
 
-// Enhanced media processing with chat support
 const processMedia = async (file: File, apiType: string, apiKey?: string) => {
-    isProcessing.value = true;
+  isProcessing.value = true;
+  
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('api_type', apiType);
+    formData.append('model', props.selectedModel);
+    if (apiKey) formData.append('api_key', apiKey);
 
-    try {
-        // Create immediate preview URL
-        const previewUrl = URL.createObjectURL(file);
+    const response = await fetch('http://127.0.0.1:5000/process-media', {
+      method: 'POST',
+      body: formData
+    });
 
-        // Set initial media content with preview URL
-        props.node.mediaContent = {
-            media_id: 'preview',
-            filename: file.name,
-            mime_type: file.type,
-            analysis: 'Analyzing...',
-            type: file.type.startsWith('image/') ? 'image' : 'video',
-            previewUrl
-        };
-
-        // Prepare and send to backend
-        const formData = new FormData();
-        formData.append('file', file);
-        const modelType = props.selectedModel.includes('gemini') ? 'gemini' :
-            props.selectedModel.includes('/') ? 'openrouter' : 'ollama';
-
-        formData.append('api_type', modelType);
-        formData.append('model', props.selectedModel);
-
-        if (apiKey) {
-            formData.append('api_key', apiKey);
-        }
-
-        const response = await fetch('http://127.0.0.1:5000/process-media', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to process media');
-        }
-
-        const result = await response.json();
-
-        // Update media content with result and keep preview URL
-        props.node.mediaContent = {
-            ...result,
-            previewUrl
-        };
-
-        // Add initial analysis message
-        if (!props.node.messages) {
-            props.node.messages = [];
-        }
-
-        props.node.messages.push({
-            role: 'assistant',
-            content: result.analysis,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        console.error('Error processing media:', error);
-        throw error;
-    } finally {
-        isProcessing.value = false;
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to process media');
     }
+
+    const result = await response.json();
+    // Update node with media content
+    props.node.mediaContent = result;
+    
+    // Add initial analysis message
+    props.node.messages = [{
+      role: 'assistant',
+      content: result.analysis,
+      timestamp: new Date().toISOString()
+    }];
+
+  } catch (error) {
+    console.error('Media processing error:', error);
+    throw error;
+  } finally {
+    isProcessing.value = false;
+  }
 };
 
 // New method to handle follow-up messages

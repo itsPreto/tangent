@@ -68,7 +68,7 @@ import { useChatStore } from '@/stores/chatStore';
 const canvasStore = useCanvasStore();
 const chatStore = useChatStore();
 
-const emit = defineEmits(['workspace-loaded']);
+const emit = defineEmits(['workspace-loaded', 'new-workspace']); // Add new-workspace
 
 onMounted(async () => {
     await chatStore.loadChats();
@@ -91,6 +91,7 @@ const handleClickOutside = (event: Event) => {
     }
 };
 
+
 const savedWorkspaces = computed(() =>
     chatStore.chats.sort((a, b) =>
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -98,25 +99,50 @@ const savedWorkspaces = computed(() =>
 );
 
 const currentWorkspace = computed(() => {
-  // Only show current workspace if we're not in overview mode
-  if (canvasStore.isOverviewMode) {
-    return null;
-  }
-  return chatStore.chats.find(chat => chat.id === canvasStore.lastSavedWorkspaceId);
+    if (!canvasStore.lastSavedWorkspaceId) { // Removed isoverview check
+        return null;
+    }
+    const workspace = chatStore.chats.find(
+        chat => chat.id === canvasStore.lastSavedWorkspaceId
+    );
+
+    return workspace;
 });
 
 const handleSave = async () => {
     if (!workspaceTitle.value.trim()) return;
-
+    // Call saveWorkspace with title
     const workspaceId = await canvasStore.saveWorkspace(workspaceTitle.value);
     if (workspaceId) {
+        // Reload chat list to reflect the new/renamed workspace
         await chatStore.loadChats();
-        workspaceTitle.value = '';
+        workspaceTitle.value = ''; // Reset input field
         isEditing.value = false;
         isOpen.value = false;
-        await loadWorkspace(workspaceId);
+        await loadWorkspace(workspaceId); // Load the workspace you just saved/renamed
     }
 };
+
+const openNewWorkspaceEditor = () => {
+    isEditing.value = true;
+    // Optionally, focus the input after it appears
+    nextTick(() => {
+        titleInput.value?.focus();
+    });
+};
+
+const startEditing = (workspaceId: string) => {
+    const workspace = chatStore.chats.find(chat => chat.id === workspaceId);
+    if (workspace) {
+        workspaceTitle.value = workspace.title;
+        isEditing.value = true;
+        nextTick(() => {
+            titleInput.value?.focus();
+            titleInput.value?.select();
+        });
+    }
+};
+
 
 const loadWorkspace = async (id: string) => {
     isOpen.value = false;
@@ -128,10 +154,8 @@ const loadWorkspace = async (id: string) => {
     const success = await canvasStore.loadChatState(id);
     if (success) {
         canvasStore.lastSavedWorkspaceId = id;
-        emit('workspace-loaded');
-
         await nextTick();
-        emit('workspace-loaded');
+        emit('workspace-loaded'); // <--  Emit *after* the next tick.
     }
 };
 
@@ -140,7 +164,10 @@ const handleDelete = async () => {
 
     if (await window.confirm('Delete this workspace? This cannot be undone.')) {
         await chatStore.deleteChat(currentWorkspace.value.id);
-        canvasStore.lastSavedWorkspaceId = null;
+        // Clear current workspace and reload chats
+        await canvasStore.clearCurrentWorkspace();
+        await chatStore.loadChats();
+
         isOpen.value = false;
     }
 };
@@ -152,4 +179,7 @@ watch(isEditing, async (newValue) => {
         titleInput.value?.focus();
     }
 });
+
+defineExpose({ openNewWorkspaceEditor });
+
 </script>

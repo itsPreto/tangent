@@ -1,24 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { Node } from '../types/message';
-
-interface ChatSummary {
-    id: string;
-    title: string;
-    createdAt: string;
-    updatedAt: string;
-    nodeCount: number;
-    x?: number;  // Optional position
-    y?: number;  // Optional position
-}
-
-interface ChatData {
-    id: string;
-    title: string;
-    createdAt: string;
-    updatedAt: string;
-    nodes: Node;
-}
+import type { ChatSummary } from '@/types/chat';
 
 export const useChatStore = defineStore('chat', () => {
     const currentChatId = ref<string | null>(null);
@@ -32,16 +14,18 @@ export const useChatStore = defineStore('chat', () => {
         error.value = null;
         try {
             const response = await fetch('http://127.0.0.1:5000/chats');
+            if (!response.ok) { // Check for HTTP errors
+                throw new Error(`Failed to load chats: ${response.status} ${response.statusText}`);
+            }
             const data = await response.json();
             chats.value = data.chats;
-        } catch (e) {
-            error.value = 'Failed to load chats';
+        } catch (e: any) { // using any to avoid TS type issues with generic errors
+            error.value = e.message || 'Failed to load chats';  // Store a user-friendly error
             console.error(e);
         } finally {
             isLoading.value = false;
         }
     };
-
     // Create new chat
     const createChat = async (title: string, initialNode: any) => {
         isLoading.value = true;
@@ -52,33 +36,51 @@ export const useChatStore = defineStore('chat', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title, initialNode })
             });
+            if (!response.ok) { // Check for HTTP errors here too
+                throw new Error(`Failed to create chat: ${response.status} ${response.statusText}`);
+            }
             const data = await response.json();
             await loadChats();
-            return data.chatId;
-        } catch (e) {
-            error.value = 'Failed to create chat';
+   
+            return data.chatId; // Return the ID.
+        } catch (e: any) {
+            error.value = e.message || 'Failed to create chat'; // Store user friendly error
             console.error(e);
             return null;
         } finally {
             isLoading.value = false;
         }
-    };
-
+    }
     const updateChatMetadata = async (chatId: string, metadata: Partial<ChatSummary>) => {
         try {
-            await fetch(`http://127.0.0.1:5000/chats/${chatId}`, {
-                method: 'PATCH',
+            const response = await fetch(`http://127.0.0.1:5000/chats/${chatId}`, {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(metadata)
             });
-            await loadChats(); // Reload to get updated positions
+
+            if (!response.ok) {
+                throw new Error('Failed to update chat metadata');
+            }
+
+            // Update local state immediately
+            const chatIndex = chats.value.findIndex(chat => chat.id === chatId);
+            if (chatIndex !== -1) {
+                chats.value[chatIndex] = {
+                    ...chats.value[chatIndex],
+                    ...metadata,
+                    isFavorite: metadata.isFavorite ?? chats.value[chatIndex].isFavorite
+                };
+            }
+
+            // Reload chats to ensure consistency
+            await loadChats();
             return true;
         } catch (e) {
             console.error(e);
             return false;
         }
     };
-
     // Load specific chat
     const loadChat = async (chatId: string) => {
         isLoading.value = true;
