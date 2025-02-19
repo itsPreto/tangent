@@ -53,7 +53,7 @@
           :theme="editorTheme"
           :customSetup="sandpackSetup"
           :options="{
-            autorun: true,
+            autorun: !isStreaming, // Don't auto-run when streaming
             recompileMode: 'immediate',
             recompileDelay: 500
           }"

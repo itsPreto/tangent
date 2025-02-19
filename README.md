@@ -1,11 +1,7 @@
 <div align="center">
 
- ->->-> [<img src="https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6ca814282eca7172c6_icon_clyde_white_RGB.svg" width="20px" alt="Discord">](https://discord.gg/qHDavVmafF) <-<-<-
+<img src="https://github.com/user-attachments/assets/cd8a656e-f643-439c-a64a-694d521c43fe" alt="tangent" style="border-radius: 10px">
 
-  
-  <img src="https://github.com/user-attachments/assets/cd8a656e-f643-439c-a64a-694d521c43fe" alt="tangent" style="border-radius: 10px">
-  
-   
 ## What is this?
 
 Tangent is a canvas for exploring AI conversations, treating each chat branch as an experiment you can merge, compare, and discard. It lets you resurrect conversations that hit context limits, pick up abandoned threads, and map the hidden connections between different discussions.
@@ -57,15 +53,41 @@ tangent-api
 ```
 
 <div align="center">
-## Prerequisites
+ 
+## Quick Installation
+
 </div>
+
+
 
 * [Whisper.cpp](https://github.com/ggerganov/whisper.cpp) (`git clone https://github.com/ggerganov/whisper.cpp` -> `cd whisper.cpp` -> `sh ./models/download-ggml-model.sh base.en` -> `make` -> `make server && ./server`)
 * [Ollama](https://ollama.com/) (project was kinda hardcoded for ollama but can be generalized to accept diff backends)
 * Exported Archive Data (from Claude or ChatGPT)
 
+
+```bash
+# Clone the repository
+git clone https://github.com/itsPreto/tangent.git
+cd tangent
+
+# Make the install script executable and run it
+chmod +x install.sh
+./install.sh
+```
+
+The script will:
+- Check for and start required services (Ollama)
+- Optionally install Whisper.cpp for voice features
+- Set up the Python environment and dependencies
+- Install and start the frontend
+- Set up default models (all-minilm for embeddings, qwen2.5 for generation)
+
+> For manual setup or troubleshooting, see the instructions below.
+
 <div align="center">
-### Environment Setup
+ 
+### Manual Setup
+
 </div>
 
 Initialize a new venv (mac):
@@ -80,7 +102,9 @@ pip install -r requirements.txt
 ```
 
 <div align="center">
+ 
 ### Ollama Setup
+
 </div>
 
 Install Ollama
@@ -105,7 +129,9 @@ ollama serve
 ```
 
 <div align="center">
+ 
 ### Backend Setup
+
 </div>
 
 Configure local models:
@@ -128,7 +154,9 @@ python3 app.py --embedding-model "custom-embedding-model" --generation-model "cu
 The backend will start up at `http://localhost:5001/api`.
 
 <div align="center">
+ 
 ### Frontend Setup
+
 </div>
 
 ```bash
@@ -139,7 +167,9 @@ npm start
 > if you get any missing pckg error just manually install it and restart the UI
 
 <div align="center">
+ 
 ### API Endpoints
+
 </div>
 
 The backend exposes these main endpoints:
@@ -151,4 +181,17 @@ The backend exposes these main endpoints:
 
 Feel free to contribute! Just submit a PR or open an issue for any cool features or fixes you've got in mind.
 
-Licensed under Apache 2.0 - see the LICENSE file for the full details.
+<div align="center">
+ 
+> Licensed under Apache 2.0 - see the LICENSE file for the full details.
+
+</div>
+
+---
+
+<div align="center">
+⬇️ - JOIN OUR DISCORD SERVER - ⬇️
+ 
+# [<img src="https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6ca814282eca7172c6_icon_clyde_white_RGB.svg" width="20px" alt="Discord">](https://discord.gg/qHDavVmafF)
+ 
+</div>

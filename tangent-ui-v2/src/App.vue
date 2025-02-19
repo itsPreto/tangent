@@ -23,7 +23,7 @@
       <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mt-16 sm:mt-4">
         <div class="flex items-center space-x-4">
           <!-- Logo Container -->
-          <TangentLogo />
+          <TangentLogo v-if="showLogo" />
           <ThemeToggle />
           <!-- New Workspace Button -->
           <button @click="handleNewWorkspace" :style="buttonStyles"
@@ -101,7 +101,7 @@
     </div>
 
     <!-- Workspace Overview Title -->
-    <div class="fixed bottom-4 z-50 w-full text-center transition-all duration-300"
+    <div v-if="!isInOverview" class="fixed bottom-4 z-50 w-full text-center transition-all duration-300"
       :style="{ left: appStore.isSidePanelOpen ? '40vw' : '0', right: '0' }">
       <!-- Use appStore -->
       <div v-if="showOverviewTitle"
@@ -347,8 +347,6 @@ import SidePanel from './components/sidepanel/SandPackSidePanel.vue';
 import Badge from './components/ui/Badge.vue';
 import google from '@/assets/google.jpeg';
 import ollama from '@/assets/ollama.jpeg';
-import anthropicIcon from '@/assets/anthropic.jpeg';
-import openaiIcon from '@/assets/openai.jpeg';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -375,6 +373,10 @@ const windowSize = ref({
 });
 
 const showHelp = ref(false);
+
+const showLogo = computed(() => {
+  return (canvasRef.value?.workspaces && canvasRef.value.workspaces.length !== 0) || false;
+});
 
 const canvasStore = useCanvasStore();
 const modelStore = useModelStore();
@@ -546,20 +548,20 @@ const handleNewWorkspace = async () => {
   if (canvasStore.snappedNodeId) {
     canvasStore.popSnappedNode();
   }
-  
+
   // Clear the current workspace
   await canvasStore.clearCurrentWorkspace();
-  
+
   // Create new workspace
   const newWorkspaceId = await canvasStore.createNewWorkspace();
-  
+
   if (newWorkspaceId) {
     // Refresh the workspaces list
     await chatStore.loadChats();
-    
+
     // Load the new workspace state
     await canvasStore.loadChatState(newWorkspaceId);
-    
+
     // Get the ID of the newly created root node
     const rootNodeId = canvasStore.nodes[0]?.id;
     if (rootNodeId) {
@@ -812,6 +814,9 @@ const handleDrop = async (e: DragEvent) => {
   }
 };
 
+watch(() => canvasRef.value?.workspaces, (newWorkspaces) => {
+  // This will trigger a recompute of showLogo when workspaces change
+}, { deep: true });
 
 onMounted(async () => {
   canvasStore.initFromLocalStorage(); // Keep this for other settings
