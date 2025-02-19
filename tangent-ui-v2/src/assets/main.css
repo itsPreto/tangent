@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary: theme('colors.indigo.600');
+    --muted: theme('colors.gray.100');
+    --border: theme('colors.gray.200');
+  }
+
+  [data-theme="dark"] {
+    --primary: theme('colors.indigo.500');
+    --muted: theme('colors.gray.800');
+    --border: theme('colors.gray.700');
+  }
+}
+
+@layer components {
+  .chat-node {
+    @apply bg-white dark:bg-gray-800 border border-border shadow-lg rounded-lg p-4;
+  }
+  
+  .chat-message {
+    @apply p-4 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100;
+  }
+
+  .chat-input {
+    @apply w-full px-4 py-2 rounded-lg border border-border 
+           bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+           focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-primary text-white rounded-lg 
+           hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-200;
+  }
+
+  .btn-icon {
+    @apply p-2 rounded-full bg-white dark:bg-gray-800 border border-border shadow-lg
+           hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200;
+  }
+  
+  .connection-line {
+    @apply transition-colors duration-200;
+  }
+}
