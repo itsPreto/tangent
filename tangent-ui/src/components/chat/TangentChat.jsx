@@ -364,6 +364,9 @@ const TangentChat = ({
       return;
     }
 
+    // Clear input immediately after validation
+    setInputValue('');
+
     // 1) Add user message
     const newMessage = {
       role: 'user',
