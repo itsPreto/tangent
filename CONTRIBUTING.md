@@ -10,32 +10,36 @@ Tangent is an AI chat canvas that grows with you. Instead of a linear chat inter
 
 Here's a brief overview of the project structure:
 
-*   `simplified-ui/`: Contains all frontend code using React.
+*   `tangent-ui/`: Contains all frontend code using React.
     *   `src/components/`: React components for the UI.
         *   `chat/`: Components related to the chat interface.
         *   `visualization/`: Components for the visualization canvas.
         *   `shared/`: Shared components used across the app.
         *   `core/`: Core components for styling and functionality.
-        *    `feedback/` Feedback and metrics components
+        *   `feedback/`: Feedback and metrics components
         *   `forms/`: Components for handling user forms.
         *   `layout/`: Components for application layouts
         *   `providers/`: Context providers
-        *    `navigation/`: Navigation components
-        *    `overlay/`: Overlay components
+        *   `navigation/`: Navigation components
+        *   `overlay/`: Overlay components
+        *   `interpreter/`: Python and React preview components
     *   `src/utils/`: Utility functions.
     *   `src/index.js`: Entry point for the UI.
-*   `tsne.py`: Python backend code using Flask for processing and embeddings.
+*   `tangent-api/`: Python backend code using Flask for processing and embeddings.
+    *   `src/`: Main application code
+    *   `routes/`: API endpoints
+    *   `services/`: Business logic and processing services
 
 ## Areas Needing Help
 
 We'd love your help with:
 
-*   **Backend Overhaul (`tsne.py`):**
+*   **Backend Overhaul (`tangent-api/`):**
     *   Implementing fuzzy matching or sentence-wise embedding matching for better reflection analysis.
     *   Refactoring for better organization and readability
     *   Making the API OpenAI compatible.
 
-*   **Frontend Improvements (`simplified-ui/`):**
+*   **Frontend Improvements (`tangent-ui/`):**
     *   Cleaning up hardcoded configurations.
     *   Adding a proper configuration system (e.g., using config file).
     *   Improving the overall code organization and file structure.
