@@ -358,6 +358,9 @@ const TangentChat = ({
     }
     if (!message.trim()) return;
 
+    // Clear the input immediately after sending
+    setInputValue('');
+
     const currentNode = nodes.find(n => n.id === nodeId);
     if (!currentNode) {
       console.error('Node not found:', nodeId);
