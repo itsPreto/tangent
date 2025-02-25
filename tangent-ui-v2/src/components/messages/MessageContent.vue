@@ -4,9 +4,10 @@
     <template v-if="props.isStreaming">
       <div class="mt-3 mb-3">
         <CodeBubble
+          :nodeId="props.nodeId"
           :language="streamingLanguage"
           :content="streamingBuffer"
-          @click="handleCodeClick({ content: streamingBuffer, language: streamingLanguage, complete: !props.isStreaming })"
+          @click="handleCodeClick({ content: streamingBuffer, language: streamingLanguage, nodeId: props.nodeId, codeIndex: 0, complete: false })"
         />
       </div>
     </template>
@@ -20,6 +21,7 @@
         />
         <div v-else-if="part.type === 'code'" class="mt-3 mb-3">
           <CodeBubble
+            :nodeId="props.nodeId"
             :language="part.language"
             :content="part.content"
             @click="handleCodeClick(part)"
@@ -30,30 +32,24 @@
   </div>
 </template>
 
+
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import emitter, { Events } from '@/utils/eventBus'
 import CodeBubble from './CodeBubble.vue'
+import type { ContentPart } from '@/types/message'
 import { useAppStore } from '@/stores/appStore'
 
 interface Props {
   content: string;
   isStreaming?: boolean;
-  nodeId?: string;
-}
-
-interface ContentPart {
-  type: 'text' | 'code';
-  content: string;
-  language?: string;
-  complete?: boolean;
+  nodeId: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  isStreaming: false,
-  nodeId: ''
+  isStreaming: false
 })
 
 const appStore = useAppStore()
@@ -63,12 +59,11 @@ const lastCompleteContent = ref('')
 
 // For streaming accumulation:
 const streamingBuffer = ref('')
-const streamingLanguage = ref('javascriptreact') // default language
+const streamingLanguage = ref('javascriptreact')
 const isStreamingActive = ref(false)
 
 // Helper: Extract code block content between triple backticks
 function extractCodeBlock(text: string): string {
-  // This regex captures content between ``` (optionally with "jsx" after the backticks)
   const regex = /```(?:jsx)?\s*([\s\S]*?)\s*```/;
   const match = text.match(regex);
   return match ? match[1] : text;
@@ -86,7 +81,7 @@ watch(
     }
     // While streaming, update the buffer with only the code block content
     streamingBuffer.value = extractCodeBlock(newContent);
-    streamingLanguage.value = 'javascriptreact'; // Adjust as needed
+    streamingLanguage.value = 'javascriptreact';
     emitter.emit('show-sandbox', {
       code: streamingBuffer.value,
       language: streamingLanguage.value,
@@ -116,13 +111,13 @@ watch(
   }
 );
 
-// For non-streamed content, parse using your normal logic:
 const parsedContent = computed<ContentPart[]>(() => {
   const contentToProcess = lastCompleteContent.value || props.content;
   const parts: ContentPart[] = [];
   let inCodeBlock = false;
   let codeLanguage = '';
   let currentBuffer = '';
+  let codeIndex = 0;
 
   const processMarkdown = (text: string) => {
     if (!text) return;
@@ -143,6 +138,7 @@ const parsedContent = computed<ContentPart[]>(() => {
           type: 'code',
           content: currentBuffer,
           language: codeLanguage || 'javascriptreact',
+          codeIndex: codeIndex++,
           complete: true
         });
         currentBuffer = '';
@@ -158,25 +154,30 @@ const parsedContent = computed<ContentPart[]>(() => {
       currentBuffer += currentBuffer ? '\n' + line : line;
     }
   }
+
   if (inCodeBlock) {
     parts.push({
       type: 'code',
       content: currentBuffer,
       language: codeLanguage || 'javascriptreact',
+      codeIndex: codeIndex++,
       complete: true
     });
   } else if (currentBuffer) {
     processMarkdown(currentBuffer);
   }
+
   return parts;
 });
 
 const handleCodeClick = (part: ContentPart) => {
+  console.log('NodeId:', props.nodeId);
   const eventData = {
     code: part.content,
     language: part.language || 'javascriptreact',
     isStreaming: !part.complete,
-    nodeId: props.nodeId
+    nodeId: props.nodeId,
+    codeIndex: part.codeIndex
   };
   emitter.emit('show-sandbox', eventData as Events['show-sandbox']);
   appStore.openSidePanel();

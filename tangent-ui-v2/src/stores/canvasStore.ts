@@ -5,6 +5,7 @@ import { ref, watch, computed } from 'vue';
 import type { Message, Node, ContentPart, TTSConfig } from '../types/message';
 import type { ModelInfo, ModelParameters } from '@/types/model';
 import type { ChatSummary } from '@/types/chat';
+import { sandpackSetup } from '../components/sandpack/sandpackDeps'
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
 
@@ -12,7 +13,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 // Helper types for model info
-type ModelSource = 'ollama' | 'openrouter' | 'custom';
+type ModelSource = "custom" | "ollama" | "google" | "openrouter" | "anthropic" | "openai";
 
 interface LocalStorageState {
   nodes: Node[];
@@ -44,6 +45,44 @@ export const useCanvasStore = defineStore('canvas', () => {
       threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
     }
   ];
+
+  const generateSystemPrompt = (codeType?: string): string => {
+    const depsString = JSON.stringify(sandpackSetup.dependencies, null, 2);
+
+    const basePrompt = `You are generating code that must work with exactly these dependencies and versions:
+  ${depsString}
+  
+  Important requirements:
+  - Code must be a complete, working component
+  - Only use features available in these specific package versions
+  - Don't use any packages/imports not listed above
+  - Don't use external assets or CDN resources
+  - Ensure the component is properly exported
+  - Follow React best practices for hooks and state management`;
+
+    // Add specific context based on code type
+    switch (codeType) {
+      case 'threejs':
+        return `${basePrompt}
+  Additional Three.js requirements:
+  - Import OrbitControls from @react-three/drei, not from three/examples
+  - Use Canvas from @react-three/fiber for the 3D context
+  - Handle proper cleanup in useEffect for any animations
+  - Include proper TypeScript types if available`;
+
+      case 'react':
+        return `${basePrompt}
+  Additional React requirements:
+  - Use functional components with hooks
+  - Include proper prop types/interfaces
+  - Handle cleanup and side effects appropriately
+  - Follow React performance best practices`;
+
+      default:
+        return basePrompt;
+    }
+  };
+
 
   const nodeModelParams = ref(new Map<string, ModelParameters>());
 
@@ -128,41 +167,6 @@ export const useCanvasStore = defineStore('canvas', () => {
   const nodeTopics = ref(new Map());
 
   let abortController: AbortController | null = null;
-  // Helper function to process SSE lines
-  const processSSELine = (line: string, source: ModelSource) => {
-    // Skip empty lines and known control messages
-    if (!line || line === 'data: [DONE]' || line === '[DONE]' ||
-      (source === 'openrouter' && line.startsWith(': OPENROUTER PROCESSING'))) {
-      return null;
-    }
-
-    // Remove 'data: ' prefix and handle different formats
-    const jsonData = line.startsWith('data: ') ? line.slice(5) : line;
-
-    try {
-      const data = JSON.parse(jsonData);
-
-      // Handle different provider response structures
-      switch (source) {
-        case 'openrouter':
-          return data.choices?.[0]?.delta?.content || '';
-        case 'ollama':
-          // Ollama's response structure uses 'message' field
-          return data.message?.content || data.content || '';
-        case 'custom':
-          // Handle custom API formats
-          return data.content || data.response || data.output || '';
-        default:
-          return data.content || '';
-      }
-    } catch (e) {
-      // Only log actual parsing errors for non-control messages
-      if (!line.includes('[DONE]') && !line.includes('OPENROUTER PROCESSING')) {
-        console.error(`Error parsing ${source} response:`, e, line);
-      }
-      return null;
-    }
-  };
 
   const snappedNodesStack = ref<string[]>([]);
 
@@ -213,7 +217,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     // saveToLocalStorage(); // You'd need a function to save the state
 
     // If you also need to immediately reflect this in the chatStore:
-      await chatStore.loadChats(); //I'm keeping this incase you end up adding a db route for it later
+    await chatStore.loadChats(); //I'm keeping this incase you end up adding a db route for it later
   };
 
   // 3. Add the `importWorkspaces` function:
@@ -236,9 +240,9 @@ export const useCanvasStore = defineStore('canvas', () => {
         branchMessageIndex: parseInt(msg.branch_id) - 1,
         title: msg.chat_name
       };
-      
-      await addNode(msg.parent_message_id, parseInt(msg.branch_id) - 1, {x: nodeData.x, y: nodeData.y}, nodeData);
-      
+
+      await addNode(msg.parent_message_id, parseInt(msg.branch_id) - 1, { x: nodeData.x, y: nodeData.y }, nodeData);
+
       // Small delay to allow UI updates
       await new Promise(resolve => setTimeout(resolve, 10));
     }
@@ -554,12 +558,14 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
+
   const prepareRequest = (
     modelInfo: ModelInfo,
     messageContext: Array<{ role: string; content: string }>,
     systemPrompt: string,
     openRouterApiKey: string,
-    nodeId: string
+    nodeId: string,
+    codeType?: string
   ) => {
     if (!modelInfo.source) {
       throw new Error('Model source not specified');
@@ -578,8 +584,17 @@ export const useCanvasStore = defineStore('canvas', () => {
         if (!geminiApiKey) {
           throw new Error('Gemini API key not found');
         }
-        endpoint = `https://generativelanguage.googleapis.com/v1beta/${modelInfo.id}:generateContent?key=${geminiApiKey}`;
+
+        // Use Flask backend for Google
+        endpoint = 'http://127.0.0.1:5000/api/chat/google/stream';
+        headers = {
+          ...headers,
+          'X-API-Key': geminiApiKey
+        };
+
+        // Format for Google API
         requestBody = {
+          model: modelInfo.id,
           contents: messageContext.map(msg => ({
             role: msg.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: msg.content }]
@@ -594,34 +609,58 @@ export const useCanvasStore = defineStore('canvas', () => {
         };
         break;
 
-      case 'openrouter':
-        endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+      case 'anthropic':
+        const anthropicApiKey = localStorage.getItem('anthropicApiKey');
+        if (!anthropicApiKey) {
+          throw new Error('Anthropic API key not found');
+        }
+
+        // Use Flask backend for Anthropic
+        endpoint = 'http://127.0.0.1:5000/api/chat/anthropic/stream';
         headers = {
           ...headers,
-          'Authorization': `Bearer ${openRouterApiKey}`,
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'Tangent Chat'
+          'X-API-Key': anthropicApiKey
         };
+
+        // Format messages for Anthropic API
+        requestBody = {
+          model: modelInfo.id,
+          messages: messageContext,
+          system: systemPrompt,
+          temperature: modelParams.temperature,
+          top_p: modelParams.topP,
+          max_tokens: modelParams.maxOutputTokens
+        };
+        break;
+
+      case 'openrouter':
+        // Use Flask backend for OpenRouter
+        endpoint = 'http://127.0.0.1:5000/api/chat/openrouter/stream';
+        headers = {
+          ...headers,
+          'X-API-Key': openRouterApiKey
+        };
+
         requestBody = {
           model: modelInfo.id,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: generateSystemPrompt(codeType) },
             ...messageContext
           ],
           temperature: modelParams.temperature,
           top_p: modelParams.topP,
           top_k: modelParams.topK,
-          max_tokens: modelParams.maxOutputTokens,
-          stream: true
+          max_tokens: modelParams.maxOutputTokens
         };
         break;
 
       case 'ollama':
+        // Keep using local Ollama API directly since it doesn't have CORS issues
         endpoint = 'http://localhost:11434/api/chat';
         requestBody = {
           model: modelInfo.name,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: generateSystemPrompt(codeType) },
             ...messageContext
           ],
           options: {
@@ -641,6 +680,60 @@ export const useCanvasStore = defineStore('canvas', () => {
     return { endpoint, headers, requestBody };
   };
 
+  // Update processSSELine to handle backend-formatted responses
+  const processSSELine = (line: string, source: ModelSource) => {
+    // Skip empty lines and known control messages
+    if (!line || line === 'data: [DONE]' || line === '[DONE]' ||
+      (source === 'openrouter' && line.startsWith(': OPENROUTER PROCESSING'))) {
+      return null;
+    }
+
+    // Remove 'data: ' prefix and handle different formats
+    const jsonData = line.startsWith('data: ') ? line.slice(5) : line;
+
+    try {
+      const data = JSON.parse(jsonData);
+
+      // Handle different provider response structures
+      switch (source) {
+        case 'openrouter':
+          // For OpenRouter proxied through Flask
+          return data.choices?.[0]?.delta?.content || '';
+
+        case 'ollama':
+          // Ollama's response structure (direct)
+          return data.message?.content || data.content || '';
+
+        case 'anthropic':
+          // Anthropic's SSE format proxied through Flask
+          if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
+            return data.delta.text || '';
+          }
+          return '';
+
+        case 'google':
+          // Google's response format proxied through Flask
+          if (data.candidates && data.candidates[0]?.content?.parts) {
+            return data.candidates[0].content.parts[0]?.text || '';
+          }
+          return '';
+
+        case 'custom':
+          // Handle custom API formats
+          return data.content || data.response || data.output || '';
+
+        default:
+          return data.content || '';
+      }
+    } catch (e) {
+      // Only log actual parsing errors for non-control messages
+      if (!line.includes('[DONE]') && !line.includes('OPENROUTER PROCESSING')) {
+        console.error(`Error parsing ${source} response:`, e, line);
+      }
+      return null;
+    }
+  };
+
   const sendMessage = async (
     nodeId: string,
     messageData: string | { message: string, tts?: TTSConfig },
@@ -650,6 +743,22 @@ export const useCanvasStore = defineStore('canvas', () => {
   ) => {
     const messageText = typeof messageData === 'string' ? messageData : messageData.message;
     const ttsConfig = typeof messageData === 'string' ? undefined : messageData.tts;
+
+    // Detect if this is a code generation request
+    const isCodeRequest = messageText.toLowerCase().includes('create') &&
+      (messageText.toLowerCase().includes('component') ||
+        messageText.toLowerCase().includes('threejs') ||
+        messageText.toLowerCase().includes('react'));
+
+    // Determine code type
+    let codeType: string | undefined;
+    if (isCodeRequest) {
+      if (messageText.toLowerCase().includes('threejs')) {
+        codeType = 'threejs';
+      } else if (messageText.toLowerCase().includes('react')) {
+        codeType = 'react';
+      }
+    }
 
     console.log("sendMessage called", { nodeId, messageText, selectedModel, openRouterApiKey, addUserMessage, ttsConfig });
 
@@ -693,6 +802,12 @@ export const useCanvasStore = defineStore('canvas', () => {
           }));
 
         try {
+          // For Google/Gemini, we prepend the system prompt to the first message since it doesn't have system messages
+          const systemPromptText = isCodeRequest ? generateSystemPrompt(codeType) : "You are a helpful AI assistant";
+          if (history.length > 0 && history[0].role === 'user') {
+            history[0].parts[0].text = `${systemPromptText}\n\nUser request: ${history[0].parts[0].text}`;
+          }
+
           const chat = model.startChat({
             history,
             generationConfig: {
@@ -744,7 +859,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         const { endpoint, headers, requestBody } = prepareRequest(
           selectedModel,
           messageContext,
-          "You are a helpful AI assistant...",
+          isCodeRequest ? generateSystemPrompt(codeType) : "You are a helpful AI assistant",
           openRouterApiKey,
           nodeId
         );
@@ -772,7 +887,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         const response = await handleStreamingResponse(
           reader,
           nodeId,
-          selectedModel.source,
+          selectedModel.source as ModelSource,
           async (streamedContent: string) => {
             await processStreamedContent(nodeId, streamedContent, setStreamingContent, ttsConfig);
           }

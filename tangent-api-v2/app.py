@@ -1,13 +1,14 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import tiktoken
 import os
 from pathlib import Path
 import re
 import time
-import json
 from typing import Dict, List, Tuple, Optional
+import requests
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 import logging
+import sseclient
 import requests
 import base64
 from PIL import Image
@@ -17,6 +18,15 @@ from ChatgptChatProcessor import ChatGPTDataProcessor
 from ChatPersistenceService import ChatPersistenceService, Chat, db
 import tempfile
 import uuid
+
+from flask import Blueprint, stream_with_context
+import re
+
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+api_routes = Blueprint('api_routes', __name__)
 
 app = Flask(__name__)
 
@@ -28,15 +38,10 @@ CORS(app, resources={
             "http://localhost:5173",  # Another Vite port if needed
         ],
         "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        # If you're using cookies or tokens that require credentials:
+        "allow_headers": ["Content-Type", "Authorization", "X-API-Key"],  # Added X-API-Key
         "supports_credentials": True
     }
 })
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
@@ -47,39 +52,39 @@ class EnhancedMediaProcessor:
         self.supported_image_types = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
         self.supported_video_types = {'video/mp4', 'video/quicktime', 'video/webm'}
         self.conversation_history = {}  # Store conversation history per media_id
-        
+     
     def process_media(self, file_data: bytes, mime_type: str, api_type: str, api_key: str = None, model: str = None) -> Dict:
-        """Process media file and return analysis based on API type"""
-        try:
-            if mime_type in self.supported_image_types:
-                result = self.process_image(file_data, mime_type, api_type, api_key, model)
-            elif mime_type in self.supported_video_types:
-                result = self.process_video(file_data, mime_type, api_type, api_key, model)
-            else:
-                raise ValueError(f"Unsupported media type: {mime_type}")
+            """Process media file and return analysis based on API type"""
+            try:
+                if mime_type in self.supported_image_types:
+                    result = self.process_image(file_data, mime_type, api_type, api_key, model)
+                elif mime_type in self.supported_video_types:
+                    result = self.process_video(file_data, mime_type, api_type, api_key, model)
+                else:
+                    raise ValueError(f"Unsupported media type: {mime_type}")
 
-            # Generate media ID
-            media_id = str(uuid.uuid4())
-            
-            # Initialize conversation history
-            self.conversation_history[media_id] = {
-                'messages': [
-                    {'role': 'system', 'content': 'You are analyzing media content. Use the initial analysis as context.'},
-                    {'role': 'assistant', 'content': result['analysis']}
-                ],
-                'media_data': base64.b64encode(file_data).decode('utf-8'),
-                'api_type': api_type,
-                'model': model
-            }
-            
-            return {
-                **result,
-                'media_id': media_id
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in media processing: {str(e)}")
-            raise
+                # Generate media ID
+                media_id = str(uuid.uuid4())
+                
+                # Initialize conversation history
+                self.conversation_history[media_id] = {
+                    'messages': [
+                        {'role': 'system', 'content': 'You are analyzing media content. Use the initial analysis as context.'},
+                        {'role': 'assistant', 'content': result['analysis']}
+                    ],
+                    'media_data': base64.b64encode(file_data).decode('utf-8'),
+                    'api_type': api_type,
+                    'model': model
+                }
+                
+                return {
+                    **result,
+                    'media_id': media_id
+                }
+                
+            except Exception as e:
+                logger.error(f"Error in media processing: {str(e)}")
+                raise
 
     def process_image(self, file_data: bytes, mime_type: str, api_type: str, api_key: str = None, model: str = None) -> Dict:
         """Process image with selected API"""
@@ -358,6 +363,7 @@ class EnhancedMediaProcessor:
 media_processor = EnhancedMediaProcessor()
 chat_processor = ChatGPTDataProcessor()
 
+# ========== APP ROUTES ==========
 
 @app.route('/api/process', methods=['POST'])
 def process_uploaded_data():
@@ -369,32 +375,44 @@ def process_uploaded_data():
         if not file.filename.endswith('.json'):
             return jsonify({'error': 'Invalid file type'}), 400
 
-        # Save uploaded file (you already have this)
-        data_dir = Path('./unprocessed')  # Use pathlib for better path handling
+        # Save uploaded file
+        data_dir = Path('./unprocessed')
         data_dir.mkdir(exist_ok=True)
         file_path = data_dir / 'chat_data.json'
         file.save(file_path)
 
-        # --- USE THE PROCESSOR HERE ---
         try:
             processed_messages = chat_processor.process_data(str(file_path))
-            # processed_messages is now a list of dictionaries,
-            # each representing a message with branching information.
             print(processed_messages) #for debugging
 
-        # Instead of starting background processing, return the processed messages:
             return jsonify({
-                'messages': processed_messages,  # Send the processed messages
-                'message': 'Data processed successfully' #update message
+                'messages': processed_messages,
+                'message': 'Data processed successfully'
             })
 
         except ValueError as e:
-            return jsonify({'error': str(e)}), 400  # Specific error for bad data
+            return jsonify({'error': str(e)}), 400
         except Exception as e:
           logger.error(f"Error processing data in /api/process route: {str(e)}")
           return jsonify({'error': str(e)}), 500
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
+@app.route('/count-tokens', methods=['POST'])
+def count_tokens():
+    try:
+        data = request.json
+        if not data or 'text' not in data:
+            return jsonify({'error': 'No text provided'}), 400
+            
+        # Initialize the tokenizer
+        enc = tiktoken.get_encoding("cl100k_base")
+        
+        # Count tokens
+        tokens = len(enc.encode(data['text']))
+        
+        return jsonify({'tokens': tokens})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -476,9 +494,6 @@ def remove_node(chat_id, node_id):
     except Exception as e:
         logger.error(f"Error removing node: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-# Initialize the service
-chat_service = ChatPersistenceService(app)
 
 @app.route('/process-media', methods=['POST'])
 def process_media():
@@ -570,6 +585,459 @@ def get_media(media_id):
         return jsonify({'error': 'Media not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ========== API ROUTES (BLUEPRINT) ==========
+
+@api_routes.route('/models/anthropic', methods=['GET'])
+def get_anthropic_models():
+    """Proxy endpoint to fetch Anthropic models through the backend."""
+    try:
+        api_key = request.headers.get('X-API-Key')
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+
+        # Call Anthropic API to get models
+        response = requests.get(
+            'https://api.anthropic.com/v1/models',
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json'
+            }
+        )
+
+        # Return the response from Anthropic
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Anthropic API error: {response.status_code}',
+                'message': response.text
+            }), response.status_code
+
+        return jsonify(response.json())
+    
+    except Exception as e:
+        logger.error(f"Error fetching Anthropic models: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_routes.route('/chat/anthropic', methods=['POST'])
+def chat_with_anthropic():
+    """Non-streaming endpoint for Anthropic chat."""
+    try:
+        data = request.json
+        api_key = request.headers.get('X-API-Key')
+        
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+        
+        # Required parameters
+        model = data.get('model')
+        messages = data.get('messages')
+        system = data.get('system', '')
+        max_tokens = data.get('max_tokens', 1024)
+        
+        # Optional parameters
+        temperature = data.get('temperature', 0.7)
+        top_p = data.get('top_p', 0.95)
+        top_k = data.get('top_k', 40)
+        
+        if not model or not messages:
+            return jsonify({'error': 'Model and messages are required'}), 400
+        
+        # Call Anthropic API
+        response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'model': model,
+                'messages': messages,
+                'system': system,
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+                'top_p': top_p
+            }
+        )
+        
+        # Return the response from Anthropic
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Anthropic API error: {response.status_code}',
+                'message': response.text
+            }), response.status_code
+        
+        return jsonify(response.json())
+    
+    except Exception as e:
+        logger.error(f"Error in Anthropic chat: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_routes.route('/chat/anthropic/stream', methods=['POST'])
+def stream_chat_with_anthropic():
+    """Streaming endpoint for Anthropic chat."""
+    @stream_with_context
+    def generate():
+        try:
+            data = request.json
+            api_key = request.headers.get('X-API-Key')
+            
+            if not api_key:
+                yield f"data: {json.dumps({'error': 'API key is required'})}\n\n"
+                return
+
+            # Required parameters
+            model = data.get('model')
+            messages = data.get('messages')
+            system = data.get('system', '')
+            max_tokens = data.get('max_tokens', 1024)
+            
+            # Optional parameters
+            temperature = data.get('temperature', 0.7)
+            top_p = data.get('top_p', 0.95)
+            top_k = data.get('top_k', 40)
+            
+            if not model or not messages:
+                yield f"data: {json.dumps({'error': 'Model and messages are required'})}\n\n"
+                return
+            
+            # Call Anthropic API with streaming
+            response = requests.post(
+                'https://api.anthropic.com/v1/messages',
+                headers={
+                    'x-api-key': api_key,
+                    'anthropic-version': '2023-06-01',
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                },
+                json={
+                    'model': model,
+                    'messages': messages,
+                    'system': system,
+                    'max_tokens': max_tokens,
+                    'temperature': temperature,
+                    'top_p': top_p,
+                    'stream': True
+                },
+                stream=True
+            )
+            
+            if response.status_code != 200:
+                error_message = response.text
+                yield f"data: {json.dumps({'error': f'Anthropic API error: {response.status_code}', 'message': error_message})}\n\n"
+                return
+            
+            # Process and forward the streamed response
+            client = sseclient.SSEClient(response)
+            for event in client.events():
+                yield f"{event.data}\n\n"
+                
+        except Exception as e:
+            logger.error(f"Error in Anthropic streaming chat: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), content_type='text/event-stream')
+
+
+@api_routes.route('/models/openrouter', methods=['GET'])
+def get_openrouter_models():
+    """Proxy endpoint to fetch OpenRouter models through the backend."""
+    try:
+        api_key = request.headers.get('X-API-Key')
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+
+        # Call OpenRouter API to get models
+        response = requests.get(
+            'https://openrouter.ai/api/v1/models',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'HTTP-Referer': request.headers.get('Origin', 'http://localhost:3000'),
+                'X-Title': 'Tangent Chat',
+                'Content-Type': 'application/json'
+            }
+        )
+
+        # Return the response from OpenRouter
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'OpenRouter API error: {response.status_code}',
+                'message': response.text
+            }), response.status_code
+
+        return jsonify(response.json())
+    
+    except Exception as e:
+        logger.error(f"Error fetching OpenRouter models: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_routes.route('/models/google', methods=['GET'])
+def get_google_models():
+    """Proxy endpoint to fetch Google Gemini models through the backend."""
+    try:
+        api_key = request.headers.get('X-API-Key')
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+
+        # Call Google API to get models
+        response = requests.get(
+            f'https://generativelanguage.googleapis.com/v1beta/models?key={api_key}'
+        )
+
+        # Return the response from Google
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Google API error: {response.status_code}',
+                'message': response.text
+            }), response.status_code
+
+        return jsonify(response.json())
+    
+    except Exception as e:
+        logger.error(f"Error fetching Google models: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_routes.route('/chat/openrouter', methods=['POST'])
+def chat_with_openrouter():
+    """Non-streaming endpoint for OpenRouter chat."""
+    try:
+        data = request.json
+        api_key = request.headers.get('X-API-Key')
+        
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+        
+        # Required parameters
+        model = data.get('model')
+        messages = data.get('messages')
+        max_tokens = data.get('max_tokens', 1024)
+        
+        # Optional parameters
+        temperature = data.get('temperature', 0.7)
+        top_p = data.get('top_p', 0.95)
+        top_k = data.get('top_k', 40)
+        
+        if not model or not messages:
+            return jsonify({'error': 'Model and messages are required'}), 400
+        
+        # Call OpenRouter API
+        response = requests.post(
+            'https://openrouter.ai/api/v1/chat/completions',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'HTTP-Referer': request.headers.get('Origin', 'http://localhost:3000'),
+                'X-Title': 'Tangent Chat',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'model': model,
+                'messages': messages,
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+                'top_p': top_p,
+                'top_k': top_k
+            }
+        )
+        
+        # Return the response from OpenRouter
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'OpenRouter API error: {response.status_code}',
+                'message': response.text
+            }), response.status_code
+        
+        return jsonify(response.json())
+    
+    except Exception as e:
+        logger.error(f"Error in OpenRouter chat: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_routes.route('/chat/openrouter/stream', methods=['POST'])
+def stream_chat_with_openrouter():
+    """Streaming endpoint for OpenRouter chat."""
+    @stream_with_context
+    def generate():
+        try:
+            data = request.json
+            api_key = request.headers.get('X-API-Key')
+            
+            if not api_key:
+                yield f"data: {json.dumps({'error': 'API key is required'})}\n\n"
+                return
+
+            # Required parameters
+            model = data.get('model')
+            messages = data.get('messages')
+            max_tokens = data.get('max_tokens', 1024)
+            
+            # Optional parameters
+            temperature = data.get('temperature', 0.7)
+            top_p = data.get('top_p', 0.95)
+            top_k = data.get('top_k', 40)
+            
+            if not model or not messages:
+                yield f"data: {json.dumps({'error': 'Model and messages are required'})}\n\n"
+                return
+            
+            # Call OpenRouter API with streaming
+            response = requests.post(
+                'https://openrouter.ai/api/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {api_key}',
+                    'HTTP-Referer': request.headers.get('Origin', 'http://localhost:3000'),
+                    'X-Title': 'Tangent Chat',
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                json={
+                    'model': model,
+                    'messages': messages,
+                    'max_tokens': max_tokens,
+                    'temperature': temperature,
+                    'top_p': top_p,
+                    'top_k': top_k,
+                    'stream': True
+                },
+                stream=True
+            )
+            
+            if response.status_code != 200:
+                error_message = response.text
+                yield f"data: {json.dumps({'error': f'OpenRouter API error: {response.status_code}', 'message': error_message})}\n\n"
+                return
+            
+            # Forward the streamed response
+            for chunk in response.iter_lines():
+                if chunk:
+                    yield f"{chunk.decode('utf-8')}\n\n"
+                
+        except Exception as e:
+            logger.error(f"Error in OpenRouter streaming chat: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), content_type='text/event-stream')
+
+
+@api_routes.route('/chat/google', methods=['POST'])
+def chat_with_google():
+    """Non-streaming endpoint for Google Gemini chat."""
+    try:
+        data = request.json
+        api_key = request.headers.get('X-API-Key')
+        
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+        
+        # Required parameters
+        model = data.get('model')
+        contents = data.get('contents')
+        
+        if not model or not contents:
+            return jsonify({'error': 'Model and contents are required'}), 400
+        
+        # Get generation config
+        generation_config = data.get('generationConfig', {})
+        
+        # Call Google API
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={api_key}"
+        
+        payload = {
+            'contents': contents,
+            'generationConfig': generation_config
+        }
+        
+        if 'safetySettings' in data:
+            payload['safetySettings'] = data['safetySettings']
+        
+        response = requests.post(
+            endpoint,
+            json=payload,
+            headers={'Content-Type': 'application/json'}
+        )
+        
+        # Return the response from Google
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Google API error: {response.status_code}',
+                'message': response.text
+            }), response.status_code
+        
+        return jsonify(response.json())
+    
+    except Exception as e:
+        logger.error(f"Error in Google Gemini chat: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_routes.route('/chat/google/stream', methods=['POST'])
+def stream_chat_with_google():
+    """Streaming endpoint for Google Gemini chat."""
+    @stream_with_context
+    def generate():
+        try:
+            data = request.json
+            api_key = request.headers.get('X-API-Key')
+            
+            if not api_key:
+                yield f"data: {json.dumps({'error': 'API key is required'})}\n\n"
+                return
+
+            # Required parameters
+            model = data.get('model')
+            contents = data.get('contents')
+            
+            if not model or not contents:
+                yield f"data: {json.dumps({'error': 'Model and contents are required'})}\n\n"
+                return
+            
+            # Get generation config
+            generation_config = data.get('generationConfig', {})
+            
+            # Call Google API with streaming
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:streamGenerateContent?key={api_key}"
+            
+            payload = {
+                'contents': contents,
+                'generationConfig': generation_config
+            }
+            
+            if 'safetySettings' in data:
+                payload['safetySettings'] = data['safetySettings']
+            
+            response = requests.post(
+                endpoint,
+                json=payload,
+                headers={'Content-Type': 'application/json'},
+                stream=True
+            )
+            
+            if response.status_code != 200:
+                error_message = response.text
+                yield f"data: {json.dumps({'error': f'Google API error: {response.status_code}', 'message': error_message})}\n\n"
+                return
+            
+            # Process and forward the streamed response
+            for chunk in response.iter_lines():
+                if chunk:
+                    yield f"data: {chunk.decode('utf-8')}\n\n"
+                
+        except Exception as e:
+            logger.error(f"Error in Google Gemini streaming chat: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), content_type='text/event-stream')
+
+# Initialize the service
+chat_service = ChatPersistenceService(app)
+
+# Register the blueprint AFTER all routes are defined
+app.register_blueprint(api_routes, url_prefix='/api')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000, use_reloader=False)

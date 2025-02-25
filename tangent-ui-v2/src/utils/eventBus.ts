@@ -1,4 +1,4 @@
-// emitter.ts (or eventBus.ts)
+// eventBus.ts
 import mitt from 'mitt';
 
 export type Events = {
@@ -8,12 +8,18 @@ export type Events = {
     isStreaming: boolean;
     nodeId?: string;
     partial?: boolean;
+    codeIndex?: number;
   };
   'show-code-in-panel': {
     code: string;
     language: string;
     isStreaming: boolean;
     shouldOpenPanel?: boolean;
+    nodeId?: string;
+  };
+  'debug-sandbox': {
+    code: string;
+    errors: string;
     nodeId?: string;
   };
 };

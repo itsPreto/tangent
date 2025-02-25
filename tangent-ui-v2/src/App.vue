@@ -6,7 +6,8 @@
       class="fixed left-0 top-0 h-full w-[40vw] bg-background shadow-lg transform transition-transform duration-300 z-40 border-r border-base-300"
       :class="appStore.isSidePanelOpen ? 'translate-x-0' : '-translate-x-full'">
       <div class="h-full pt-2 px-4 pb-4 bg-background">
-        <SidePanel @panel-opened="isSidePanelOpen = true" @panel-closed="isSidePanelOpen = false" />
+        <SidePanel :node-id="currentNodeId" @panel-opened="isSidePanelOpen = true"
+          @panel-closed="isSidePanelOpen = false" />
       </div>
     </div>
 
@@ -23,7 +24,7 @@
       <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mt-16 sm:mt-4">
         <div class="flex items-center space-x-4">
           <!-- Logo Container -->
-          <TangentLogo v-if="showLogo" />
+          <TangentLogo />
           <ThemeToggle />
           <!-- New Workspace Button -->
           <button @click="handleNewWorkspace" :style="buttonStyles"
@@ -135,7 +136,7 @@
         </div>
         <div class="relative">
           <transition name="fade" mode="out-in">
-            <!-- Simplified API Settings Tab -->
+            <!-- API Settings Tab -->
             <div v-if="activeTab === 'api'" key="api" class="space-y-4 p-2">
               <div class="form-control">
                 <label class="label">
@@ -144,6 +145,7 @@
                 <select v-model="selectedApiProvider" class="input input-bordered w-full">
                   <option value="openrouter">OpenRouter</option>
                   <option value="gemini">Gemini</option>
+                  <option value="anthropic">Anthropic</option>
                   <option value="custom">Custom</option>
                 </select>
               </div>
@@ -166,6 +168,20 @@
                   @keyup.enter="saveApiKey('gemini')" />
                 <div v-if="apiKeySaveStatus.gemini" class="text-sm text-green-500 mt-1">
                   {{ apiKeySaveStatus.gemini }}
+                </div>
+              </div>
+              <!-- Add Anthropic section -->
+              <div class="form-control" v-if="selectedApiProvider === 'anthropic'">
+                <label class="label">
+                  <span class="label-text">Anthropic API Key</span>
+                </label>
+                <input v-model="anthropicApiKey" type="password" placeholder="sk-ant-..." 
+                  class="input input-bordered w-full" @keyup.enter="saveApiKey('anthropic')" />
+                <div v-if="apiKeySaveStatus.anthropic" class="text-sm text-green-500 mt-1">
+                  {{ apiKeySaveStatus.anthropic }}
+                </div>
+                <div class="text-xs text-base-content/70 mt-2">
+                  Get your API key from the <a href="https://console.anthropic.com/" target="_blank" class="underline">Anthropic Console</a>
                 </div>
               </div>
               <div v-if="selectedApiProvider === 'custom'">
@@ -247,6 +263,20 @@
                   <span class="truncate transition-opacity duration-300"
                     :class="{ 'opacity-0 w-0': activeProvider !== 'google' }">
                     Google
+                  </span>
+                </button>
+                <!-- Anthropic -->
+                <button @click="setActiveProvider('anthropic')"
+                  class="relative flex items-center gap-2 px-3 rounded-md transition-all duration-300" :class="{
+                    'bg-base-100 shadow-sm flex-1': activeProvider === 'anthropic',
+                    'w-10 hover:bg-base-300': activeProvider !== 'anthropic'
+                  }">
+                  <span class="w-6 h-6 flex items-center justify-center">
+                    <img :src="anthropic" alt="Anthropic" class="w-5 h-5 object-contain" />
+                  </span>
+                  <span class="truncate transition-opacity duration-300"
+                    :class="{ 'opacity-0 w-0': activeProvider !== 'anthropic' }">
+                    Anthropic
                   </span>
                 </button>
                 <!-- Custom -->
@@ -343,10 +373,11 @@ import ThemeToggle from './components/theme/ThemeToggle.vue';
 import TangentLogo from './components/logo/TangentLogo.vue';
 import TaskManager from './components/manager/TaskManager.vue';
 import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
-import SidePanel from './components/sidepanel/SandPackSidePanel.vue';
+import SidePanel from './components/sandpack/SandPackSidePanel.vue';
 import Badge from './components/ui/Badge.vue';
 import google from '@/assets/google.jpeg';
 import ollama from '@/assets/ollama.jpeg';
+import anthropic from '@/assets/anthropic.jpeg'
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -361,6 +392,9 @@ import HelpOverlay from './components/ui/overlay/HelpOverlay.vue';
 import AgentSettings from './components/agents/AgentSettings.vue';
 
 const gestureMode = ref<'scroll' | 'zoom'>('zoom');
+
+const anthropicApiKey = ref(localStorage.getItem('anthropicApiKey') || '');
+
 
 // Canvas and workspace state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
@@ -377,6 +411,8 @@ const showHelp = ref(false);
 const showLogo = computed(() => {
   return (canvasRef.value?.workspaces && canvasRef.value.workspaces.length !== 0) || false;
 });
+
+const currentNodeId = ref('');
 
 const canvasStore = useCanvasStore();
 const modelStore = useModelStore();
@@ -412,6 +448,7 @@ const isHeightLocked = ref(false);
 const apiKeySaveStatus = ref({
   openrouter: '',
   gemini: '',
+  anthropic: '',
 });
 
 const activeTab = ref<'api' | 'tasks' | 'models' | 'agents'>('agents');
@@ -583,7 +620,7 @@ const setActiveProvider = (provider: typeof activeProvider.value) => {
 };
 
 // Corrected saveApiKey function
-const saveApiKey = (provider: 'openrouter' | 'gemini') => {
+const saveApiKey = (provider: 'openrouter' | 'gemini' | 'anthropic') => {
   let apiKey = '';
   if (provider === 'openrouter') {
     apiKey = openRouterApiKey.value;
@@ -591,9 +628,12 @@ const saveApiKey = (provider: 'openrouter' | 'gemini') => {
   } else if (provider === 'gemini') {
     apiKey = geminiApiKey.value;
     localStorage.setItem('geminiApiKey', apiKey);
+  } else if (provider === 'anthropic') {
+    apiKey = anthropicApiKey.value;
+    localStorage.setItem('anthropicApiKey', apiKey);
   }
 
-  // Check if apiKey is not empty *before* accessing apiKeySaveStatus.value
+  // Check if apiKey is not empty
   if (apiKey) {
     apiKeySaveStatus.value[provider] = 'API Key Saved!';
     setTimeout(() => {
@@ -817,6 +857,12 @@ const handleDrop = async (e: DragEvent) => {
 watch(() => canvasRef.value?.workspaces, (newWorkspaces) => {
   // This will trigger a recompute of showLogo when workspaces change
 }, { deep: true });
+
+watch(() => canvasStore.activeNode, (newNodeId) => {
+  if (newNodeId) {
+    currentNodeId.value = newNodeId;
+  }
+});
 
 onMounted(async () => {
   canvasStore.initFromLocalStorage(); // Keep this for other settings

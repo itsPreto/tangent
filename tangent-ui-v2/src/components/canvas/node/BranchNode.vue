@@ -68,6 +68,7 @@
 
           <!-- Control Buttons -->
           <div class="flex items-center gap-2">
+            <TokenCounter :text="getAllMessagesText" class="mr-2" size="small" />
             <button @click.stop="toggleSnap" class="p-2 rounded-full hover:bg-white/10 transition-colors"
               :title="isSnapped ? 'Exit full view' : 'Enter full view'">
               <Expand v-if="!isSnapped" class="w-5 h-5 text-base-content/60" />
@@ -155,7 +156,8 @@
                   'whitespace-pre-wrap': !msg.isStreaming,
                   'whitespace-normal': msg.isStreaming
                 }">
-                  <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" />
+                  <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" :node-id="node.id"
+                    />
                 </div>
 
                 <!-- Message Actions -->
@@ -247,10 +249,12 @@ import Badge from '../../ui/Badge.vue';
 import MessageContent from '../../messages/MessageContent.vue';
 import MessageTimestamp from '../../messages/MessageTimestamp.vue';
 import ModelParamsEditor from '../../models/ModelParamsEditor.vue';
+import TokenCounter from '@/components/ui/TokenCounter.vue';
 import type { ModelParameters } from '@/types/model';
 import type { ModelInfo } from '@/types/model';
 import { useModelStore } from '@/stores/modelStore';
 import anthropic from '@/assets/anthropic.jpeg';
+import emitter, { Events } from '@/utils/eventBus'
 import openai from '@/assets/openai.jpeg';
 import google from '@/assets/google.jpeg';
 import meta from '@/assets/meta.jpeg';
@@ -275,19 +279,18 @@ interface ExtendedNode {
   // … plus any additional properties you need
 }
 
-const props = defineProps({
-  node: {
-    type: Object as PropType<ExtendedNode>,
-    required: true
-  },
-  isSelected: Boolean,
-  selectedModel: { type: String, required: true },
-  openRouterApiKey: { type: String, required: true },
-  modelType: { type: String, required: true, default: "" },
-  zoom: { type: Number, required: true },
-  modelRegistry: { type: Object as PropType<Map<string, ModelInfo>>, required: true },
-  isSidePanelOpen: { type: Boolean, default: false }
-});
+interface BranchNodeProps {  // Use a dedicated interface
+  node: Node;
+  isSelected: boolean;
+  selectedModel: string;
+  openRouterApiKey: string;
+  modelType: string;
+  zoom: number;
+  modelRegistry: Map<string, ModelInfo>;
+  isSidePanelOpen: boolean;
+}
+
+const props = defineProps<BranchNodeProps>();
 
 const emit = defineEmits([
   'select',
@@ -455,6 +458,14 @@ const providerAvatars: Record<string, string> = {
   ollama: ollama
 };
 
+
+const getAllMessagesText = computed(() => {
+  if (!props.node.messages) return '';
+  return props.node.messages
+    .map(msg => msg.content)
+    .join('\n\n');
+});
+
 const handleInputClick = (e: MouseEvent) => {
   e.preventDefault();
   e.stopPropagation();
@@ -554,12 +565,15 @@ const toggleSnap = async () => {
 
 const nodeElement = ref<HTMLElement | null>(null);
 
+
 function getAvatarUrl(model?: ModelInfo): string {
   if (!model) return providerAvatars['Unknown'];
   if (model.source === 'ollama') return providerAvatars['ollama'];
+  if (model.source === 'anthropic') return providerAvatars['Anthropic'];
   const avatar = model.provider ? providerAvatars[model.provider] : providerAvatars['Unknown'];
   return avatar || providerAvatars['Unknown'];
 }
+
 
 function getModelInfo(modelId?: string): ModelInfo | undefined {
   if (!modelId) return undefined;
@@ -713,14 +727,21 @@ const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
   };
   const initialData = {
     title: `Branch from "${props.node.title || 'Untitled Thread'}"`,
-    messages: props.node.messages.slice(0, messageIndex + 1),
+    messages: props.node.messages.slice(0, messageIndex + 1).map(msg => ({
+      ...msg, //keep other props of messages
+      contentParts: msg.contentParts.map((part, index) => ({
+        ...part,
+        codeIndex: index // Assign indices to contentParts
+      }))
+    })),
     branchMessageIndex: messageIndex,
     type: direction === 'left' ? 'left-branch' : 'right-branch'
   };
   emit('create-branch', props.node.id, messageIndex, position, initialData);
 };
 
-async function handleMessageSend(message: string) {
+
+const handleMessageSend = async (message: string) => {
   isLoading.value = true;
   try {
     const modelInfo: ModelInfo = {
@@ -728,13 +749,14 @@ async function handleMessageSend(message: string) {
       name: props.selectedModel,
       source: props.modelType as 'ollama' | 'openrouter' | 'google' | 'anthropic' | 'openai'
     };
-    const userMsg = { content: message };
+
     await canvasStore.sendMessage(
       props.node.id,
-      userMsg.content,
+      message,
       modelInfo,
       props.openRouterApiKey
     );
+
     if (props.node.messages.length === 2 && !props.node.title) {
       generateTitle();
     }
@@ -743,7 +765,8 @@ async function handleMessageSend(message: string) {
   } finally {
     isLoading.value = false;
   }
-}
+};
+
 
 async function generateTitle() {
   try {
@@ -845,6 +868,13 @@ onMounted(() => {
   if (!props.node.title) {
     isEditing.value = true;
   }
+
+  emitter.on('debug-sandbox', async ({ code, errors, nodeId }) => {
+    if (nodeId === props.node.id) {
+      await handleMessageSend(errors);
+    }
+  });
+
   window.addEventListener("keydown", onKeyDown);
   if (props.node.messages && props.node.messages.length > 0) {
     let lastMessage = props.node.messages[props.node.messages.length - 1];
@@ -862,6 +892,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.body.classList.remove('has-snapped-node');
+  emitter.off('debug-sandbox');
   window.removeEventListener("keydown", onKeyDown);
   if (messagesContainerRef.value) {
     messagesContainerRef.value.removeEventListener('scroll', updateScrollButtonsVisibility);
