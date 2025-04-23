@@ -24,3 +24,28 @@ npm.lock
 v2_env/
 *.pyc
 .env
+**/instance/chats.db
+**/instance/
+
+# API files
+**/llm_router.py
+
+# Node dependencies
+**/bun.lockb
+**/package-lock.json
+
+# Build scripts
+**/bundle.sh
+
+# Video processing
+video_editor.py
+input.mp4
+promo_creation.log
+
+# Test files
+rapier_test.html
+
+# Virtual environments
+**/.venv/
+**/venv/
+**/__pycache__/
