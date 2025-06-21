@@ -1,12 +1,8 @@
 Flask
-flask-cors
-numpy
+Flask-Cors
+Flask-SQLAlchemy
 pandas
-scipy
-hdbscan
-umap-learn
+tiktoken
+google-generativeai
 requests
-dataclasses-json
-python-dotenv
-torch
-
+Pillow

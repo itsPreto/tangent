@@ -1,8 +1,0 @@
-Flask
-Flask-Cors
-Flask-SQLAlchemy
-pandas
-tiktoken
-google-generativeai
-requests
-Pillow
