@@ -1,6 +1,41 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { CodeProject, ProjectFile } from '@/types/project';
+
+export interface ProjectFile {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  language: string;
+  type: 'file' | 'folder';
+  lastModified: number;
+  parentId?: string;
+  children?: ProjectFile[];
+}
+
+export interface ProjectMetadata {
+  language: string;
+  template: string;
+  createdAt: number;
+  lastModified: number;
+  dependencies: Record<string, string>;
+}
+
+export interface CodeProject {
+  id: string;
+  name: string;
+  description: string;
+  sourceInfo: {
+    workspaceId: string;
+    nodeId: string;
+    messageIndex: number;
+    codeIndex: number;
+  };
+  fileStructure: ProjectFile[];
+  metadata: ProjectMetadata;
+  currentFileId: string | null;
+  openFiles: string[];
+}
 
 export const useProjectStore = defineStore('projects', () => {
   const projects = ref(new Map<string, CodeProject>());
@@ -242,24 +277,24 @@ export const useProjectStore = defineStore('projects', () => {
   // Helper functions
   const detectTemplate = (code: string, language: string): string => {
     // Detect React/Vue/etc based on code content
-    if (code.includes('React') || code.includes('jsx') || language === 'react') return 'react';
     if (code.includes('Vue') || code.includes('<template>')) return 'vue';
-    if (code.includes('THREE') || code.includes('three')) return 'react-three';
+    if (code.includes('THREE') || code.includes('three') || code.includes('@react-three/fiber') || code.includes('@react-three/drei')) return 'react-three';
     if (language === 'html') return 'vanilla';
+    if (code.includes('React') || code.includes('jsx') || language === 'react' || language === 'javascript') return 'react';
     return 'react'; // default
   };
 
   const createInitialFileStructure = (code: string, language: string, template: string): ProjectFile[] => {
     const now = Date.now();
     
-    // Create main file based on template
+    // Always use App.js as the main file for React/JS projects to ensure Sandpack compatibility
     const mainFileName = getMainFileName(template, language);
     const mainFile: ProjectFile = {
       id: 'main_file',
       name: mainFileName,
       path: `/${mainFileName}`,
       content: code,
-      language: language === 'react' ? 'jsx' : language,
+      language: language === 'react' || language === 'javascript' ? 'javascript' : language,
       type: 'file',
       lastModified: now
     };
@@ -321,7 +356,7 @@ export const useProjectStore = defineStore('projects', () => {
     switch (template) {
       case 'vue': return 'App.vue';
       case 'vanilla': return 'index.html';
-      default: return language === 'typescript' ? 'App.tsx' : 'App.jsx';
+      default: return language === 'typescript' ? 'App.tsx' : 'App.js';
     }
   };
 
@@ -336,7 +371,7 @@ export const useProjectStore = defineStore('projects', () => {
             path: '/index.js',
             content: `import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import App from "./App.js";
 import './styles.css';
 
 const root = createRoot(document.getElementById("root"));
@@ -462,9 +497,9 @@ createApp(App).mount('#app')`,
         return { 
           'react': '^18.2.0', 
           'react-dom': '^18.2.0',
-          '@react-three/fiber': '^8.13.0',
-          '@react-three/drei': '^9.77.0',
-          'three': '^0.153.0'
+          '@react-three/fiber': '^8.15.0',
+          '@react-three/drei': '^9.88.0',
+          'three': '^0.159.0'
         };
       case 'vue':
         return { 'vue': '^3.3.0' };

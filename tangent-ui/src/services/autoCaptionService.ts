@@ -1,6 +1,7 @@
 /**
  * Auto-caption service for MediaBranchNode
- * Handles automatic image captioning using Ollama vision models
+ * Handles automatic image captioning using vision-capable models
+ * Now integrates with agent system for automatic model selection
  */
 
 export interface AutoCaptionSettings {
@@ -39,25 +40,80 @@ class AutoCaptionService {
   }
   
   /**
-   * Get auto-caption settings from localStorage
+   * Get auto-caption settings, now with agent system integration
    */
-  getSettings(): AutoCaptionSettings {
+  async getSettings(): Promise<AutoCaptionSettings> {
     const saved = localStorage.getItem('autoCaptionSettings');
+    let settings: AutoCaptionSettings;
+    
     if (saved) {
       try {
-        return JSON.parse(saved);
+        settings = JSON.parse(saved);
       } catch (e) {
         console.error('Failed to parse auto-caption settings:', e);
+        settings = this.getDefaultSettings();
+      }
+    } else {
+      settings = this.getDefaultSettings();
+    }
+
+    // If no model is configured, try to get from agent system
+    if (!settings.model || settings.model.trim() === '') {
+      const agentModel = await this.getVisionModelFromAgents();
+      if (agentModel) {
+        settings.model = agentModel;
       }
     }
-    
-    // Default settings - try to get a working vision model
+
+    return settings;
+  }
+
+  /**
+   * Get default settings
+   */
+  private getDefaultSettings(): AutoCaptionSettings {
     return {
       enabled: true,
-      model: '', // Will be set by component when available models are loaded
+      model: '', // Will be determined by agent system or manual selection
       maxTokens: 150,
       temperature: 0.3
     };
+  }
+
+  /**
+   * Get vision model from agent system
+   */
+  private async getVisionModelFromAgents(): Promise<string | null> {
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { useAgentStore } = await import('@/stores/agentStore');
+      const agentStore = useAgentStore();
+      
+      const visionAgent = agentStore.visionAgent;
+      if (visionAgent && visionAgent.model && visionAgent.enabled) {
+        console.log('[AutoCaption] Using vision model from agent system:', visionAgent.model.name);
+        return visionAgent.model.name || visionAgent.model.id;
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn('[AutoCaption] Could not load agent store:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if agent configurator should be shown for vision tasks
+   */
+  async shouldShowAgentConfigurator(): Promise<boolean> {
+    try {
+      const { useAgentStore } = await import('@/stores/agentStore');
+      const agentStore = useAgentStore();
+      return agentStore.shouldShowAgentConfigurator('vision');
+    } catch (error) {
+      console.warn('[AutoCaption] Could not check agent configurator status:', error);
+      return false;
+    }
   }
   
   /**
@@ -88,7 +144,7 @@ class AutoCaptionService {
    * Generate caption for an image file
    */
   async captionFile(file: File, customPrompt?: string): Promise<CaptionResult> {
-    const settings = this.getSettings();
+    const settings = await this.getSettings();
     
     if (!settings.enabled) {
       return {
@@ -203,7 +259,7 @@ class AutoCaptionService {
    * Generate caption for a media URL (for existing media)
    */
   async captionUrl(mediaUrl: string, customPrompt?: string): Promise<CaptionResult> {
-    const settings = this.getSettings();
+    const settings = await this.getSettings();
     
     if (!settings.enabled) {
       return {
@@ -307,7 +363,7 @@ class AutoCaptionService {
   async debugStatus(): Promise<void> {
     console.log('=== AUTO-CAPTION DEBUG STATUS ===');
     
-    const settings = this.getSettings();
+    const settings = await this.getSettings();
     console.log('Settings:', settings);
     
     try {

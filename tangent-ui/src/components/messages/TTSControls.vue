@@ -335,42 +335,6 @@ watch(error, (newError) => {
 })
 
 
-// Watch for auto-trigger
-watch(
-  () => props.text,
-  (newText) => {
-    if (props.autoTrigger && autoRead.value && newText.trim() && !isStreamingMode.value) {
-      setTimeout(() => {
-        startReading()
-      }, 500)
-    }
-  },
-  { immediate: false }
-)
-
-// Watch for streaming trigger
-watch(
-  () => props.streamingTrigger,
-  (enabled) => {
-    if (enabled) {
-      startStreamingMode()
-    } else {
-      stopStreamingMode()
-    }
-  },
-  { immediate: true }
-)
-
-// Watch for streaming text changes
-watch(
-  () => props.streamingText,
-  (newText) => {
-    if (isStreamingMode.value && newText) {
-      processStreamingText(newText)
-    }
-  },
-  { immediate: false }
-)
 // Cleanup on unmount
 onUnmounted(() => {
   if (isActive.value) {

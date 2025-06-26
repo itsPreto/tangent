@@ -24,10 +24,12 @@
       </button>
 
       <!-- Dropdown Menu -->
-      <div v-if="isOpen"
-        class="absolute left-0 mt-2 w-64 max-h-[60vh] overflow-y-auto rounded-lg border shadow-lg z-[100] theme-dropdown"
-        :style="dropdownStyle"
-        @click.stop>
+      <Teleport to="body">
+        <div v-if="isOpen"
+          class="fixed w-64 max-h-[60vh] overflow-y-auto rounded-lg border shadow-lg theme-dropdown"
+          style="z-index: 99999;"
+          :style="{ ...dropdownStyle, ...dropdownPosition }"
+          @click.stop>
         <div class="p-2 search-container" :style="searchContainerStyle">
           <div class="relative">
             <Search class="absolute left-3 top-2.5 w-4 h-4 search-icon" :style="{ color: searchIconColor }" />
@@ -57,13 +59,14 @@
             <Check v-if="theme === currentTheme" class="w-4 h-4 ml-auto text-primary" />
           </button>
         </div>
-      </div>
+        </div>
+      </Teleport>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { ChevronDown, Check, Search } from 'lucide-vue-next';
 
 type ThemeColors = {
@@ -280,6 +283,37 @@ function adjustColorOpacity(hexColor: string, opacity: number): string {
 const getThemeColors = (theme: ThemeName): ThemeColors => {
   return themeColors[theme];
 };
+
+const dropdownPosition = ref({});
+
+const updateDropdownPosition = () => {
+  if (typeof window === 'undefined') return;
+  
+  const button = document.querySelector('.theme-toggle-button');
+  if (!button) return;
+  
+  const rect = button.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const dropdownWidth = 256; // 16rem (w-64)
+  
+  let left = rect.left;
+  if (left + dropdownWidth > viewportWidth - 16) {
+    left = viewportWidth - dropdownWidth - 16;
+  }
+  
+  dropdownPosition.value = {
+    top: `${rect.bottom + 8}px`,
+    left: `${Math.max(16, left)}px`
+  };
+};
+
+watch(isOpen, (newValue) => {
+  if (newValue) {
+    nextTick(() => {
+      updateDropdownPosition();
+    });
+  }
+});
 
 const filteredThemes = computed(() => {
   const searchTerm = search.value.toLowerCase();

@@ -29,7 +29,7 @@ class Node(db.Model):
     messages = db.Column(db.JSON)
     node_metadata = db.Column(db.JSON)  # Renamed from metadata to avoid conflicts
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    children = db.relationship('Node', backref=db.backref('parent', remote_side=[id]))
+    children = db.relationship('Node', backref=db.backref('parent', remote_side=[id]), cascade='all, delete-orphan')
 
 class ChatPersistenceService:
     def __init__(self, app):
@@ -158,11 +158,83 @@ class ChatPersistenceService:
         return node.id
 
     def remove_node(self, chat_id: str, node_id: str) -> bool:
-        """Remove a node and its children"""
+        """Remove a node and ALL its children recursively"""
         node = Node.query.filter_by(chat_id=chat_id, id=node_id).first()
         if not node or node.type == 'main':
             return False
-            
+        
+        # Get count of nodes that will be deleted for logging
+        def count_descendants(n):
+            total = 1  # Count the node itself
+            for child in n.children:
+                total += count_descendants(child)
+            return total
+        
+        nodes_to_delete = count_descendants(node)
+        print(f"[ChatPersistenceService] Deleting node {node_id} and {nodes_to_delete - 1} descendants")
+        
+        # SQLAlchemy will now cascade delete children due to the relationship configuration
         db.session.delete(node)
         db.session.commit()
+        
+        print(f"[ChatPersistenceService] Successfully deleted {nodes_to_delete} nodes")
         return True
+    
+    def cleanup_orphaned_nodes(self, chat_id: str) -> int:
+        """Clean up orphaned nodes that have invalid parent references"""
+        try:
+            # Find nodes with parent_id that doesn't exist
+            orphaned_nodes = db.session.query(Node).filter(
+                Node.chat_id == chat_id,
+                Node.parent_id.isnot(None),
+                ~Node.parent_id.in_(
+                    db.session.query(Node.id).filter(Node.chat_id == chat_id)
+                )
+            ).all()
+            
+            orphan_count = len(orphaned_nodes)
+            if orphan_count > 0:
+                print(f"[ChatPersistenceService] Found {orphan_count} orphaned nodes in chat {chat_id}")
+                for orphan in orphaned_nodes:
+                    print(f"[ChatPersistenceService] Deleting orphaned node: {orphan.id} (parent: {orphan.parent_id})")
+                    db.session.delete(orphan)
+                
+                db.session.commit()
+                print(f"[ChatPersistenceService] Cleaned up {orphan_count} orphaned nodes")
+            
+            return orphan_count
+        except Exception as e:
+            print(f"[ChatPersistenceService] Error cleaning orphaned nodes: {e}")
+            db.session.rollback()
+            return 0
+    
+    def get_node_count_integrity_check(self, chat_id: str) -> dict:
+        """Check node count integrity and identify potential issues"""
+        try:
+            all_nodes = Node.query.filter_by(chat_id=chat_id).all()
+            total_count = len(all_nodes)
+            
+            # Count by type
+            main_nodes = [n for n in all_nodes if n.type == 'main']
+            branch_nodes = [n for n in all_nodes if n.type == 'branch']
+            other_nodes = [n for n in all_nodes if n.type not in ['main', 'branch']]
+            
+            # Find orphaned nodes
+            valid_parent_ids = {n.id for n in all_nodes}
+            orphaned = [n for n in all_nodes if n.parent_id and n.parent_id not in valid_parent_ids]
+            
+            # Find root nodes (no parent)
+            root_nodes = [n for n in all_nodes if not n.parent_id]
+            
+            return {
+                'total_nodes': total_count,
+                'main_nodes': len(main_nodes),
+                'branch_nodes': len(branch_nodes),
+                'other_nodes': len(other_nodes),
+                'orphaned_nodes': len(orphaned),
+                'root_nodes': len(root_nodes),
+                'orphaned_details': [{'id': n.id, 'parent_id': n.parent_id, 'type': n.type} for n in orphaned]
+            }
+        except Exception as e:
+            print(f"[ChatPersistenceService] Error in integrity check: {e}")
+            return {'error': str(e)}

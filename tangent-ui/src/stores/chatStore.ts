@@ -13,7 +13,7 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         error.value = null;
         try {
-            const response = await fetch('http://127.0.0.1:5000/chats');
+            const response = await fetch('http://127.0.0.1:5050/chats');
             if (!response.ok) { // Check for HTTP errors
                 throw new Error(`Failed to load chats: ${response.status} ${response.statusText}`);
             }
@@ -31,7 +31,7 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         error.value = null;
         try {
-            const response = await fetch('http://127.0.0.1:5000/chats', {
+            const response = await fetch('http://127.0.0.1:5050/chats', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title, initialNode })
@@ -53,7 +53,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     const updateChatMetadata = async (chatId: string, metadata: Partial<ChatSummary>) => {
         try {
-            const response = await fetch(`http://127.0.0.1:5000/chats/${chatId}`, {
+            const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(metadata)
@@ -86,7 +86,7 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         error.value = null;
         try {
-            const response = await fetch(`http://127.0.0.1:5000/chats/${chatId}`);
+            const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}`);
             const data = await response.json();
             currentChatId.value = chatId;
             return data;
@@ -104,7 +104,7 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         error.value = null;
         try {
-            await fetch(`http://127.0.0.1:5000/chats/${chatId}`, { method: 'DELETE' });
+            await fetch(`http://127.0.0.1:5050/chats/${chatId}`, { method: 'DELETE' });
             if (currentChatId.value === chatId) {
                 currentChatId.value = null;
             }
@@ -122,7 +122,7 @@ export const useChatStore = defineStore('chat', () => {
     // Add node
     const addNode = async (chatId: string, nodeData: any) => {
         try {
-            const response = await fetch(`http://127.0.0.1:5000/chats/${chatId}/nodes`, {
+            const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}/nodes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(nodeData)
@@ -138,7 +138,7 @@ export const useChatStore = defineStore('chat', () => {
     // Update node
     const updateNode = async (chatId: string, nodeId: string, data: any) => {
         try {
-            await fetch(`http://127.0.0.1:5000/chats/${chatId}/nodes/${nodeId}`, {
+            await fetch(`http://127.0.0.1:5050/chats/${chatId}/nodes/${nodeId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -153,7 +153,7 @@ export const useChatStore = defineStore('chat', () => {
     // Remove node
     const removeNode = async (chatId: string, nodeId: string) => {
         try {
-            await fetch(`http://127.0.0.1:5000/chats/${chatId}/nodes/${nodeId}`, {
+            await fetch(`http://127.0.0.1:5050/chats/${chatId}/nodes/${nodeId}`, {
                 method: 'DELETE'
             });
             return true;
@@ -180,6 +180,44 @@ export const useChatStore = defineStore('chat', () => {
         chats.value.find(chat => chat.id === currentChatId.value)
     );
 
+    // Clean up orphaned nodes in a chat
+    const cleanupOrphanedNodes = async (chatId: string) => {
+        try {
+            const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}/cleanup-orphaned-nodes`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to cleanup orphaned nodes');
+            }
+            
+            const data = await response.json();
+            console.log(`[ChatStore] Cleaned up ${data.cleaned_nodes} orphaned nodes`);
+            return data;
+        } catch (e) {
+            console.error('Error cleaning orphaned nodes:', e);
+            return null;
+        }
+    };
+    
+    // Check node integrity for a chat
+    const checkNodeIntegrity = async (chatId: string) => {
+        try {
+            const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}/integrity-check`);
+            
+            if (!response.ok) {
+                throw new Error('Failed to check node integrity');
+            }
+            
+            const data = await response.json();
+            console.log('[ChatStore] Node integrity check:', data);
+            return data;
+        } catch (e) {
+            console.error('Error checking node integrity:', e);
+            return null;
+        }
+    };
+
     return {
         currentChatId,
         chats,
@@ -194,6 +232,8 @@ export const useChatStore = defineStore('chat', () => {
         updateNode,
         removeNode,
         autoSave,
-        updateChatMetadata
+        updateChatMetadata,
+        cleanupOrphanedNodes,
+        checkNodeIntegrity
     };
 });

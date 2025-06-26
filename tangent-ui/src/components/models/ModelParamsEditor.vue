@@ -1,23 +1,24 @@
 <template>
   <div ref="editorRef" 
-       class="fixed z-50 rounded-lg shadow-xl p-4 w-72 editor-container"
+       class="fixed z-50 shadow-xl w-72 editor-container overflow-hidden"
        :style="[positionStyle, themeStyle]"
        @mousedown.stop
        @click.stop>
-    <!-- Visual connector triangle that points down to the avatar -->
-    <div class="connector-triangle"></div>
     
-    <div class="flex items-center justify-between mb-4">
-      <div class="flex items-center gap-2">
-        <img :src="modelAvatar" alt="Model Avatar" class="w-6 h-6 rounded-full object-cover border border-base-300" />
-        <span class="font-medium">{{ model.name }}</span>
+    <!-- Connected header that visually extends from avatar -->
+    <div class="editor-header px-4 py-3 border-b border-white/10">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <img :src="modelAvatar" alt="Model Avatar" class="w-6 h-6 rounded-full object-cover border border-base-300" />
+          <span class="font-medium">{{ model.name }}</span>
+        </div>
+        <button @click.stop="$emit('close')" class="p-1 hover:bg-white/10 rounded-full transition-colors">
+          <X class="w-4 h-4" />
+        </button>
       </div>
-      <button @click.stop="$emit('close')" class="p-1 hover:bg-white/10 rounded-full transition-colors">
-        <X class="w-4 h-4" />
-      </button>
     </div>
 
-    <div class="space-y-4">
+    <div class="p-4 space-y-4">
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <Label>Temperature</Label>
@@ -127,15 +128,16 @@ const themeStyle = computed(() => {
       ? 'linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.9))' 
       : 'linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.95))',
     '--border-color': adjustColorOpacity(color, 0.6),
-    'backdrop-filter': 'blur(12px)',
+    'backdrop-filter': 'blur(20px)',
     'color': 'var(--text-color)',
     'background': 'var(--background-color)',
     'border': '1px solid var(--border-color)',
-    'box-shadow': `0 8px 32px ${adjustColorOpacity(color, 0.4)}`
+    'border-top': 'none',
+    'box-shadow': `0 4px 24px ${adjustColorOpacity(color, 0.3)}, 0 8px 32px ${adjustColorOpacity(color, 0.2)}`
   };
 });
 
-// Fixed positioning that places the editor above the avatar
+// Fixed positioning that places the editor directly below the avatar
 const positionStyle = computed(() => {
   if (!props.triggerRect) {
     return { display: 'none' };
@@ -143,11 +145,12 @@ const positionStyle = computed(() => {
   
   const avatarRect = props.triggerRect;
   const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
   const editorWidth = 288; // w-72 = 18rem = 288px
   
-  // We need to position the editor above the avatar
+  // Position the editor directly below the avatar with no gap
   let left = avatarRect.left + (avatarRect.width / 2) - (editorWidth / 2);
-  let top = avatarRect.top - editorHeight.value - 16; // 16px gap
+  let top = avatarRect.bottom; // No gap - directly connected
   
   // Ensure the editor doesn't go off-screen horizontally
   if (left < 16) left = 16;
@@ -155,28 +158,16 @@ const positionStyle = computed(() => {
     left = viewportWidth - editorWidth - 16;
   }
   
-  let trianglePosition = 'bottom';
-  
-  // If there's not enough room above, position below
-  if (top < 16) {
-    top = avatarRect.bottom + 16;
-    trianglePosition = 'top';
+  // If there's not enough room below, position above
+  if (top + editorHeight.value > viewportHeight - 16) {
+    top = avatarRect.top - editorHeight.value;
   }
-  
-  // Calculate the triangle position
-  let triangleLeft = avatarRect.left + (avatarRect.width / 2) - left;
-  
-  // Make sure triangle doesn't go outside editor boundaries
-  const minTriangleLeft = 24;
-  const maxTriangleLeft = editorWidth - 24;
-  triangleLeft = Math.max(minTriangleLeft, Math.min(triangleLeft, maxTriangleLeft));
   
   return {
     'position': 'fixed',
     'top': `${top}px`,
     'left': `${left}px`,
-    '--triangle-position': trianglePosition,
-    '--triangle-left': `${triangleLeft}px`,
+    'border-radius': '0 0 0.5rem 0.5rem', // Only round bottom corners
   };
 });
 
@@ -267,46 +258,42 @@ watch(() => editorHeight.value, () => {
 /* Base isolation */
 .editor-container {
   isolation: isolate;
-  transform-origin: bottom center;
-  animation: popIn 0.2s ease-out;
+  transform-origin: top center;
+  animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
+  max-height: 400px;
+  transition: max-height 0.3s ease;
 }
 
-@keyframes popIn {
+@keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.95);
+    transform: scaleY(0);
+    max-height: 0;
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: scaleY(1);
+    max-height: 400px;
   }
 }
 
-/* Connector triangle that points to the avatar */
-.connector-triangle {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  background: var(--background-color, #fff);
-  border-right: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-  /* Position at bottom pointing down to avatar by default */
-  bottom: -8px;
-  left: var(--triangle-left, 50%);
-  transform: translateX(-50%) rotate(45deg);
-  z-index: -1;
+/* Connected header styling */
+.editor-header {
+  background: var(--accent-color-transparent);
+  backdrop-filter: blur(20px);
+  position: relative;
 }
 
-/* Position the triangle based on the variable */
-.editor-container:where([style*="--triangle-position:top"]) .connector-triangle {
-  bottom: auto;
-  top: -8px;
-  border-right: 1px solid var(--border-color);
-  border-bottom: none;
-  border-left: none;
-  border-top: 1px solid var(--border-color);
-  transform: translateX(-50%) rotate(-45deg);
+.editor-header::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent-color);
+  opacity: 0.6;
 }
 
 /* Theme-specific styles */

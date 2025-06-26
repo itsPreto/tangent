@@ -142,7 +142,9 @@ const themeColors = computed(() => {
 const cardStyles = computed(() => {
   const baseStyles = {
     transition: 'all 0.3s ease',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    // Ensure proper text color based on theme
+    color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)'
   };
 
   // Theme-specific card backgrounds for better contrast
@@ -153,7 +155,8 @@ const cardStyles = computed(() => {
         backgroundColor: 'rgba(15, 15, 25, 0.95)',
         backdropFilter: 'blur(10px)',
         border: `1px solid ${themeColors.value.primary}40`,
-        boxShadow: `0 4px 15px rgba(0, 0, 0, 0.4), inset 0 1px 0 ${themeColors.value.primary}20`
+        boxShadow: `0 4px 15px rgba(0, 0, 0, 0.4), inset 0 1px 0 ${themeColors.value.primary}20`,
+        color: 'rgba(255, 255, 255, 0.9)' // Ensure light text on dark background
       };
     
     case 'synthwave':
@@ -225,7 +228,8 @@ const cardStyles = computed(() => {
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
         backdropFilter: 'blur(8px)',
         border: '1px solid rgba(0, 0, 0, 0.15)',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.1)'
+        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.1)',
+        color: 'rgba(0, 0, 0, 0.9)' // Ensure dark text on light backgrounds
       };
     
     default:
@@ -455,6 +459,7 @@ const getTagStyles = (tag) => {
   white-space: nowrap;
   flex: 1;
   margin-right: 0.5rem;
+  color: inherit; /* Inherit color from parent */
 }
 
 .card-actions {
@@ -498,6 +503,7 @@ const getTagStyles = (tag) => {
   gap: 0.5rem;
   font-size: 0.875rem;
   opacity: 0.8;
+  color: inherit; /* Inherit color from parent */
 }
 
 .tags-container {

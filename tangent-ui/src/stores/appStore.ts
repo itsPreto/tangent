@@ -4,6 +4,7 @@ import { defineStore } from 'pinia';
 export const useAppStore = defineStore('app', {
   state: () => ({
     isSidePanelOpen: false,
+    isAgentConfiguratorOpen: false,
   }),
   actions: {
     openSidePanel() {
@@ -14,6 +15,15 @@ export const useAppStore = defineStore('app', {
     },
     toggleSidePanel() {
       this.isSidePanelOpen = !this.isSidePanelOpen;
+    },
+    openAgentConfigurator() {
+      this.isAgentConfiguratorOpen = true;
+    },
+    closeAgentConfigurator() {
+      this.isAgentConfiguratorOpen = false;
+    },
+    toggleAgentConfigurator() {
+      this.isAgentConfiguratorOpen = !this.isAgentConfiguratorOpen;
     },
   },
 });

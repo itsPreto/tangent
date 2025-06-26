@@ -49,3 +49,41 @@ rapier_test.html
 **/.venv/
 **/venv/
 **/__pycache__/
+# Temporary audio files
+tangent-api/audio_temp/
+
+# Database files
+tangent-api/chroma_db/
+*.sqlite3
+
+# Cache 
+  files
+*.tangent_deps_cache.json
+
+# Backup files
+*.bak
+
+# Test audio files
+test_*.wav
+
+# Generated analysis/context 
+  files
+llm_project_context.txt
+project_struct.html
+tangent-dependency-analysis*.json
+dep_graph_builder.js
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test files and scripts
+test-*.js
+test-*.sh
+*-results-*.json
+test-results/
+three-js-*.jsx
+
+# Root level config files that shouldn't be tracked
+/package.json
+/preppend.sh
+/ttft-results-*.json

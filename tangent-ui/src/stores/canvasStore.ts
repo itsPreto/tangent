@@ -5,7 +5,7 @@ import { ref, watch, computed } from 'vue';
 import type { Message, Node, ContentPart, TTSConfig } from '../types/message';
 import type { ModelInfo, ModelParameters } from '@/types/model';
 import type { ChatSummary } from '@/types/chat';
-import { sandpackSetup } from '../components/sandpack/sandpackDeps'
+import { sandpackSetup } from '../components/sidebar/sandpackDeps'
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import emitter from '@/utils/eventBus'
 import { marked } from 'marked';
@@ -149,18 +149,23 @@ export const useCanvasStore = defineStore('canvas', () => {
     return codeLike >= 1 ? 'code' : 'chat';
   };
 
-  const nodeModelParams = ref(new Map<string, ModelParameters>());
+  // Store model params per node AND per model
+  const nodeModelParams = ref(new Map<string, Map<string, ModelParameters>>());
   const workspaces = ref<ChatSummary[]>([]);
 
-  const updateModelParams = (nodeId: string, params: ModelParameters) => {
-    nodeModelParams.value.set(nodeId, params);
+  const updateModelParams = (nodeId: string, modelId: string, params: ModelParameters) => {
+    if (!nodeModelParams.value.has(nodeId)) {
+      nodeModelParams.value.set(nodeId, new Map());
+    }
+    nodeModelParams.value.get(nodeId)!.set(modelId, params);
     if (chatStore.currentChatId) {
-      chatStore.autoSave(chatStore.currentChatId, nodeId, { modelParams: params });
+      chatStore.autoSave(chatStore.currentChatId, nodeId, { modelParams: { [modelId]: params } });
     }
   };
 
-  const getModelParams = (nodeId: string, ctx: 'code' | 'chat' = 'chat'): ModelParameters => {
-    const base = nodeModelParams.value.get(nodeId) || {
+  const getModelParams = (nodeId: string, modelId: string, ctx: 'code' | 'chat' = 'chat'): ModelParameters => {
+    const nodeParams = nodeModelParams.value.get(nodeId);
+    const base = nodeParams?.get(modelId) || {
       temperature: 0.7, topP: 0.95, topK: 40, maxOutputTokens: 2048
     };
     if (ctx === 'chat') {
@@ -181,17 +186,14 @@ export const useCanvasStore = defineStore('canvas', () => {
   };
   const initFromLocalStorage = () => {
     const savedState = localStorage.getItem('canvasState');
-    console.log("initFromLocalStorage: savedState:", savedState); // Log the raw saved state
 
     if (savedState) {
       try {
         const state = JSON.parse(savedState) as LocalStorageState;
-        console.log("initFromLocalStorage: parsed state:", state); // Log the parsed state
 
         // ONLY restore if there are nodes.  An empty database should result
         // in an empty canvas state.
         if (state.nodes && state.nodes.length > 0) {
-          console.log("initFromLocalStorage: Restoring nodes from localStorage");
           nodes.value = state.nodes;
           lastSavedWorkspaceId.value = state.lastSavedWorkspaceId;
           isOverviewMode.value = state.isOverviewMode ?? true; // Default to true if not present
@@ -510,9 +512,8 @@ export const useCanvasStore = defineStore('canvas', () => {
     dragOffset.value = { x: 0, y: 0 };
     isTransitioning.value = false;
 
-    // Reset topic clustering state
-    topicClusters.value = new Map();
-    nodeTopics.value = new Map();
+    // Reset all caches and memory-intensive state
+    clearAllCaches();
 
     // Set overview mode to false
     isOverviewMode.value = false;
@@ -666,6 +667,11 @@ export const useCanvasStore = defineStore('canvas', () => {
       }
     }
 
+    // Trigger memory cleanup every 10 nodes
+    if (nodes.value.length % 10 === 0) {
+      cleanupMemory();
+    }
+
     return newNode;
   };
 
@@ -726,7 +732,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       for (const sentence of sentences) {
         if (sentence.trim()) {
           try {
-            const response = await fetch('http://127.0.0.1:5000/tts/process', {
+            const response = await fetch('http://127.0.0.1:5050/tts/process', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -763,7 +769,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       throw new Error('Model source not specified');
     }
 
-    const modelParams = getModelParams(nodeId, contextType);
+    const modelParams = getModelParams(nodeId, modelInfo.id, contextType);
     let endpoint = '';
     let headers: HeadersInit = {
       'Content-Type': 'application/json'
@@ -778,7 +784,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         }
 
         // Use Flask backend for Google
-        endpoint = 'http://127.0.0.1:5000/api/chat/google/stream';
+        endpoint = 'http://127.0.0.1:5050/api/chat/google/stream';
         headers = {
           ...headers,
           'X-API-Key': geminiApiKey
@@ -808,7 +814,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         }
 
         // Use Flask backend for Anthropic
-        endpoint = 'http://127.0.0.1:5000/api/chat/anthropic/stream';
+        endpoint = 'http://127.0.0.1:5050/api/chat/anthropic/stream';
         headers = {
           ...headers,
           'X-API-Key': anthropicApiKey
@@ -827,7 +833,7 @@ export const useCanvasStore = defineStore('canvas', () => {
 
       case 'openrouter':
         // Use Flask backend for OpenRouter
-        endpoint = 'http://127.0.0.1:5000/api/chat/openrouter/stream';
+        endpoint = 'http://127.0.0.1:5050/api/chat/openrouter/stream';
         headers = {
           ...headers,
           'X-API-Key': openRouterApiKey
@@ -1024,7 +1030,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         }
 
         const model = genAI.value.getGenerativeModel({ model: selectedModel.id });
-        const modelParams = getModelParams(nodeId, contextType);
+        const modelParams = getModelParams(nodeId, modelInfo.id, contextType);
 
         const history = node.messages
           .filter((msg, index) => {
@@ -1212,7 +1218,6 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
-
   const handleStreamingResponse = async (
     reader: ReadableStreamDefaultReader<Uint8Array>,
     nodeId: string,
@@ -1222,6 +1227,8 @@ export const useCanvasStore = defineStore('canvas', () => {
     let buffer = '';
     let accumulatedContent = '';
     const decoder = new TextDecoder();
+    let streamingParts: ContentPart[] = [];
+    let lastPartsUpdateLength = 0;
 
     try {
       console.log("Starting streaming response for", modelSource);
@@ -1231,20 +1238,42 @@ export const useCanvasStore = defineStore('canvas', () => {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        // console.log("Raw chunk:", chunk); // Log raw chunk data
-
         buffer += chunk;
+
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          console.log("Processing line:", line); // Log each line before processing
           const content = processSSELine(line, modelSource);
-          console.log("Processed content:", content); // Log processed content
 
           if (content !== null) {
             accumulatedContent += content;
             setStreamingContent(nodeId, accumulatedContent);
+
+            // Only reparse content if we've accumulated a significant amount of new text
+            // This prevents excessive parsing operations
+            if (accumulatedContent.length > lastPartsUpdateLength + 20 ||
+              content.includes('```') ||
+              accumulatedContent.length - lastPartsUpdateLength > 100) {
+
+              try {
+                // Parse the accumulated content into structured parts
+                streamingParts = await parseContent(accumulatedContent);
+                lastPartsUpdateLength = accumulatedContent.length;
+
+                // Emit an event with both raw content and parsed parts
+                emitter.emit('message-streamed', {
+                  nodeId,
+                  content: accumulatedContent,
+                  contentParts: streamingParts,
+                  role: 'assistant',
+                  isStreaming: true
+                });
+              } catch (parseError) {
+                console.error('Error parsing streaming content:', parseError);
+              }
+            }
+
             if (onStreamedContent) {
               await onStreamedContent(content);
             }
@@ -1252,12 +1281,92 @@ export const useCanvasStore = defineStore('canvas', () => {
         }
       }
 
-      console.log("Stream complete. Total content:", accumulatedContent); // Log final content
+      // Final parse and emit to ensure complete content is processed
+      try {
+        streamingParts = await parseContent(accumulatedContent);
+        emitter.emit('message-streamed', {
+          nodeId,
+          content: accumulatedContent,
+          contentParts: streamingParts,
+          role: 'assistant',
+          isStreaming: false
+        });
+      } catch (parseError) {
+        console.error('Error in final parse of content:', parseError);
+      }
+
+      console.log("Stream complete. Total content:", accumulatedContent);
       return accumulatedContent;
     } catch (error) {
       console.error('Error in streaming response:', error);
       throw error;
     }
+  };
+
+  const parseStreamingContentInProgress = async (content) => {
+    const parts = [];
+    let inCodeBlock = false;
+    let codeLanguage = '';
+    let currentCodeBuffer = '';
+    let currentTextBuffer = '';
+    let codeIndex = 0;
+
+    // Split the content by lines to detect code blocks
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('```')) {
+        if (inCodeBlock) {
+          // Closing code block
+          if (currentCodeBuffer) {
+            parts.push({
+              type: 'code',
+              content: currentCodeBuffer.trim(),
+              language: codeLanguage,
+              codeIndex: codeIndex++,
+            });
+          }
+          currentCodeBuffer = '';
+          inCodeBlock = false;
+        } else {
+          // Opening code block
+          if (currentTextBuffer) {
+            parts.push({
+              type: 'text',
+              content: await marked(currentTextBuffer),
+            });
+            currentTextBuffer = '';
+          }
+          codeLanguage = line.slice(3).trim();
+          inCodeBlock = true;
+        }
+      } else {
+        if (inCodeBlock) {
+          currentCodeBuffer += (currentCodeBuffer ? '\n' : '') + line;
+        } else {
+          currentTextBuffer += (currentTextBuffer ? '\n' : '') + line;
+        }
+      }
+    }
+
+    // Handle any remaining content
+    if (currentTextBuffer) {
+      parts.push({
+        type: 'text',
+        content: await marked(currentTextBuffer),
+      });
+    }
+
+    if (inCodeBlock && currentCodeBuffer) {
+      parts.push({
+        type: 'code',
+        content: currentCodeBuffer,
+        language: codeLanguage || 'plaintext',
+        codeIndex: codeIndex,
+      });
+    }
+
+    return parts;
   };
 
   /**  ─────────────────────────────────────────────
@@ -1500,6 +1609,7 @@ export const useCanvasStore = defineStore('canvas', () => {
             branchMessageIndex: node.branchMessageIndex,
             messages: node.messages || [],
             streamingContent: null,
+            modelParams: node.modelParams,
             ...node.metadata
           },
           ...children.flatMap(flattenNodes)
@@ -1509,6 +1619,18 @@ export const useCanvasStore = defineStore('canvas', () => {
       // Load nodes and update state
       nodes.value = flattenNodes(chatData.nodes);
       lastSavedWorkspaceId.value = chatId;
+      
+      // Restore model parameters for each node
+      nodeModelParams.value.clear();
+      nodes.value.forEach(node => {
+        if (node.modelParams) {
+          const paramsMap = new Map<string, ModelParameters>();
+          Object.entries(node.modelParams).forEach(([modelId, params]) => {
+            paramsMap.set(modelId, params as ModelParameters);
+          });
+          nodeModelParams.value.set(node.id, paramsMap);
+        }
+      });
 
       // Update localStorage
       const state: LocalStorageState = {
@@ -1527,7 +1649,12 @@ export const useCanvasStore = defineStore('canvas', () => {
   const saveWorkspace = async (title?: string) => {
     try {
       if (!title) {
-        title = `Workspace ${new Date().toLocaleString()}`;
+        const now = new Date();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        title = `WS ${month}/${day} ${hours}:${minutes}`;
       }
 
       // Save the root node and its state
@@ -1684,6 +1811,69 @@ export const useCanvasStore = defineStore('canvas', () => {
 
   setupRelicPopoutListener();
 
+  // Memory management functions
+  const MAX_NODE_PARAMS_CACHE = 100; // Limit the number of cached node parameters
+  const MAX_TOPIC_CLUSTERS = 50; // Limit topic clusters
+  
+  const cleanupMemory = () => {
+    // Clean up nodeModelParams - keep only recent nodes
+    if (nodeModelParams.value.size > MAX_NODE_PARAMS_CACHE) {
+      const currentNodeIds = new Set(nodes.value.map(n => n.id));
+      
+      // Remove params for nodes that no longer exist
+      for (const [nodeId] of nodeModelParams.value) {
+        if (!currentNodeIds.has(nodeId)) {
+          nodeModelParams.value.delete(nodeId);
+        }
+      }
+      
+      // If still too many, remove oldest entries (LRU-style)
+      if (nodeModelParams.value.size > MAX_NODE_PARAMS_CACHE) {
+        const entries = Array.from(nodeModelParams.value.keys());
+        const toRemove = entries.slice(0, entries.length - MAX_NODE_PARAMS_CACHE);
+        toRemove.forEach(nodeId => nodeModelParams.value.delete(nodeId));
+      }
+    }
+    
+    // Clean up topic clusters
+    if (topicClusters.value.size > MAX_TOPIC_CLUSTERS) {
+      const entries = Array.from(topicClusters.value.keys());
+      const toRemove = entries.slice(0, entries.length - MAX_TOPIC_CLUSTERS);
+      toRemove.forEach(topicId => {
+        topicClusters.value.delete(topicId);
+        // Also clean up related nodeTopics
+        for (const [nodeId, nodeTopicId] of nodeTopics.value) {
+          if (nodeTopicId === topicId) {
+            nodeTopics.value.delete(nodeId);
+          }
+        }
+      });
+    }
+  };
+  
+  const clearAllCaches = () => {
+    // Clear all memory-intensive caches
+    nodeModelParams.value.clear();
+    topicClusters.value.clear();
+    nodeTopics.value.clear();
+    
+    // Clear any other potential memory consumers
+    snappedNodesStack.value = [];
+    snappedNodeId.value = null;
+    
+    console.log('Canvas store caches cleared');
+  };
+  
+  const getMemoryUsage = () => {
+    return {
+      nodeModelParams: nodeModelParams.value.size,
+      topicClusters: topicClusters.value.size,
+      nodeTopics: nodeTopics.value.size,
+      nodes: nodes.value.length,
+      snappedNodes: snappedNodesStack.value.length
+    };
+  };
+
   return {
     nodes,
     activeNode,
@@ -1739,5 +1929,10 @@ export const useCanvasStore = defineStore('canvas', () => {
     toggleCodeMode,
     isCodeRequest,
     determineConversationContext,
+    
+    // Memory management
+    cleanupMemory,
+    clearAllCaches,
+    getMemoryUsage,
   };
 });

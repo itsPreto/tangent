@@ -7,7 +7,7 @@
         v-model="searchValue"
         type="text"
         class="search-input"
-        placeholder="Search workspaces... (Press '/' to focus)"
+        placeholder="Search workspaces... (Press '?' to focus)"
         @input="handleInput"
       />
       <button v-if="searchValue" @click="clearSearch" class="clear-button">
@@ -109,24 +109,23 @@ defineExpose({
   justify-content: space-between;
   padding: 1rem;
   max-width: 100%;
-  background-color: rgba(var(--color-base-100, 15 23 42), 0.8);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(var(--color-base-300, 51 65 85), 0.5);
+  background-color: transparent;
   position: sticky;
   bottom: 0;
-  z-index: 10;
+  z-index: 50;
 }
 
 .search-input-wrapper {
   display: flex;
   align-items: center;
-  width: 100%;
-  max-width: 600px;
+  flex: 1;
   background-color: rgba(var(--color-base-200, 30 41 59), 0.8);
+  backdrop-filter: blur(10px);
   border-radius: 9999px;
   padding: 0 1rem;
   border: 1px solid rgba(var(--color-base-300, 51 65 85), 0.5);
   transition: all 0.2s ease;
+  margin-right: 1rem;
 }
 
 .search-input-wrapper:focus-within {
@@ -170,10 +169,11 @@ defineExpose({
   display: flex;
   align-items: center;
   background-color: rgba(var(--color-base-200, 30 41 59), 0.8);
+  backdrop-filter: blur(10px);
   border-radius: 9999px;
   padding: 0.25rem;
   border: 1px solid rgba(var(--color-base-300, 51 65 85), 0.5);
-  margin-left: 1rem;
+  flex-shrink: 0;
 }
 
 .toggle-btn {

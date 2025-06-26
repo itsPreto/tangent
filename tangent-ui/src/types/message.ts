@@ -1,15 +1,31 @@
 // src/types/message.ts
 
 export interface ContentPart {
-  type: 'text' | 'code' | 'paste'; // Add 'paste' type
+  type: 'text' | 'code' | 'paste';
   content: string;
   language?: string;
+  detectedLanguage?: string; // For auto-detected language in pasted content
   codeIndex?: number;
-  nodeId?: string;
   complete?: boolean;
-  // Paste-specific properties
-  preview?: string;
-  wordCount?: number;
+  wordCount?: number; // For paste content
+  preview?: string; // Optional preview text
+}
+
+// Additional helper types for the unified CodePreview component
+export interface CodePreviewData {
+  content: string;
+  language: string;
+  nodeId: string;
+  codeIndex?: number;
+  complete?: boolean;
+  isStreaming?: boolean;
+}
+
+export interface PasteData {
+  isPaste: boolean;
+  content: string;
+  wordCount: number;
+  detectedLanguage?: string;
 }
 
 export interface TTSConfig {
@@ -38,4 +54,5 @@ export interface Node {
   branchMessageIndex: number | null;
   streamingContent?: string | null;
   lockedHeight?: number;
+  modelParams?: Record<string, any>; // Model-specific parameters
 }

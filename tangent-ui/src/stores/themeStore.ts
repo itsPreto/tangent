@@ -45,11 +45,11 @@ export const useThemeStore = defineStore('theme', {
       lemonade: { primary: '#519903', secondary: '#E9E92E', accent: '#94CE58' },
       // Dark themes
       dark: { primary: '#793EF9', secondary: '#F471B5', accent: '#1FB2A5' },
-      synthwave: { primary: '#E779C1', secondary: '#58C7F3', accent: '#F3CC30' },
-      retro: { primary: '#EF9995', secondary: '#2CB67D', accent: '#7D5BA6' },
-      cyberpunk: { primary: '#FF7598', secondary: '#75D1F0', accent: '#F7D51D' },
-      valentine: { primary: '#E96D7B', secondary: '#A12E45', accent: '#F0AFC0' },
-      halloween: { primary: '#F28C18', secondary: '#6B21A8', accent: '#37CDBE' },
+      synthwave: { primary: '#FF00FF', secondary: '#00FFFF', accent: '#FFFF00' },
+      retro: { primary: '#D2691E', secondary: '#CD853F', accent: '#F4A460' },
+      cyberpunk: { primary: '#00FFFF', secondary: '#FF1493', accent: '#ADFF2F' },
+      valentine: { primary: '#FF69B4', secondary: '#DC143C', accent: '#FFB6C1' },
+      halloween: { primary: '#FF8C00', secondary: '#8B008B', accent: '#32CD32' },
       forest: { primary: '#1EB854', secondary: '#1DB88E', accent: '#1EA885' },
       aqua: { primary: '#09ECF3', secondary: '#0771DE', accent: '#07ABE3' },
       black: { primary: '#333333', secondary: '#666666', accent: '#999999' },
@@ -57,7 +57,7 @@ export const useThemeStore = defineStore('theme', {
       dracula: { primary: '#FF79C6', secondary: '#BD93F9', accent: '#50FA7B' },
       cmyk: { primary: '#00BCD4', secondary: '#FF4081', accent: '#FFEB3B' },
       autumn: { primary: '#8B4513', secondary: '#A0522D', accent: '#CD853F' },
-      business: { primary: '#1C4E80', secondary: '#7C909A', accent: '#A6B0B5' },
+      business: { primary: '#1E3A8A', secondary: '#3B82F6', accent: '#60A5FA' },
       acid: { primary: '#FF00FF', secondary: '#00FF00', accent: '#FFFF00' },
       night: { primary: '#38BDF8', secondary: '#818CF8', accent: '#C084FC' },
       coffee: { primary: '#6F4E37', secondary: '#C6A880', accent: '#DAC3B3' },
@@ -93,9 +93,9 @@ export const useThemeStore = defineStore('theme', {
      * Check if a theme is a dark theme
      */
     isDarkTheme: (state) => (theme: ThemeName): boolean => {
-      const darkThemes = ['dark', 'synthwave', 'retro', 'cyberpunk', 'valentine', 
-        'halloween', 'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk', 
-        'autumn', 'business', 'acid', 'night', 'coffee'];
+      const darkThemes = ['dark', 'synthwave', 'cyberpunk', 'valentine', 
+        'halloween', 'forest', 'aqua', 'black', 'luxury', 'dracula', 
+        'business', 'acid', 'night', 'coffee'];
       return darkThemes.includes(theme);
     }
   },

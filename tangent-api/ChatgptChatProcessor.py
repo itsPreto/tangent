@@ -12,32 +12,6 @@ class ChatGPTDataProcessor:
     def __init__(self):
         pass
 
-    def detect_chat_type(self, file_path: str) -> str:
-        """
-        Detect whether the file contains Claude or ChatGPT chats.
-        """
-        try:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-
-            # Check first item in the data
-            if isinstance(data, list):
-                first_item = data[0] if data else {}
-
-                # ChatGPT format detection (has 'mapping' field)
-                if isinstance(first_item, dict) and "mapping" in first_item:
-                    return "chatgpt"
-
-                # Claude format detection (has 'chat_messages' field)
-                elif isinstance(first_item, dict) and "chat_messages" in first_item:
-                    return "claude"
-
-            raise ValueError("Unknown chat format")
-
-        except Exception as e:
-            raise Exception(f"Error detecting chat type: {str(e)}")
-        
-
     def process_chatgpt_messages(self, data: list) -> List[Dict]:
         """Process ChatGPT format messages and reconstruct conversation tree."""
         messages = []
@@ -129,17 +103,13 @@ class ChatGPTDataProcessor:
         Load, detect, and process data, handling branching. This is the main entry point.
         """
 
-        chat_type = self.detect_chat_type(file_path)
-        if chat_type != "chatgpt":
-            raise ValueError(f"Expected ChatGPT data, but detected: {chat_type}")
-
         with open(file_path, 'r') as f:
             data = json.load(f)
 
         messages = self.process_chatgpt_messages(data)
         messages_with_branches = self.establish_branching(messages)
+        
         return messages_with_branches
-
 
 
 # Example Usage (assuming this class is in a file called data_processor.py)
@@ -175,37 +145,66 @@ if __name__ == '__main__':
                         "id": "msg3",
                         "author": {"role": "user"},
                         "create_time": 1678886520,
-                        "content": {"parts": ["How are you?"]},
+                        "content": {"parts": ["Can you help me with Python?"]},
                     },
                     "parent": "msg2",
-                    "children": [],
+                    "children": ["msg5"],
                 },
-                 "msg4": {
+                "msg4": {
                     "message": {
                         "id": "msg4",
                         "author": {"role": "user"},
-                        "create_time": 1678886500,  # earlier timestamp! to test sorting
-                        "content": {"parts": ["Branching question?"]},
+                        "create_time": 1678886580,
+                        "content": {"parts": ["Actually, tell me about JavaScript instead."]},
                     },
                     "parent": "msg2",
+                    "children": ["msg6"],
+                },
+                "msg5": {
+                    "message": {
+                        "id": "msg5",
+                        "author": {"role": "assistant"},
+                        "create_time": 1678886640,
+                        "content": {"parts": ["Sure! Python is a versatile programming language..."]},
+                    },
+                    "parent": "msg3",
+                    "children": [],
+                },
+                "msg6": {
+                    "message": {
+                        "id": "msg6",
+                        "author": {"role": "assistant"},
+                        "create_time": 1678886700,
+                        "content": {"parts": ["JavaScript is great for web development..."]},
+                    },
+                    "parent": "msg4",
                     "children": [],
                 },
             },
         }
     ]
 
-    with open("dummy_chatgpt.json", "w") as f:
+    with open("chatgpt_conversations.json", "w") as f:
         json.dump(dummy_data, f, indent=2)
-    # --- End of creating dummy data
 
+    # Initialize processor and process data
     processor = ChatGPTDataProcessor()
-    try:
-      processed_messages = processor.process_data("dummy_chatgpt.json")
-      for msg in processed_messages:
-        print(
-            f"Chat: {msg['chat_name']}, Msg ID: {msg['message_id']}, Parent: {msg['parent_message_id']}, Branch: {msg['branch_id']}, Sender: {msg['sender']}, Time: {msg['timestamp']}, Text: {msg['text']}"
-      )
-    except ValueError as ve:
-      print(ve)
-    finally:
-      os.remove("dummy_chatgpt.json")
+    result = processor.process_data("chatgpt_conversations.json")
+
+    print("Processing Results:")
+    for msg in result:
+        print(f"Branch {msg['branch_id']}: {msg['sender']} - {msg['text'][:50]}...")
+
+    print("\nBranching Structure:")
+    # Group by branch for better visualization
+    branches = {}
+    for msg in result:
+        branch_id = msg['branch_id']
+        if branch_id not in branches:
+            branches[branch_id] = []
+        branches[branch_id].append(msg)
+
+    for branch_id, msgs in branches.items():
+        print(f"\nBranch {branch_id}:")
+        for msg in msgs:
+            print(f"  {msg['sender']}: {msg['text']}")

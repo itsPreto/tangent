@@ -25,20 +25,34 @@
     <div class="absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-base-300/90 
                 backdrop-blur rounded text-xs whitespace-nowrap transition-opacity duration-200 z-10"
          :class="isHovered ? 'opacity-100' : 'opacity-0 pointer-events-none'">
-      Click to {{ isStreaming ? 'view live code' : 'open in editor' }}
+      <span v-if="isStreaming">Click to view live code</span>
+      <span v-else>Click to open • Cmd+click to preview</span>
     </div>
     
     <!-- Quick action buttons on hover -->
     <div class="absolute right-0 top-full mt-1 opacity-0 group-hover:opacity-100 
                 transition-opacity duration-200 flex gap-1 bg-base-300/90 backdrop-blur 
-                rounded-md p-1 shadow-md">
-      <button class="p-1.5 hover:bg-base-200 rounded-md transition-colors"
+                rounded-md p-1 shadow-md z-50">
+      <button class="p-1.5 hover:bg-base-200/80 rounded-md transition-colors group/btn relative"
               title="Copy to clipboard" @click.stop="copyContent">
         <Copy class="w-3.5 h-3.5 text-base-content/60" />
+        <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-base-100/90 
+                     backdrop-blur rounded text-xs whitespace-nowrap transition-opacity duration-200 
+                     opacity-0 group-hover/btn:opacity-100 pointer-events-none">Copy</span>
       </button>
-      <button v-if="!isStreaming" class="p-1.5 hover:bg-base-200 rounded-md transition-colors"
+      <button v-if="!isStreaming" class="p-1.5 hover:bg-base-200/80 rounded-md transition-colors group/btn relative"
+              title="Preview code" @click.stop="showPreview">
+        <Eye class="w-3.5 h-3.5 text-base-content/60" />
+        <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-base-100/90 
+                     backdrop-blur rounded text-xs whitespace-nowrap transition-opacity duration-200 
+                     opacity-0 group-hover/btn:opacity-100 pointer-events-none">Preview</span>
+      </button>
+      <button v-if="!isStreaming" class="p-1.5 hover:bg-base-200/80 rounded-md transition-colors group/btn relative"
               title="Edit in workspace" @click.stop="openEditor">
         <Edit class="w-3.5 h-3.5 text-base-content/60" />
+        <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-base-100/90 
+                     backdrop-blur rounded text-xs whitespace-nowrap transition-opacity duration-200 
+                     opacity-0 group-hover/btn:opacity-100 pointer-events-none">Edit</span>
       </button>
     </div>
   </div>
@@ -46,7 +60,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { Code, Copy, Edit } from 'lucide-vue-next';
+import { Code, Copy, Edit, Eye } from 'lucide-vue-next';
 import emitter from '@/utils/eventBus';
 import { useAppStore } from '@/stores/appStore';
 
@@ -60,6 +74,7 @@ interface CodeBubbleProps {
 
 interface CodeBubbleEmits {
   (e: 'click', data: { content: string, language: string, nodeId: string, codeIndex?: number, complete?: boolean }): void;
+  (e: 'preview', data: { content: string, language: string, nodeId: string, codeIndex?: number }): void;
 }
 
 const props = withDefaults(defineProps<CodeBubbleProps>(), {
@@ -89,8 +104,18 @@ onMounted(() => {
   }
 });
 
-const handleClick = () => {
+const handleClick = (e: MouseEvent) => {
   console.log('CodeBubble clicked:', props.nodeId);
+  
+  // Check if Cmd key (Mac) or Ctrl key (Windows/Linux) is pressed
+  if (e.metaKey || e.ctrlKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    showPreview();
+    return;
+  }
+  
+  // Normal click - open in editor
   appStore.openSidePanel();
   emit('click', {
     content: props.content || '',
@@ -98,6 +123,15 @@ const handleClick = () => {
     nodeId: props.nodeId,
     codeIndex: props.codeIndex,
     complete: !props.isStreaming
+  });
+};
+
+const showPreview = () => {
+  emit('preview', {
+    content: props.content || '',
+    language: props.language || 'react',
+    nodeId: props.nodeId,
+    codeIndex: props.codeIndex
   });
 };
 

@@ -471,6 +471,32 @@ class TTSService {
     this.currentText.value = ''
     this.error.value = null
   }
+
+  reset(): void {
+    // Complete cleanup and reset
+    this.stop()
+    
+    // Close and reset audio context
+    if (this.audioContext) {
+      this.audioContext.close()
+      this.audioContext = null
+    }
+    
+    // Clear all state
+    this.audioQueue = []
+    this.isProcessingQueue = false
+    this.currentAudioSource = null
+    this.abortController = null
+    
+    // Reset reactive state
+    this.isPlaying.value = false
+    this.isSpeaking.value = false
+    this.currentText.value = ''
+    this.error.value = null
+    this.voices.value = []
+    
+    console.log('TTSService: Complete reset performed')
+  }
   
   private cleanTextForSpeech(text: string): string {
     // Remove markdown formatting

@@ -14,6 +14,14 @@
     --muted: theme('colors.gray.800');
     --border: theme('colors.gray.700');
   }
+
+  /* Prevent body scroll when canvas is active */
+  html, body {
+    overflow: hidden;
+    height: 100vh;
+    position: fixed;
+    width: 100%;
+  }
 }
 
 @layer components {

@@ -1,10 +1,10 @@
 <template>
   <div class="hot-corners-container">
-    <!-- Bottom Left Corner -->
+    <!-- Bottom Left -->
     <div 
       class="hot-corner bottom-left"
-      @mouseenter="showIndicator('bottom-left')"
-      @mouseleave="hideIndicator('bottom-left')"
+      @mouseenter="indicators['bottom-left'] = true"
+      @mouseleave="indicators['bottom-left'] = false"
       @click="$emit('toggle')"
     >
       <div 
@@ -12,30 +12,30 @@
         :class="{ 'visible': indicators['bottom-left'] }"
       ></div>
     </div>
-
-    <!-- Bottom Center -->
-    <div 
-      class="hot-corner bottom-center"
-      @mouseenter="showIndicator('bottom-center')"
-      @mouseleave="hideIndicator('bottom-center')"
-      @click="$emit('toggle')"
-    >
-      <div 
-        class="corner-indicator" 
-        :class="{ 'visible': indicators['bottom-center'] }"
-      ></div>
-    </div>
-
-    <!-- Bottom Right Corner -->
+    
+    <!-- Bottom Right -->
     <div 
       class="hot-corner bottom-right"
-      @mouseenter="showIndicator('bottom-right')"
-      @mouseleave="hideIndicator('bottom-right')"
+      @mouseenter="indicators['bottom-right'] = true"
+      @mouseleave="indicators['bottom-right'] = false"
       @click="$emit('toggle')"
     >
       <div 
         class="corner-indicator" 
         :class="{ 'visible': indicators['bottom-right'] }"
+      ></div>
+    </div>
+    
+    <!-- Bottom Center -->
+    <div 
+      class="hot-corner bottom-center"
+      @mouseenter="indicators['bottom-center'] = true"
+      @mouseleave="indicators['bottom-center'] = false"
+      @click="$emit('toggle')"
+    >
+      <div 
+        class="corner-indicator" 
+        :class="{ 'visible': indicators['bottom-center'] }"
       ></div>
     </div>
   </div>
@@ -50,17 +50,9 @@ const emit = defineEmits<{
 
 const indicators = ref({
   'bottom-left': false,
-  'bottom-center': false,
-  'bottom-right': false
+  'bottom-right': false,
+  'bottom-center': false
 });
-
-const showIndicator = (corner: string) => {
-  indicators.value[corner] = true;
-};
-
-const hideIndicator = (corner: string) => {
-  indicators.value[corner] = false;
-};
 </script>
 
 <style scoped>
@@ -88,7 +80,13 @@ const hideIndicator = (corner: string) => {
 .hot-corner.bottom-left {
   bottom: 0;
   left: 0;
-  border-radius: 0 100% 0 0;
+  border-radius: 0 50% 0 0;
+}
+
+.hot-corner.bottom-right {
+  bottom: 0;
+  right: 0;
+  border-radius: 50% 0 0 0;
 }
 
 .hot-corner.bottom-center {
@@ -96,12 +94,6 @@ const hideIndicator = (corner: string) => {
   left: 50%;
   transform: translateX(-50%);
   border-radius: 50% 50% 0 0;
-}
-
-.hot-corner.bottom-right {
-  bottom: 0;
-  right: 0;
-  border-radius: 100% 0 0 0;
 }
 
 .corner-indicator {

@@ -402,6 +402,34 @@ class AudioRecordingService {
     this.state.value.isSpeechDetected = false;
   }
 
+  public reset(): void {
+    // Complete cleanup including audio context and all resources
+    this.cleanup();
+    
+    // Clear all audio data
+    this.audioChunks = [];
+    this.state.value.audioBlob = null;
+    this.state.value.transcription = '';
+    this.state.value.error = null;
+    
+    // Close and reset audio context
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+    
+    // Reset all internal state
+    this.mediaRecorder = null;
+    this.processor = null;
+    this.source = null;
+    this.speechStartTime = null;
+    this.lastSpeechTime = 0;
+    this.silenceStartTime = null;
+    this.hasDetectedSpeech = false;
+    
+    console.log('AudioService: Complete reset performed');
+  }
+
   public clearTranscription(): void {
     this.state.value.transcription = '';
     this.state.value.error = null;

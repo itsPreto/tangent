@@ -1,11 +1,24 @@
 <template>
-  <div class="fixed overflow-visible bg-background transition-all duration-300" :style="{
-    left: sidePanelOpen ? '40vw' : '0',
-    right: '0',
+  <div class="fixed overflow-hidden bg-background transition-all duration-300" :style="{
+    left: sidePanelOpen ? '40vw' : '0px', // Leave space for sidebar trigger
+    right: rightPanelOpen ? '40vw' : '0',
     top: '0',
     bottom: '0',
+    zIndex: '30',
   }" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
     @drop.prevent="handleDrop">
+
+    <!-- Grass Layer (behind search bar) -->
+    <div v-if="isWorkspaceOverview" class="grass-layer">
+      <div class="grass-container">
+        <div 
+          v-for="blade in grassBlades" 
+          :key="blade.id" 
+          class="grass-blade"
+          :style="blade.style"
+        ></div>
+      </div>
+    </div>
 
     <!-- Workspace Search Bar -->
     <WorkspaceSearchBar v-if="isWorkspaceOverview" v-model="searchQuery" :view-mode="viewMode"
@@ -25,12 +38,11 @@
         <div class="space-y-6 text-base-content/80">
           <transition name="waterfall" appear :style="{ 'transition-delay': `0.1s` }">
             <p class="text-xl">
-              Your visual workspace for conversations with AI
+              - a digitial garden for your AI chats -
             </p>
           </transition>
           <transition name="waterfall" appear>
             <div class="grid gap-6 text-center">
-              <!-- Loop through feature cards -->
               <transition-group name="waterfall" tag="div" appear>
                 <div v-for="(feature, index) in features" :key="index" class="p-6 bg-base-200/50 rounded-xl border border-base-300 hover:shadow-md hover:translate-y-[-4px]
                   transition duration-200" :style="{ 'transition-delay': `${0.02}s` }">
@@ -57,31 +69,35 @@
       </div>
     </div>
 
-    <!-- Main Canvas -->
-    <div v-else class="workspace-container">
+    <!-- Main Canvas with RTS Perspective -->
+    <div v-else class="workspace-container rts-perspective">
       <Transition name="fade">
         <div v-if="notification.visible"
           class="fixed top-16 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-primary/80 text-primary-content rounded-lg shadow-lg z-50">
           {{ notification.message }}
         </div>
       </Transition>
-      <!-- Bubble View -->
+
+      <!-- RTS Ground Plane -->
+      <div v-if="viewMode === 'bubble' && isWorkspaceOverview" class="rts-ground-plane"></div>
+
+      <!-- Bubble View with RTS -->
       <div v-if="viewMode === 'bubble' && isWorkspaceOverview" ref="canvasRef"
-        class="bubble-view absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
+        class="bubble-view rts-canvas absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
         @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
         @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
         @keydown="handleKeyDown" @wheel="handleWheel">
 
-        <!-- Canvas Transform Container -->
-        <div class="absolute transform-gpu" :style="transformStyle" :class="{
+        <!-- Canvas Transform Container with RTS adjustments -->
+        <div class="absolute transform-gpu rts-transform" :style="transformStyle" :class="{
           'transition-transform-overview': isWorkspaceOverview,
           'overflow-visible': true,
         }">
           <!-- Bubble Layout -->
-          <div class="absolute" :style="nodesLayerStyle">
+          <div class="absolute rts-nodes-layer" :style="nodesLayerStyle">
             <FlowerWorkspaceNode v-for="workspace in filteredWorkspaces" :key="workspace.id" :workspace="workspace"
               :is-selected="selectedWorkspaceId === workspace.id" :max-node-count="maxNodeCount"
-              :window-height="windowSize.value ? windowSize.value.height : 1080" :always-show-petals="alwaysShowPetals"
+              :window-height="windowSize.value ? windowSize.value.height : 1080" :always-show-petals="alwaysShowPetals || isCommandPressed"
               @select="handleWorkspaceSelect(workspace.id)" @favorite="handleWorkspaceFavorite(workspace.id)"
               @duplicate="handleWorkspaceDuplicate(workspace.id)" @archive="handleWorkspaceArchive(workspace.id)"
               @export="handleWorkspaceExport(workspace.id)" @delete="handleWorkspaceDelete(workspace.id)" />
@@ -89,7 +105,7 @@
         </div>
       </div>
 
-      <!-- Grid View -->
+      <!-- Grid View (unchanged) -->
       <transition name="fade" mode="out-in">
         <GridWorkspaceView v-if="viewMode === 'grid' && isWorkspaceOverview" :workspaces="filteredWorkspaces"
           :selected-workspace-id="selectedWorkspaceId" :search-query="searchQuery"
@@ -127,12 +143,10 @@
           <!-- Nodes Layer -->
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
             <template v-for="node in store.nodes" :key="node.id">
-              <!-- Media Node -->
-              <MediaBranchNode v-if="node.type === 'media'" :ref="(el) => {
-                if (el) mediaNodesRef.value[node.id] = el;
-              }" :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+              <!-- Branch Node (handles text and media) -->
+              <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"
-                :model-registry="modelRegistry" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
+                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen" :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
                 @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
                 " @delete="() => store.removeNode(node.id)" :style="{
@@ -156,11 +170,11 @@
                     : 'none',
                 }" />
 
-              <!-- Branch Node (with input zoom on focus) -->
+              <!-- Branch Node -->
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"
-                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen" @select="handleNodeSelect(node.id)"
+                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen" :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected" @select="handleNodeSelect(node.id)"
                 @drag-start="handleDragStart" @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
                 @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
                 @delete="() => store.removeNode(node.id)" @update-position="handleNodePositionUpdate"
@@ -202,13 +216,14 @@ import BranchNode from "./node/BranchNode.vue";
 import TangentLogo from '../logo/TangentLogo.vue';
 import emitter from '@/utils/eventBus'
 import FlowerWorkspaceNode from "./node/FlowerWorkspaceNode.vue";
-import GridWorkspaceView from "../ui/GridWorkspaceView.vue";
+import GridWorkspaceView from "../workspace/GridWorkspaceView.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
 import WebBranchNode from "./node/WebBranchNode.vue";
-import MediaBranchNode from "./node/MediaBranchNode.vue";
 import SplineConnector from "./spline/MainSplineConnector.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useAppStore } from "@/stores/appStore";
+import { useModelStore } from "@/stores/modelStore";
 import type { ModelInfo } from '@/types/model';
 import PerformanceTestPanel from './PerformanceTestPanel.vue';
 import { Plus, Circle, LayoutGrid } from "lucide-vue-next";
@@ -218,13 +233,46 @@ const modelRegistry = ref(new Map<string, ModelInfo>());
 
 const store = useCanvasStore();
 const chatStore = useChatStore();
+const modelStore = useModelStore();
 const canvasRef = ref(null);
+const appStore = useAppStore();
+
+// Populate model registry with all available models
+const updateModelRegistry = () => {
+  modelRegistry.value.clear();
+  
+  // Add all available models from each provider to the registry
+  const allModels = [
+    ...modelStore.ollamaModels,
+    ...modelStore.openRouterModels,
+    ...modelStore.googleModels,
+    ...modelStore.anthropicModels,
+    ...modelStore.openaiModels
+  ];
+  
+  allModels.forEach(model => {
+    if (model && model.id) {
+      modelRegistry.value.set(model.id, model);
+    }
+  });
+};
 
 // View modes and search
 const viewMode = ref('bubble'); // 'bubble' or 'grid'
 const searchQuery = ref('');
 const perfTestPanel = ref(null);
 const alwaysShowPetals = ref(localStorage.getItem('alwaysShowPetals') === 'true' || false);
+
+// CMD/CTRL key state for flower bloom effect
+const isCommandPressed = ref(false);
+
+const STEM_LENGTH_MIN = 400; // Minimum stem length
+const STEM_LENGTH_MAX = 650; // Maximum stem length
+
+// RTS Perspective constants
+const RTS_ANGLE = 35; // degrees for ground plane
+const RTS_SCALE_Y = 0.6; // vertical compression
+const DEPTH_FACTOR = 0.8; // how much depth affects positioning
 
 // Props
 const props = defineProps({
@@ -245,6 +293,10 @@ const props = defineProps({
   sidePanelOpen: {
     type: Boolean,
     required: true,
+  },
+  rightPanelOpen: {
+    type: Boolean,
+    default: false,
   },
   autoZoomEnabled: {
     type: Boolean,
@@ -300,9 +352,6 @@ const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
 const focusedTopicId = ref<string | null>(null);
 const isDraggingFile = ref(false);
-const mediaNodesRef = ref<Record<string, InstanceType<typeof MediaBranchNode>>>(
-  {}
-);
 
 provide('performanceTestingActive', false);
 
@@ -327,15 +376,65 @@ const workspaceDragState = ref({
 
 const notification = ref({ visible: false, message: '' });
 
-
 // Calculate max node count for bubble size normalization
 const maxNodeCount = computed(() => {
   if (!workspaces.value.length) return 1;
   return Math.max(...workspaces.value.map(w => w.nodeCount || 0), 1);
 });
 
-const isWorkspaceOverview = ref(true); // Whether we're showing workspaces list
-const expandingWorkspaceId = ref<string | null>(null); // For transition animation
+// Generate procedural grass blades for ambient background
+const grassBlades = computed(() => {
+  if (!isWorkspaceOverview.value) return [];
+  
+  const canvasWidth = windowSize.value?.width || 1920;
+  const bladeCount = Math.floor(canvasWidth / 8); // One blade every 8px
+  const blades = [];
+  
+  // Seeded random function for consistent placement
+  const seededRandom = (seed) => {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  };
+  
+  for (let i = 0; i < bladeCount; i++) {
+    const seed = i * 123.456;
+    const x = (i / bladeCount) * 100;
+    
+    // Varied blade properties
+    const height = 30 + seededRandom(seed) * 40; // 30-70px range
+    const width = 2 + seededRandom(seed + 1) * 3; // 2-5px range
+    const rotation = (seededRandom(seed + 2) - 0.5) * 30; // More natural sway
+    const delay = seededRandom(seed + 3) * 4; // Animation delay
+    
+    // Natural grass colors with variation
+    const hue = 115 + seededRandom(seed + 4) * 10; // Green with slight variation
+    const saturation = 40 + seededRandom(seed + 5) * 30; // 40-70%
+    const lightness = 30 + seededRandom(seed + 6) * 25; // 30-55%
+    
+    blades.push({
+      id: i,
+      style: {
+        position: 'absolute',
+        left: `${x}%`,
+        bottom: '0px',
+        width: `${width}px`,
+        height: `${height}px`,
+        backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
+        transform: `rotate(${rotation}deg)`,
+        transformOrigin: 'bottom center',
+        borderRadius: `${width}px ${width}px 0 0`,
+        animationDelay: `${delay}s`,
+        opacity: 0.7,
+        boxShadow: `0 0 2px rgba(0, 100, 0, 0.2)`
+      }
+    });
+  }
+  
+  return blades;
+});
+
+const isWorkspaceOverview = ref(true);
+const expandingWorkspaceId = ref<string | null>(null);
 
 const features = [
   {
@@ -360,9 +459,8 @@ const features = [
   },
 ];
 
-// Workspaces with force-directed layout for bubble view
+// Enhanced workspace positioning with RTS perspective
 const workspaces = computed(() => {
-  // Base workspace data
   const workspaceData = chatStore.chats.map((chat) => ({
     id: chat.id,
     title: chat.title,
@@ -377,9 +475,8 @@ const workspaces = computed(() => {
     status: chat.status || 'active'
   }));
 
-  // For bubble view, apply force-directed layout
   if (viewMode.value === 'bubble' && workspaceData.length > 0) {
-    return simulateFlowerLayout(workspaceData);
+    return simulateRTSFlowerLayout(workspaceData);
   }
 
   return workspaceData;
@@ -412,7 +509,260 @@ const getNodeCenter = (node) => ({
   y: node.y + store.CARD_HEIGHT / 2,
 });
 
-// Computed styles
+const getMediaUrl = (mediaContent) => {
+  if (!mediaContent) return '';
+  if (mediaContent.previewUrl) return mediaContent.previewUrl;
+  if (mediaContent.media_id) return `http://127.0.0.1:5050/media/${mediaContent.media_id}`;
+  return '';
+};
+
+// Generate concise title for image using vision model
+const generateConciseImageTitle = async (file: File): Promise<string> => {
+  try {
+    const base64Data = await fileToBase64(file);
+    
+    // Use the same model that the router service uses for vision tasks
+    const routerModel = 'qwen2.5vl:3b';
+    
+    const titlePrompt = 'Generate a concise, descriptive title for this image in 3-5 words. Focus on the main subject or action. Respond with only the title, no additional text.';
+    
+    const response = await fetch('http://localhost:5050/api/ollama-proxy/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: routerModel,
+        prompt: titlePrompt,
+        images: [base64Data],
+        stream: false,
+        options: {
+          temperature: 0.3,
+          num_predict: 20
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to generate title: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    const title = result.response?.trim() || '';
+    
+    // Clean up the title - remove quotes and extra punctuation
+    const cleanTitle = title.replace(/["']/g, '').replace(/\.$/, '').trim();
+    
+    console.log(`[InfiniteCanvas] Generated title: "${cleanTitle}"`);
+    return cleanTitle || file.name;
+    
+  } catch (error) {
+    console.error('[InfiniteCanvas] Title generation error:', error);
+    return file.name; // Fallback to filename
+  }
+};
+
+// Convert file to base64
+const fileToBase64 = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64Data = result.split(',')[1];
+      resolve(base64Data);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+const processMediaForNode = async (node, file) => {
+  try {
+    // FIRST: Create thumbnail immediately for instant UI feedback
+    const mediaId = `media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const previewUrl = URL.createObjectURL(file);
+    
+    // Set media content immediately so thumbnail shows
+    await store.updateNode(node.id, {
+      mediaContent: {
+        media_id: mediaId,
+        filename: file.name,
+        mime_type: file.type,
+        type: file.type.startsWith('image/') ? 'image' : 'video',
+        analysis: 'Processing...',
+        previewUrl
+      },
+      isProcessingMedia: true
+    });
+    
+    console.log('[InfiniteCanvas] Media content saved to database');
+    
+    // Force a small delay to ensure UI updates
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Import auto-caption service, agent service, and router service
+    const { autoCaptionService } = await import('@/services/autoCaptionService');
+    const { agentService } = await import('@/services/agentService');
+    const { routerService } = await import('@/services/routerService');
+    
+    // Check if we should use auto-captioning for images
+    const settings = await autoCaptionService.getSettings();
+    const shouldAutoCaption = settings.enabled && 
+                              file.type.startsWith('image/') && 
+                              settings.model &&
+                              settings.model.trim() !== '';
+    
+    console.log('[InfiniteCanvas] Processing options:', {
+      autoCaptionEnabled: settings.enabled,
+      selectedModel: settings.model,
+      shouldAutoCaption
+    });
+
+    // Use router service to determine the best approach for image handling
+    if (file.type.startsWith('image/')) {
+      console.log('[InfiniteCanvas] Using router service for image handling');
+      
+      const routingResult = await routerService.routeRequest({
+        message: 'Analyze this uploaded image',
+        hasImages: true
+      });
+      
+      console.log('[InfiniteCanvas] Router result:', routingResult);
+      
+      // If no vision model configured, show agent configurator
+      if (!routingResult.model) {
+        console.log('[InfiniteCanvas] No vision agent configured, showing configurator');
+        await agentService.showAgentConfigurator('agents');
+        
+        // Update node with message about configuration needed
+        await store.updateNode(node.id, {
+          mediaContent: {
+            ...node.mediaContent,
+            analysis: 'Image uploaded. Configure a vision agent in the settings panel to enable automatic captioning.'
+          },
+          messages: [
+            ...(node.messages || []),
+            {
+              role: 'assistant',
+              content: 'I\'ve uploaded your image, but no vision agent is configured for automatic analysis. Please set up a vision agent in the settings panel (gear icon) to enable automatic image captioning.',
+              timestamp: new Date().toISOString()
+            }
+          ],
+          isProcessingMedia: false
+        });
+        return;
+      }
+      
+      // Update settings to use the router-selected model
+      const currentSettings = await autoCaptionService.getSettings();
+      const updatedSettings = {
+        ...currentSettings,
+        enabled: true,
+        model: routingResult.model.name || routingResult.model.id
+      };
+      
+      console.log('[InfiniteCanvas] Using router-selected vision model:', routingResult.model.name);
+    }
+    
+    if (shouldAutoCaption) {
+      console.log('[InfiniteCanvas] Using auto-captioning service');
+      
+      // Update status
+      node.mediaContent.analysis = 'Generating caption...';
+      
+      // Generate caption
+      const result = await autoCaptionService.captionFile(file);
+      
+      if (result.success && result.caption) {
+        // Update with successful caption
+        const updatedMediaContent = {
+          ...node.mediaContent,
+          analysis: result.caption
+        };
+        
+        const updatedMessages = [
+          ...(node.messages || []),
+          {
+            role: 'assistant',
+            content: result.caption,
+            timestamp: new Date().toISOString()
+          }
+        ];
+        
+        console.log(`[InfiniteCanvas] Auto-caption generated in ${result.responseTime}ms`);
+        console.log('[InfiniteCanvas] Updating node with caption:', result.caption.substring(0, 100) + '...');
+        
+        // Save updated content to database
+        await store.updateNode(node.id, { 
+          mediaContent: updatedMediaContent,
+          messages: updatedMessages,
+          isProcessingMedia: false,
+          metadata: {
+            ...node.metadata,
+            mediaContent: updatedMediaContent
+          }
+        });
+      } else {
+        // Handle caption failure
+        console.error(`[InfiniteCanvas] Auto-caption failed:`, result.error);
+        
+        const updatedMediaContent = {
+          ...node.mediaContent,
+          analysis: 'Caption generation failed'
+        };
+        
+        const updatedMessages = [
+          ...(node.messages || []),
+          {
+            role: 'assistant',
+            content: `Image uploaded successfully, but automatic captioning failed: ${result.error}. You can still chat about this image.`,
+            timestamp: new Date().toISOString()
+          }
+        ];
+        
+        // Save updated content to database
+        await store.updateNode(node.id, { 
+          mediaContent: updatedMediaContent,
+          messages: updatedMessages,
+          isProcessingMedia: false,
+          metadata: {
+            ...node.metadata,
+            mediaContent: updatedMediaContent
+          }
+        });
+      }
+      
+      console.log('[InfiniteCanvas] Auto-caption complete, saved to database');
+    } else {
+      // No auto-captioning, just mark as ready
+      await store.updateNode(node.id, {
+        mediaContent: {
+          ...node.mediaContent,
+          analysis: 'Media uploaded successfully'
+        },
+        isProcessingMedia: false
+      });
+    }
+
+  } catch (error) {
+    console.error('[InfiniteCanvas] Media processing error:', error);
+    
+    await store.updateNode(node.id, {
+      mediaContent: {
+        ...node.mediaContent,
+        analysis: `Processing failed: ${error.message}`
+      },
+      isProcessingMedia: false
+    });
+  }
+};
+
+// Vision capabilities computed property
+const isVisionModelSelected = computed(() => {
+  return modelStore.selectedModelCapabilities?.supportsVision || false;
+});
+
+// Enhanced computed styles with RTS perspective
 const transformStyle = computed(() => {
   if (store.snappedNodeId !== null) {
     return {
@@ -424,7 +774,7 @@ const transformStyle = computed(() => {
     };
   }
 
-  // Overview mode: no scaling transformation
+  // Overview mode with RTS perspective adjustments
   if (isWorkspaceOverview.value) {
     return {
       transform: `translate(${panX.value}px, ${panY.value}px)`,
@@ -446,7 +796,7 @@ const transformStyle = computed(() => {
 const svgStyle = computed(() => ({
   width: "100000px",
   height: "100000px",
-  viewBox: `0 0 ${windowSize.value.width} ${windowSize.value.height}`, // Dynamic viewBox
+  viewBox: `0 0 ${windowSize.value.width} ${windowSize.value.height}`,
 }));
 
 const nodesLayerStyle = computed(() => ({
@@ -454,9 +804,84 @@ const nodesLayerStyle = computed(() => ({
   height: "100000px",
   left: 0,
   top: 0,
+  pointerEvents: isWorkspaceOverview ? 'auto' : 'none', // Only capture events in overview mode
 }));
 
 provide('alwaysShowPetals', alwaysShowPetals);
+
+
+const simulateRTSFlowerLayout = (workspaceNodes) => {
+  const nodes = JSON.parse(JSON.stringify(workspaceNodes));
+
+  // Adjust canvas dimensions
+  const leftPanelWidth = props.sidePanelOpen ? windowSize.value.width * 0.4 : 0;
+  const rightPanelWidth = props.rightPanelOpen ? windowSize.value.width * 0.4 : 0;
+  const canvasW = windowSize.value.width - leftPanelWidth - rightPanelWidth;
+  const canvasH = windowSize.value.height + 800;
+
+  const FLOOR = canvasH - 90;
+  const maxCount = Math.max(...nodes.map(n => n.nodeCount || 1), 1);
+
+  // Calculate flower sizes
+  nodes.forEach(n => {
+    const baseR = 50 + ((n.nodeCount || 1) / maxCount) * 70;
+    n.radius = baseR + 30;
+  });
+
+  const centerX = canvasW / 2;
+  const centerY = canvasH / 2;
+
+  // Seeded random function for consistent positioning
+  const seededRandom = (seed) => {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  };
+
+  if (nodes.length === 1) {
+    // Single flower - random stem length between 200-400
+    const seed = nodes[0].id.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
+    const stemLength = 350 + seededRandom(seed) * 500; // Random between 200-400
+    nodes[0].x = centerX;
+    nodes[0].y = centerY - stemLength;
+  } else {
+    // Multiple flowers - each gets individual random stem length
+    const itemsPerRow = Math.ceil(Math.sqrt(nodes.length));
+    const spacing = Math.min(200, canvasW / (itemsPerRow + 1));
+
+    nodes.forEach((node, index) => {
+      // Create unique seed based on workspace ID
+      let seed = 0;
+      for (let i = 0; i < node.id.length; i++) {
+        seed += node.id.charCodeAt(i) * (i + 1);
+      }
+      
+      // Generate random stem length for this flower (200-400px)
+      const stemLength = 400 + seededRandom(seed * 1.5) * 250; // Multiply seed for different randomness
+      const groundY = centerY - stemLength;
+      
+      if (nodes.length <= 6) {
+        // For small numbers, scatter around center at different stem heights
+        const baseAngle = (2 * Math.PI * index) / nodes.length;
+        const radius = Math.min(150, canvasW * 0.15);
+        const scatterRadius = radius + (seededRandom(seed) - 0.5) * 80;
+        node.x = centerX + Math.cos(baseAngle) * scatterRadius;
+        node.y = groundY; // Individual stem length
+      } else {
+        // For larger numbers, scatter horizontally at different stem heights
+        const baseX = centerX + (index - (nodes.length - 1) / 2) * spacing;
+        const scatterX = (seededRandom(seed) - 0.5) * spacing * 0.6;
+        node.x = baseX + scatterX;
+        node.y = groundY; // Individual stem length
+      }
+
+      // Ensure flowers don't go too far out of bounds
+      node.x = Math.max(node.radius, Math.min(canvasW - node.radius, node.x));
+      node.y = Math.max(node.radius + 50, Math.min(FLOOR - node.radius - 100, node.y));
+    });
+  }
+
+  return nodes;
+};
 
 // Create new workspace
 const handleNewWorkspace = async () => {
@@ -470,7 +895,6 @@ const handleNewWorkspace = async () => {
     await chatStore.loadChats();
     await store.loadChatState(newWorkspaceId);
 
-    // Get the ID of the newly created root node. Assumes the first node is the root.
     const rootNodeId = store.nodes[0]?.id;
     if (rootNodeId) {
       nextTick(() => {
@@ -480,11 +904,10 @@ const handleNewWorkspace = async () => {
   }
 };
 
-// Handle view mode toggle between bubble and grid
+// Handle view mode toggle
 const handleViewModeToggle = (mode) => {
   viewMode.value = mode;
 
-  // If switching to bubble view, reset canvas
   if (mode === 'bubble') {
     nextTick(() => {
       autoFitNodes();
@@ -492,126 +915,82 @@ const handleViewModeToggle = (mode) => {
   }
 };
 
-const simulateFlowerLayout = (workspaceNodes) => {
-  const nodes = JSON.parse(JSON.stringify(workspaceNodes));
-
-  /* canvas dims */
-  const canvasW = windowSize.value.width - (props.sidePanelOpen ? windowSize.value.width * 0.4 : 0);
-  const canvasH = windowSize.value.height;
-  const FLOOR = canvasH - 140;      // matches .flower‑ground
-
-  /* physics consts */
-  const G = 9.8 * 8;
-  const AIR = 0.995;
-  const DAMP = 0.6;
-  const PAD = 25;                   // petal padding
-
-  const maxCount = Math.max(...nodes.map(n => n.nodeCount || 1), 1);
-
-  /* --- init ------------------------------------------------------- */
-  nodes.forEach(n => {
-    const baseR = 50 + ((n.nodeCount || 1) / maxCount) * 70;
-    n.radius = baseR + PAD;
-    n.mass = n.radius ** 2;
-
-    /* ▶ spawn at least one full radius + 20 px below top‑edge */
-    n.x = (isFinite(n.x) ? n.x : canvasW / 2) + (Math.random() - 0.5) * canvasW * 0.5;
-    n.y = Math.max(n.radius + 20, baseR * 2 + Math.random() * 80);   // << key change
-
-    n.vx = (Math.random() - 0.5) * 30;
-    n.vy = Math.random() * 10;
-  });
-
-  /* --- Euler integrate  ------------------------------------------------ */
-  const dt = 1 / 120;
-  const STEPS = 1200;          // ≈10 s of settling – prevents overlaps
-  for (let k = 0; k < STEPS; k++) {
-    /* motion + gravity */
-    nodes.forEach(a => {
-      a.vy += G * dt;
-      a.vx *= AIR; a.vy *= AIR;
-      a.x += a.vx * dt;
-      a.y += a.vy * dt;
-
-      /* bounds */
-      if (a.y + a.radius > FLOOR) { a.y = FLOOR - a.radius; a.vy *= -DAMP; a.vx *= 0.9; }
-      if (a.y - a.radius < 0) { a.y = a.radius; a.vy *= -DAMP; }
-      if (a.x - a.radius < 0) { a.x = a.radius; a.vx *= -DAMP; }
-      if (a.x + a.radius > canvasW) { a.x = canvasW - a.radius; a.vx *= -DAMP; }
-    });
-
-    /* collisions */
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j];
-        const dx = b.x - a.x, dy = b.y - a.y, minD = a.radius + b.radius;
-        const dist2 = dx * dx + dy * dy;
-        if (dist2 < minD * minD) {
-          const dist = Math.sqrt(dist2) || 1, nx = dx / dist, ny = dy / dist;
-          const overlap = minD - dist, tm = a.mass + b.mass;
-          a.x -= nx * overlap * (b.mass / tm); a.y -= ny * overlap * (b.mass / tm);
-          b.x += nx * overlap * (a.mass / tm); b.y += ny * overlap * (a.mass / tm);
-
-          const relV = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-          const J = -(1 + DAMP) * relV / (1 / a.mass + 1 / b.mass);
-          a.vx -= J * nx / a.mass; a.vy -= J * ny / a.mass;
-          b.vx += J * nx / b.mass; b.vy += J * ny / b.mass;
-        }
-      }
-    }
-  }
-
-  /* strip sim props */
-  nodes.forEach(n => { delete n.vx; delete n.vy; delete n.mass; });
-  return nodes;
-};
-
-
-// Replace your resetWorkspacePhysics function with this improved version
 const resetWorkspacePhysics = () => {
-  // Reset workspace positions with better initial clustering
-  const canvasWidth = windowSize.value.width - (props.sidePanelOpen ? windowSize.value.width * 0.4 : 0);
-  const canvasHeight = windowSize.value.height;
+  const leftPanelWidth = props.sidePanelOpen ? windowSize.value.width * 0.4 : 0;
+  const rightPanelWidth = props.rightPanelOpen ? windowSize.value.width * 0.4 : 0;
+  const canvasWidth = windowSize.value.width - leftPanelWidth - rightPanelWidth;
+  const canvasHeight = windowSize.value.height + 800;
 
-  // Make the function available globally
   window.resetWorkspacePhysics = resetWorkspacePhysics;
+
+  const centerX = canvasWidth / 2;
+  const centerY = canvasHeight / 2;
+
+  // Seeded random function for consistent positioning
+  const seededRandom = (seed) => {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  };
+
   chatStore.chats.forEach((chat, index) => {
-    // Calculate radius for workspace based on node count
     const nodeCount = chat.nodeCount || 1;
     const maxCount = Math.max(...chatStore.chats.map(c => c.nodeCount || 1), 1);
     const minSize = 80;
     const maxSize = 160;
     chat.radius = minSize + (nodeCount / maxCount) * (maxSize - minSize);
 
-    // Position horizontally - spread across center 60% of screen with some randomness
-    const horizontalRange = canvasWidth * 0.6;
-    const centerX = canvasWidth / 2;
-    const x = centerX + (Math.random() - 0.5) * horizontalRange;
+    let x, y;
 
-    // Position vertically - start at top with some randomness
-    const y = Math.max(chat.radius, Math.random() * 100);
+    // Create unique seed based on workspace ID
+    let seed = 0;
+    for (let i = 0; i < chat.id.length; i++) {
+      seed += chat.id.charCodeAt(i) * (i + 1);
+    }
+    
+    // Generate random stem length for this flower (200-400px)
+    const stemLength = 350 + seededRandom(seed * 1.5) * 500;
+    const groundY = centerY - stemLength;
 
-    // Update positions in the chat store
-    chatStore.updateChatMetadata(chat.id, {
-      x: x,
-      y: y,
-      radius: chat.radius
-    });
+    if (chatStore.chats.length === 1) {
+      // Single workspace - random stem length
+      x = centerX;
+      y = groundY;
+    } else {
+      // Multiple flowers - each gets individual random stem length
+      const itemsPerRow = Math.ceil(Math.sqrt(chatStore.chats.length));
+      const spacing = Math.min(200, canvasWidth / (itemsPerRow + 1));
 
-    window.resetWorkspacePhysics = resetWorkspacePhysics;
+      if (chatStore.chats.length <= 6) {
+        // Small number - scatter around center at different stem heights
+        const baseAngle = (2 * Math.PI * index) / chatStore.chats.length;
+        const radius = Math.min(150, canvasWidth * 0.15);
+        const scatterRadius = radius + (seededRandom(seed) - 0.5) * 80;
+        x = centerX + Math.cos(baseAngle) * scatterRadius;
+        y = groundY; // Individual stem length
+      } else {
+        // Larger number - scatter horizontally at different stem heights
+        const baseX = centerX + (index - (chatStore.chats.length - 1) / 2) * spacing;
+        const scatterX = (seededRandom(seed) - 0.5) * spacing * 0.6;
+        x = baseX + scatterX;
+        y = groundY; // Individual stem length
+      }
+    }
+
+    // Ensure flowers stay within bounds
+    x = Math.max(chat.radius, Math.min(canvasWidth - chat.radius, x));
+    y = Math.max(chat.radius + 50, Math.min(canvasHeight - chat.radius - 100, y));
+
+    chatStore.updateChatMetadata(chat.id, { x, y, radius: chat.radius });
   });
 
-  // Force re-simulation after a brief delay
+  // Force re-simulation with deterministic layout
   setTimeout(() => {
     if (viewMode.value === 'bubble') {
-      // Force a re-render of the workspaces
       const chatCopy = [...chatStore.chats];
       chatStore.chats = [];
 
       nextTick(() => {
         chatStore.chats = chatCopy;
-
-        // Then trigger auto-fit after DOM update
         nextTick(() => {
           autoFitNodes();
         });
@@ -630,19 +1009,14 @@ const centerAndSnapNode = (nodeId: string) => {
   const center = getNodeCenter(node);
   const rect = canvasRef.value.getBoundingClientRect();
 
-  // Calculate horizontal centering
   panX.value = rect.width / 2 - center.x * zoom.value;
 
-  // Add vertical offset to account for input window
-  // Move the node up by 20% of viewport height
-  const verticalOffset = rect.height * 0.2;
+  const verticalOffset = Math.min(rect.height * 0.05, 30);
   panY.value = rect.height / 2 - center.y * zoom.value + verticalOffset;
 
   focusedNodeId.value = nodeId;
 
-  // Use nextTick to wait for the DOM to update after centering
   nextTick(() => {
-    // Now, trigger the snap
     emit('snap', { nodeId: node.id, originalPosition: { x: node.x, y: node.y } });
 
     setTimeout(() => {
@@ -653,12 +1027,20 @@ const centerAndSnapNode = (nodeId: string) => {
 
 // Watch for side panel changes
 watch(() => props.sidePanelOpen, (isOpen) => {
-  // Wait for panel transition to complete
   setTimeout(() => {
     if (props.autoZoomEnabled) {
       autoFitNodes();
     }
-  }, 300); // Match the transition duration
+  }, 300);
+}, { immediate: false });
+
+// Watch for right panel changes
+watch(() => props.rightPanelOpen, (isOpen) => {
+  setTimeout(() => {
+    if (props.autoZoomEnabled) {
+      autoFitNodes();
+    }
+  }, 300);
 }, { immediate: false });
 
 // Handle height lock for nodes
@@ -666,33 +1048,25 @@ const handleHeightLock = () => {
   const selectedNode = store.nodes.find((n) => n.id === focusedNodeId.value);
   if (!selectedNode) return;
 
-  // Get the node's DOM element
   const nodeElement = document.querySelector(
     `[data-node-id="${selectedNode.id}"]`
   );
   if (!nodeElement) return;
 
-  // Get the node's bounding rect relative to the viewport
   const nodeRect = nodeElement.getBoundingClientRect();
   const canvasRect = canvasRef.value?.getBoundingClientRect();
   if (!canvasRect) return;
 
-  // Calculate which parts of the node are within the viewport
   const visibleTop = Math.max(0, canvasRect.top - nodeRect.top);
   const visibleBottom = Math.min(
     nodeRect.height,
     canvasRect.bottom - nodeRect.top
   );
 
-  // Calculate the visible height in canvas coordinates (accounting for current zoom)
   const visibleHeight = (visibleBottom - visibleTop) / zoom.value;
-
-  // Add some padding
   const paddedHeight = visibleHeight - 32;
 
-  // Tell the store to set this height for the node
   store.setNodeHeightLock(selectedNode.id, paddedHeight);
-
   emit("update:isHeightLocked", true);
 };
 
@@ -715,34 +1089,24 @@ const handleNodeSnap = async ({ nodeId, originalPosition }) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
+  // Don't trigger any auto-centering
+  const prevAutoZoom = autoZoomEnabled.value;
+  autoZoomEnabled.value = false;
+  
   store.isTransitioning = true;
   store.snapNode(nodeId);
   nodePositions.value.set(nodeId, originalPosition);
 
-  const rect = canvasRef.value?.getBoundingClientRect();
-  if (!rect) return;
-
-  // Calculate available width based on side panel state
-  const availableWidth = props.sidePanelOpen ? rect.width * 0.6 : rect.width;
-
-  const targetZoom = 0.8;
-
-  const nodeCenter = {
-    x: node.x + store.CARD_WIDTH / 2,
-    y: node.y + store.CARD_HEIGHT / 2,
-  };
-
-  const sidePanelOffset = props.sidePanelOpen ? rect.width * 0.4 : 0; // Account for side panel
-  const verticalOffset = rect.height * 0.1; // Vertical offset
-
-  panX.value = sidePanelOffset + availableWidth / 2 - nodeCenter.x * targetZoom;
-  panY.value = rect.height / 2 - nodeCenter.y * targetZoom + verticalOffset;
-
-  zoom.value = targetZoom;
-
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  store.isTransitioning = false;
+  // Wait for the BranchNode component to handle its own snap animation
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  
+  // Re-enable auto zoom after snapping is complete
+  setTimeout(() => {
+    store.isTransitioning = false;
+    autoZoomEnabled.value = prevAutoZoom;
+  }, 350);
 };
+
 
 // Handle node unsnapping
 const handleNodeUnsnap = async ({ nodeId, originalPosition }) => {
@@ -753,7 +1117,6 @@ const handleNodeUnsnap = async ({ nodeId, originalPosition }) => {
 
   store.isTransitioning = true;
 
-  // Return to previous zoom/pan centered on the node
   const rect = canvasRef.value?.getBoundingClientRect();
   if (rect) {
     const nodeCenter = {
@@ -761,7 +1124,6 @@ const handleNodeUnsnap = async ({ nodeId, originalPosition }) => {
       y: node.y + store.CARD_HEIGHT / 2,
     };
 
-    // Use same zoom/pan logic as regular node selection
     const bounds = calculateNodeBounds(node);
     const newZoom = calculateRequiredZoom(bounds, rect);
 
@@ -771,7 +1133,6 @@ const handleNodeUnsnap = async ({ nodeId, originalPosition }) => {
     zoom.value = newZoom;
   }
 
-  // Restore original position
   store.updateNodePosition(nodeId, originalPosition);
   nodePositions.value.delete(nodeId);
 
@@ -781,27 +1142,22 @@ const handleNodeUnsnap = async ({ nodeId, originalPosition }) => {
 
 // Handle focus on a node's input
 const handleFocusInput = ({ nodeId }) => {
-  // Find the branch node element
   const branchNodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
   if (!branchNodeEl) return;
 
-  // Assume your MessageInput component has a class or data attribute
   const inputEl = branchNodeEl.querySelector(".message-input");
   if (!inputEl) return;
 
   const inputRect = inputEl.getBoundingClientRect();
   const canvasRect = canvasRef.value.getBoundingClientRect();
 
-  // Decide on a desired zoom level for focusing on the input
   const targetZoom = 1.5;
 
-  // Calculate the input's center relative to the canvas
   const inputCenterX = inputRect.left + inputRect.width / 2;
   const inputCenterY = inputRect.top + inputRect.height / 2;
   const canvasCenterX = canvasRect.width / 2;
   const canvasCenterY = canvasRect.height / 2;
 
-  // Adjust pan so that the input's center aligns with the canvas center
   panX.value = canvasCenterX - (inputCenterX - canvasRect.left) * targetZoom;
   panY.value = canvasCenterY - (inputCenterY - canvasRect.top) * targetZoom;
   zoom.value = targetZoom;
@@ -816,7 +1172,7 @@ const handleWorkspaceDragStart = (dragData) => {
 
 const selectedWorkspaceId = computed(() => {
   if (!isWorkspaceOverview.value) return null;
-  return workspaceDragState.value.activeId || null; // Highlight the dragging workspace
+  return workspaceDragState.value.activeId || null;
 });
 
 // Calculate required zoom level for a node
@@ -824,12 +1180,9 @@ const calculateRequiredZoom = (bounds, containerRect) => {
   const contentWidth = bounds.maxX - bounds.minX;
   const contentHeight = bounds.maxY - bounds.minY;
 
-  // Calculate zoom levels needed for both dimensions
-  const zoomX = (containerRect.width * 0.9) / contentWidth; // Use 90% of container width
-  const zoomY = (containerRect.height * 0.9) / contentHeight; // Use 90% of container height
+  const zoomX = (containerRect.width * 0.85) / contentWidth;
+  const zoomY = (containerRect.height * 0.8) / contentHeight;
 
-  // Use the smaller zoom level to ensure the entire node fits
-  // Cap zoom between 0.1 and 2 to prevent extreme zoom levels
   return Math.min(Math.max(Math.min(zoomX, zoomY), 0.1), 2);
 };
 
@@ -838,7 +1191,6 @@ const handleNodeSelect = async (nodeId: string) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
-  // Don't zoom if the node is snapped
   if (store.snappedNodeId === nodeId) {
     focusedNodeId.value = nodeId;
     return;
@@ -850,27 +1202,20 @@ const handleNodeSelect = async (nodeId: string) => {
   store.isTransitioning = true;
   focusedNodeId.value = nodeId;
 
-  // Wait for next tick to ensure DOM is updated
   await nextTick();
 
-  // Calculate the bounds and required zoom
   const bounds = calculateNodeBounds(node);
   const newZoom = calculateRequiredZoom(bounds, rect);
 
-  // Calculate the node's center position
   const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
   const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
 
-  // Calculate the required pan position to center the node
-  // Add a slight vertical offset to account for the input area
-  const verticalOffset = rect.height * 0.1; // 10% of viewport height
+  const verticalOffset = Math.min(rect.height * 0.05, 30);
   panX.value = rect.width / 2 - nodeCenterX * newZoom;
   panY.value = rect.height / 2 - nodeCenterY * newZoom + verticalOffset;
 
-  // Update zoom level using the computed property
   zoom.value = newZoom;
 
-  // Reset transition state after animation
   setTimeout(() => {
     store.isTransitioning = false;
   }, 300);
@@ -881,22 +1226,19 @@ const calculateNodeBounds = (node) => {
   if (!node) {
     if (!store.nodes.length) return null;
 
-    // Calculate bounds for all nodes if no specific node is provided
     return store.nodes.reduce(
       (acc, node) => {
-        // Get the actual DOM element for this node
         const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
         if (!nodeElement) return acc;
 
-        // Get the actual rendered height
         const nodeRect = nodeElement.getBoundingClientRect();
-        const actualHeight = nodeRect.height / zoom.value; // Convert from screen to canvas coordinates
+        const actualHeight = nodeRect.height / zoom.value;
 
         return {
           minX: Math.min(acc.minX, node.x),
           maxX: Math.max(acc.maxX, node.x + store.CARD_WIDTH),
           minY: Math.min(acc.minY, node.y),
-          maxY: Math.max(acc.maxY, node.y + actualHeight), // Use actual height instead of CARD_HEIGHT
+          maxY: Math.max(acc.maxY, node.y + actualHeight),
         };
       },
       {
@@ -908,14 +1250,13 @@ const calculateNodeBounds = (node) => {
     );
   }
 
-  // Calculate bounds for a specific node
   const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
   if (!nodeElement) {
     return {
       minX: node.x,
       maxX: node.x + store.CARD_WIDTH,
       minY: node.y,
-      maxY: node.y + store.CARD_HEIGHT,
+      maxY: node.y + store.CARD_HEIGHT + 100,
     };
   }
 
@@ -926,7 +1267,7 @@ const calculateNodeBounds = (node) => {
     minX: node.x,
     maxX: node.x + store.CARD_WIDTH,
     minY: node.y,
-    maxY: node.y + actualHeight,
+    maxY: node.y + (actualHeight * 1.1),
   };
 };
 
@@ -938,16 +1279,15 @@ const handleNodePositionUpdate = (
   store.updateNodePosition(nodeId, position);
 };
 
-
 const handleWheel = (e: WheelEvent) => {
-  // Check if CMD/Meta key is pressed
-  // if (e.metaKey || e.ctrlKey) {
-  //   // Let the NavigationWheel component handle this
-  //   return;
-  // }
-
   if ((e.target as HTMLElement).closest(".branch-node.snapped")) {
     console.log("Snapped node, ignoring wheel event");
+    return;
+  }
+
+  // Disable zoom/pan/scroll in overview mode
+  if (isWorkspaceOverview.value) {
+    e.preventDefault();
     return;
   }
 
@@ -961,11 +1301,9 @@ const handleWheel = (e: WheelEvent) => {
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
-  // Calculate point on content under mouse before zoom
   const contentX = (mouseX - panX.value) / zoom.value;
   const contentY = (mouseY - panY.value) / zoom.value;
 
-  // Calculate new zoom
   const delta = props.gestureMode === "zoom" ? -e.deltaY : e.deltaX;
   const zoomDelta = props.gestureMode === "zoom" ? delta * ZOOM_SENSITIVITY : 0;
   const newZoom = Math.min(
@@ -973,22 +1311,21 @@ const handleWheel = (e: WheelEvent) => {
     ZOOM_MAX
   );
 
-  // Calculate new pan values
   if (props.gestureMode === "zoom") {
     panX.value = mouseX - contentX * newZoom;
     panY.value = mouseY - contentY * newZoom;
   } else {
-    // pan using deltaX, deltaY based on gestureMode
     panX.value -= e.deltaX;
     panY.value -= e.deltaY;
   }
-  // Set new zoom using the computed property
+
   zoom.value = newZoom;
 };
 
 // Center canvas
 const centerCanvas = () => {
   zoom.value = 1;
+  targetZoom.value = 1;
   panX.value = 0;
   panY.value = 0;
 };
@@ -1011,6 +1348,9 @@ onBeforeUnmount(() => {
   if (inactivityTimer.value) {
     clearTimeout(inactivityTimer.value);
   }
+  if (animationFrame.value) {
+    cancelAnimationFrame(animationFrame.value);
+  }
 });
 
 // Watch for node changes
@@ -1030,28 +1370,29 @@ watch(
   }
 );
 
-// Clean up media node references when nodes change
-watch(
-  () => store.nodes,
-  (newNodes) => {
-    // Clear old refs that no longer exist
-    Object.keys(mediaNodesRef.value).forEach((id) => {
-      if (!newNodes.find((n) => n.id === id)) {
-        delete mediaNodesRef.value[id];
-      }
-    });
-  },
-  { deep: true }
-);
 
 // Watch for window size changes
 watch(
   () => [windowSize.value.width, windowSize.value.height],
   () => {
-    // Recalculate layout/positions if needed
     if (props.autoZoomEnabled && !store.isDragging && !isPanning.value) {
       autoFitNodes();
     }
+  },
+  { deep: true }
+);
+
+// Watch for model changes and update registry
+watch(
+  () => [
+    modelStore.ollamaModels,
+    modelStore.openRouterModels,
+    modelStore.googleModels,
+    modelStore.anthropicModels,
+    modelStore.openaiModels
+  ],
+  () => {
+    updateModelRegistry();
   },
   { deep: true }
 );
@@ -1061,7 +1402,6 @@ const handleDragEnter = (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
 
-  // Only show media overlay if in workspace view with media files
   if (!isWorkspaceOverview.value && e.dataTransfer?.items?.length === 1) {
     const item = e.dataTransfer.items[0];
     if (item.kind === 'file' && (item.type.startsWith('image/') || item.type.startsWith('video/'))) {
@@ -1075,7 +1415,6 @@ const handleDragLeave = (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
 
-  // Check if mouse is leaving the canvas
   const rect = e.currentTarget?.getBoundingClientRect();
   if (rect) {
     const { clientX, clientY } = e;
@@ -1090,20 +1429,32 @@ const handleDrop = async (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
 
-  // Only handle media files in workspace view
   if (isWorkspaceOverview.value) {
-    return; // Let App.vue handle JSON files
+    return;
   }
 
   isDraggingFile.value = false;
+  
+  // Check if the drop target is a node element (not empty canvas)
+  const dropTarget = e.target as HTMLElement;
+  const isDropOnNode = dropTarget?.closest('.branch-node') !== null;
+  
+  if (isDropOnNode) {
+    console.log('Drop on node detected, letting BranchNode handle it');
+    return;
+  }
+
   const files = e.dataTransfer?.files;
   if (!files || files.length === 0) return;
 
   const file = files[0];
   if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-    return; // Only handle media files
+    return;
   }
 
+  // Create a new node when dropping on empty canvas
+  console.log('Media file dropped on empty canvas - creating new node');
+  
   await nextTick(async () => {
     try {
       const rect = canvasRef.value?.getBoundingClientRect();
@@ -1114,35 +1465,27 @@ const handleDrop = async (e: DragEvent) => {
         y: (e.clientY - rect.top - panY.value) / zoom.value,
       };
 
-      const apiType = props.selectedModel.includes("gemini")
-        ? "gemini"
-        : props.selectedModel.includes("/")
-          ? "openrouter"
-          : "ollama";
-
-      const apiKey =
-        apiType === "gemini"
-          ? localStorage.getItem("geminiApiKey")
-          : props.openRouterApiKey;
-
-      if (apiType !== "ollama" && !apiKey) {
-        throw new Error(`No API key provided for ${apiType}`);
+      // Generate concise title for the image
+      let nodeTitle = file.name;
+      try {
+        nodeTitle = await generateConciseImageTitle(file);
+      } catch (error) {
+        console.warn('[InfiniteCanvas] Title generation failed, using filename:', error);
       }
-
-      const newNode = store.addNode(null, -1, position, {
-        type: "media",
-        title: file.name,
+      
+      // Create a new branch node that will handle the media
+      const newNode = await store.addNode(null, -1, position, {
+        type: "branch",
+        title: nodeTitle,
+        isProcessingMedia: true
       });
 
-      await nextTick();
-      await nextTick();
+      // Wait a moment to ensure the node ID has been updated by the database
+      await new Promise(resolve => setTimeout(resolve, 200));
 
-      const mediaNode = mediaNodesRef.value[newNode.id];
-      if (!mediaNode) {
-        throw new Error("Media node not found after creation");
-      }
+      // Process the media using the existing function
+      await processMediaForNode(newNode, file);
 
-      await mediaNode.processMedia(file, apiType, apiKey);
       centerOnNode(newNode.id);
     } catch (error) {
       console.error("Error handling media drop:", error);
@@ -1155,7 +1498,6 @@ const handleDragOver = (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
 
-  // Set dropEffect to 'copy' to indicate we'll copy the file
   if (e.dataTransfer) {
     e.dataTransfer.dropEffect = "copy";
   }
@@ -1164,43 +1506,32 @@ const handleDragOver = (e: DragEvent) => {
 const returnToOverview = async () => {
   console.log("Returning to overview");
 
-  // Save current view state for transition
   const currentScale = zoom.value;
   const currentPanX = panX.value;
   const currentPanY = panY.value;
 
-  // Add transition overlay
   const overlay = document.createElement('div');
   overlay.className = 'overview-transition-overlay';
   document.body.appendChild(overlay);
 
-  // Enable transition for smooth effect
   store.isTransitioning = true;
 
-  // Create "shrinking" effect on current workspace
   zoom.value = currentScale * 0.8;
 
-  // Add slight blur effect during transition
   document.body.classList.add('transition-blur');
 
   setTimeout(async () => {
-    // Reset view parameters
     zoom.value = 1;
     panX.value = 0;
     panY.value = 0;
     expandingWorkspaceId.value = null;
 
-    // Then set overview mode and clear state
     isWorkspaceOverview.value = true;
     store.clearCurrentWorkspace();
 
-    // Force a fresh reload of chats
     await chatStore.loadChats();
-
-    // Wait for DOM update
     await nextTick();
 
-    // Prepare for workspace entrance animation
     const workspaceElements = document.querySelectorAll('.bubble-workspace-node, .grid-workspace-card');
     workspaceElements.forEach((el, i) => {
       el.style.opacity = '0';
@@ -1214,10 +1545,8 @@ const returnToOverview = async () => {
       }, 50);
     });
 
-    // Reset workspace physics to make them fall again
     resetWorkspacePhysics();
 
-    // Remove blur and overlay when transition completes
     setTimeout(() => {
       document.body.classList.remove('transition-blur');
       document.body.removeChild(overlay);
@@ -1229,24 +1558,15 @@ const returnToOverview = async () => {
 const handleWorkspaceSelect = async (workspaceId: string) => {
   console.log('Selecting workspace:', workspaceId);
 
-
-  // Disable any ongoing transitions
   store.isTransitioning = false;
-
-  // Set expanding state
   expandingWorkspaceId.value = workspaceId;
 
-  // Get workspace node position before switching views
   const workspaceNode = document.querySelector(`[data-workspace-id="${workspaceId}"]`);
   if (!workspaceNode) {
     console.warn(`Could not find workspace node with id ${workspaceId}`);
-    // Proceed with default position if element not found
     isWorkspaceOverview.value = false;
     await store.loadChatState(workspaceId);
-
-    // IMPORTANT: Initialize expandedNodes with the new nodes
     expandedNodes.value = new Set(store.nodes.map(node => node.id));
-
     await nextTick();
     autoFitNodes();
     return;
@@ -1258,43 +1578,31 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
 
-  // Store initial state
   const startPosition = {
     x: panX.value,
     y: panY.value,
     scale: zoom.value
   };
 
-  // Enable transitions for the animation
   store.isTransitioning = true;
 
-  // Switch to detailed view
   isWorkspaceOverview.value = false;
 
-  // Load chat state
   await store.loadChatState(workspaceId);
-
-  // IMPORTANT: Initialize expandedNodes with the new nodes
   expandedNodes.value = new Set(store.nodes.map(node => node.id));
 
-  // Wait for DOM update
   await nextTick();
 
-  // Reset zoom and pan to match workspace position
   zoom.value = 1;
   panX.value = centerX - rect.width / 2;
   panY.value = centerY - rect.height / 2;
 
-  // Wait another tick for position update
   await nextTick();
 
-  // Perform auto-fit with transition
   autoFitNodes();
 
-  // Add this line to emit the event
   emitter.emit('workspace-opened');
 
-  // Disable transitions after animation
   setTimeout(() => {
     store.isTransitioning = false;
   }, 300);
@@ -1306,28 +1614,26 @@ const handleWorkspaceFavorite = async (workspaceId: string) => {
     await chatStore.updateChatMetadata(workspaceId, {
       isFavorite: !workspace.isFavorite
     });
-    // Refresh the workspaces list to trigger reordering
     await chatStore.loadChats();
   }
 };
 
 const handleWorkspaceDuplicate = async (workspaceId: string) => {
   await chatStore.duplicateChat(workspaceId);
-  await chatStore.loadChats(); // Reload chats to update the list
-  autoFitNodes(); // Recalculate positions
+  await chatStore.loadChats();
+  autoFitNodes();
 };
 
 const handleWorkspaceArchive = (workspaceId: string) => {
   const workspace = chatStore.chats.find(chat => chat.id === workspaceId);
   if (workspace) {
-    const newStatus = workspace.status === 'archived' ? 'active' : 'archived'; //toggle
+    const newStatus = workspace.status === 'archived' ? 'active' : 'archived';
     chatStore.updateChatMetadata(workspaceId, { status: newStatus });
   }
 };
 
 const handleWorkspaceExport = (workspaceId: string) => {
-  // Implement export logic here
-  alert(`Exporting workspace: ${workspaceId}`); // Placeholder
+  alert(`Exporting workspace: ${workspaceId}`);
 };
 
 const handleWorkspaceDelete = async (workspaceId: string) => {
@@ -1348,12 +1654,9 @@ const centerOnNode = (nodeId) => {
 
   const rect = canvasRef.value.getBoundingClientRect();
 
-  // Calculate horizontal centering
   panX.value = rect.width / 2 - center.x * zoom.value;
 
-  // Add vertical offset to account for input window
-  // Move the node up by 20% of viewport height
-  const verticalOffset = rect.height * 0.2;
+  const verticalOffset = Math.min(rect.height * 0.05, 30);
   panY.value = rect.height / 2 - center.y * zoom.value + verticalOffset;
 
   focusedNodeId.value = nodeId;
@@ -1370,29 +1673,24 @@ const handleCreateBranch = (
   position: { x: number; y: number },
   initialData: any
 ) => {
-  // Exit focused mode when creating a branch
   isFocusedMode.value = false;
 
-  // Existing branch creation logic
   const parentNode = store.nodes.find((n) => n.id === parentId);
   if (!parentNode) return;
 
   const existingBranches = store.nodes.filter((n) => n.parentId === parentId);
   const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
 
-  // Adjust the position for the new branch
   const adjustedPosition = {
     x: position.x,
     y: parentNode.y + verticalOffset,
   };
 
-  // Create the new node
   const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
     ...initialData,
     y: adjustedPosition.y,
   });
 
-  // First center on the new node
   centerOnNode(newNode.id);
   setTimeout(() => {
     autoFitNodes();
@@ -1407,17 +1705,14 @@ const handleResend = async (nodeId: string, userMessageIndex: number) => {
   const userMsg = node.messages[userMessageIndex];
   if (!userMsg || userMsg.role !== "user") return;
 
-  // Remove the AI response that follows this user message
   store.removeMessage(nodeId, userMessageIndex + 1);
 
-  // Create proper ModelInfo object
   const modelInfo: ModelInfo = {
     id: props.selectedModel,
     name: props.selectedModel,
     source: props.modelType as 'ollama' | 'openrouter' | 'google' | 'anthropic' | 'openai'
   };
 
-  // Pass ModelInfo object to sendMessage
   await store.sendMessage(
     nodeId,
     userMsg.content,
@@ -1432,7 +1727,6 @@ const handleMouseUp = () => {
   if (workspaceDragState.value.isDragging) {
     const { activeId } = workspaceDragState.value;
     if (activeId) {
-      // Save workspace position using the chat store
       const workspace = chatStore.chats.find((chat) => chat.id === activeId);
       if (workspace) {
         chatStore.updateChatMetadata(activeId, {
@@ -1457,7 +1751,9 @@ const handleMouseUp = () => {
 const handleCanvasMouseDown = (e) => {
   if (snappedNodeId.value !== null) return;
 
-  // Check for left button (button 0) and that we aren't dragging a node already
+  // Disable panning in overview mode
+  if (isWorkspaceOverview.value) return;
+
   if (e.button === 0 && !store.isDragging && !workspaceDragState.value.isDragging) {
     isPanning.value = true;
     lastPanPosition.value = {
@@ -1471,49 +1767,43 @@ const handleCanvasMouseDown = (e) => {
 const handleTouchMove = (e: TouchEvent) => {
   e.preventDefault();
 
+  // Disable touch interactions in overview mode
+  if (isWorkspaceOverview.value) return;
+
   if (isPanning.value && e.touches.length === 1) {
-    // Single-finger pan
     const touch = e.touches[0];
     panX.value = touch.clientX - lastPanPosition.value.x;
     panY.value = touch.clientY - lastPanPosition.value.y;
   } else if (e.touches.length === 2) {
-    // Two-finger zoom
     const touch1 = e.touches[0];
     const touch2 = e.touches[1];
 
-    // Calculate the midpoint between the two touches
     const centerX = (touch1.clientX + touch2.clientX) / 2;
     const centerY = (touch1.clientY + touch2.clientY) / 2;
 
-    // Calculate distance between touches (for zoom)
     const distance = Math.hypot(
       touch2.clientX - touch1.clientX,
       touch2.clientY - touch1.clientY
     );
 
     if (!lastPanPosition.value.lastDistance) {
-      // Initialize if not set
       lastPanPosition.value.lastDistance = distance;
     }
 
     const deltaDistance = distance - lastPanPosition.value.lastDistance;
 
-    // Use the computed zoom property here
     const newZoom = Math.min(
       Math.max(zoom.value + deltaDistance * 0.01, 0.1),
       2
     );
-    zoom.value = newZoom; // Use computed property setter
+    zoom.value = newZoom;
 
-    // Calculate content coordinates under the midpoint before zoom
     const contentX = (centerX - panX.value) / zoom.value;
     const contentY = (centerY - panY.value) / zoom.value;
 
-    // Update pan values based on the new zoom and midpoint
     panX.value = centerX - contentX * newZoom;
     panY.value = centerY - contentY * newZoom;
 
-    // Store last distance for next move
     lastPanPosition.value.lastDistance = distance;
   }
 };
@@ -1521,8 +1811,10 @@ const handleTouchMove = (e: TouchEvent) => {
 const handleTouchStart = (e: TouchEvent) => {
   e.preventDefault();
 
+  // Disable touch interactions in overview mode
+  if (isWorkspaceOverview.value) return;
+
   if (e.touches.length === 1) {
-    // If one finger, start panning
     isPanning.value = true;
     const touch = e.touches[0];
     lastPanPosition.value = {
@@ -1530,7 +1822,6 @@ const handleTouchStart = (e: TouchEvent) => {
       y: touch.clientY - panY.value,
     };
   } else if (e.touches.length === 2) {
-    // Initialize lastDistance for zoom
     const touch1 = e.touches[0];
     const touch2 = e.touches[1];
     lastPanPosition.value.lastDistance = Math.hypot(
@@ -1543,7 +1834,6 @@ const handleTouchStart = (e: TouchEvent) => {
 // Find closest node in a direction
 const findClosestNodeInDirection = (currentNode, direction) => {
   const currentCenter = getNodeCenter(currentNode);
-  // Gather connected nodes from the connection list as a fallback
   const connectedNodes = store.connections
     .filter(
       (conn) =>
@@ -1572,7 +1862,6 @@ const findClosestNodeInDirection = (currentNode, direction) => {
     );
   }
 
-  // Choose the candidate that is closest (by Euclidean distance)
   candidates.sort((a, b) => {
     const distA = Math.hypot(
       getNodeCenter(a).x - currentCenter.x,
@@ -1590,43 +1879,38 @@ const findClosestNodeInDirection = (currentNode, direction) => {
 
 // Handle keyboard navigation
 const handleKeyDown = (e: KeyboardEvent) => {
-
-  // Check if active element is an input or contentEditable element
   const activeTag = document.activeElement?.tagName.toLowerCase();
   const isEditing =
     activeTag === 'input' ||
     activeTag === 'textarea' ||
     document.activeElement?.hasAttribute('contenteditable');
 
-  // Only process if not editing text and Command/Ctrl + P is pressed
-  // Using CMD+P for "Petals" (avoiding CMD+F which is browser's find)
+  // Track CMD/CTRL key for flower bloom effect
+  if ((e.metaKey || e.ctrlKey) && isWorkspaceOverview.value && viewMode.value === 'bubble') {
+    isCommandPressed.value = true;
+  }
+
   if (!isEditing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
-    e.preventDefault(); // Prevent browser's print dialog
+    e.preventDefault();
     alwaysShowPetals.value = !alwaysShowPetals.value;
     localStorage.setItem('alwaysShowPetals', alwaysShowPetals.value.toString());
 
-    // Show a brief notification of the change
     showNotification(alwaysShowPetals.value ? 'Petals: Always Visible' : 'Petals: Visible on Hover');
   }
 
   if (store.isTransitioning) return;
 
-  // Handle relic navigation when a node is snapped
   if (store.snappedNodeId !== null) {
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      // Only handle left/right keys when a node is snapped
-      // Emit an event for the SidePanel to handle
       emitter.emit('navigate-relic', {
         direction: e.key === "ArrowLeft" ? "previous" : "next",
         nodeId: store.snappedNodeId
       });
 
-      // Prevent default to avoid scrolling
       e.preventDefault();
       return;
     }
 
-    // If Escape is pressed while a node is snapped, unsnap it
     if (e.key === "Escape") {
       const node = store.nodes.find(n => n.id === store.snappedNodeId);
       if (node) {
@@ -1640,13 +1924,10 @@ const handleKeyDown = (e: KeyboardEvent) => {
     }
   }
 
-  // Continue with existing keyboard navigation for non-snapped nodes
   const currentNode = store.nodes.find((n) => n.id === focusedNodeId.value);
   if (!currentNode) return;
 
-  // Determine if the current node is part of a parent–child structure
   const parentNode = store.nodes.find((n) => n.id === currentNode.parentId);
-  // Get all children of the current node, sorted top-to-bottom (by y coordinate)
   const children = store.nodes
     .filter((n) => n.parentId === currentNode.id)
     .sort((a, b) => a.y - b.y);
@@ -1654,23 +1935,18 @@ const handleKeyDown = (e: KeyboardEvent) => {
   let targetNodeId = null;
 
   if (e.key === "ArrowRight") {
-    // If the current node has children, select the top-most child
     if (children.length > 0) {
       targetNodeId = children[0].id;
     } else {
-      // Fallback: find a node that lies to the right of the current one
       targetNodeId = findClosestNodeInDirection(currentNode, "right");
     }
   } else if (e.key === "ArrowLeft") {
-    // When pressing left, if there is a parent, go there
     if (parentNode) {
       targetNodeId = parentNode.id;
     } else {
-      // Otherwise, fallback to geometry
       targetNodeId = findClosestNodeInDirection(currentNode, "left");
     }
   } else if (e.key === "ArrowUp") {
-    // When the current node is a child, allow up to navigate to an earlier (upper) sibling
     if (parentNode) {
       const siblings = store.nodes
         .filter((n) => n.parentId === parentNode.id)
@@ -1680,12 +1956,10 @@ const handleKeyDown = (e: KeyboardEvent) => {
         targetNodeId = siblings[index - 1].id;
       }
     }
-    // Fallback: if nothing was found among siblings, try the geometric approach
     if (!targetNodeId) {
       targetNodeId = findClosestNodeInDirection(currentNode, "up");
     }
   } else if (e.key === "ArrowDown") {
-    // When the current node is a child, allow down to navigate to a later (lower) sibling
     if (parentNode) {
       const siblings = store.nodes
         .filter((n) => n.parentId === parentNode.id)
@@ -1695,7 +1969,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
         targetNodeId = siblings[index + 1].id;
       }
     }
-    // Fallback: use geometry if no sibling was found
     if (!targetNodeId) {
       targetNodeId = findClosestNodeInDirection(currentNode, "down");
     }
@@ -1707,23 +1980,28 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
 };
 
+// Handle key release to stop flower bloom effect
+const handleKeyUp = (e: KeyboardEvent) => {
+  // Stop flower bloom effect when CMD/CTRL is released
+  if ((e.key === 'Meta' || e.key === 'Control') && isWorkspaceOverview.value && viewMode.value === 'bubble') {
+    isCommandPressed.value = false;
+  }
+};
+
 // Unfocus cluster visualization
 const unfocusClusterViz = () => {
-  // First step: Start unfocus transition
   store.isTransitioning = true;
 
-  // Second step: Unfocus
   isClusterVizFocused.value = false;
   focusedTopicId.value = null;
 
-  // Third step: After transition, re-enable canvas and reset
   setTimeout(() => {
     store.isTransitioning = false;
     autoFitNodes();
-  }, 700); // Match the transition duration
+  }, 700);
 };
 
-// Auto-fit nodes
+// Enhanced auto-fit for RTS perspective
 const autoFitNodes = () => {
   if (
     !canvasRef.value ||
@@ -1738,12 +2016,16 @@ const autoFitNodes = () => {
   if (!bounds) return;
 
   const rect = canvasRef.value.getBoundingClientRect();
-  const padding = isWorkspaceOverview.value ? 100 : 200; // Different padding for overview
+  const padding = isWorkspaceOverview.value ? 120 : 200; // More padding for RTS view
 
   const contentWidth = bounds.maxX - bounds.minX + padding * 2;
   const contentHeight = bounds.maxY - bounds.minY + padding * 2;
+
+  // Adjust for RTS perspective - account for vertical compression
+  const adjustedContentHeight = contentHeight * RTS_SCALE_Y;
+
   const scaleX = rect.width / contentWidth;
-  const scaleY = rect.height / contentHeight;
+  const scaleY = rect.height / adjustedContentHeight;
 
   const newZoom = Math.min(scaleX, scaleY, 1);
 
@@ -1765,17 +2047,20 @@ const autoFitNodes = () => {
   window.autoFitNodes = autoFitNodes;
 };
 
-// Calculate bounds for workspaces
+// Enhanced bounds calculation for RTS
 const calculateWorkspacesBounds = () => {
   if (!chatStore.chats.length) return null;
 
   return chatStore.chats.reduce(
     (acc, workspace) => {
+      // Adjust bounds for RTS perspective
+      const adjustedY = workspace.y * RTS_SCALE_Y;
+
       return {
         minX: Math.min(acc.minX, workspace.x),
-        maxX: Math.max(acc.maxX, workspace.x + 300), // Assuming 300px width
-        minY: Math.min(acc.minY, workspace.y),
-        maxY: Math.max(acc.maxY, workspace.y + 200), // Assuming 200px height
+        maxX: Math.max(acc.maxX, workspace.x + 300),
+        minY: Math.min(acc.minY, adjustedY),
+        maxY: Math.max(acc.maxY, adjustedY + 200 * RTS_SCALE_Y),
       };
     },
     {
@@ -1827,11 +2112,9 @@ const handleMouseMove = (e) => {
 
     const canvasRect = canvasRef.value.getBoundingClientRect();
 
-    // Calculate new position in canvas coordinates
     const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
     const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
 
-    // Update the workspace position in the local workspaces array
     const workspace = workspaces.value.find(w => w.id === activeId);
     if (workspace) {
       workspace.x = canvasX - offset.x;
@@ -1839,20 +2122,16 @@ const handleMouseMove = (e) => {
     }
 
   } else if (store.isDragging && store.activeNode) {
-    // Handle node dragging
     const canvasRect = canvasRef.value.getBoundingClientRect();
 
-    // Calculate the new position in canvas space
     const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
     const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
 
-    // Update node position accounting for the initial click offset
     store.updateNodePosition(store.activeNode, {
       x: canvasX - store.dragOffset.x,
       y: canvasY - store.dragOffset.y,
     });
   } else if (isPanning.value) {
-    // Handle canvas panning
     const dx = e.clientX - lastPanPosition.value.x;
     const dy = e.clientY - lastPanPosition.value.y;
     panX.value = dx;
@@ -1875,11 +2154,9 @@ const handleDragStart = (e, node) => {
 
   const canvasRect = canvasRef.value.getBoundingClientRect();
 
-  // Calculate the initial click position in canvas space
   const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
   const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
 
-  // Calculate offset from the node's position
   store.dragOffset = {
     x: canvasX - node.x,
     y: canvasY - node.y,
@@ -1911,8 +2188,8 @@ onMounted(async () => {
       expandedNodes.value.add(node.id);
     });
 
-
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("dragenter", handleDragEnter);
     window.addEventListener("dragleave", handleDragLeave);
     if (canvasRef.value) {
@@ -1929,6 +2206,9 @@ onMounted(async () => {
       windowSize.value.height = window.innerHeight;
     });
 
+    // Initialize model registry
+    updateModelRegistry();
+
     if (isBrowser && !isInitializing.value) {
       isInitializing.value = true;
       try {
@@ -1937,9 +2217,16 @@ onMounted(async () => {
         if (store.nodes.length) {
           centerCanvas();
         } else {
-          // If we're in overview mode (no nodes selected), trigger physics
           if (isWorkspaceOverview.value) {
             resetWorkspacePhysics();
+            
+            // Show tip about CMD/CTRL bloom effect once
+            if (!localStorage.getItem('cmdBloomTipShown') && chatStore.chats.length > 1) {
+              setTimeout(() => {
+                showNotification('💡 Hold CMD/CTRL to make all flowers bloom!');
+                localStorage.setItem('cmdBloomTipShown', 'true');
+              }, 2000);
+            }
           }
         }
 
@@ -1953,19 +2240,57 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeyDown);
+  window.removeEventListener("keyup", handleKeyUp);
 });
 </script>
 
 <style scoped>
-/* GPU Acceleration */
+/* RTS Perspective Base Styles */
+.rts-perspective {
+  perspective: 2000px;
+  perspective-origin: center 20%;
+}
+
+.rts-canvas {
+  transform-style: preserve-3d;
+}
+
+.rts-transform {
+  transform-style: preserve-3d;
+}
+
+.rts-nodes-layer {
+  transform-style: preserve-3d;
+}
+
+/* RTS Ground Plane */
+.rts-ground-plane {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(to bottom,
+      transparent 0%,
+      rgba(var(--color-base-300), 0.1) 30%,
+      rgba(var(--color-base-300), 0.3) 70%,
+      rgba(var(--color-base-300), 0.5) 100%);
+  transform: rotateX(75deg) translateZ(-200px);
+  transform-origin: bottom center;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Enhanced GPU Acceleration for RTS */
 .transform-gpu {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
-  perspective: 1000px;
+  perspective: 2000px;
   overflow: hidden;
+  will-change: transform;
 }
 
-/* Layout & Positioning */
+/* Layout & Positioning with RTS adjustments */
 .fixed {
   overflow: hidden;
   z-index: 40;
@@ -1975,7 +2300,7 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-/* Basic Transitions */
+/* Enhanced transitions for RTS */
 .transition-transform {
   transition-property: transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -1988,7 +2313,7 @@ onBeforeUnmount(() => {
   transition-duration: 300ms;
 }
 
-/* Focus States */
+/* Focus States with depth */
 div:focus {
   outline: none;
 }
@@ -1998,7 +2323,7 @@ div:focus-visible {
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
-/* Canvas Controls */
+/* Canvas Controls with RTS positioning */
 .canvas-control {
   position: fixed;
   padding: 0.375rem 0.75rem;
@@ -2006,14 +2331,17 @@ div:focus-visible {
   backdrop-filter: blur(4px);
   border-radius: 9999px;
   border: 1px solid rgb(var(--color-base-300));
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  box-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.15), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  transform: translateZ(50px);
+  /* Bring controls forward in 3D space */
 }
 
 .canvas-control:hover {
   background-color: rgb(var(--color-base-300) / 0.9);
+  transform: translateZ(60px) scale(1.05);
 }
 
-/* Transform Utilities */
+/* Transform Utilities for RTS */
 .will-change-transform {
   will-change: transform;
 }
@@ -2022,23 +2350,82 @@ div:focus-visible {
   transition: transform 0.3s ease-out;
 }
 
-/* Container Styles */
+/* Container Styles with RTS */
 .workspace-container {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
+  transform-style: preserve-3d;
 }
 
 .bubble-view {
   overflow: hidden;
   touch-action: none;
   user-select: none;
+  transform-style: preserve-3d;
 }
 
 .grid-view {
   overflow-y: auto;
   padding-top: 4rem;
+}
+
+/* Grass Layer - positioned behind search bar, extends full viewport width */
+.grass-layer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100vw;
+  height: 100px; /* Height to cover search bar area */
+  z-index: 45; /* Behind search bar (z-index: 50) but above canvas elements */
+  pointer-events: none;
+  overflow: visible;
+  transform: translateZ(90px);
+}
+
+.grass-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to top, 
+    rgba(34, 139, 34, 0.1) 0%,
+    rgba(34, 139, 34, 0.05) 50%,
+    transparent 100%);
+}
+
+.grass-blade {
+  transition: transform 0.3s ease;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+  animation: grassSway 4s ease-in-out infinite;
+  animation-delay: calc(var(--delay, 0) * 0.1s);
+}
+
+.grass-blade:nth-child(odd) {
+  animation-direction: alternate;
+}
+
+.grass-blade:nth-child(even) {
+  animation-direction: alternate-reverse;
+}
+
+.grass-blade:hover {
+  transform: scale(1.1) rotate(calc(var(--rotation, 0deg) + 5deg));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+/* Gentle swaying animation */
+@keyframes grassSway {
+  0%, 100% {
+    transform: rotate(var(--rotation, 0deg)) translateX(0);
+  }
+  25% {
+    transform: rotate(calc(var(--rotation, 0deg) + 2deg)) translateX(1px);
+  }
+  75% {
+    transform: rotate(calc(var(--rotation, 0deg) - 2deg)) translateX(-1px);
+  }
 }
 
 .workspace-search-bar {
@@ -2047,26 +2434,30 @@ div:focus-visible {
   left: 0;
   right: 0;
   z-index: 50;
+  transform: translateZ(100px);
+  /* Behind configurator panel (z-index: 40) */
 }
 
-/* SVG Layer */
+/* SVG Layer with depth */
 .svg-layer {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
   z-index: 1;
+  transform-style: preserve-3d;
 }
 
-/* Node Layer */
+/* Node Layer with 3D positioning */
 .node-layer {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 2;
+  transform-style: preserve-3d;
 }
 
-/* Animation States */
+/* Animation States with depth */
 .enter-active,
 .leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -2075,21 +2466,22 @@ div:focus-visible {
 .enter-from,
 .leave-to {
   opacity: 0;
-  transform: scale(0.95);
+  transform: scale(0.95) translateZ(-20px);
 }
 
-/* Fade transition */
+/* Fade transition with depth */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+  transform: translateZ(-10px);
 }
 
-/* Performance Optimizations */
+/* Performance Optimizations for RTS */
 .hardware-accelerated {
   transform: translateZ(0);
   backface-visibility: hidden;
@@ -2098,9 +2490,10 @@ div:focus-visible {
 .media-drop-overlay {
   pointer-events: none;
   z-index: 100;
+  transform: translateZ(200px);
 }
 
-/* Add these to ensure drag events are captured properly */
+/* RTS-specific drag behaviors */
 .fixed {
   touch-action: none;
 }
@@ -2109,14 +2502,14 @@ div:focus-visible {
   cursor: move;
 }
 
-/* Transition for Overview and Detailed Views */
+/* Transition for Overview and Detailed Views with RTS */
 .transition-transform-overview {
   transition-property: transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 500ms;
 }
 
-/* Waterfall Transition */
+/* Waterfall Transition with depth */
 .waterfall-enter-active,
 .waterfall-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -2125,7 +2518,7 @@ div:focus-visible {
 .waterfall-enter-from,
 .waterfall-leave-to {
   opacity: 0;
-  transform: translateY(20px);
+  transform: translateY(20px) translateZ(-30px);
 }
 
 .waterfall-move {
@@ -2137,22 +2530,24 @@ div:focus-visible {
 }
 
 .p-6:hover {
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+  transform: translateY(-6px) translateZ(10px);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Enhanced overview transition overlay with depth */
 .overview-transition-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(var(--color-base-200), 0.3);
-  backdrop-filter: blur(3px);
+  background-color: rgba(var(--color-base-200), 0.4);
+  backdrop-filter: blur(4px);
   z-index: 50;
   opacity: 0;
   animation: fadeIn 0.3s forwards;
+  transform: translateZ(150px);
 }
 
 .transition-blur {
@@ -2162,41 +2557,46 @@ div:focus-visible {
 @keyframes fadeIn {
   from {
     opacity: 0;
+    transform: translateZ(150px) scale(0.98);
   }
 
   to {
     opacity: 1;
+    transform: translateZ(150px) scale(1);
   }
 }
 
 @keyframes blurEffect {
   0% {
     backdrop-filter: blur(0px);
+    transform: scale(1);
   }
 
   50% {
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(6px);
+    transform: scale(1.02);
   }
 
   100% {
     backdrop-filter: blur(0px);
+    transform: scale(1);
   }
 }
 
-/* Bubble animation */
+/* Enhanced bubble animation with 3D */
 @keyframes bubblePulse {
   0% {
-    transform: scale(1);
+    transform: scale(1) translateZ(0px);
     box-shadow: 0 0 0 0 rgba(var(--color-primary), 0.7);
   }
 
   70% {
-    transform: scale(1.05);
+    transform: scale(1.05) translateZ(5px);
     box-shadow: 0 0 0 10px rgba(var(--color-primary), 0);
   }
 
   100% {
-    transform: scale(1);
+    transform: scale(1) translateZ(0px);
     box-shadow: 0 0 0 0 rgba(var(--color-primary), 0);
   }
 }
@@ -2204,6 +2604,8 @@ div:focus-visible {
 .bubble-highlight {
   animation: bubblePulse 2s infinite;
 }
+
+/* Enhanced fade transitions with 3D */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -2212,6 +2614,50 @@ div:focus-visible {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translate(-50%, -20px);
+  transform: translate(-50%, -20px) translateZ(-20px);
+}
+
+/* Depth-based layering for better RTS effect */
+.workspace-container>* {
+  transform-style: preserve-3d;
+}
+
+/* Lighting effects for RTS atmosphere */
+.rts-canvas::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  background: radial-gradient(ellipse 80% 60% at 50% 20%,
+      rgba(255, 255, 255, 0.02) 0%,
+      transparent 50%);
+  pointer-events: none;
+  z-index: 1000;
+  transform: translateZ(300px);
+  border-radius: 4px;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .rts-perspective {
+    perspective: none !important;
+  }
+
+  .rts-transform,
+  .rts-nodes-layer,
+  .rts-canvas {
+    transform-style: flat !important;
+  }
+
+  .rts-ground-plane {
+    transform: none !important;
+    opacity: 0.3 !important;
+  }
+
+  .transform-gpu {
+    transform: none !important;
+  }
 }
 </style>

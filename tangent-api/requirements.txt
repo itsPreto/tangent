@@ -6,3 +6,14 @@ tiktoken
 google-generativeai
 requests
 Pillow
+kokoro>=0.9.4
+soundfile
+torch
+sentence-transformers>=2.2.2
+scikit-learn>=1.3.0
+umap-learn>=0.5.3
+nltk>=3.8
+chromadb>=0.4.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+seaborn>=0.12.0

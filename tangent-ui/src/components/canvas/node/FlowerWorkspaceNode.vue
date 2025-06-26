@@ -1,7 +1,7 @@
 <template>
   <div ref="wrapperRef"
     class="flower-workspace-node"
-    :class="[{ selected: isSelected, favorite: workspace.isFavorite, bloom: isHovered || alwaysShowPetals }]"
+    :class="[{ selected: isSelected, favorite: workspace.isFavorite, bloom: shouldBloom }]"
     :style="wrapperStyle"
     :data-workspace-id="workspace.id"
   >
@@ -13,97 +13,110 @@
       preserveAspectRatio="none"
       pointer-events="none"
     >
-      <!-- Enhanced Gradients for petals and other elements -->
+      <!-- Enhanced Gradients -->
       <defs>
-        <!-- Main petal gradient -->
         <linearGradient :id="`petal-grad-${workspace.id}`" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%"  :stop-color="gradientColor1" />
           <stop offset="60%" :stop-color="gradientColor2" />
           <stop offset="100%" :stop-color="gradientColor3" />
         </linearGradient>
         
-        <!-- Inner petal highlight gradient -->
         <linearGradient :id="`petal-highlight-${workspace.id}`" x1="20%" y1="0%" x2="80%" y2="100%">
           <stop offset="0%"  :stop-color="petalHighlightColor" :stop-opacity="0.9" />
           <stop offset="100%" :stop-color="petalHighlightColor" :stop-opacity="0" />
         </linearGradient>
         
-        <!-- Center disk radial gradient -->
-        <radialGradient :id="`center-grad-${workspace.id}`" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+        <radialGradient :id="`center-grad-${workspace.id}`" cx="50%" cy="50%" r="50%">
           <stop offset="0%"  :stop-color="centerHighlightColor" />
           <stop offset="70%" :stop-color="centerColor" />
           <stop offset="100%" :stop-color="centerShadowColor" />
         </radialGradient>
         
-        <!-- Stem gradient -->
         <linearGradient :id="`stem-grad-${workspace.id}`" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%"  :stop-color="stemTopColor" />
-          <stop offset="100%" :stop-color="stemBottomColor" />
+          <stop offset="30%" :stop-color="stemMidColor" />
+          <stop offset="70%" :stop-color="stemBottomColor" />
+          <stop offset="100%" :stop-color="stemRootColor" />
         </linearGradient>
       </defs>
 
-      <!-- ========== STEM (path from head center down to ground) ========== -->
-      <!-- Set pointer-events="none" to make stem non-clickable -->
-      <path
-        :d="optimizedStemPath"
-        :stroke="`url(#stem-grad-${workspace.id})`"
-        :stroke-width="stemWidth"
-        fill="none"
-        stroke-linecap="round"
-        class="stem-path"
-        pointer-events="none"
-      />
-      
-      <!-- Small leaves on stem (for visual interest) -->
-      <path v-if="shouldRenderStemLeaves" v-for="(leaf, idx) in stemLeaves" :key="`leaf-${idx}`"
-        :d="leaf.path"
-        :fill="leaf.fill"
-        :transform="`translate(${leaf.x}, ${leaf.y}) rotate(${leaf.angle})`"
-        class="stem-leaf"
-        pointer-events="none"
-      />
+      <!-- PROCEDURAL STEM -->
+      <g class="stem-group" pointer-events="none">
+        <!-- Main organic stem -->
+        <path
+          :d="organicStemPath"
+          :stroke="`url(#stem-grad-${workspace.id})`"
+          :stroke-width="stemWidth"
+          fill="none"
+          stroke-linecap="round"
+          class="stem-path main-stem"
+        />
+        
+        <!-- Stem branches -->
+        <template v-if="renderComplexFeatures">
+          <path v-for="branch in stemBranches" :key="`branch-${branch.id}`"
+            :d="branch.path"
+            :stroke="branch.color"
+            :stroke-width="branch.width"
+            fill="none"
+            stroke-linecap="round"
+            class="stem-branch"
+            :style="{ animationDelay: branch.delay }"
+          />
+        </template>
+        
+        <!-- Procedural leaves -->
+        <!-- Removed leaves from stems -->
+        
+        <!-- Ground roots -->
+        <template v-if="renderRoots">
+          <path v-for="root in groundRoots" :key="`root-${root.id}`"
+            :d="root.path"
+            :stroke="root.color"
+            :stroke-width="root.width"
+            fill="none"
+            stroke-linecap="round"
+            class="ground-root"
+            :style="{ animationDelay: root.delay }"
+          />
+        </template>
+      </g>
 
-      <!-- ========== HEAD (positioned relative to SVG top-left) ========== -->
-      <g
-        class="head-group"
-        :transform="`translate(${svgWidth/2}, ${headGroupY})`"
-      >
-        <!-- Background glow for selected/favorite flowers -->
-        <circle v-if="isSelected || workspace.isFavorite" 
+      <!-- FLOWER HEAD -->
+      <g class="head-group" :transform="`translate(${headX}, ${headY})`">
+        <!-- Glow effect -->
+        <circle v-if="showGlow" 
           :r="baseRadius * 1.2" 
           :fill="glowColor"
           class="flower-glow"
           opacity="0.6"
-          pointer-events="none"
         />
         
-        <!-- FIXED: Use nested groups to separate rotation from animation -->
-        <g v-for="(angle, idx) in petalAngles" :key="`petal-group-${idx}`"
-          :transform="`rotate(${angle})`"
-          v-if="shouldRenderPetals">
-          <!-- Each petal in its own rotation group - petals ARE clickable but transparent parts aren't -->
-          <path
-            :d="petalPath"
-            :fill="`url(#petal-grad-${workspace.id})`"
-            :style="{ '--d': `${idx * 20}ms` }"
-            class="petal-shape"
-            pointer-events="fill"
-            @click.stop="handleClick"
-          />
-          
-          <!-- Inner highlight in the same rotation group -->
-          <path
-            :d="petalInnerHighlightPath"
-            :fill="`url(#petal-highlight-${workspace.id})`"
-            :style="{ '--d': `${idx * 20 + 100}ms` }"
-            class="petal-highlight"
-            pointer-events="none"
-          />
-        </g>
+        <!-- Petals -->
+        <template v-if="renderPetals">
+          <g v-for="petal in petalData" :key="`petal-${petal.id}`"
+            :transform="petal.transform">
+            <path
+              :d="petal.path"
+              :fill="`url(#petal-grad-${workspace.id})`"
+              :style="{ animationDelay: petal.delay }"
+              class="petal-shape"
+              pointer-events="fill"
+              @click.stop="handleClick"
+            />
+            <path
+              :d="petal.highlightPath"
+              :fill="`url(#petal-highlight-${workspace.id})`"
+              :style="{ animationDelay: petal.highlightDelay }"
+              class="petal-highlight"
+              pointer-events="none"
+            />
+          </g>
+        </template>
 
-        <!-- Clickable center disk with enhanced styling -->
+        <!-- Center -->
         <circle 
-          :r="baseRadius * 0.72" 
+          :r="branchCount === 1 ? baseRadius * 0.55 : baseRadius * 0.72" 
           :fill="`url(#center-grad-${workspace.id})`" 
           class="flower-center" 
           pointer-events="fill"
@@ -112,21 +125,20 @@
           @mouseleave="isHovered = false"
         />
         
-        <!-- Title display -->
+        <!-- Title -->
         <text
           text-anchor="middle"
           dominant-baseline="middle"
-          :style="`font-size:${Math.max(10, baseRadius * 0.28)}px;font-weight:600;fill:${textColor};`"
+          :style="titleStyle"
           pointer-events="none"
         >
           {{ truncatedTitle }}
         </text>
         
-        <!-- Invisible larger hitbox for easier selection -->
+        <!-- Hitbox -->
         <circle 
           :r="baseRadius * 1.4" 
-          fill="rgba(0,0,0,0)" 
-          stroke="none"
+          fill="transparent" 
           pointer-events="fill"
           @click.stop="handleClick"
           @mouseenter="isHovered = true"
@@ -135,8 +147,8 @@
       </g>
     </svg>
 
-    <!-- actions -->
-    <div class="flower-actions">
+    <!-- Actions -->
+    <div class="flower-actions" :style="actionsStyle">
       <button @click.stop="$emit('favorite')" class="flower-action-btn">
         <Star class="w-4 h-4" :class="{ 'text-yellow-400 fill-yellow-400': workspace.isFavorite }" />
       </button>
@@ -146,285 +158,383 @@
     </div>
 
     <ContextMenu
-      v-if="showContextMenu && !isMoreThan200Flowers"
+      v-if="showContextMenu && maxNodeCount <= 200"
       :position="contextMenuPosition"
       @close="showContextMenu = false"
     >
-      <button @click="$emit('duplicate')" class="context-menu-item"><Copy class="w-4 h-4" />Duplicate</button>
-      <button @click="$emit('archive')"   class="context-menu-item"><Archive class="w-4 h-4" />Archive</button>
-      <button @click="$emit('export')"    class="context-menu-item"><Download class="w-4 h-4" />Export</button>
+      <button @click="$emit('duplicate')" class="context-menu-item">
+        <Copy class="w-4 h-4" />Duplicate
+      </button>
+      <button @click="$emit('archive')" class="context-menu-item">
+        <Archive class="w-4 h-4" />Archive
+      </button>
+      <button @click="$emit('export')" class="context-menu-item">
+        <Download class="w-4 h-4" />Export
+      </button>
       <hr class="my-2 border-base-200" />
-      <button @click="$emit('delete')"    class="context-menu-item text-destructive"><Trash2 class="w-4 h-4" />Delete</button>
+      <button @click="$emit('delete')" class="context-menu-item text-destructive">
+        <Trash2 class="w-4 h-4" />Delete
+      </button>
     </ContextMenu>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, inject } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
 import { Star, MoreVertical, Copy, Archive, Download, Trash2 } from 'lucide-vue-next';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import { useThemeStore } from '@/stores/themeStore';
 import type { ThemeName } from '@/stores/themeStore';
 
-/* ---------- props / emits ---------- */
+// Props & Emits
 const props = defineProps({
-  workspace    : { type:Object, required:true },
-  isSelected   : Boolean,
-  maxNodeCount : { type:Number, default:1 },
-  windowHeight : { type:Number, required:true }, // Prop for current window height
-  alwaysShowPetals: { type:Boolean, default:false }, // New prop for controlling petal visibility
+  workspace: { type: Object, required: true },
+  isSelected: Boolean,
+  maxNodeCount: { type: Number, default: 1 },
+  windowHeight: { type: Number, required: true },
+  alwaysShowPetals: { type: Boolean, default: false },
 });
-const emit = defineEmits(['select','favorite','duplicate','archive','export','delete']);
+
+const emit = defineEmits(['select', 'favorite', 'duplicate', 'archive', 'export', 'delete']);
+
+// Refs
 const wrapperRef = ref(null);
+const isHovered = ref(false);
 
-/* ---------- theme ---------- */
-const themeStore  = useThemeStore();
+// Theme
+const themeStore = useThemeStore();
 const activeTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
-let obs:MutationObserver|undefined;
-onMounted(()=>{
-  obs = new MutationObserver(()=>activeTheme.value=document.documentElement.getAttribute('data-theme')||'light');
-  obs.observe(document.documentElement,{attributes:true, attributeFilter:['data-theme']});
+
+let obs: MutationObserver | undefined;
+onMounted(() => {
+  obs = new MutationObserver(() => {
+    activeTheme.value = document.documentElement.getAttribute('data-theme') || 'light';
+  });
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 });
-onBeforeUnmount(()=>obs?.disconnect());
+onBeforeUnmount(() => obs?.disconnect());
 
-/* ---------- refs ---------- */
-const isHovered = ref(false); // Explicitly declared ref
+// Safe number function to prevent NaN
+const safeNumber = (value: any, fallback: number = 0): number => {
+  const num = Number(value);
+  return isNaN(num) || !isFinite(num) ? fallback : num;
+};
 
-/* ---------- theme flags for styling variants ---------- */
-const isDarkTheme = computed(() => themeStore.isDarkTheme(activeTheme.value as ThemeName));
-const isMinimalist = computed(() => ['lofi', 'wireframe', 'black', 'light', 'corporate'].includes(activeTheme.value));
+// Utility functions
+const seededRandom = (seed: number): number => {
+  const safeSeed = safeNumber(seed, 1);
+  const x = Math.sin(safeSeed) * 10000;
+  return x - Math.floor(x);
+};
 
-/* ---------- geometry ---------- */
-const branchCount = computed(()=>props.workspace.nodeCount || 1);
-const minR = 35, maxR = 80;
-const baseRadius = computed(()=>{
-  const scale = props.maxNodeCount>1 ? Math.min(1, branchCount.value/props.maxNodeCount) : 0.5;
-  return minR + scale*(maxR-minR);
-});
+const noise1D = (x: number, seed: number = 1): number => {
+  const safeX = safeNumber(x, 0);
+  const safeSeed = safeNumber(seed, 1);
+  const frequency = 0.05;
+  const scaledX = safeX * frequency;
+  const floorX = Math.floor(scaledX);
+  const fracX = scaledX - floorX;
+  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+  const n1 = seededRandom(floorX + safeSeed);
+  const n2 = seededRandom(floorX + 1 + safeSeed);
+  return (n1 * (1 - fade(fracX)) + n2 * fade(fracX));
+};
 
-/* ground position settings */
-const GROUND_BUFFER = 20; // Increased buffer from the absolute bottom
-const GROUND_LINE = computed(() => props.windowHeight - GROUND_BUFFER);
+// Basic computed properties with safe defaults
+const branchCount = computed(() => safeNumber(props.workspace?.nodeCount, 1));
 
-/* hover growth - how much the head moves up and stem effectively grows */
-const growthPx = computed(()=>{
-  const ratio = (maxR - baseRadius.value)/(maxR - minR); // 1->small, 0->largest
-  const minGrow=2, maxGrow=8;
-  return minGrow + ratio*(maxGrow-minGrow);
-});
-
-/* Head center Y in SVG coordinates */
-const headCenterY_in_svg = computed(() => baseRadius.value);
-
-/* SVG Dimensions - ensure room for full stem */
-const stemWidth = computed(()=>Math.max(2.5, baseRadius.value*0.1)); // Slightly thinner for elegance
-const svgWidth = computed(() => baseRadius.value * 2 + Math.max(stemWidth.value * 4, growthPx.value));
-// Make sure SVG height extends to the ground
-const svgHeight = computed(() => GROUND_LINE.value + GROUND_BUFFER);
-
-/* Wrapper position and dimensions */
-const wrapperLeft = computed(() => {
-  if (!props.workspace || typeof props.workspace.x !== 'number') return 0; // Fallback
-  return props.workspace.x - svgWidth.value / 2;
-});
-
-const wrapperTop = computed(() => {
-  if (!props.workspace || typeof props.workspace.y !== 'number') return 0; // Fallback
-  return props.workspace.y - baseRadius.value;
-});
-
-// Handle greater than 200 flowers case
-const isMoreThan200Flowers = computed(() => {
-  return props.maxNodeCount > 200;
-});
-
-const shouldRenderPetals = computed(() => {
-  // Always render petals if alwaysShowPetals is true
-  if (props.alwaysShowPetals) return true;
-  
-  // Otherwise, use the existing logic
-  const totalFlowers = props.maxNodeCount > 100;
-  return !totalFlowers || isHovered.value || props.isSelected || props.workspace.isFavorite;
-});
-
-// 2. Simplify path calculations for large flower counts
-const optimizedPetalPath = computed(() => {
-  // Use simpler paths when we have many flowers (>100)
-  if (props.maxNodeCount > 100) {
-    const r = petalLength.value * 0.8;
-    const w = petalWidth.value * 0.7;
-    return `M0,0 L${r/2},${w/2} L${r},0 L${r/2},${-w/2} Z`;
+const seedValue = computed(() => {
+  try {
+    let hash = 0;
+    const str = (props.workspace?.id || 'default').toString();
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash) || 1;
+  } catch {
+    return 1;
   }
+});
+
+// Density and sizing with safe calculations
+const densityScale = computed(() => {
+  const maxNodes = safeNumber(props.maxNodeCount, 1);
+  if (maxNodes > 200) return 0.4;
+  if (maxNodes > 100) return 0.6;
+  if (maxNodes > 50) return 0.8;
+  return 1.0;
+});
+
+const baseRadius = computed(() => {
+  const isSingleBranch = branchCount.value === 1;
+  const minR = (isSingleBranch ? 20 : 25) * densityScale.value;
+  const maxR = (isSingleBranch ? 40 : 60) * densityScale.value;
+  const maxNodes = safeNumber(props.maxNodeCount, 1);
+  const branches = branchCount.value;
+  const scale = maxNodes > 1 ? Math.min(1, branches / maxNodes) : 0.5;
+  return safeNumber(minR + scale * (maxR - minR), minR);
+});
+
+// Positioning with anti-overlap offset
+const positionOffset = computed(() => {
+  const maxNodes = safeNumber(props.maxNodeCount, 1);
+  const magnitude = maxNodes > 50 ? 8 : 4;
+  const seed = seedValue.value;
+  return {
+    x: safeNumber((seededRandom(seed) - 0.5) * magnitude, 0),
+    y: safeNumber((seededRandom(seed + 1) - 0.5) * magnitude, 0)
+  };
+});
+
+// Layout calculations with safe defaults
+const GROUND_BUFFER = 20;
+const groundLine = computed(() => safeNumber(props.windowHeight, 800) - GROUND_BUFFER);
+const growthPx = computed(() => safeNumber(2 + (seededRandom(seedValue.value + 5) * 4), 2));
+const stemWidth = computed(() => safeNumber(Math.max(1.5, baseRadius.value * 0.08) * densityScale.value, 1.5));
+
+// SVG dimensions with safe calculations
+const svgWidth = computed(() => {
+  const width = baseRadius.value * 2.4 + Math.max(stemWidth.value * 6, growthPx.value);
+  return safeNumber(width, 100);
+});
+
+const svgHeight = computed(() => {
+  const height = groundLine.value + GROUND_BUFFER;
+  return safeNumber(height, 400);
+});
+
+// Head positioning with safe calculations
+const headX = computed(() => {
+  const x = svgWidth.value / 2 + positionOffset.value.x;
+  return safeNumber(x, svgWidth.value / 2);
+});
+
+const headY = computed(() => {
+  const baseY = baseRadius.value;
+  const hoverAdjust = isHovered.value ? growthPx.value : 0;
+  const y = baseY - hoverAdjust + positionOffset.value.y;
+  return safeNumber(y, baseRadius.value);
+});
+
+// Wrapper positioning with safe calculations
+const wrapperStyle = computed(() => {
+  const workspaceX = safeNumber(props.workspace?.x, 0);
+  const workspaceY = safeNumber(props.workspace?.y, 0);
   
-  // Use standard path for normal cases
-  return petalPath.value;
+  return {
+    left: `${workspaceX - svgWidth.value / 2 + positionOffset.value.x}px`,
+    top: `${workspaceY - baseRadius.value + positionOffset.value.y}px`,
+    width: `${svgWidth.value}px`,
+    height: `${svgHeight.value}px`,
+    zIndex: isHovered.value ? 20 : (props.isSelected ? 15 : (props.workspace?.isFavorite ? 12 : 10)),
+    pointerEvents: 'none',
+  };
 });
 
-// 3. Optimize stem calculation for large flower counts
-const optimizedStemPath = computed(() => {
-  // Use simpler stem for large flower counts
-  if (props.maxNodeCount > 100) {
-    const startY = headGroupY.value; 
-    const groundY = GROUND_LINE.value - wrapperTop.value; 
-    const centerX = svgWidth.value/2;
-    return `M${centerX},${startY} L${centerX},${groundY}`;
-  }
+// Conditional rendering flags
+const renderPetals = computed(() => {
+  return props.alwaysShowPetals || 
+         props.maxNodeCount < 100 || 
+         isHovered.value || 
+         props.isSelected || 
+         props.workspace?.isFavorite;
+});
+
+const renderLeaves = computed(() => props.maxNodeCount < 100 || isHovered.value || props.isSelected);
+const renderComplexFeatures = computed(() => props.maxNodeCount < 50 && branchCount.value > 3);
+const renderRoots = computed(() => props.maxNodeCount < 30 && (isHovered.value || props.isSelected));
+const shouldBloom = computed(() => isHovered.value || props.alwaysShowPetals);
+const showGlow = computed(() => props.isSelected || props.workspace?.isFavorite);
+
+// Organic stem path with safe calculations
+const organicStemPath = computed(() => {
+  const startY = headY.value;
+  const workspaceY = safeNumber(props.workspace?.y, 0);
+  const endY = groundLine.value - (workspaceY - baseRadius.value + positionOffset.value.y);
+  const centerX = headX.value;
+  const height = safeNumber(endY - startY, 100);
   
-  // Use standard stem path for normal cases
-  return stemPath.value;
-});
-
-// 4. Conditional stem leaves rendering
-const shouldRenderStemLeaves = computed(() => {
-  // Only render stem leaves for fewer flowers or hover states
-  return props.maxNodeCount < 50 || isHovered.value || props.isSelected;
-});
-
-// Make z-index dynamic based on hover/selection state to bring clicked flower to front
-const dynamicZIndex = computed(() => {
-  let baseZ = props.workspace.isFavorite ? 12 : 10;
-  if (isHovered.value) baseZ += 5;
-  if (props.isSelected) baseZ += 10;
-  return baseZ;
-});
-
-const wrapperStyle = computed(()=>({
-  left   : `${wrapperLeft.value}px`,
-  top    : `${wrapperTop.value}px`,
-  width  : `${svgWidth.value}px`,
-  height : `${svgHeight.value}px`, // Match SVG height
-  zIndex : dynamicZIndex.value,  // Use dynamic z-index for better overlapping behavior
-  pointerEvents: "none", // Make the wrapper div ignore pointer events
-}));
-
-/* Head group Y position in SVG coords (adjusts for hover) */
-const headGroupY = computed(() => {
-  const currentHoverState = (isHovered && 'value' in isHovered) ? isHovered.value : false;
-  return headCenterY_in_svg.value - (currentHoverState ? growthPx.value : 0);
-});
-
-/* Stem path - improved curve for more natural look */
-const stemPath = computed(()=>{
-  const startY = headGroupY.value; // Start at flower center
-  const groundY = GROUND_LINE.value - wrapperTop.value; // Ground position in SVG coords
-  const centerX = svgWidth.value/2;
-  const stemHeight = groundY - startY;
+  if (height <= 0) return `M${centerX},${startY} L${centerX},${startY + 50}`;
   
-  // Add slight curve with subtle randomness for organic feel
-  const curveOffset = (Math.sin(props.workspace.id.charCodeAt(0) / 10) * 10) || 5;
+  // Simple organic curve with noise
+  const segments = Math.min(5, Math.max(2, Math.floor(height / 80)));
+  let path = `M${centerX},${startY}`;
   
-  // More natural curved stem with slight bend
-  return `M${centerX},${startY} C${centerX+curveOffset},${startY+stemHeight*0.3} ${centerX-curveOffset},${startY+stemHeight*0.6} ${centerX},${groundY}`;
-});
-
-/* Stem leaves for visual interest */
-const stemLeaves = computed(() => {
-  const groundY = GROUND_LINE.value - wrapperTop.value;
-  const startY = headGroupY.value;
-  const stemHeight = groundY - startY;
-  const centerX = svgWidth.value/2;
-  const leafCount = Math.min(Math.max(1, Math.floor(branchCount.value/3)), 3);
-  
-  // Create small decorative leaves along the stem
-  return Array.from({length: leafCount}, (_, i) => {
-    const yPos = startY + stemHeight * (0.3 + i * 0.25); // Distribute leaves along stem
-    const xOffset = (i % 2 === 0 ? 1 : -1) * stemWidth.value * 2;
-    const angle = (i % 2 === 0 ? -20 : 20) + (Math.random() - 0.5) * 10;
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const y = startY + height * t;
+    const noiseX = noise1D(y, seedValue.value) * 12 * densityScale.value;
+    const x = safeNumber(centerX + noiseX, centerX);
     
-    // Simple leaf shape - can be customized more for different themes
-    const leafSize = baseRadius.value * 0.2;
+    if (i === 1) {
+      const cp1x = safeNumber(centerX + noiseX * 0.5, centerX);
+      const cp1y = safeNumber(startY + height * 0.3, startY);
+      path += ` Q${cp1x},${cp1y} ${x},${y}`;
+    } else {
+      path += ` T${x},${y}`;
+    }
+  }
+  
+  return path;
+});
+
+// Stem branches with safe calculations
+const stemBranches = computed(() => {
+  if (!renderComplexFeatures.value) return [];
+  
+  const count = Math.min(2, Math.floor(branchCount.value / 4));
+  return Array.from({ length: count }, (_, i) => {
+    const startY = safeNumber(headY.value + (baseRadius.value * (1 + i * 0.5)), headY.value);
+    const direction = i % 2 === 0 ? 1 : -1;
+    const length = baseRadius.value * 0.6;
+    const endX = safeNumber(headX.value + direction * length, headX.value);
+    const endY = safeNumber(startY + length * 0.3, startY);
     
     return {
-      x: centerX + xOffset,
-      y: yPos,
-      angle: angle,
-      fill: stemTopColor.value,
-      path: `M0,0 C${leafSize*0.5},${-leafSize*0.3} ${leafSize},${-leafSize*0.1} ${leafSize*1.2},0 C${leafSize},${leafSize*0.1} ${leafSize*0.5},${leafSize*0.3} 0,0 Z`
+      id: i,
+      path: `M${headX.value},${startY} Q${safeNumber(headX.value + direction * length * 0.5, headX.value)},${safeNumber(startY + length * 0.1, startY)} ${endX},${endY}`,
+      color: stemMidColor.value,
+      width: stemWidth.value * 0.6,
+      delay: `${1.5 + i * 0.2}s`
     };
   });
 });
 
-/* petals ---------- */
-const petalCount = computed(() => {
-  // Direct mapping to branch count, capped at 24 for visual clarity
-  return Math.min(branchCount.value, 24);
+// Stem leaves with safe calculations and pre-computed transforms
+const stemLeaves = computed(() => {
+  if (!renderLeaves.value) return [];
+  
+  const count = Math.min(3, Math.max(1, Math.floor(branchCount.value / 2)));
+  return Array.from({ length: count }, (_, i) => {
+    const t = 0.3 + (i / Math.max(1, count - 1)) * 0.4;
+    const yPos = safeNumber(headY.value + baseRadius.value * (1 + t * 2), headY.value);
+    const side = i % 2 === 0 ? 1 : -1;
+    const leafSize = baseRadius.value * 0.15 * densityScale.value;
+    const scale = safeNumber(0.8 + seededRandom(seedValue.value + i + 20) * 0.4, 0.8);
+    const x = safeNumber(headX.value + side * stemWidth.value * 2, headX.value);
+    const angle = safeNumber((20 + seededRandom(seedValue.value + i) * 15) * side, 0);
+    
+    return {
+      id: i,
+      transform: `translate(${x}, ${yPos}) rotate(${angle}) scale(${scale})`,
+      fill: `hsl(120, 60%, ${isDarkTheme.value ? 45 : 35}%)`,
+      path: `M0,0 C${leafSize * 0.6},${-leafSize * 0.3} ${leafSize * 1.2},0 ${leafSize * 0.6},${leafSize * 0.3} Z`,
+      delay: `${1.8 + i * 0.15}s`
+    };
+  });
 });
 
-// Generate an array of explicit angles that we can directly use in the template
-const petalAngles = computed(() => {
-  // Create an array of evenly distributed angles
-  const angles = [];
-  const count = petalCount.value;
-  for (let i = 0; i < count; i++) {
-    angles.push((360 / count) * i);
+// Ground roots with safe calculations
+const groundRoots = computed(() => {
+  if (!renderRoots.value) return [];
+  
+  const count = 3;
+  const workspaceY = safeNumber(props.workspace?.y, 0);
+  const groundY = groundLine.value - (workspaceY - baseRadius.value + positionOffset.value.y);
+  
+  return Array.from({ length: count }, (_, i) => {
+    const angle = (i / count) * 120 - 60; // -60 to +60 degrees
+    const length = baseRadius.value * 0.4;
+    const endX = safeNumber(headX.value + Math.sin(angle * Math.PI / 180) * length, headX.value);
+    const endY = safeNumber(groundY + length * 0.2, groundY);
+    const cpX = safeNumber(headX.value + Math.sin(angle * Math.PI / 180) * length * 0.5, headX.value);
+    const cpY = safeNumber(groundY + length * 0.05, groundY);
+    
+    return {
+      id: i,
+      path: `M${headX.value},${groundY} Q${cpX},${cpY} ${endX},${endY}`,
+      color: darkenColor(stemBottomColor.value, 30),
+      width: stemWidth.value * 0.4,
+      delay: `${2 + i * 0.1}s`
+    };
+  });
+});
+
+// Petal data with safe calculations and pre-computed transforms
+// CACHED petal data to avoid heavy recalculation
+const petalCache = new Map();
+
+const petalData = computed(() => {
+  if (!renderPetals.value) return [];
+  
+  // Create cache key from important props
+  const cacheKey = `${branchCount.value}-${baseRadius.value}-${densityScale.value}-${seedValue.value}`;
+  
+  // Return cached result if available
+  if (petalCache.has(cacheKey)) {
+    return petalCache.get(cacheKey);
   }
-  return angles;
-});
-
-// Improved petal shape with better curves
-const petalLength = computed(() => baseRadius.value * 1.8);
-const petalWidth = computed(() => baseRadius.value * 0.5);
-
-// Main petal path - simplified for better rendering
-const petalPath = computed(() => {
-  const r = petalLength.value;
-  const w = petalWidth.value;
   
-  // More organic petal shape with simpler curves for reliable rendering
-  return `M0,0 C${r*0.4},${w} ${r*0.6},${w} ${r},0 C${r*0.6},${-w} ${r*0.4},${-w} 0,0`;
-});
-
-// Inner highlight path for depth - simplified
-const petalInnerHighlightPath = computed(() => {
-  const r = petalLength.value * 0.7;
-  const w = petalWidth.value * 0.4;
+  // REDUCED complexity for performance
+  const isSingleBranch = branchCount.value === 1;
+  const count = isSingleBranch ? 8 : Math.min(Math.max(1, branchCount.value), 6); // Reduced from 16/10 to 8/6
   
-  // Simpler inner path for highlight effect
-  return `M0,0 C${r*0.3},${w} ${r*0.5},${w} ${r*0.8},0 C${r*0.5},${-w} ${r*0.3},${-w} 0,0`;
+  // Simpler calculations
+  const sizeFactor = isSingleBranch ? 0.75 : 1;
+  const baseLength = baseRadius.value * 1.4 * densityScale.value * sizeFactor; // Slightly smaller
+  const baseWidth = baseRadius.value * 0.4 * densityScale.value * sizeFactor;
+  
+  const result = Array.from({ length: count }, (_, i) => {
+    const baseAngle = (360 / count) * i;
+    const angleVar = isSingleBranch ? 0 : (seededRandom(seedValue.value + i) - 0.5) * 8; // Reduced variation
+    const scaleVar = isSingleBranch ? 1 : 0.9 + seededRandom(seedValue.value + i + 10) * 0.2; // Less variation
+    const lengthMod = isSingleBranch ? 1.1 : 0.95 + seededRandom(seedValue.value + i + 20) * 0.1;
+    
+    const r = baseLength * lengthMod;
+    const w = isSingleBranch ? baseWidth * 0.5 : baseWidth;
+    const angle = baseAngle + angleVar;
+    
+    // SIMPLIFIED path generation
+    const petalPath = isSingleBranch 
+      ? `M0,0 L${r * 0.3},${w} L${r},0 L${r * 0.3},${-w} Z` // Simpler triangle shape
+      : `M0,0 L${r * 0.5},${w} L${r},0 L${r * 0.5},${-w} Z`; // Simpler shape for multi-branch too
+    
+    // No highlight path to reduce DOM complexity
+    return {
+      id: i,
+      transform: `rotate(${angle}) scale(${scaleVar})`,
+      path: petalPath,
+      delay: `${i * 30}ms`, // Slightly longer delays
+    };
+  });
+  
+  // Cache the result
+  petalCache.set(cacheKey, result);
+  
+  // Limit cache size to prevent memory leak
+  if (petalCache.size > 20) {
+    const firstKey = petalCache.keys().next().value;
+    petalCache.delete(firstKey);
+  }
+  
+  return result;
 });
 
-/* colors - enhanced with theme integration ---------- */
+// Theme colors
+const isDarkTheme = computed(() => themeStore.isDarkTheme(activeTheme.value as ThemeName));
 const themeColors = computed(() => themeStore.getThemeColors(activeTheme.value as ThemeName));
 
-// More sophisticated color derivation for flower elements
 const centerColor = computed(() => themeColors.value.primary);
 const centerHighlightColor = computed(() => lightenColor(themeColors.value.primary, 30));
 const centerShadowColor = computed(() => darkenColor(themeColors.value.primary, 20));
-
-// Enhanced gradient colors for petals
 const gradientColor1 = computed(() => themeColors.value.primary);
 const gradientColor2 = computed(() => themeColors.value.secondary);
-const gradientColor3 = computed(() => {
-  // Use accent if available, otherwise blend primary and secondary
-  return themeColors.value.accent || blendColors(themeColors.value.primary, themeColors.value.secondary, 0.7);
-});
-
-// Highlight and texture colors
+const gradientColor3 = computed(() => themeColors.value.accent || blendColors(themeColors.value.primary, themeColors.value.secondary, 0.7));
 const petalHighlightColor = computed(() => lightenColor(themeColors.value.primary, 50));
 const textColor = computed(() => isDarkTheme.value ? '#ffffff' : '#111111');
-
-// Glow effect for selected/favorite
 const glowColor = computed(() => props.isSelected ? lightenColor(themeColors.value.primary, 30) : '#FFD700');
 
-// Stem colors with better theming
-const stemTopColor = computed(() => {
-  // Use a complementary green that harmonizes with the theme
-  if (activeTheme.value === 'forest' || activeTheme.value === 'garden') {
-    return themeColors.value.accent || '#2E7D32';
-  }
-  return isDarkTheme.value ? '#4CAF50' : '#2E7D32';
-});
+const stemTopColor = computed(() => isDarkTheme.value ? '#4CAF50' : '#2E7D32');
+const stemMidColor = computed(() => blendColors(stemTopColor.value, stemBottomColor.value, 0.5));
+const stemBottomColor = computed(() => darkenColor(stemTopColor.value, 25));
+const stemRootColor = computed(() => darkenColor(stemTopColor.value, 40));
 
-const stemBottomColor = computed(() => {
-  return darkenColor(stemTopColor.value, 20);
-});
-
-/* Color utility functions */
-function hexToRgb(hex) {
-  // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
+// Color utilities
+function hexToRgb(hex: string) {
   const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
   hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
-
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result ? {
     r: parseInt(result[1], 16),
@@ -433,11 +543,11 @@ function hexToRgb(hex) {
   } : { r: 0, g: 0, b: 0 };
 }
 
-function rgbToHex(r, g, b) {
+function rgbToHex(r: number, g: number, b: number) {
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-function lightenColor(color, amount) {
+function lightenColor(color: string, amount: number) {
   const rgb = hexToRgb(color);
   rgb.r = Math.min(255, rgb.r + amount);
   rgb.g = Math.min(255, rgb.g + amount);
@@ -445,7 +555,7 @@ function lightenColor(color, amount) {
   return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
 
-function darkenColor(color, amount) {
+function darkenColor(color: string, amount: number) {
   const rgb = hexToRgb(color);
   rgb.r = Math.max(0, rgb.r - amount);
   rgb.g = Math.max(0, rgb.g - amount);
@@ -453,7 +563,7 @@ function darkenColor(color, amount) {
   return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
 
-function blendColors(color1, color2, ratio) {
+function blendColors(color1: string, color2: string, ratio: number) {
   const rgb1 = hexToRgb(color1);
   const rgb2 = hexToRgb(color2);
   const r = Math.round(rgb1.r * (1 - ratio) + rgb2.r * ratio);
@@ -462,173 +572,215 @@ function blendColors(color1, color2, ratio) {
   return rgbToHex(r, g, b);
 }
 
-/* title trunc */
-const truncatedTitle = computed(()=>{
-  const t = props.workspace.title || 'Untitled';
-  const m = Math.max(8, Math.floor(baseRadius.value*0.3)); // dynamic length based on size
-  return t.length>m ? t.slice(0,m-1)+'…' : t;
+// Text and styling
+const truncatedTitle = computed(() => {
+  const title = props.workspace?.title || 'Untitled';
+  const maxLength = Math.max(6, Math.floor(baseRadius.value * 0.25));
+  return title.length > maxLength ? title.slice(0, maxLength - 1) + '…' : title;
 });
 
-/* Click handler for petals/center */
-function handleClick(e) {
-  // Bring the flower to front temporarily by updating its z-index  
+const titleStyle = computed(() => 
+  `font-size:${Math.max(8, baseRadius.value * 0.26)}px;font-weight:600;fill:${textColor.value};`
+);
+
+const actionsStyle = computed(() => ({
+  top: `${headY.value - baseRadius.value + 4}px`,
+  right: '4px'
+}));
+
+// Event handlers
+function handleClick(e: Event) {
   if (wrapperRef.value) {
-    wrapperRef.value.style.zIndex = '100'; // Temporary highest z-index
-    
-    // Reset z-index after a short delay
+    (wrapperRef.value as HTMLElement).style.zIndex = '100';
     setTimeout(() => {
       if (wrapperRef.value) {
-        wrapperRef.value.style.zIndex = dynamicZIndex.value;
+        (wrapperRef.value as HTMLElement).style.zIndex = String(wrapperStyle.value.zIndex);
       }
     }, 500);
   }
-  
-  // Emit the select event
   emit('select');
-  
-  // Stop event propagation
   e.stopPropagation();
 }
 
-/* menu helpers */
 const showContextMenu = ref(false);
-const contextMenuPosition = ref({x:0,y:0});
-function openMenu(e:MouseEvent){
-  showContextMenu.value=true;
-  contextMenuPosition.value={x:e.clientX,y:e.clientY};
+const contextMenuPosition = ref({ x: 0, y: 0 });
+function openMenu(e: MouseEvent) {
+  showContextMenu.value = true;
+  contextMenuPosition.value = { x: e.clientX, y: e.clientY };
   e.stopPropagation();
 }
 </script>
 
 <style scoped>
-/* container */
-.flower-workspace-node{
+.flower-workspace-node {
   position: absolute;
   cursor: pointer;
-  transition: box-shadow .3s, transform .3s ease, z-index 0.1s;
+  margin-top: 20vh;
+  transition: transform 0.3s ease, z-index 0.1s;
   transform-origin: center bottom;
 }
-.flower-workspace-node:hover{ 
-  z-index: 20; 
-  transform: translateY(-5px);
+
+.flower-workspace-node:hover {
+  z-index: 20;
+  transform: translateY(-3px);
 }
-.selected{
-  box-shadow: 0 0 0 4px rgba(255,255,255,.8), 0 8px 20px rgba(0,0,0,.25);
+
+.selected {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.8), 0 6px 16px rgba(0, 0, 0, 0.25);
   z-index: 25;
 }
 
-/* svg tweaks */
-.flower-svg{
+.flower-svg {
   overflow: visible;
   position: absolute;
   top: 0;
   left: 0;
 }
 
-/* Petal styling - MODIFIED to remove rotation */
-.petal-shape{
+/* Petal animations */
+.petal-shape {
   transform-origin: 0 0;
   opacity: 0;
-  transform: scale(0.4); /* Removed rotation */
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d), opacity 0.5s ease var(--d);
+  transform: scale(0.3);
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
   cursor: pointer;
 }
 
-.bloom .petal-shape{
+.bloom .petal-shape {
   opacity: 1;
-  transform: scale(1); /* Removed rotation */
+  transform: scale(1);
 }
 
 .petal-highlight {
   transform-origin: 0 0;
   opacity: 0;
-  transform: scale(0.4); /* Removed rotation */
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d), opacity 0.5s ease var(--d);
+  transform: scale(0.3);
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
 }
 
 .bloom .petal-highlight {
-  opacity: 0.7;
-  transform: scale(1); /* Removed rotation */
+  opacity: 0.6;
+  transform: scale(1);
 }
 
-/* Flower center animation */
+/* Stem animations */
+.main-stem {
+  stroke-dasharray: 1500;
+  stroke-dashoffset: 1500;
+  animation: drawStem 2s ease-out forwards;
+  filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.15));
+}
+
+.stem-branch {
+  stroke-dasharray: 300;
+  stroke-dashoffset: 300;
+  opacity: 0;
+  animation: drawBranch 1s ease-out forwards;
+}
+
+.stem-leaf {
+  opacity: 0;
+  transform-origin: 0 0;
+  animation: leafGrow 0.8s ease-out forwards;
+}
+
+.ground-root {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  opacity: 0;
+  animation: rootGrow 0.6s ease-out forwards;
+}
+
 .flower-center {
   transition: transform 0.3s ease;
   cursor: pointer;
 }
 
 .bloom .flower-center {
-  animation: pulse 3s infinite alternate;
+  animation: organicPulse 4s infinite alternate;
 }
 
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+.flower-glow {
+  opacity: 0.2;
+  animation: organicGlow 3.5s infinite alternate;
 }
 
-/* Stem styling and animation */
-.stem-path {
-  pointer-events: none;
-  stroke-dasharray: 1000;
-  stroke-dashoffset: 1000;
-  animation: drawStem 1.5s ease-out forwards;
-  filter: drop-shadow(0px 0px 1px rgba(0, 0, 0, 0.2));
-}
-
-.stem-leaf {
-  opacity: 0;
-  transform-origin: 0 0;
-  animation: fadeIn 0.5s ease forwards;
-  animation-delay: 1.2s;
-}
-
-@keyframes fadeIn {
-  to { opacity: 0.8; }
-}
-
+/* Keyframes */
 @keyframes drawStem {
   to { stroke-dashoffset: 0; }
 }
 
-/* Glow effect */
-.flower-glow {
-  opacity: 0.2;
-  animation: glow 3s infinite alternate;
+@keyframes drawBranch {
+  to { 
+    stroke-dashoffset: 0; 
+    opacity: 0.8;
+  }
 }
 
-@keyframes glow {
+@keyframes leafGrow {
+  0% { 
+    opacity: 0; 
+    transform: scale(0);
+  }
+  100% { 
+    opacity: 0.9; 
+    transform: scale(1);
+  }
+}
+
+@keyframes rootGrow {
+  to { 
+    stroke-dashoffset: 0; 
+    opacity: 0.4;
+  }
+}
+
+@keyframes organicPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes organicGlow {
   0% { opacity: 0.2; transform: scale(1); }
-  100% { opacity: 0.5; transform: scale(1.1); }
+  100% { opacity: 0.6; transform: scale(1.15); }
 }
 
-/* actions */
-.flower-actions{
+/* Actions */
+.flower-actions {
   position: absolute;
-  top: calc(v-bind(headGroupY) * 1px - v-bind(baseRadius) * 1px + 4px);
-  right: 4px;
-  display: flex; 
-  gap: 4px; 
+  display: flex;
+  gap: 3px;
   opacity: 0;
-  transition: opacity .2s;
+  transition: opacity 0.2s;
   z-index: 30;
   pointer-events: auto;
 }
-.flower-workspace-node:hover .flower-actions{ opacity: 1; }
 
-.flower-action-btn{
+.flower-workspace-node:hover .flower-actions {
+  opacity: 1;
+}
+
+.flower-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: rgba(255,255,255,.9);
-  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   border: none;
   cursor: pointer;
   color: var(--tw-base-content);
+  transition: transform 0.2s ease;
 }
-.flower-action-btn:hover{ transform: scale(1.1); }
 
-.context-menu-item{ @apply flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-base-200/50 text-left; }
+.flower-action-btn:hover {
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 1);
+}
+
+.context-menu-item {
+  @apply flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-base-200/50 text-left;
+}
 </style>

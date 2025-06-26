@@ -1,6 +1,6 @@
 <template>
   <div class="pointer-events-auto absolute transition-all duration-300 branch-node" ref="nodeElement"
-    :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :class="[
+    :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :class="[
       'theme-' + currentTheme,
       {
         'selected': isSelected,
@@ -13,25 +13,36 @@
         'transition-snap': isTransitioningSnap
       }
     ]" @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
+    @dragover="supportsVision ? handleDragOver : undefined" @drop="supportsVision ? handleDrop : undefined"
     :style="[nodePositionStyle, nodeThemeStyle]">
+    <div v-if="isSnapped" class="fixed inset-0 backdrop-blur-xl -z-10 pointer-events-none" :style="{
+      backgroundColor: snappedBackgroundStyle
+    }">
+    </div>
+
     <Card :class="[
       'node-card',
       'backdrop-blur transition-all duration-300',
       isSnapped ? 'snapped-card' : 'max-w-2xl w-[42rem]'
     ]" :style="computedCardStyle">
       <div class="relative group w-full h-9 flex items-center justify-center" ref="avatarRef">
-        <div class="flex -space-x-3">
-          <div v-for="model in uniqueModels" :key="model.id" @click.stop="openModelParams" class="relative first:ml-0">
+        <!-- Subtle glow effect when params editor is open -->
+        <div v-if="showParamsEditor" class="absolute inset-0 bg-primary/10 blur-xl rounded-full pointer-events-none" />
+        <div class="flex -space-x-3 relative z-10">
+          <div v-for="model in uniqueModels" :key="model.id" @click.stop="() => openModelParams(model)" class="relative first:ml-0">
             <img :src="getAvatarUrl(model)" :alt="model.name"
-              class="w-9 h-9 rounded-full border-2 border-base-100 shadow-md object-cover cursor-pointer hover:z-10 transition-transform hover:scale-110" />
+              :class="[
+                'w-9 h-9 rounded-full border-2 shadow-md object-cover cursor-pointer hover:z-10 transition-all duration-300',
+                showParamsEditor && lastModel?.id === model.id ? 'border-primary scale-110 ring-2 ring-primary/50' : 'border-base-100 hover:scale-110'
+              ]" />
           </div>
         </div>
       </div>
 
       <!-- Use teleport to position the editor at body level -->
       <Teleport to="body">
-        <ModelParamsEditor v-if="showParamsEditor" :model="lastModel" :model-avatar="getAvatarUrl(lastModel)"
-          :current-parameters="canvasStore.getModelParams(node.id)" :trigger-rect="avatarRect" @save="updateModelParams"
+        <ModelParamsEditor v-if="showParamsEditor && currentModel" :model="currentModel" :model-avatar="getAvatarUrl(currentModel)"
+          :current-parameters="canvasStore.getModelParams(node.id, currentModel.id)" :trigger-rect="avatarRect" @save="updateModelParams"
           @close="() => { showParamsEditor = false }" />
       </Teleport>
       <div :class="['p-4 mt-4', isSnapped ? 'snapped-content' : '']"
@@ -74,7 +85,36 @@
 
           <!-- Control Buttons -->
           <div class="flex items-center gap-2">
-            <TokenCounter :text="getAllMessagesText" class="mr-2" size="small" />
+            <TokenCounter 
+              :text="getAllMessagesText" 
+              :context-limit="activeModel?.inputTokenLimit"
+              :show-percentage="true"
+              :show-progress-bar="true"
+              :cache-key="`branch-${node.id}`"
+              class="mr-2" 
+              size="small" 
+            />
+            
+            <!-- Auto-compact button when approaching limits -->
+            <button 
+              v-if="tokenUsage.shouldCompact && !hasCompactedSections"
+              @click.stop="handleAutoCompact"
+              class="p-2 rounded-full bg-orange-500/20 hover:bg-orange-500/30 text-orange-600 transition-colors"
+              title="Auto-compact old messages to save context"
+            >
+              <Archive class="w-4 h-4" />
+            </button>
+
+            <!-- Auto TTS Toggle -->
+            <button @click.stop="toggleAutoTTS" :class="[
+              'p-2 rounded-full transition-colors',
+              autoTTSEnabled
+                ? 'bg-green-500/20 hover:bg-green-500/30 text-green-600'
+                : 'hover:bg-white/10 text-base-content/60'
+            ]" :title="autoTTSEnabled ? 'Disable auto TTS for responses' : 'Enable auto TTS for responses'">
+              <Volume2 class="w-5 h-5" />
+            </button>
+
             <button @click.stop="toggleSnap" class="p-2 rounded-full hover:bg-white/10 transition-colors"
               :title="isSnapped ? 'Exit full view' : 'Enter full view'">
               <Expand v-if="!isSnapped" class="w-5 h-5 text-base-content/60" />
@@ -89,8 +129,57 @@
           </div>
         </div>
 
-        <!-- Slot for media -->
-        <slot></slot>
+        <!-- Media Content Section -->
+        <div v-if="hasMediaContent" class="media-content-section">
+          <!-- Media thumbnail header for images -->
+          <div v-if="isImageMedia" class="media-thumbnail-header p-3 border-b border-base-300/50">
+            <div class="flex items-center gap-3">
+              <img 
+                :src="mediaUrl" 
+                class="w-16 h-16 object-cover rounded-lg shadow-sm flex-shrink-0"
+                :alt="node.mediaContent.filename" />
+              <div class="flex-grow min-w-0">
+                <p class="font-medium text-sm text-base-content truncate">{{ node.mediaContent.filename }}</p>
+                <p class="text-xs text-base-content/60 mt-1">{{ node.mediaContent.mime_type }}</p>
+                <!-- Processing status in header -->
+                <div v-if="isMediaProcessing" class="flex items-center gap-2 mt-2">
+                  <div class="loading loading-spinner loading-xs"></div>
+                  <span class="text-xs text-base-content/60">
+                    {{ mediaProcessingStatus }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Full media preview for videos -->
+          <div v-if="isVideoMedia" class="media-preview p-4 border-b border-base-300">
+            <video controls class="max-w-full h-auto rounded-lg">
+              <source :src="mediaUrl" :type="node.mediaContent.mime_type">
+              Your browser does not support the video tag.
+            </video>
+            <div class="mt-2 text-sm text-base-content/70">
+              <span class="font-medium">{{ node.mediaContent.filename }}</span>
+              <span class="ml-2 px-2 py-1 bg-base-200 rounded text-xs">{{ node.mediaContent.type }}</span>
+            </div>
+            <div v-if="isMediaProcessing" class="mt-4 text-sm text-base-content/60">
+              <div class="flex items-center gap-2">
+                <div class="loading loading-spinner loading-sm"></div>
+                <span>{{ mediaProcessingStatus }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Regenerate caption button for images -->
+          <div v-if="isImageMedia && node.mediaContent?.analysis && !isMediaProcessing" class="p-3 border-b border-base-300/50">
+            <button 
+              @click="regenerateCaption" 
+              class="btn btn-xs btn-ghost opacity-60 hover:opacity-100"
+              title="Regenerate caption">
+              🔄 Regenerate Caption
+            </button>
+          </div>
+        </div>
 
         <!-- Messages Container -->
         <div :class="[
@@ -98,6 +187,20 @@
           isSnapped ? 'snapped-messages-container' : '',
           isExpanded && node.messages ? 'space-y-4' : ''
         ]">
+          <!-- Compacted Messages Section -->
+          <div v-if="isExpanded && compactedSections.length > 0" class="px-2 space-y-3">
+            <CollapsedMessagesView
+              v-for="section in compactedSections"
+              :key="section.id"
+              :compacted-section="section"
+              :showing-expanded="expandedSectionId === section.id"
+              :showing-summary="summarySectionId === section.id"
+              @expand-messages="handleExpandSection(section.id)"
+              @show-summary="handleShowSummary(section.id)"
+              @remove-compaction="handleRemoveCompaction(section.id)"
+            />
+          </div>
+
           <!-- Expanded Messages View -->
           <div v-if="isExpanded && node.messages"
             class="space-y-4 h-full overflow-y-auto px-2 messages-scroll-container" ref="messagesContainerRef"
@@ -133,7 +236,7 @@
                     'whitespace-normal': msg.isStreaming
                   }">
                   <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" :node-id="node.id"
-                    :data-message-idx="i" />
+                    :content-parts="msg.contentParts" :message-index="i" :data-message-idx="i" />
                 </div>
 
                 <!-- Message Actions -->
@@ -155,6 +258,15 @@
                      group-hover:opacity-100 transition-opacity message-action-btn" :style="{ color: threadColor }">
                         <ClipboardCopy class="w-4 h-4" />
                       </button>
+
+                      <!-- TTS Controls -->
+                      <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <TTSControls :text="msg.content"
+                          :auto-trigger="autoTTSEnabled && i === node.messages.length - 1 && !msg.isStreaming"
+                          :streaming-trigger="autoTTSEnabled && msg.isStreaming && i === node.messages.length - 1"
+                          :streaming-text="msg.isStreaming && i === node.messages.length - 1 ? node.streamingContent : null"
+                          compact />
+                      </div>
                     </template>
                   </div>
 
@@ -248,10 +360,13 @@ import {
   RotateCw,
   Expand,
   Shrink,
-  GitBranch
+  GitBranch,
+  Volume2,
+  Archive
 } from 'lucide-vue-next';
 
 import MessageInput from '../../messages/MessageInput.vue';
+import CollapsedMessagesView from '../../messages/CollapsedMessagesView.vue';
 import { useCanvasStore } from '../../../stores/canvasStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { Card } from '@/components/ui/card';
@@ -260,6 +375,8 @@ import MessageContent from '../../messages/MessageContent.vue';
 import MessageTimestamp from '../../messages/MessageTimestamp.vue';
 import ModelParamsEditor from '../../models/ModelParamsEditor.vue';
 import TokenCounter from '@/components/ui/TokenCounter.vue';
+import TTSControls from '../../messages/TTSControls.vue';
+import { tokenTrackingService, type CompactedSection, type TokenUsage } from '@/services/tokenTrackingService';
 import type { ModelParameters } from '@/types/model';
 import type { ModelInfo } from '@/types/model';
 import { useModelStore } from '@/stores/modelStore';
@@ -271,22 +388,11 @@ import meta from '@/assets/meta.jpeg';
 import mistral from '@/assets/mistral.jpeg';
 import unknownAvatar from '@/assets/unknown.jpeg';
 import ollama from '@/assets/ollama.jpeg';
+import { autoCaptionService, type CaptionResult } from '@/services/autoCaptionService';
 
 interface ExtendedMessage extends ModelParameters {
   // Extend as needed
   modelId?: string;
-}
-
-interface ExtendedNode {
-  id: string;
-  title?: string;
-  messages: ExtendedMessage[];
-  streamingContent: string | null;
-  type: string;
-  branchMessageIndex: number | null;
-  x: number;
-  y: number;
-  // … plus any additional properties you need
 }
 
 interface BranchNodeProps {  // Use a dedicated interface
@@ -298,6 +404,8 @@ interface BranchNodeProps {  // Use a dedicated interface
   zoom: number;
   modelRegistry: Map<string, ModelInfo>;
   isSidePanelOpen: boolean;
+  isRightPanelOpen?: boolean;
+  supportsVision?: boolean;
 }
 
 const props = defineProps<BranchNodeProps>();
@@ -337,6 +445,13 @@ const wasRecentlyDragging = ref(false);
 const isSnapped = ref(false);
 const isTransitioningSnap = ref(false);
 const originalPosition = ref<{ x: number; y: number; left?: number; top?: number }>({ x: 0, y: 0 });
+const autoTTSEnabled = ref(false);
+
+// Compaction state
+const compactedSections = ref<CompactedSection[]>([]);
+const expandedSectionId = ref<string | null>(null);
+const summarySectionId = ref<string | null>(null);
+const currentTokenCount = ref(0);
 
 const canvasStore = useCanvasStore();
 const modelStore = useModelStore();
@@ -351,6 +466,29 @@ const themeColors = computed(() => {
   return themeStore.getThemeColors(currentTheme.value);
 });
 
+const isLightTheme = computed(() => {
+  const darkThemes = [
+    'dark', 'synthwave', 'retro', 'cyberpunk', 'halloween',
+    'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk',
+    'autumn', 'business', 'acid', 'night', 'coffee'
+  ];
+  return !darkThemes.includes(currentTheme.value);
+});
+
+const snappedBackgroundStyle = computed(() => {
+  // Use theme colors for background instead of plain white/black
+  const colors = themeColors.value;
+  
+  if (isLightTheme.value) {
+    // For light themes, use a very light tint of the primary color
+    const rgb = hexToRgb(colors.primary);
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`;
+  } else {
+    // For dark themes, use a dark tint of the primary color
+    const rgb = hexToRgb(colors.primary);
+    return `rgba(${Math.min(rgb.r, 60)}, ${Math.min(rgb.g, 60)}, ${Math.min(rgb.b, 60)}, 0.8)`;
+  }
+});
 // Calculate theme-based colors
 const baseColorSet = computed(() => {
   const colorIndex = Math.abs(Number(props.node.id)) % 3;
@@ -386,6 +524,19 @@ const avatarRef = ref<HTMLElement | null>(null);
 // --- Computed avatarRect for ModelParamsEditor ---
 const avatarRect = computed(() => avatarRef.value ? avatarRef.value.getBoundingClientRect() : null);
 
+// Get current model for params editor
+const currentModel = computed(() => {
+  // First try to get from lastModel if it exists
+  if (lastModel.value) return lastModel.value;
+  
+  // Otherwise, create a model from the selectedModel prop
+  if (props.selectedModel) {
+    return getModelInfo(props.selectedModel);
+  }
+  
+  return undefined;
+});
+
 // Add this computed property
 const uniqueModels = computed(() => {
   if (!props.node.messages) return [];
@@ -405,6 +556,279 @@ const uniqueModels = computed(() => {
 
 const isLoading = ref(false);
 let abortController: AbortController | null = null;
+
+// Media handling state
+const isMediaProcessing = ref(false);
+const isAutoCaptioning = ref(false);
+
+// Media computed properties
+const hasMediaContent = computed(() => !!props.node.mediaContent);
+const isImageMedia = computed(() => props.node.mediaContent?.mime_type?.startsWith('image/'));
+const isVideoMedia = computed(() => props.node.mediaContent?.mime_type?.startsWith('video/'));
+const mediaUrl = computed(() => {
+  if (!props.node.mediaContent) return null;
+  return props.node.mediaContent.previewUrl || `http://127.0.0.1:5050/media/${props.node.mediaContent.media_id}`;
+});
+
+const mediaProcessingStatus = computed(() => {
+  if (isAutoCaptioning.value) return 'Generating caption...';
+  if (isMediaProcessing.value) return 'Processing media...';
+  if (props.node.isProcessingMedia) return 'Processing...';
+  return 'Processing...';
+});
+
+// Token tracking computed properties
+const activeModel = computed(() => {
+  // Use the last model used in this branch if available
+  if (lastModel.value) return lastModel.value;
+  
+  // Otherwise fall back to the selected model for this branch
+  if (props.selectedModel) {
+    return getModelInfo(props.selectedModel);
+  }
+  
+  // Finally fall back to the global selected model or first unique model
+  return modelStore.selectedModel || uniqueModels.value[0] || null;
+});
+
+const tokenUsage = computed((): TokenUsage => {
+  return tokenTrackingService.getTokenUsage(
+    currentTokenCount.value,
+    activeModel.value,
+    compactedSections.value.length > 0
+  );
+});
+
+const hasCompactedSections = computed(() => compactedSections.value.length > 0);
+
+const displayMessages = computed((): ExtendedMessage[] => {
+  let baseMessages: ExtendedMessage[] = [];
+  
+  // If we're showing an expanded section, show those messages instead
+  if (expandedSectionId.value) {
+    const section = compactedSections.value.find(s => s.id === expandedSectionId.value);
+    baseMessages = section ? section.originalMessages : props.node.messages || [];
+  } else {
+    baseMessages = props.node.messages || [];
+  }
+  
+  // Add streaming content if present
+  return props.node.streamingContent
+    ? [
+      ...baseMessages,
+      {
+        role: 'assistant',
+        content: props.node.streamingContent,
+        contentParts: [{ type: 'text', content: props.node.streamingContent }],
+        isStreaming: true,
+        timestamp: new Date().toISOString()
+      } as ExtendedMessage
+    ]
+    : baseMessages;
+});
+
+// Media processing function
+const processMediaForNode = async (file: File) => {
+  try {
+    isMediaProcessing.value = true;
+    
+    // Create media content immediately for instant UI feedback
+    const mediaId = `media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const previewUrl = URL.createObjectURL(file);
+    
+    // Set media content immediately so thumbnail shows
+    canvasStore.updateNode(props.node.id, {
+      mediaContent: {
+        media_id: mediaId,
+        filename: file.name,
+        mime_type: file.type,
+        type: file.type.startsWith('image/') ? 'image' : 'video',
+        analysis: 'Processing...',
+        previewUrl
+      },
+      isProcessingMedia: true
+    });
+    
+    console.log('[BranchNode] Media content set immediately:', {
+      fileName: file.name,
+      fileType: file.type,
+      mediaId,
+      nodeId: props.node.id
+    });
+    
+    // Check if we should use auto-captioning for images
+    const settings = await autoCaptionService.getSettings();
+    const shouldAutoCaption = settings.enabled && 
+                              file.type.startsWith('image/') && 
+                              settings.model &&
+                              settings.model.trim() !== '';
+
+    // Use router service to determine the best approach for image handling
+    if (file.type.startsWith('image/')) {
+      console.log('[BranchNode] Using router service for image handling');
+      
+      const { routerService } = await import('@/services/routerService');
+      const routingResult = await routerService.routeRequest({
+        message: 'Analyze this uploaded image',
+        hasImages: true
+      });
+      
+      console.log('[BranchNode] Router result:', routingResult);
+      
+      // If no vision model configured, show agent configurator
+      if (!routingResult.model) {
+        console.log('[BranchNode] No vision agent configured, showing configurator');
+        const { agentService } = await import('@/services/agentService');
+        await agentService.showAgentConfigurator('agents');
+        
+        // Update node with message about configuration needed
+        canvasStore.updateNode(props.node.id, {
+          mediaContent: {
+            ...props.node.mediaContent,
+            analysis: 'Image uploaded. Configure a vision agent in the settings panel to enable automatic captioning.'
+          },
+          messages: [
+            ...(props.node.messages || []),
+            {
+              role: 'assistant',
+              content: 'I\'ve uploaded your image, but no vision agent is configured for automatic analysis. Please set up a vision agent in the settings panel (gear icon) to enable automatic image captioning.',
+              timestamp: new Date().toISOString()
+            }
+          ],
+          isProcessingMedia: false
+        });
+        return;
+      }
+      
+      // Update auto-caption settings to use router-selected model
+      const currentSettings = await autoCaptionService.getSettings();
+      const updatedSettings = {
+        ...currentSettings,
+        enabled: true,
+        model: routingResult.model.name || routingResult.model.id
+      };
+      autoCaptionService.saveSettings(updatedSettings);
+      
+      console.log('[BranchNode] Using router-selected vision model:', routingResult.model.name);
+    }
+    
+    if (shouldAutoCaption) {
+      console.log('[BranchNode] Using auto-captioning service');
+      isAutoCaptioning.value = true;
+      
+      // Generate caption
+      const result: CaptionResult = await autoCaptionService.captionFile(file);
+      
+      if (result.success && result.caption) {
+        // Update with successful caption
+        canvasStore.updateNode(props.node.id, {
+          mediaContent: {
+            ...props.node.mediaContent,
+            analysis: result.caption
+          },
+          messages: [
+            ...(props.node.messages || []),
+            {
+              role: 'assistant',
+              content: result.caption,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          isProcessingMedia: false
+        });
+        
+        console.log(`[BranchNode] Auto-caption generated in ${result.responseTime}ms`);
+      } else {
+        // Handle caption failure
+        console.error('[BranchNode] Auto-caption failed:', result.error);
+        
+        canvasStore.updateNode(props.node.id, {
+          mediaContent: {
+            ...props.node.mediaContent,
+            analysis: 'Caption generation failed'
+          },
+          messages: [
+            ...(props.node.messages || []),
+            {
+              role: 'assistant',
+              content: `Image uploaded successfully, but automatic captioning failed: ${result.error}. You can still chat about this image.`,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          isProcessingMedia: false
+        });
+      }
+    } else {
+      // No auto-captioning, just mark as ready
+      canvasStore.updateNode(props.node.id, {
+        mediaContent: {
+          ...props.node.mediaContent,
+          analysis: 'Media uploaded successfully'
+        },
+        isProcessingMedia: false
+      });
+    }
+    
+  } catch (error) {
+    console.error('[BranchNode] Media processing error:', error);
+    
+    canvasStore.updateNode(props.node.id, {
+      mediaContent: {
+        ...props.node.mediaContent,
+        analysis: `Processing failed: ${error.message}`
+      },
+      isProcessingMedia: false
+    });
+  } finally {
+    isMediaProcessing.value = false;
+    isAutoCaptioning.value = false;
+  }
+};
+
+// Regenerate caption function
+const regenerateCaption = async () => {
+  if (!props.node.mediaContent || !isImageMedia.value) return;
+  
+  isAutoCaptioning.value = true;
+  
+  try {
+    let result: CaptionResult;
+    
+    if (props.node.mediaContent.previewUrl) {
+      // Use preview URL if available
+      result = await autoCaptionService.captionUrl(props.node.mediaContent.previewUrl);
+    } else {
+      // Use media URL
+      const url = `http://127.0.0.1:5050/media/${props.node.mediaContent.media_id}`;
+      result = await autoCaptionService.captionUrl(url);
+    }
+    
+    if (result.success && result.caption) {
+      // Update analysis
+      canvasStore.updateNode(props.node.id, {
+        mediaContent: {
+          ...props.node.mediaContent,
+          analysis: result.caption
+        },
+        messages: [
+          ...(props.node.messages || []),
+          {
+            role: 'assistant',
+            content: `[Updated caption] ${result.caption}`,
+            timestamp: new Date().toISOString()
+          }
+        ]
+      });
+    } else {
+      console.error('Caption regeneration failed:', result.error);
+    }
+    
+  } catch (error) {
+    console.error('Caption regeneration error:', error);
+  } finally {
+    isAutoCaptioning.value = false;
+  }
+};
 
 // Theme-aware card styling
 const computedCardStyle = computed(() => {
@@ -534,8 +958,9 @@ const nodeThemeStyle = computed(() => {
 
   // Force light text for specific dark themes regardless of contrast calculation
   const forceLightTextThemes = [
-    'cyberpunk', 'dracula', 'cmyk', 'acid', 'night',
-    'synthwave', 'retro', 'black', 'luxury'
+    'dark', 'synthwave', 'retro', 'cyberpunk', 'halloween',
+    'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk',
+    'autumn', 'business', 'acid', 'night', 'coffee'
   ];
 
   const forceLightText = forceLightTextThemes.includes(currentTheme.value);
@@ -544,6 +969,23 @@ const nodeThemeStyle = computed(() => {
   const textColor = forceLightText
     ? 'rgba(255, 255, 255, 0.95)'
     : baseColorSet.value.contrastText;
+
+  // Use theme-appropriate background colors instead of generic black/white
+  const colors = themeColors.value;
+  const primaryRgb = hexToRgb(colors.primary);
+  const secondaryRgb = hexToRgb(colors.secondary);
+  
+  let baseBgColor, messageBgColor;
+  
+  if (!isLightTheme.value) {
+    // Dark themes: use very dark tints of theme colors
+    baseBgColor = `rgba(${Math.min(primaryRgb.r * 0.3, 40)}, ${Math.min(primaryRgb.g * 0.3, 40)}, ${Math.min(primaryRgb.b * 0.3, 40)}, 0.85)`;
+    messageBgColor = `rgba(${Math.min(secondaryRgb.r * 0.2, 30)}, ${Math.min(secondaryRgb.g * 0.2, 30)}, ${Math.min(secondaryRgb.b * 0.2, 30)}, 0.7)`;
+  } else {
+    // Light themes: use very light tints of theme colors
+    baseBgColor = `rgba(${Math.max(255 - (255 - primaryRgb.r) * 0.1, 240)}, ${Math.max(255 - (255 - primaryRgb.g) * 0.1, 240)}, ${Math.max(255 - (255 - primaryRgb.b) * 0.1, 240)}, 0.9)`;
+    messageBgColor = `rgba(${Math.max(255 - (255 - secondaryRgb.r) * 0.05, 245)}, ${Math.max(255 - (255 - secondaryRgb.g) * 0.05, 245)}, ${Math.max(255 - (255 - secondaryRgb.b) * 0.05, 245)}, 0.8)`;
+  }
 
   return {
     '--node-color': baseColorSet.value.base,
@@ -554,8 +996,8 @@ const nodeThemeStyle = computed(() => {
     '--node-glow-color': `${adjustColorOpacity(baseColorSet.value.base, 0.4)}`,
     '--node-border-color': `${adjustColorOpacity(baseColorSet.value.light, 0.6)}`,
     '--node-shadow-color': `${adjustColorOpacity(baseColorSet.value.dark, 0.5)}`,
-    '--base-bg-color': isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.7)',
-    '--message-bg-color': isDark ? 'rgba(30, 30, 30, 0.6)' : 'rgba(245, 245, 245, 0.6)'
+    '--base-bg-color': baseBgColor,
+    '--message-bg-color': messageBgColor
   };
 });
 
@@ -573,7 +1015,8 @@ const calculateSnappedPosition = () => {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const sidePanelWidth = props.isSidePanelOpen ? vw * 0.4 : 0;
-  const availableWidth = vw - sidePanelWidth;
+  const rightPanelWidth = props.isRightPanelOpen ? vw * 0.4 : 0;
+  const availableWidth = vw - sidePanelWidth - rightPanelWidth;
 
   // Get the current node's position and dimensions
   const nodeRect = nodeElement.value.getBoundingClientRect();
@@ -608,7 +1051,8 @@ const calculateAndUpdateSnappedPosition = () => {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const sidePanelWidth = props.isSidePanelOpen ? vw * 0.4 : 0;
-  const availableWidth = vw - sidePanelWidth;
+  const rightPanelWidth = props.isRightPanelOpen ? vw * 0.4 : 0;
+  const availableWidth = vw - sidePanelWidth - rightPanelWidth;
   const availableHeight = vh;
 
   nextTick(() => {
@@ -629,21 +1073,6 @@ const calculateAndUpdateSnappedPosition = () => {
     }
   });
 };
-
-const displayMessages = computed((): ExtendedMessage[] => {
-  if (!props.node.messages) return [];
-  return props.node.streamingContent
-    ? [
-      ...props.node.messages,
-      {
-        role: 'assistant',
-        content: props.node.streamingContent,
-        isStreaming: true,
-        timestamp: new Date().toISOString()
-      }
-    ]
-    : props.node.messages;
-});
 
 const providerAvatars: Record<string, string> = {
   Anthropic: anthropic,
@@ -712,12 +1141,20 @@ const toggleSnap = async () => {
     if (!isSnapped.value) {
       console.log('Snapping node:', props.node.id);
       // Store original position before snapping
+      const currentRect = nodeElement.value?.getBoundingClientRect();
       originalPosition.value = {
         x: props.node.x,
         y: props.node.y,
-        left: nodeElement.value?.getBoundingClientRect().left || 0,
-        top: nodeElement.value?.getBoundingClientRect().top || 0
+        left: currentRect?.left || 0,
+        top: currentRect?.top || 0
       };
+
+      // First, set the node to its current screen position with fixed positioning
+      if (nodeElement.value && currentRect) {
+        nodeElement.value.style.position = 'fixed';
+        nodeElement.value.style.transform = `translate3d(${currentRect.left}px, ${currentRect.top}px, 0) scale(${props.zoom})`;
+        nodeElement.value.style.transformOrigin = '0 0';
+      }
 
       // Enable transition and snap
       isTransitioningSnap.value = true;
@@ -885,6 +1322,59 @@ const handleMouseUp = () => {
   }
 };
 
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  console.log('[BranchNode] DragOver event triggered, supportsVision:', props.supportsVision);
+  if (props.supportsVision) {
+    e.dataTransfer!.dropEffect = 'copy';
+  }
+};
+
+const handleDrop = async (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  console.log('[BranchNode] Drop event triggered, supportsVision:', props.supportsVision);
+  
+  if (!props.supportsVision) {
+    console.log('[BranchNode] Vision not supported, skipping drop handling');
+    return;
+  }
+  
+  try {
+    const files = Array.from(e.dataTransfer?.files || []);
+    const mediaFiles = files.filter(file => file.type.startsWith('image/') || file.type.startsWith('video/'));
+    
+    if (mediaFiles.length > 0) {
+      console.log('[BranchNode] Handling media drop on existing node:', props.node.id);
+      
+      // Take the first media file and set it as the node's media content
+      const file = mediaFiles[0];
+      await processMediaForNode(file);
+    }
+  } catch (error) {
+    console.error('Error handling dropped files:', error);
+  }
+};
+
+// Helper function to convert file to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to read file as base64'));
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+};
+
 const scrollToTop = () => {
   if (messagesContainerRef.value) {
     messagesContainerRef.value.scrollTo({
@@ -894,12 +1384,17 @@ const scrollToTop = () => {
   }
 };
 
-const openModelParams = () => {
+const openModelParams = (model?: ModelInfo) => {
+  if (model) {
+    lastModel.value = model;
+  }
   showParamsEditor.value = true;
 };
 
 const updateModelParams = (params: ModelParameters) => {
-  canvasStore.updateModelParams(props.node.id, params);
+  if (currentModel.value) {
+    canvasStore.updateModelParams(props.node.id, currentModel.value.id, params);
+  }
   showParamsEditor.value = false;
 };
 
@@ -978,11 +1473,58 @@ const handleMessageSend = async (messageData) => {
       messageText = messageData;
     }
 
-    const modelInfo = {
+    // 🚀 Router Service Integration - Intelligent Model Selection
+    let modelInfo = {
       id: props.selectedModel,
       name: props.selectedModel,
       source: props.modelType
     };
+
+    try {
+      // Import router service
+      const { routerService } = await import('@/services/routerService');
+      
+      // Prepare routing request
+      const routingRequest = {
+        message: messageText,
+        hasImages: pasteEntries?.some(entry => entry.type === 'image') || false,
+        context: props.node.messages?.slice(-3).map(m => m.content).join(' ') || ''
+      };
+
+      console.log('[BranchNode] Routing request:', {
+        message: messageText.substring(0, 100) + '...',
+        hasImages: routingRequest.hasImages,
+        contextLength: routingRequest.context.length
+      });
+
+      // Get routing decision
+      const routingResult = await routerService.routeRequest(routingRequest);
+      
+      console.log('[BranchNode] Routing result:', {
+        category: routingResult.category,
+        confidence: routingResult.confidence,
+        model: routingResult.model?.name,
+        fallbackUsed: routingResult.fallbackUsed,
+        responseTime: routingResult.responseTime
+      });
+
+      // Use routed model if available, otherwise fallback to selected model
+      if (routingResult.model) {
+        modelInfo = {
+          id: routingResult.model.id,
+          name: routingResult.model.name,
+          source: routingResult.model.source
+        };
+        
+        console.log(`[BranchNode] 🎯 Routed to ${routingResult.category} agent: ${routingResult.model.name} (${routingResult.responseTime}ms)`);
+      } else {
+        console.log(`[BranchNode] ⚠️ No agent configured for ${routingResult.category}, using selected model: ${props.selectedModel}`);
+      }
+
+    } catch (routerError) {
+      console.error('[BranchNode] Router service failed, using selected model:', routerError);
+      // Continue with originally selected model as fallback
+    }
 
     await canvasStore.sendMessage(
       props.node.id,
@@ -1118,6 +1660,13 @@ const toggleExpanded = () => {
   emit('expansion-change', { nodeId: props.node.id, isExpanded: isExpanded.value });
 };
 
+const toggleAutoTTS = () => {
+  autoTTSEnabled.value = !autoTTSEnabled.value;
+  console.log('BranchNode: Auto TTS toggled to:', autoTTSEnabled.value, 'for node:', props.node.id);
+  // Store the preference in localStorage for persistence
+  localStorage.setItem(`autoTTS_${props.node.id}`, autoTTSEnabled.value.toString());
+};
+
 const expandMessage = (index: number) => {
   const newSet = new Set(expandedMessages.value);
   if (newSet.has(index)) {
@@ -1186,6 +1735,12 @@ watch(() => props.isSidePanelOpen, () => {
   }
 }, { immediate: true });
 
+watch(() => props.isRightPanelOpen, () => {
+  if (isSnapped.value) {
+    calculateAndUpdateSnappedPosition();
+  }
+}, { immediate: true });
+
 watch(() => props.node.streamingContent, (newVal) => {
   if (newVal) {
     if (fadeTimeout.value) {
@@ -1199,9 +1754,103 @@ watch(() => props.node.streamingContent, (newVal) => {
   }
 });
 
+// Compaction methods
+const handleAutoCompact = async () => {
+  if (!props.node.messages || props.node.messages.length < 5) return;
+  
+  // Take the first half of messages for compaction
+  const splitIndex = Math.floor(props.node.messages.length / 2);
+  const messagesToCompact = props.node.messages.slice(0, splitIndex);
+  
+  try {
+    const summary = await tokenTrackingService.createCompactSummary(messagesToCompact);
+    const tokenCount = await tokenTrackingService.countTokens(
+      tokenTrackingService.messagesToText(messagesToCompact)
+    );
+    
+    const compactedSection: CompactedSection = {
+      id: `compact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      originalMessages: messagesToCompact,
+      summary,
+      tokenCount,
+      createdAt: new Date().toISOString()
+    };
+    
+    compactedSections.value.push(compactedSection);
+    
+    // Remove compacted messages from the node
+    canvasStore.updateNode(props.node.id, {
+      messages: props.node.messages.slice(splitIndex)
+    });
+    
+    // Clear token cache for this branch
+    tokenTrackingService.clearBranchCache(props.node.id);
+  } catch (error) {
+    console.error('Error creating compacted section:', error);
+  }
+};
+
+const handleExpandSection = (sectionId: string) => {
+  expandedSectionId.value = expandedSectionId.value === sectionId ? null : sectionId;
+  summarySectionId.value = null; // Clear summary view
+};
+
+const handleShowSummary = (sectionId: string) => {
+  summarySectionId.value = summarySectionId.value === sectionId ? null : sectionId;
+  expandedSectionId.value = null; // Clear expanded view
+};
+
+const handleRemoveCompaction = (sectionId: string) => {
+  const sectionIndex = compactedSections.value.findIndex(s => s.id === sectionId);
+  if (sectionIndex === -1) return;
+  
+  const section = compactedSections.value[sectionIndex];
+  
+  // Restore messages to the node
+  const currentMessages = props.node.messages || [];
+  const restoredMessages = [...section.originalMessages, ...currentMessages];
+  
+  canvasStore.updateNode(props.node.id, {
+    messages: restoredMessages
+  });
+  
+  // Remove the compacted section
+  compactedSections.value.splice(sectionIndex, 1);
+  
+  // Clear any active views
+  if (expandedSectionId.value === sectionId) {
+    expandedSectionId.value = null;
+  }
+  if (summarySectionId.value === sectionId) {
+    summarySectionId.value = null;
+  }
+  
+  // Clear token cache
+  tokenTrackingService.clearBranchCache(props.node.id);
+};
+
+// Watch for token count updates
+watch(() => getAllMessagesText.value, async (newText) => {
+  try {
+    currentTokenCount.value = await tokenTrackingService.countBranchTokens(
+      props.node.messages || [],
+      '', // No current input from here
+      props.node.id
+    );
+  } catch (error) {
+    console.error('Error updating token count:', error);
+  }
+}, { immediate: true });
+
 onMounted(() => {
   if (!props.node.title) {
     isEditing.value = true;
+  }
+
+  // Restore autoTTS preference from localStorage
+  const savedAutoTTS = localStorage.getItem(`autoTTS_${props.node.id}`);
+  if (savedAutoTTS !== null) {
+    autoTTSEnabled.value = savedAutoTTS === 'true';
   }
 
   emitter.on('streaming-complete', (data) => {
@@ -1285,30 +1934,233 @@ onBeforeUnmount(() => {
   }
 });
 </script>
-
 <style scoped>
-/* Branch node base variables */
+/* COMPLETE BRANCH NODE STYLES - Fixed theme contrasting and consistent snapped backgrounds */
+
+/* FIXED: Proper theme detection for text contrast */
 .branch-node {
   --node-color: var(--p);
-  /* Default to primary color if custom variables aren't set */
   --node-color-light: var(--pf, var(--p));
-  /* Fallback to primary if primary-focus not available */
   --node-color-dark: var(--pc, var(--p));
-  /* Fallback to primary if primary-content not available */
   --node-color-transparent: rgba(var(--p), 0.1);
-  /* Semi-transparent primary */
   --node-text-color: var(--pc, #000);
-  /* Default text color */
   --node-glow-color: rgba(var(--p), 0.4);
-  /* Glow effect */
   --node-border-color: rgba(var(--p), 0.6);
-  /* Border color */
   --node-shadow-color: rgba(var(--p), 0.5);
-  /* Shadow color */
   --base-bg-color: rgba(255, 255, 255, 0.7);
-  /* Default base background */
   --message-bg-color: rgba(245, 245, 245, 0.6);
-  /* Default message background */
+  --snapped-backdrop: rgba(0, 0, 0, 0.4);
+  /* Default backdrop */
+}
+
+/* FIXED: Dark themes get light text and dark backdrops */
+.theme-dark,
+.theme-synthwave,
+.theme-cyberpunk,
+.theme-dracula,
+.theme-night,
+.theme-black,
+.theme-luxury,
+.theme-forest,
+.theme-coffee {
+  --node-text-color: rgba(255, 255, 255, 0.95) !important;
+  --base-bg-color: rgba(0, 0, 0, 0.7);
+  --message-bg-color: rgba(30, 30, 30, 0.6);
+}
+
+/* FIXED: Light themes get dark text and light backdrops */
+.theme-light,
+.theme-corporate,
+.theme-cupcake,
+.theme-bumblebee,
+.theme-emerald,
+.theme-retro,
+.theme-valentine,
+.theme-garden,
+.theme-lofi,
+.theme-pastel,
+.theme-fantasy,
+.theme-wireframe,
+.theme-autumn,
+.theme-acid,
+.theme-lemonade,
+.theme-winter {
+  --node-text-color: rgba(0, 0, 0, 0.85) !important;
+  --base-bg-color: rgba(255, 255, 255, 0.8);
+  --message-bg-color: rgba(245, 245, 245, 0.7);
+}
+
+/* FIXED: Mixed themes */
+.theme-cmyk {
+  --node-text-color: rgba(0, 0, 0, 0.85) !important;
+  --base-bg-color: rgba(255, 255, 255, 0.8);
+}
+
+/* THEME-SPECIFIC SNAPPED BACKDROPS - Match canvas backgrounds */
+.theme-light {
+  --snapped-backdrop: rgba(248, 250, 252, 0.8);
+}
+
+/* Light gray */
+.theme-dark {
+  --snapped-backdrop: rgba(15, 23, 42, 0.8);
+}
+
+/* Dark slate */
+.theme-cupcake {
+  --snapped-backdrop: rgba(253, 242, 248, 0.8);
+}
+
+/* Pink tint */
+.theme-bumblebee {
+  --snapped-backdrop: rgba(255, 251, 235, 0.8);
+}
+
+/* Warm yellow */
+.theme-emerald {
+  --snapped-backdrop: rgba(236, 253, 245, 0.8);
+}
+
+/* Green tint */
+.theme-corporate {
+  --snapped-backdrop: rgba(248, 250, 252, 0.8);
+}
+
+/* Clean gray */
+.theme-synthwave {
+  --snapped-backdrop: rgba(20, 5, 40, 0.8);
+}
+
+/* Dark purple */
+.theme-retro {
+  --snapped-backdrop: rgba(255, 248, 220, 0.8);
+}
+
+/* Deep cyberpunk purple */
+.theme-cyberpunk {
+  --snapped-backdrop: rgba(20, 5, 30, 0.9);
+}
+
+/* Dark yellow base */
+.theme-valentine {
+  --snapped-backdrop: rgba(255, 240, 245, 0.8);
+}
+
+/* Dark purple/blue Halloween theme */
+.theme-halloween {
+  --snapped-backdrop: rgba(15, 10, 25, 0.95);
+}
+
+/* Dark orange */
+.theme-garden {
+  --snapped-backdrop: rgba(240, 253, 244, 0.8);
+}
+
+/* Light green */
+.theme-forest {
+  --snapped-backdrop: rgba(10, 25, 15, 0.8);
+}
+
+/* Dark green */
+.theme-aqua {
+  --snapped-backdrop: rgba(5, 25, 35, 0.8);
+}
+
+/* Dark teal */
+.theme-lofi {
+  --snapped-backdrop: rgba(250, 248, 246, 0.8);
+}
+
+/* Warm off-white */
+.theme-pastel {
+  --snapped-backdrop: rgba(252, 251, 255, 0.8);
+}
+
+/* Very light purple */
+.theme-fantasy {
+  --snapped-backdrop: rgba(255, 240, 255, 0.8);
+}
+
+/* Light magenta */
+.theme-wireframe {
+  --snapped-backdrop: rgba(255, 255, 255, 0.9);
+}
+
+/* Pure white */
+.theme-black {
+  --snapped-backdrop: rgba(0, 0, 0, 0.8);
+}
+
+/* Pure black */
+.theme-luxury {
+  --snapped-backdrop: rgba(15, 15, 15, 0.8);
+}
+
+/* Rich black */
+.theme-dracula {
+  --snapped-backdrop: rgba(40, 42, 54, 0.8);
+}
+
+/* Dracula background */
+.theme-cmyk {
+  --snapped-backdrop: rgba(245, 245, 255, 0.8);
+}
+
+/* Light blue tint */
+.theme-autumn {
+  --snapped-backdrop: rgba(255, 248, 235, 0.8);
+}
+
+/* Warm cream */
+.theme-business {
+  --snapped-backdrop: rgba(25, 35, 45, 0.8);
+}
+
+/* Dark with neon glow */
+.theme-acid {
+  --snapped-backdrop: rgba(20, 20, 20, 0.9);
+}
+
+/* Bright yellow tint */
+.theme-lemonade {
+  --snapped-backdrop: rgba(255, 255, 240, 0.8);
+}
+
+/* Light yellow */
+.theme-night {
+  --snapped-backdrop: rgba(15, 20, 35, 0.8);
+}
+
+/* Deep blue */
+.theme-coffee {
+  --snapped-backdrop: rgba(25, 15, 10, 0.8);
+}
+
+/* Dark brown */
+.theme-winter {
+  --snapped-backdrop: rgba(240, 248, 255, 0.8);
+}
+
+/* Ice blue */
+
+/* Enhanced glassmorphism variables for better contrast */
+:root {
+  /* User message glassmorphism - warm contrasting colors */
+  --user-glass-primary: rgba(99, 102, 241, 0.15);
+  /* Indigo */
+  --user-glass-secondary: rgba(79, 70, 229, 0.25);
+  /* Darker indigo */
+  --user-border-color: rgba(99, 102, 241, 0.3);
+  --user-accent-color: rgb(99, 102, 241);
+  --user-shadow-color: rgba(99, 102, 241, 0.2);
+  --user-highlight-color: rgba(165, 180, 252, 0.4);
+
+  /* AI message glassmorphism - uses node theme color */
+  --ai-glass-primary: var(--node-color-transparent);
+  --ai-glass-secondary: rgba(var(--node-color), 0.25);
+  --ai-border-color: rgba(var(--node-color), 0.3);
+  --ai-shadow-color: rgba(var(--node-color), 0.2);
+  --ai-highlight-color: rgba(var(--node-color), 0.4);
 }
 
 /* Base container for the node */
@@ -1323,7 +2175,7 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-/* Enhanced node card styling */
+/* Enhanced node card styling with better theme support */
 .node-card {
   backdrop-filter: blur(12px);
   background-color: var(--base-bg-color) !important;
@@ -1334,6 +2186,8 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px var(--node-shadow-color);
   overflow: visible !important;
   border-radius: 0.75rem;
+  color: var(--node-text-color);
+  /* Ensure proper text color inheritance */
 }
 
 .node-card:hover {
@@ -1360,22 +2214,13 @@ onBeforeUnmount(() => {
   border-radius: inherit;
   background: linear-gradient(90deg,
       var(--er, #ff1493) 0%,
-      /* Error color */
       var(--a, #ff6347) 15%,
-      /* Accent color */
       var(--wa, #ffd700) 30%,
-      /* Warning color */
       var(--su, #32cd32) 45%,
-      /* Success color */
       var(--in, #4169e1) 60%,
-      /* Info color */
       var(--p, #9400d3) 75%,
-      /* Primary color */
       var(--er, #ff1493) 90%,
-      /* Back to error */
-      var(--a, #ff6347) 100%
-      /* Back to accent */
-    );
+      var(--a, #ff6347) 100%);
   background-size: 200% 100%;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
@@ -1417,10 +2262,32 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Ensure inner content appears above overlays */
+/* Ensure inner content appears above overlays and inherits proper colors */
 .streaming .node-card>* {
   position: relative;
   z-index: 1;
+  color: inherit;
+}
+
+/* FIXED: Proper text color inheritance for all child elements */
+.node-card * {
+  color: inherit;
+}
+
+/* FIXED: Specific overrides for elements that might not inherit properly */
+.node-card .text-lg,
+.node-card .text-sm,
+.node-card .text-xs,
+.node-card .badge,
+.node-card .text-base-content,
+.node-card .text-base-content\/60 {
+  color: var(--node-text-color) !important;
+}
+
+/* Semi-transparent text */
+.node-card .text-base-content\/60 {
+  color: var(--node-text-color) !important;
+  opacity: 0.6;
 }
 
 /* Badge animation */
@@ -1440,137 +2307,162 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Message alignment styles */
-.user-message {
-  margin-left: auto !important;
-  margin-right: 0 !important;
-  /* Remove right margin to attach to the edge */
-  max-width: 85% !important;
-  justify-content: flex-end !important;
-  padding-left: 2rem !important;
-  padding-right: 1rem !important;
-  align-self: flex-end !important;
-  /* Ensure alignment to the right */
-  float: right !important;
-  /* Force right alignment */
-  clear: both !important;
-  /* Ensure proper stacking */
-  text-align: right !important;
-  /* Align text to the right */
-}
-
+/* UPDATED: Centralized Message alignment styles like Claude's interface */
+.user-message,
 .ai-message {
-  margin-right: auto !important;
-  margin-left: 0 !important;
-  /* Remove left margin to attach to the edge */
-  max-width: 85% !important;
+  margin: 0 auto 1rem auto !important;
+  /* Center both message types */
+  max-width: 90% !important;
+  /* Slightly wider for better readability */
   justify-content: flex-start !important;
-  padding-left: 1rem !important;
-  padding-right: 2rem !important;
-  align-self: flex-start !important;
-  /* Ensure alignment to the left */
-  float: left !important;
-  /* Force left alignment */
+  /* Consistent alignment */
+  padding: 1rem 1.5rem !important;
+  /* Consistent padding */
+  align-self: center !important;
+  /* Center alignment */
+  float: none !important;
+  /* Remove floating */
   clear: both !important;
   /* Ensure proper stacking */
   text-align: left !important;
-  /* Align text to the left */
+  /* Consistent text alignment */
+  display: block !important;
+  /* Ensure proper block display */
+  position: relative;
+  backdrop-filter: blur(12px) !important;
+  /* Glassmorphism effect */
+  -webkit-backdrop-filter: blur(12px) !important;
+  /* Safari support */
+  color: var(--node-text-color) !important;
+  /* Ensure message text uses theme-appropriate color */
 }
 
-/* Style for user message bubbles */
-.user-message::before {
-  content: '';
-  position: absolute;
-  overflow: auto;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: var(--message-bg-color);
-  border-radius: 1.25rem 0 0 1.25rem !important;
-  /* Flat on the right side */
-  z-index: -1;
-  opacity: 0.7;
-}
-
-/* Style for AI message bubbles */
-.ai-message::before {
-  content: '';
-  position: absolute;
-  overflow: auto;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: var(--node-color-transparent);
-  border-radius: 0 1.25rem 1.25rem 0 !important;
-  /* Flat on the left side */
-  z-index: -1;
-  opacity: 0.9;
-}
-
-/* Custom borders for message types */
+/* User message glassmorphism - Contrasting warm tone */
 .user-message {
-  border-left: none !important;
-  border-right: 4px solid var(--node-color) !important;
+  background: linear-gradient(135deg,
+      var(--user-glass-primary),
+      var(--user-glass-secondary)) !important;
+  border: 1px solid var(--user-border-color) !important;
+  border-left: 3px solid var(--user-accent-color) !important;
+  box-shadow:
+    0 4px 16px var(--user-shadow-color),
+    inset 0 1px 0 var(--user-highlight-color) !important;
 }
 
+/* AI message glassmorphism - Node theme color */
 .ai-message {
-  border-left: 4px solid var(--node-color) !important;
-  border-right: none !important;
+  background: linear-gradient(135deg,
+      var(--ai-glass-primary),
+      var(--ai-glass-secondary)) !important;
+  border: 1px solid var(--ai-border-color) !important;
+  border-left: 3px solid var(--node-color) !important;
+  box-shadow:
+    0 4px 16px var(--ai-shadow-color),
+    inset 0 1px 0 var(--ai-highlight-color) !important;
 }
 
-/* Add more distinct coloring for user messages */
+/* Remove the old pseudo-elements since we're using direct backgrounds */
+.user-message::before,
+.ai-message::before {
+  display: none;
+}
+
+/* Updated message text styling */
+.message-text {
+  color: var(--node-text-color);
+  text-align: left !important;
+  /* Consistent left alignment */
+}
+
 .user-message .message-text {
   font-weight: 500;
-  text-align: right !important;
+  /* Keep slightly bolder for user messages */
+  text-align: left !important;
+  /* Change from right to left */
 }
 
 .user-message .badge {
-  margin-left: auto !important;
+  margin-left: 0 !important;
+  /* Reset margin */
 }
 
-/* Message container styling */
+/* UPDATED: Message container styling for centralized layout */
 .message-container {
   position: relative;
   transition: all 0.2s ease-in-out;
-  margin: 0 0 1rem 0 !important;
+  margin: 0 auto 1rem auto !important;
+  /* Center the container */
   padding: 1rem !important;
   overflow: visible;
-  border-radius: 0.5rem;
-  width: 60% !important;
+  border-radius: 0.75rem;
+  width: 95% !important;
+  /* Consistent width */
   display: block !important;
-  /* Change to block for proper floating */
-  /* Contain floated children */
+  max-width: none !important;
+  /* Remove max-width restriction */
+  color: var(--node-text-color) !important;
+  /* Ensure container text uses theme color */
 }
 
-.message-text {
-  color: var(--node-text-color);
+/* Enhanced hover effects for the new centered layout */
+.message-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
-.message-container::after {
-  content: "";
-  display: table;
-  clear: both;
+.user-message:hover {
+  background: linear-gradient(135deg,
+      var(--user-glass-secondary),
+      var(--user-glass-primary)) !important;
+  border-color: var(--user-accent-color) !important;
+  box-shadow:
+    0 6px 20px var(--user-shadow-color),
+    inset 0 1px 0 var(--user-highlight-color),
+    0 0 0 1px var(--user-border-color) !important;
 }
 
-/* Branch button effects */
-.branch-btn {
-  transform: translateX(20px);
+.ai-message:hover {
+  background: linear-gradient(135deg,
+      var(--ai-glass-secondary),
+      var(--ai-glass-primary)) !important;
+  border-color: var(--node-color) !important;
+  box-shadow:
+    0 6px 20px var(--ai-shadow-color),
+    inset 0 1px 0 var(--ai-highlight-color),
+    0 0 0 1px var(--ai-border-color) !important;
+}
+
+/* UPDATED: Branch button positioning for centered layout */
+.message-container .branch-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   opacity: 0;
   transition: all 0.2s ease-in-out;
+  z-index: 20;
   background-color: var(--base-bg-color);
   color: var(--node-color) !important;
+  border-radius: 50%;
+  padding: 0.5rem;
+}
+
+.user-message .branch-btn {
+  right: -3rem;
+  /* Position to the right of the message */
+}
+
+.ai-message .branch-btn {
+  left: -3rem;
+  /* Position to the left of the message */
 }
 
 .message-container:hover .branch-btn {
-  transform: translateX(0);
   opacity: 1;
 }
 
 .branch-btn:hover {
   background-color: var(--node-color-transparent) !important;
-  transform: scale(1.1);
+  transform: translateY(-50%) scale(1.1);
 }
 
 /* Message action buttons */
@@ -1595,7 +2487,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* Enhanced snapped view styling */
+/* Enhanced snapped view styling with THEME-CONSISTENT backgrounds */
 .branch-node.snapped {
   position: fixed !important;
   top: 0;
@@ -1613,7 +2505,23 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   transition: width 0.5s ease-out, transform 0.3s ease-out;
   will-change: transform;
-  backdrop-filter: blur(100px);
+}
+
+/* FIXED: Theme-consistent backdrop that matches canvas background */
+.branch-node.snapped::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--snapped-backdrop);
+  /* Use theme-specific backdrop */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: -1;
+  pointer-events: none;
+  transition: opacity 0.3s ease-out;
 }
 
 /* Adjust width based on side panel */
@@ -1623,6 +2531,16 @@ onBeforeUnmount(() => {
 
 .branch-node.snapped[data-side-panel-open="false"] {
   width: 100vw;
+}
+
+/* Adjust width based on right panel */
+.branch-node.snapped[data-right-panel-open="true"] {
+  width: 60vw;
+}
+
+/* Combined panel states - both panels open */
+.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="true"] {
+  width: 20vw;
 }
 
 /* Snapped card styling */
@@ -1640,6 +2558,8 @@ onBeforeUnmount(() => {
   display: flex;
   box-shadow: 0 8px 32px var(--node-shadow-color);
   border-radius: 1.25rem;
+  color: var(--node-text-color) !important;
+  /* Ensure snapped card uses proper text color */
 }
 
 /* Ensure the content area fills available space */
@@ -1737,12 +2657,11 @@ onBeforeUnmount(() => {
   margin-top: auto;
   padding: 1rem;
   border-top: 1px solid var(--node-border-color);
-  background: var(--base-bg-color);
 }
 
 /* Collapsed preview styling */
 .collapsed-preview {
-  color: var(--node-text-color);
+  color: var(--node-text-color) !important;
   background-color: var(--node-color-transparent);
   padding: 0.75rem;
   border-radius: 0.5rem;
@@ -1774,22 +2693,99 @@ onBeforeUnmount(() => {
   transition: all 0.3s ease;
 }
 
-/* Theme-specific customizations */
+/* Theme-specific glassmorphism customizations */
+.theme-cyberpunk .user-message {
+  background: linear-gradient(135deg,
+      rgba(255, 117, 152, 0.3),
+      rgba(247, 213, 29, 0.2)) !important;
+  border-color: rgba(255, 117, 152, 0.7) !important;
+  box-shadow:
+    0 4px 16px rgba(255, 117, 152, 0.5),
+    inset 0 1px 0 rgba(247, 213, 29, 0.4),
+    0 0 15px rgba(255, 117, 152, 0.4) !important;
+}
+
+.theme-cyberpunk .ai-message {
+  background: linear-gradient(135deg,
+      rgba(117, 209, 240, 0.3),
+      rgba(255, 117, 152, 0.15)) !important;
+  border-color: rgba(117, 209, 240, 0.7) !important;
+  box-shadow:
+    0 4px 16px rgba(117, 209, 240, 0.5),
+    inset 0 1px 0 rgba(255, 117, 152, 0.3),
+    0 0 15px rgba(117, 209, 240, 0.4) !important;
+}
+
+.theme-synthwave .user-message {
+  background: linear-gradient(135deg,
+      rgba(255, 150, 0, 0.25),
+      rgba(255, 100, 150, 0.3)) !important;
+  border-color: rgba(255, 150, 0, 0.6) !important;
+}
+
+.theme-synthwave .ai-message {
+  background: linear-gradient(135deg,
+      rgba(150, 0, 255, 0.2),
+      rgba(200, 100, 255, 0.3)) !important;
+  border-color: rgba(150, 0, 255, 0.5) !important;
+}
+
+.theme-valentine .user-message,
+.theme-cupcake .user-message {
+  background: linear-gradient(135deg,
+      rgba(100, 150, 255, 0.2),
+      rgba(150, 100, 255, 0.25)) !important;
+  border-color: rgba(100, 150, 255, 0.5) !important;
+}
+
+.theme-valentine .ai-message,
+.theme-cupcake .ai-message {
+  background: linear-gradient(135deg,
+      rgba(255, 150, 200, 0.2),
+      rgba(255, 200, 220, 0.25)) !important;
+  border-color: rgba(255, 150, 200, 0.4) !important;
+}
+
+.theme-forest .user-message,
+.theme-garden .user-message {
+  background: linear-gradient(135deg,
+      rgba(100, 200, 255, 0.2),
+      rgba(150, 220, 255, 0.25)) !important;
+  border-color: rgba(100, 200, 255, 0.5) !important;
+}
+
+.theme-night .user-message {
+  background: linear-gradient(135deg,
+      rgba(255, 200, 100, 0.25),
+      rgba(255, 150, 50, 0.3)) !important;
+  border-color: rgba(255, 200, 100, 0.6) !important;
+}
+
+.theme-luxury .user-message {
+  background: linear-gradient(135deg,
+      rgba(218, 165, 32, 0.2),
+      rgba(255, 215, 0, 0.25)) !important;
+  border-color: rgba(218, 165, 32, 0.5) !important;
+  box-shadow:
+    0 4px 16px rgba(218, 165, 32, 0.3),
+    inset 0 1px 0 rgba(255, 215, 0, 0.4),
+    0 0 10px rgba(218, 165, 32, 0.2) !important;
+}
+
 .theme-cyberpunk .node-card {
   border-width: 2px;
   border-style: solid;
-  box-shadow: 0 0 10px var(--node-glow-color), inset 0 0 5px var(--node-glow-color);
-  background: radial-gradient(circle at top left, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.9)) !important;
+  box-shadow: 
+    0 0 15px var(--node-glow-color), 
+    inset 0 0 8px rgba(117, 209, 240, 0.2),
+    0 0 25px rgba(255, 117, 152, 0.3);
+  background: var(--base-bg-color) !important;
 }
 
 .theme-synthwave .node-card {
   background: linear-gradient(to bottom right, rgba(20, 10, 30, 0.8), rgba(80, 30, 110, 0.7)) !important;
   border-width: 1px;
   box-shadow: 0 0 20px var(--node-glow-color);
-}
-
-.theme-synthwave .message-container::before {
-  background: linear-gradient(to right, rgba(80, 30, 110, 0.3), rgba(220, 130, 255, 0.2));
 }
 
 .theme-retro .node-card {
@@ -1804,25 +2800,11 @@ onBeforeUnmount(() => {
   background: linear-gradient(to bottom, rgba(255, 240, 245, 0.9), rgba(255, 220, 230, 0.8)) !important;
 }
 
-.theme-valentine .message-container::before,
-.theme-cupcake .message-container::before {
-  background-color: rgba(255, 240, 245, 0.5);
-  border-radius: 0.75rem;
-}
-
 .theme-aqua .node-card {
   background: linear-gradient(135deg, rgba(0, 30, 60, 0.8), rgba(0, 180, 220, 0.3)) !important;
   backdrop-filter: blur(20px);
   border-radius: 1rem;
   box-shadow: 0 8px 32px rgba(0, 180, 220, 0.4);
-}
-
-.theme-aqua .message-container::before {
-  background: linear-gradient(to right, rgba(0, 120, 180, 0.2), rgba(0, 210, 240, 0.1));
-}
-
-.message-content {
-  justify-self: center;
 }
 
 .theme-forest .node-card,
@@ -1835,10 +2817,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 30px rgba(0, 0, 30, 0.6);
 }
 
-.theme-night .message-container::before {
-  background-color: rgba(30, 40, 80, 0.4);
-}
-
 .theme-coffee .node-card {
   background: linear-gradient(to bottom, rgba(50, 30, 20, 0.8), rgba(80, 50, 40, 0.6)) !important;
 }
@@ -1849,113 +2827,250 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 15px rgba(218, 165, 32, 0.3);
 }
 
-/* Dark theme text customizations */
-.theme-cyberpunk,
-.theme-cmyk,
-.theme-acid,
-.theme-dracula,
-.theme-night,
-.theme-synthwave,
-.theme-retro,
-.theme-black,
-.theme-luxury {
-  --node-text-color: rgba(255, 255, 255, 0.95) !important;
-  color: rgba(255, 255, 255, 0.95);
+/* Enhanced cyberpunk snapped state styling */
+.theme-cyberpunk .node-card.snapped {
+  background: var(--snapped-backdrop) !important;
+  border-color: rgba(117, 209, 240, 0.8) !important;
+  box-shadow: 
+    0 0 20px var(--node-glow-color), 
+    inset 0 0 12px rgba(117, 209, 240, 0.3),
+    0 0 35px rgba(255, 117, 152, 0.4),
+    0 0 50px rgba(247, 213, 29, 0.2) !important;
 }
 
-/* Force all child elements to use the correct text color */
-.theme-cyberpunk .node-card,
-.theme-cmyk .node-card,
-.theme-acid .node-card,
-.theme-dracula .node-card,
-.theme-night .node-card,
-.theme-synthwave .node-card,
-.theme-retro .node-card,
-.theme-black .node-card,
-.theme-luxury .node-card {
-  color: var(--node-text-color);
+.theme-cyberpunk .snapped .user-message {
+  background: linear-gradient(135deg,
+      rgba(255, 117, 152, 0.4),
+      rgba(247, 213, 29, 0.25)) !important;
+  border-color: rgba(255, 117, 152, 0.8) !important;
+  box-shadow:
+    0 4px 20px rgba(255, 117, 152, 0.6),
+    inset 0 1px 0 rgba(247, 213, 29, 0.5),
+    0 0 20px rgba(255, 117, 152, 0.5) !important;
 }
 
-/* Make sure Badge text is visible */
-.theme-cyberpunk .badge,
-.theme-cmyk .badge,
-.theme-acid .badge,
-.theme-dracula .badge,
-.theme-night .badge,
-.theme-synthwave .badge,
-.theme-retro .badge,
-.theme-black .badge,
-.theme-luxury .badge {
-  color: var(--node-text-color);
+.theme-cyberpunk .snapped .ai-message {
+  background: linear-gradient(135deg,
+      rgba(117, 209, 240, 0.4),
+      rgba(255, 117, 152, 0.2)) !important;
+  border-color: rgba(117, 209, 240, 0.8) !important;
+  box-shadow:
+    0 4px 20px rgba(117, 209, 240, 0.6),
+    inset 0 1px 0 rgba(255, 117, 152, 0.4),
+    0 0 20px rgba(117, 209, 240, 0.5) !important;
 }
 
-/* Force specific text elements to be light in dark themes */
-.theme-cyberpunk .text-base-content,
-.theme-cmyk .text-base-content,
-.theme-acid .text-base-content,
-.theme-dracula .text-base-content,
-.theme-night .text-base-content,
-.theme-synthwave .text-base-content,
-.theme-retro .text-base-content,
-.theme-black .text-base-content,
-.theme-luxury .text-base-content {
+/* Halloween theme styling with purple and blue */
+.theme-halloween .user-message {
+  background: linear-gradient(135deg,
+      rgba(88, 28, 135, 0.4),
+      rgba(25, 25, 50, 0.3)) !important;
+  border-color: rgba(124, 58, 237, 0.6) !important;
+  box-shadow:
+    0 4px 16px rgba(88, 28, 135, 0.5),
+    inset 0 1px 0 rgba(59, 130, 246, 0.2),
+    0 0 20px rgba(88, 28, 135, 0.4) !important;
+}
+
+.theme-halloween .ai-message {
+  background: linear-gradient(135deg,
+      rgba(25, 25, 50, 0.4),
+      rgba(59, 130, 246, 0.2)) !important;
+  border-color: rgba(59, 130, 246, 0.6) !important;
+  box-shadow:
+    0 4px 16px rgba(25, 25, 50, 0.6),
+    inset 0 1px 0 rgba(124, 58, 237, 0.2),
+    0 0 20px rgba(59, 130, 246, 0.3) !important;
+}
+
+.theme-halloween .node-card {
+  position: relative;
+  border-width: 2px;
+  border-style: solid;
+  border-color: rgba(88, 28, 135, 0.6) !important;
+  box-shadow: 
+    0 0 20px rgba(88, 28, 135, 0.4), 
+    inset 0 0 10px rgba(25, 25, 50, 0.5),
+    0 0 30px rgba(59, 130, 246, 0.2);
+}
+
+/* Add bat decorations with CSS */
+.theme-halloween .node-card::before,
+.theme-halloween .node-card::after {
+  content: '🦇';
+  position: absolute;
+  font-size: 20px;
+  opacity: 0.3;
+  animation: float-bats 15s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.theme-halloween .node-card::before {
+  top: 10px;
+  right: 20px;
+  animation-delay: 0s;
+}
+
+.theme-halloween .node-card::after {
+  bottom: 20px;
+  left: 30px;
+  animation-delay: 7.5s;
+  transform: scaleX(-1);
+}
+
+@keyframes float-bats {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  25% { transform: translateY(-10px) rotate(5deg); }
+  50% { transform: translateY(5px) rotate(-3deg); }
+  75% { transform: translateY(-5px) rotate(3deg); }
+}
+
+.theme-halloween .node-card.snapped {
+  background: var(--snapped-backdrop) !important;
+  border-color: rgba(124, 58, 237, 0.8) !important;
+  box-shadow: 
+    0 0 25px rgba(88, 28, 135, 0.6), 
+    inset 0 0 15px rgba(25, 25, 50, 0.6),
+    0 0 40px rgba(59, 130, 246, 0.3),
+    0 0 60px rgba(88, 28, 135, 0.3) !important;
+}
+
+.theme-halloween .snapped .user-message {
+  background: linear-gradient(135deg,
+      rgba(88, 28, 135, 0.5),
+      rgba(25, 25, 50, 0.35)) !important;
+  border-color: rgba(124, 58, 237, 0.8) !important;
+  box-shadow:
+    0 4px 20px rgba(88, 28, 135, 0.6),
+    inset 0 1px 0 rgba(59, 130, 246, 0.3),
+    0 0 25px rgba(88, 28, 135, 0.5) !important;
+}
+
+.theme-halloween .snapped .ai-message {
+  background: linear-gradient(135deg,
+      rgba(25, 25, 50, 0.5),
+      rgba(59, 130, 246, 0.25)) !important;
+  border-color: rgba(59, 130, 246, 0.8) !important;
+  box-shadow:
+    0 4px 20px rgba(25, 25, 50, 0.7),
+    inset 0 1px 0 rgba(124, 58, 237, 0.3),
+    0 0 25px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Acid theme styling with neon effects */
+.theme-acid .user-message {
+  background: linear-gradient(135deg,
+      rgba(255, 0, 255, 0.25),
+      rgba(255, 255, 0, 0.15)) !important;
+  border-color: rgba(255, 0, 255, 0.7) !important;
+  box-shadow:
+    0 4px 16px rgba(255, 0, 255, 0.4),
+    inset 0 1px 0 rgba(255, 255, 0, 0.3),
+    0 0 20px rgba(255, 0, 255, 0.3) !important;
+}
+
+.theme-acid .ai-message {
+  background: linear-gradient(135deg,
+      rgba(0, 255, 0, 0.25),
+      rgba(255, 255, 0, 0.15)) !important;
+  border-color: rgba(0, 255, 0, 0.7) !important;
+  box-shadow:
+    0 4px 16px rgba(0, 255, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 0, 0.3),
+    0 0 20px rgba(0, 255, 0, 0.3) !important;
+}
+
+.theme-acid .node-card {
+  border-width: 2px;
+  border-style: solid;
+  box-shadow: 
+    0 0 15px rgba(255, 255, 0, 0.3), 
+    inset 0 0 8px rgba(255, 0, 255, 0.1),
+    0 0 25px rgba(0, 255, 0, 0.2);
+  background: var(--base-bg-color) !important;
+}
+
+.theme-acid .node-card.snapped {
+  background: var(--snapped-backdrop) !important;
+  border-color: rgba(255, 255, 0, 0.8) !important;
+  box-shadow: 
+    0 0 20px rgba(255, 255, 0, 0.5), 
+    inset 0 0 12px rgba(255, 0, 255, 0.2),
+    0 0 35px rgba(0, 255, 0, 0.3),
+    0 0 50px rgba(255, 255, 0, 0.2) !important;
+}
+
+.theme-acid .snapped .user-message {
+  background: linear-gradient(135deg,
+      rgba(255, 0, 255, 0.35),
+      rgba(255, 255, 0, 0.2)) !important;
+  border-color: rgba(255, 0, 255, 0.8) !important;
+  box-shadow:
+    0 4px 20px rgba(255, 0, 255, 0.5),
+    inset 0 1px 0 rgba(255, 255, 0, 0.4),
+    0 0 25px rgba(255, 0, 255, 0.4) !important;
+}
+
+.theme-acid .snapped .ai-message {
+  background: linear-gradient(135deg,
+      rgba(0, 255, 0, 0.35),
+      rgba(255, 255, 0, 0.2)) !important;
+  border-color: rgba(0, 255, 0, 0.8) !important;
+  box-shadow:
+    0 4px 20px rgba(0, 255, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 0, 0.4),
+    0 0 25px rgba(0, 255, 0, 0.4) !important;
+}
+
+/* Fix acid theme text visibility */
+.theme-acid .node-card .text-base-content {
   color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 0 10px rgba(255, 255, 0, 0.3);
 }
 
-/* Fix for node titles and message counts */
-.theme-cyberpunk .text-lg,
-.theme-cmyk .text-lg,
-.theme-acid .text-lg,
-.theme-dracula .text-lg,
-.theme-night .text-lg,
-.theme-synthwave .text-lg,
-.theme-retro .text-lg,
-.theme-black .text-lg,
-.theme-luxury .text-lg,
-.theme-cyberpunk .text-sm,
-.theme-cmyk .text-sm,
-.theme-acid .text-sm,
-.theme-dracula .text-sm,
-.theme-night .text-sm,
-.theme-synthwave .text-sm,
-.theme-retro .text-sm,
-.theme-black .text-sm,
-.theme-luxury .text-sm {
-  color: rgba(255, 255, 255, 0.95) !important;
-}
-
-/* Make semi-transparent text still light but slightly dimmed */
-.theme-cyberpunk .text-base-content\/60,
-.theme-cmyk .text-base-content\/60,
-.theme-acid .text-base-content\/60,
-.theme-dracula .text-base-content\/60,
-.theme-night .text-base-content\/60,
-.theme-synthwave .text-base-content\/60,
-.theme-retro .text-base-content\/60,
-.theme-black .text-base-content\/60,
-.theme-luxury .text-base-content\/60 {
+.theme-acid .node-card .text-base-content\/60 {
   color: rgba(255, 255, 255, 0.7) !important;
+  text-shadow: 0 0 8px rgba(0, 255, 0, 0.2);
 }
 
-/* Specifically target the collapsed preview text */
-.theme-cyberpunk .collapsed-preview,
-.theme-cmyk .collapsed-preview,
-.theme-acid .collapsed-preview,
-.theme-dracula .collapsed-preview,
-.theme-night .collapsed-preview,
-.theme-synthwave .collapsed-preview,
-.theme-retro .collapsed-preview,
-.theme-black .collapsed-preview,
-.theme-luxury .collapsed-preview {
+.theme-acid .node-card span.text-lg {
   color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 0 12px rgba(255, 255, 0, 0.4);
 }
 
-/* Enhanced message container styles for better mobile handling */
+.theme-acid .node-card input {
+  background: rgba(30, 30, 30, 0.9) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgba(255, 255, 0, 0.5) !important;
+}
+
+/* Make all icons in acid theme more visible */
+.theme-acid .node-card svg {
+  color: rgba(255, 255, 255, 0.8) !important;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 0, 0.5));
+}
+
+/* UPDATED: Mobile responsiveness for centered layout */
 @media (max-width: 640px) {
 
   .user-message,
   .ai-message {
-    max-width: 95% !important;
+    max-width: 98% !important;
+    padding: 0.75rem 1rem !important;
+  }
+
+  .message-container {
+    width: 98% !important;
+    padding: 0.75rem !important;
+  }
+
+  /* Adjust branch button positioning for mobile */
+  .user-message .branch-btn {
+    right: -2rem;
+  }
+
+  .ai-message .branch-btn {
+    left: -2rem;
   }
 
   .branch-node.snapped {
@@ -1967,31 +3082,39 @@ onBeforeUnmount(() => {
   }
 }
 
+/* UPDATED: Ensure proper spacing in snapped mode */
+.snapped-messages-container .message-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 0 1rem 0 !important;
+  color: var(--node-text-color) !important;
+}
+
+.snapped-messages-container .user-message,
+.snapped-messages-container .ai-message {
+  max-width: 95% !important;
+  margin: 0 auto !important;
+  color: var(--node-text-color) !important;
+}
+
 /* Improved hover states and transitions */
 .message-container {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.message-container:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.user-message:hover {
-  transform: translateX(0) !important;
-  /* Don't move when hovering */
-}
-
-.ai-message:hover {
-  transform: translateX(0) !important;
-  /* Don't move when hovering */
-}
-
+/* Add glassmorphism shadow effects for both message types */
 .user-message {
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05) !important;
+  box-shadow:
+    0 4px 16px var(--user-shadow-color),
+    inset 0 1px 0 var(--user-highlight-color),
+    0 1px 3px rgba(0, 0, 0, 0.1) !important;
 }
 
 .ai-message {
-  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.05) !important;
+  box-shadow:
+    0 4px 16px var(--ai-shadow-color),
+    inset 0 1px 0 var(--ai-highlight-color),
+    0 1px 3px rgba(0, 0, 0, 0.1) !important;
 }
 
 /* Add subtle animation for new messages */

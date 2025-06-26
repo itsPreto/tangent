@@ -86,10 +86,23 @@
         <!-- Main Editor Layout -->
         <div class="flex flex-1 overflow-hidden">
           <!-- File Explorer Sidebar -->
-          <div class="w-64 border-r flex flex-col overflow-hidden" :style="explorerStyle">
-            <FileExplorer :files="fileStructure" :activeFileId="currentFileId" @select-file="selectFileFromExplorer"
-              @create-file="handleCreateFile" @create-folder="handleCreateFolder" @delete-item="handleDeleteItem"
-              @rename-item="handleRenameItem" :theme="currentTheme" />
+          <div 
+            class="border-r flex flex-col overflow-hidden transition-all duration-300 ease-in-out" 
+            :class="explorerCollapsed ? 'w-12' : 'w-64'"
+            :style="explorerStyle">
+            <div v-if="!explorerCollapsed" class="h-full">
+              <FileExplorer :files="fileStructure" :activeFileId="currentFileId" @select-file="selectFileFromExplorer"
+                @create-file="handleCreateFile" @create-folder="handleCreateFolder" @delete-item="handleDeleteItem"
+                @rename-item="handleRenameItem" @toggle-explorer="toggleExplorer" :theme="currentTheme" />
+            </div>
+            <div v-else class="h-full flex flex-col items-center py-3">
+              <button @click="toggleExplorer" 
+                class="p-2 rounded-md hover:bg-base-content/10 transition-colors"
+                :style="controlButtonStyle" 
+                title="Expand Explorer">
+                <ChevronRight class="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <!-- Editor and Preview Container -->
@@ -406,7 +419,7 @@ import DiffViewModal from './DiffViewModal.vue'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useAppStore } from '@/stores/appStore'
 import { useChatStore } from "@/stores/chatStore"
-import { useProjectStore } from '@/stores/projectStore'
+import { useProjectStore, type CodeProject, type ProjectFile } from '@/stores/projectStore'
 import { storeToRefs } from 'pinia'
 
 // File Explorer Component
@@ -512,6 +525,7 @@ const currentNodeId = ref<string>(props.nodeId)
 
 // View Management
 const currentView = ref<'editor' | 'manager'>('editor')
+const explorerCollapsed = ref(true)
 
 let autoSaveTimeout: number | null = null
 
@@ -564,25 +578,31 @@ const newRelic = ref<NewRelicData>({
 
 // Initialize default file structure
 const initializeFileStructure = () => {
+  // Don't initialize if we already have a project
+  const projectStore = useProjectStore()
+  if (projectStore.currentProject) {
+    loadProjectIntoEditor(projectStore.currentProject)
+    return
+  }
+
   fileStructure.value = [
     {
-      id: 'src',
-      name: 'src',
-      type: 'folder',
-      path: '/src',
-      lastModified: Date.now(),
-      children: [
-        {
-          id: 'app-js',
-          name: 'App.js',
-          type: 'file',
-          path: '/src/App.js',
-          parentId: 'src',
-          language: 'react',
-          code: '// Start coding here\n\nconst App = () => {\n  return (\n    <div>\n      <h1>Hello World</h1>\n    </div>\n  );\n};\n\nexport default App;',
-          lastModified: Date.now()
-        }
-      ]
+      id: 'app-js',
+      name: 'App.js',
+      type: 'file',
+      path: '/App.js',
+      language: 'javascript',
+      code: '// Start coding here\n\nconst App = () => {\n  return (\n    <div style={{ minHeight: "100vh", backgroundColor: "inherit", color: "inherit", padding: "2rem" }}>\n      <h1>Hello World</h1>\n      <p>Your themed preview is ready!</p>\n    </div>\n  );\n};\n\nexport default App;',
+      lastModified: Date.now()
+    },
+    {
+      id: 'index-js',
+      name: 'index.js',
+      type: 'file',
+      path: '/index.js',
+      language: 'javascript',
+      code: 'import { StrictMode } from "react";\nimport { createRoot } from "react-dom/client";\nimport App from "./App.js";\n\nconst root = createRoot(document.getElementById("root"));\nroot.render(\n  <StrictMode>\n    <App />\n  </StrictMode>\n);',
+      lastModified: Date.now()
     },
     {
       id: 'public',
@@ -881,6 +901,10 @@ const handleRenameItem = (item: FileItem, newName: string) => {
   }
 }
 
+const toggleExplorer = () => {
+  explorerCollapsed.value = !explorerCollapsed.value
+}
+
 
 const closeDeleteConfirmDialog = () => {
   deleteConfirmDialog.value?.close()
@@ -954,6 +978,28 @@ const sandpackFiles = computed(() => {
     files['/App.js'] = { code: currentCode.value }
   }
 
+  // Ensure we always have the main App.js file at the root level for Sandpack
+  // If we have /src/App.js but not /App.js, copy it to root
+  if (files['/src/App.js'] && !files['/App.js']) {
+    files['/App.js'] = files['/src/App.js']
+  }
+
+  // Ensure we have the necessary setup files if they don't exist
+  if (!files['/index.js']) {
+    files['/index.js'] = { 
+      code: `import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.js";
+
+const root = createRoot(document.getElementById("root"));
+root.render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);` 
+    }
+  }
+
   return files
 })
 
@@ -964,8 +1010,6 @@ const headerStyle = computed(() => {
     borderColor: isDarkTheme.value ? 'rgba(80, 80, 90, 0.3)' : 'rgba(230, 230, 240, 0.5)',
     borderBottomWidth: '1px',
     borderBottomStyle: 'solid',
-    borderTopLeftRadius: '16px',
-    borderTopRightRadius: '16px'
   }
 })
 
@@ -1381,6 +1425,19 @@ const handleCodeUpdate = (newCode: string) => {
   currentCode.value = newCode
   hasEdits.value = currentCode.value !== lastSavedCode.value
 
+  // Update the current file in memory immediately
+  if (currentFileId.value) {
+    const file = findFileById(currentFileId.value)
+    if (file && file.type === 'file') {
+      file.code = newCode
+    }
+    
+    const openFile = openFiles.value.find(f => f.id === currentFileId.value)
+    if (openFile) {
+      openFile.code = newCode
+    }
+  }
+
   if (autoSaveTimeout) {
     clearTimeout(autoSaveTimeout)
   }
@@ -1660,6 +1717,10 @@ const handleShowSandbox = (payload: {
 
   if (!payloadIsStreaming) {
     lastSavedCode.value = code
+    // Auto-save after loading to persist the state
+    setTimeout(() => {
+      saveFile()
+    }, 100)
   }
 }
 
@@ -1789,6 +1850,16 @@ onUnmounted(() => {
     themeObserver.disconnect()
   }
   emitter.off('show-sandbox', handleShowSandbox)
+  
+  // Save any pending changes before unmounting
+  if (hasEdits.value) {
+    saveFile()
+  }
+  
+  // Clear any pending auto-save timeout
+  if (autoSaveTimeout) {
+    clearTimeout(autoSaveTimeout)
+  }
 })
 
 watch(() => props.nodeId, (newId) => {
@@ -1852,7 +1923,45 @@ watch(() => [openFiles.value, currentFileId.value], () => {
 /* Theme-specific styling */
 .side-panel-container {
   background-color: var(--b1);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
   color: var(--bc);
+  /* Dynamic shadow that adapts to theme */
+  box-shadow: 8px 0 40px rgba(255, 255, 255, 0.08), 2px 0 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Light theme shadows */
+[data-theme="light"] .side-panel-container,
+[data-theme="cupcake"] .side-panel-container,
+[data-theme="bumblebee"] .side-panel-container,
+[data-theme="emerald"] .side-panel-container,
+[data-theme="corporate"] .side-panel-container,
+[data-theme="garden"] .side-panel-container,
+[data-theme="lofi"] .side-panel-container,
+[data-theme="pastel"] .side-panel-container,
+[data-theme="fantasy"] .side-panel-container,
+[data-theme="wireframe"] .side-panel-container,
+[data-theme="lemonade"] .side-panel-container,
+[data-theme="business"] .side-panel-container {
+  box-shadow: 8px 0 40px rgba(0, 0, 0, 0.12), 2px 0 20px rgba(0, 0, 0, 0.08);
+}
+
+/* Dark theme shadows */
+[data-theme="dark"] .side-panel-container,
+[data-theme="synthwave"] .side-panel-container,
+[data-theme="retro"] .side-panel-container,
+[data-theme="cyberpunk"] .side-panel-container,
+[data-theme="valentine"] .side-panel-container,
+[data-theme="halloween"] .side-panel-container,
+[data-theme="forest"] .side-panel-container,
+[data-theme="aqua"] .side-panel-container,
+[data-theme="black"] .side-panel-container,
+[data-theme="luxury"] .side-panel-container,
+[data-theme="dracula"] .side-panel-container,
+[data-theme="night"] .side-panel-container,
+[data-theme="coffee"] .side-panel-container,
+[data-theme="winter"] .side-panel-container {
+  box-shadow: 8px 0 40px rgba(255, 255, 255, 0.08), 2px 0 20px rgba(255, 255, 255, 0.04);
 }
 
 .theme-dark .side-panel-container {

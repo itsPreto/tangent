@@ -17,6 +17,10 @@
                         :style="iconButtonStyle" title="Collapse All">
                         <ChevronDown class="w-3.5 h-3.5" />
                     </button>
+                    <button @click="toggleExplorer" class="p-1 rounded hover:bg-base-content/10 transition-colors"
+                        :style="iconButtonStyle" title="Toggle Explorer">
+                        <ChevronLeft class="w-3.5 h-3.5" />
+                    </button>
                 </div>
             </div>
         </div>
@@ -95,7 +99,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import {
-    FilePlus, FolderPlus, ChevronDown, Package,
+    FilePlus, FolderPlus, ChevronDown, ChevronLeft, Package,
     SquareFunction, Variable, Box, Settings
 } from 'lucide-vue-next'
 import FileTreeItem from './FileTreeItem.vue'
@@ -136,6 +140,7 @@ const emit = defineEmits<{
     'create-folder': [parentId?: string]
     'delete-item': [item: FileItem]
     'rename-item': [item: FileItem, newName: string]
+    'toggle-explorer': []
 }>()
 
 // State
@@ -235,6 +240,10 @@ const createFile = (parentId?: string) => {
 
 const createFolder = (parentId?: string) => {
     emit('create-folder', parentId)
+}
+
+const toggleExplorer = () => {
+    emit('toggle-explorer')
 }
 
 const toggleDependencies = () => {

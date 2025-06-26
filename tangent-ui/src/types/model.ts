@@ -10,6 +10,9 @@ export interface ModelInfo {
     temperature?: number;
     supportedGenerationMethods?: string[];
     isFree?: boolean;
+    supportsVision?: boolean;
+    size?: number;
+    modified_at?: string;
 }
 
 export interface ModelParameters {
