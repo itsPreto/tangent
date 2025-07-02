@@ -5,6 +5,7 @@ export const useAppStore = defineStore('app', {
   state: () => ({
     isSidePanelOpen: false,
     isAgentConfiguratorOpen: false,
+    isRAGPanelOpen: false,
   }),
   actions: {
     openSidePanel() {
@@ -24,6 +25,15 @@ export const useAppStore = defineStore('app', {
     },
     toggleAgentConfigurator() {
       this.isAgentConfiguratorOpen = !this.isAgentConfiguratorOpen;
+    },
+    openRAGPanel() {
+      this.isRAGPanelOpen = true;
+    },
+    closeRAGPanel() {
+      this.isRAGPanelOpen = false;
+    },
+    toggleRAGPanel() {
+      this.isRAGPanelOpen = !this.isRAGPanelOpen;
     },
   },
 });

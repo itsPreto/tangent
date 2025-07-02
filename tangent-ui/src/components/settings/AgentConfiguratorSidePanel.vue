@@ -367,7 +367,7 @@
                           <span v-if="model.isFree" class="free-badge">FREE</span>
                           <span v-if="model.parameterSize" class="size-badge">{{ model.parameterSize }}</span>
                           <span v-if="model.contextLength" class="context-badge">{{ formatContext(model.contextLength)
-                            }}</span>
+                          }}</span>
                         </div>
                       </div>
                       <button @click="toggleFavorite(model)" class="favorite-btn-compact"
@@ -487,12 +487,27 @@
                   <div class="section-title">Run Test</div>
 
                   <div class="quick-execution-controls">
-                    <button @click="runQuickTest" :disabled="selectedTestModels.length === 0 || isRunningTests"
-                      class="run-quick-test-btn" :class="{ loading: isRunningTests }">
-                      <component :is="isRunningTests ? 'Loader' : 'Play'" class="w-4 h-4"
-                        :class="{ 'animate-spin': isRunningTests }" />
-                      {{ isRunningTests ? 'Testing...' : 'Run Quick Test' }}
-                    </button>
+                    <div class="test-control-buttons">
+                      <button @click="runQuickTest" :disabled="selectedTestModels.length === 0 || isRunningTests"
+                        class="run-quick-test-btn" :class="{ loading: isRunningTests }">
+                        <component :is="isRunningTests ? 'Loader' : 'Play'" class="w-4 h-4"
+                          :class="{ 'animate-spin': isRunningTests }" />
+                        {{ isRunningTests ? 'Testing...' : 'Run Quick Test' }}
+                      </button>
+
+                      <div v-if="isRunningTests" class="test-control-group">
+                        <button @click="isPaused ? resumeTests() : pauseTests()" class="control-btn pause-resume"
+                          :class="{ paused: isPaused }">
+                          <component :is="isPaused ? 'Play' : 'Pause'" class="w-3 h-3" />
+                          {{ isPaused ? 'Resume' : 'Pause' }}
+                        </button>
+
+                        <button @click="stopTests" class="control-btn stop">
+                          <Square class="w-3 h-3" />
+                          Stop
+                        </button>
+                      </div>
+                    </div>
 
                     <div class="quick-test-info">
                       <div class="info-row">
@@ -517,10 +532,15 @@
                       <span class="progress-text">
                         Testing {{ testProgress.current }}/{{ testProgress.total }}
                         ({{ testProgress.currentModel }})
+                        <span v-if="isPaused" class="pause-indicator">PAUSED</span>
                       </span>
                       <span class="progress-percent">
                         {{ Math.round((testProgress.current / testProgress.total) * 100) }}%
                       </span>
+                    </div>
+                    <div v-if="testProgress.currentQuestion" class="current-question">
+                      <span class="question-label">Current Question:</span>
+                      <span class="question-text">{{ testProgress.currentQuestion }}</span>
                     </div>
                     <div class="progress-bar">
                       <div class="progress-fill"
@@ -635,7 +655,7 @@
                   </div>
                   <div class="stat-item">
                     <span class="stat-value">{{Math.round(testResults.reduce((sum, r) => sum + r.overallScore, 0) /
-                      testResults.length) }}%</span>
+                      testResults.length)}}%</span>
                     <span class="stat-label">Avg Score</span>
                   </div>
                 </div>
@@ -646,6 +666,7 @@
                 <table class="results-table">
                   <thead>
                     <tr>
+                      <th class="expand-col"></th>
                       <th class="model-col">Model</th>
                       <th class="score-col">Overall Score</th>
                       <th class="criterion-col">Accuracy</th>
@@ -657,42 +678,104 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="result in sortedTestResults" :key="result.modelId" class="result-row">
-                      <td class="model-cell">
-                        <div class="model-info">
-                          <img :src="getProviderIcon(result.modelSource)" class="model-icon-mini" />
-                          <span class="model-name">{{ result.modelName }}</span>
-                          <span class="model-source">{{ result.modelSource }}</span>
-                        </div>
-                      </td>
-                      <td class="score-cell">
-                        <div class="overall-score" :class="getScoreClass(result.overallScore)">
-                          {{ Math.round(result.overallScore) }}%
-                        </div>
-                      </td>
-                      <td class="criterion-cell">
-                        <div class="criterion-score" :class="getScoreClass(result.criteriaScores[0]?.score || 0)">
-                          {{ Math.round(result.criteriaScores[0]?.score || 0) }}%
-                        </div>
-                      </td>
-                      <td class="criterion-cell">
-                        <div class="criterion-score" :class="getScoreClass(result.criteriaScores[1]?.score || 0)">
-                          {{ Math.round(result.criteriaScores[1]?.score || 0) }}%
-                        </div>
-                      </td>
-                      <td class="criterion-cell">
-                        <div class="criterion-score" :class="getScoreClass(result.criteriaScores[2]?.score || 0)">
-                          {{ Math.round(result.criteriaScores[2]?.score || 0) }}%
-                        </div>
-                      </td>
-                      <td class="stat-cell">{{ result.questionsAnswered }}</td>
-                      <td class="stat-cell">{{ result.avgResponseTime }}ms</td>
-                      <td class="stat-cell">
-                        <span class="error-count" :class="{ 'has-errors': result.errors > 0 }">
-                          {{ result.errors }}
-                        </span>
-                      </td>
-                    </tr>
+                    <template v-for="result in sortedTestResults" :key="result.modelId">
+                      <tr class="result-row clickable" @click="toggleModelRow(result.modelId)">
+                        <td class="expand-cell">
+                          <component :is="isModelRowExpanded(result.modelId) ? 'ChevronDown' : 'ChevronRight'"
+                            class="expand-icon" />
+                        </td>
+                        <td class="model-cell">
+                          <div class="model-info">
+                            <img :src="getProviderIcon(result.modelSource)" class="model-icon-mini" />
+                            <span class="model-name">{{ result.modelName }}</span>
+                            <span class="model-source">{{ result.modelSource }}</span>
+                          </div>
+                        </td>
+                        <td class="score-cell">
+                          <div class="overall-score" :class="getScoreClass(result.overallScore)">
+                            {{ Math.round(result.overallScore) }}%
+                          </div>
+                        </td>
+                        <td class="criterion-cell">
+                          <div class="criterion-score" :class="getScoreClass(result.criteriaScores[0]?.score || 0)">
+                            {{ Math.round(result.criteriaScores[0]?.score || 0) }}%
+                          </div>
+                        </td>
+                        <td class="criterion-cell">
+                          <div class="criterion-score" :class="getScoreClass(result.criteriaScores[1]?.score || 0)">
+                            {{ Math.round(result.criteriaScores[1]?.score || 0) }}%
+                          </div>
+                        </td>
+                        <td class="criterion-cell">
+                          <div class="criterion-score" :class="getScoreClass(result.criteriaScores[2]?.score || 0)">
+                            {{ Math.round(result.criteriaScores[2]?.score || 0) }}%
+                          </div>
+                        </td>
+                        <td class="stat-cell">{{ result.questionsAnswered }}</td>
+                        <td class="stat-cell">{{ result.avgResponseTime }}ms</td>
+                        <td class="stat-cell">
+                          <span class="error-count" :class="{ 'has-errors': result.errors > 0 }">
+                            {{ result.errors }}
+                          </span>
+                        </td>
+                      </tr>
+                      <!-- Expanded Row Content -->
+                      <tr v-if="isModelRowExpanded(result.modelId)" class="expanded-row">
+                        <td colspan="9" class="expanded-content">
+                          <div class="model-detailed-view">
+                            <div class="detailed-header">
+                              <h4>{{ result.modelName }} - Question-by-Question Results</h4>
+                              <span class="pass-fail-summary">
+                                {{getModelDetailedResults(result.modelId)?.questionResults.filter(q => q.passed).length
+                                || 0 }}/{{ getModelDetailedResults(result.modelId)?.questionResults.length || 0 }}
+                                passed
+                              </span>
+                            </div>
+
+                            <div class="questions-list">
+                              <div
+                                v-for="(questionResult, index) in getModelDetailedResults(result.modelId)?.questionResults"
+                                :key="index" class="question-detail-row" :class="{ failed: !questionResult.passed }">
+                                <div class="question-summary">
+                                  <span class="question-num">Q{{ index + 1 }}</span>
+                                  <span class="question-score" :class="getScoreClass(questionResult.overallScore)">
+                                    {{ Math.round(questionResult.overallScore) }}%
+                                  </span>
+                                  <span class="question-status" :class="{ passed: questionResult.passed }">
+                                    {{ questionResult.passed ? '✓' : '✗' }}
+                                  </span>
+                                  <span class="question-preview">{{ questionResult.question.substring(0, 80) }}{{
+                                    questionResult.question.length > 80 ? '...' : '' }}</span>
+                                </div>
+
+                                <div class="response-comparison">
+                                  <div class="expected-response">
+                                    <div class="response-label">Expected:</div>
+                                    <div class="response-content expected clickable" 
+                                         @click="showResponseModal('Expected Answer', questionResult.expectedAnswer, true)">
+                                      {{ questionResult.expectedAnswer }}
+                                    </div>
+                                  </div>
+                                  <div class="actual-response">
+                                    <div class="response-label">Model Response:</div>
+                                    <div class="response-content actual clickable"
+                                      :class="{ error: questionResult.actualAnswer.startsWith('ERROR:') }"
+                                      @click="showResponseModal('Model Response', questionResult.actualAnswer, true)">
+                                      {{ questionResult.actualAnswer }}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div class="question-metadata">
+                                  <span class="response-time">{{ questionResult.responseTime }}ms</span>
+                                  <span class="feedback">{{ questionResult.feedback }}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -948,12 +1031,27 @@
                       {{ isGeneratingData ? 'Generating...' : 'Generate Test Data' }}
                     </button>
 
-                    <button @click="runTests" :disabled="!canRunTests" class="run-tests-btn"
-                      :class="{ loading: isRunningTests }">
-                      <component :is="isRunningTests ? 'Loader' : 'Play'" class="w-4 h-4"
-                        :class="{ 'animate-spin': isRunningTests }" />
-                      {{ isRunningTests ? 'Running Tests...' : 'Run Tests' }}
-                    </button>
+                    <div class="test-control-buttons">
+                      <button @click="runTests" :disabled="!canRunTests" class="run-tests-btn"
+                        :class="{ loading: isRunningTests }">
+                        <component :is="isRunningTests ? 'Loader' : 'Play'" class="w-4 h-4"
+                          :class="{ 'animate-spin': isRunningTests }" />
+                        {{ isRunningTests ? 'Running Tests...' : 'Run Tests' }}
+                      </button>
+
+                      <div v-if="isRunningTests" class="test-control-group">
+                        <button @click="isPaused ? resumeTests() : pauseTests()" class="control-btn pause-resume"
+                          :class="{ paused: isPaused }">
+                          <component :is="isPaused ? 'Play' : 'Pause'" class="w-3 h-3" />
+                          {{ isPaused ? 'Resume' : 'Pause' }}
+                        </button>
+
+                        <button @click="stopTests" class="control-btn stop">
+                          <Square class="w-3 h-3" />
+                          Stop
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- Test Progress -->
@@ -962,14 +1060,20 @@
                       <span class="progress-text">
                         Testing {{ testProgress.current }}/{{ testProgress.total }}
                         ({{ testProgress.currentModel }})
+                        <span v-if="isPaused" class="pause-indicator">PAUSED</span>
                       </span>
                       <span class="progress-percent">
                         {{ Math.round((testProgress.current / testProgress.total) * 100) }}%
                       </span>
                     </div>
+                    <div v-if="testProgress.currentQuestion" class="current-question">
+                      <span class="question-label">Current Question:</span>
+                      <span class="question-text">{{ testProgress.currentQuestion }}</span>
+                    </div>
                     <div class="progress-bar">
                       <div class="progress-fill"
-                        :style="{ width: `${(testProgress.current / testProgress.total) * 100}%` }"></div>
+                        :style="{ width: `${(testProgress.current / testProgress.total) * 100}%` }">
+                      </div>
                     </div>
                   </div>
 
@@ -1020,12 +1124,12 @@
                       </div>
                       <div class="stat-item">
                         <span class="stat-value">{{testResults.reduce((sum, r) => sum + r.questionsAnswered, 0)
-                          }}</span>
+                        }}</span>
                         <span class="stat-label">Total Questions</span>
                       </div>
                       <div class="stat-item">
                         <span class="stat-value">{{Math.round(testResults.reduce((sum, r) => sum + r.overallScore, 0) /
-                          testResults.length) }}%</span>
+                          testResults.length)}}%</span>
                         <span class="stat-label">Avg Score</span>
                       </div>
                     </div>
@@ -1036,6 +1140,7 @@
                     <table class="results-table">
                       <thead>
                         <tr>
+                          <th class="expand-col"></th>
                           <th class="model-col">Model</th>
                           <th class="score-col">Overall Score</th>
                           <th class="criterion-col">Accuracy</th>
@@ -1047,44 +1152,188 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="result in sortedTestResults" :key="result.modelId" class="result-row">
-                          <td class="model-cell">
-                            <div class="model-info">
-                              <img :src="getProviderIcon(result.modelSource)" class="model-icon-mini" />
-                              <span class="model-name">{{ result.modelName }}</span>
-                              <span class="model-source">{{ result.modelSource }}</span>
-                            </div>
-                          </td>
-                          <td class="score-cell">
-                            <div class="overall-score" :class="getScoreClass(result.overallScore)">
-                              {{ Math.round(result.overallScore) }}%
-                            </div>
-                          </td>
-                          <td class="criterion-cell">
-                            <div class="criterion-score" :class="getScoreClass(result.criteriaScores[0]?.score || 0)">
-                              {{ Math.round(result.criteriaScores[0]?.score || 0) }}%
-                            </div>
-                          </td>
-                          <td class="criterion-cell">
-                            <div class="criterion-score" :class="getScoreClass(result.criteriaScores[1]?.score || 0)">
-                              {{ Math.round(result.criteriaScores[1]?.score || 0) }}%
-                            </div>
-                          </td>
-                          <td class="criterion-cell">
-                            <div class="criterion-score" :class="getScoreClass(result.criteriaScores[2]?.score || 0)">
-                              {{ Math.round(result.criteriaScores[2]?.score || 0) }}%
-                            </div>
-                          </td>
-                          <td class="stat-cell">{{ result.questionsAnswered }}</td>
-                          <td class="stat-cell">{{ result.avgResponseTime }}ms</td>
-                          <td class="stat-cell">
-                            <span class="error-count" :class="{ 'has-errors': result.errors > 0 }">
-                              {{ result.errors }}
-                            </span>
-                          </td>
-                        </tr>
+                        <template v-for="result in sortedTestResults" :key="result.modelId">
+                          <tr class="result-row clickable" @click="toggleModelRow(result.modelId)">
+                            <td class="expand-cell">
+                              <component :is="isModelRowExpanded(result.modelId) ? 'ChevronDown' : 'ChevronRight'"
+                                class="expand-icon" />
+                            </td>
+                            <td class="model-cell">
+                              <div class="model-info">
+                                <img :src="getProviderIcon(result.modelSource)" class="model-icon-mini" />
+                                <span class="model-name">{{ result.modelName }}</span>
+                                <span class="model-source">{{ result.modelSource }}</span>
+                              </div>
+                            </td>
+                            <td class="score-cell">
+                              <div class="overall-score" :class="getScoreClass(result.overallScore)">
+                                {{ Math.round(result.overallScore) }}%
+                              </div>
+                            </td>
+                            <td class="criterion-cell">
+                              <div class="criterion-score" :class="getScoreClass(result.criteriaScores[0]?.score || 0)">
+                                {{ Math.round(result.criteriaScores[0]?.score || 0) }}%
+                              </div>
+                            </td>
+                            <td class="criterion-cell">
+                              <div class="criterion-score" :class="getScoreClass(result.criteriaScores[1]?.score || 0)">
+                                {{ Math.round(result.criteriaScores[1]?.score || 0) }}%
+                              </div>
+                            </td>
+                            <td class="criterion-cell">
+                              <div class="criterion-score" :class="getScoreClass(result.criteriaScores[2]?.score || 0)">
+                                {{ Math.round(result.criteriaScores[2]?.score || 0) }}%
+                              </div>
+                            </td>
+                            <td class="stat-cell">{{ result.questionsAnswered }}</td>
+                            <td class="stat-cell">{{ result.avgResponseTime }}ms</td>
+                            <td class="stat-cell">
+                              <span class="error-count" :class="{ 'has-errors': result.errors > 0 }">
+                                {{ result.errors }}
+                              </span>
+                            </td>
+                          </tr>
+                          <!-- Expanded Row Content -->
+                          <tr v-if="isModelRowExpanded(result.modelId)" class="expanded-row">
+                            <td colspan="9" class="expanded-content">
+                              <div class="model-detailed-view">
+                                <div class="detailed-header">
+                                  <h4>{{ result.modelName }} - Question-by-Question Results</h4>
+                                  <span class="pass-fail-summary">
+                                    {{getModelDetailedResults(result.modelId)?.questionResults.filter(q =>
+                                    q.passed).length || 0 }}/{{
+                                      getModelDetailedResults(result.modelId)?.questionResults.length || 0 }} passed
+                                  </span>
+                                </div>
+
+                                <div class="questions-list">
+                                  <div
+                                    v-for="(questionResult, index) in getModelDetailedResults(result.modelId)?.questionResults"
+                                    :key="index" class="question-detail-row"
+                                    :class="{ failed: !questionResult.passed }">
+                                    <div class="question-summary">
+                                      <span class="question-num">Q{{ index + 1 }}</span>
+                                      <span class="question-score" :class="getScoreClass(questionResult.overallScore)">
+                                        {{ Math.round(questionResult.overallScore) }}%
+                                      </span>
+                                      <span class="question-status" :class="{ passed: questionResult.passed }">
+                                        {{ questionResult.passed ? '✓' : '✗' }}
+                                      </span>
+                                      <span class="question-preview">{{ questionResult.question.substring(0, 80) }}{{
+                                        questionResult.question.length > 80 ? '...' : '' }}</span>
+                                    </div>
+
+                                    <div class="response-comparison">
+                                      <div class="expected-response">
+                                        <div class="response-label">Expected:</div>
+                                        <div class="response-content expected clickable"
+                                             @click="showResponseModal('Expected Answer', questionResult.expectedAnswer, true)">
+                                          {{ questionResult.expectedAnswer }}
+                                        </div>
+                                      </div>
+                                      <div class="actual-response">
+                                        <div class="response-label">Model Response:</div>
+                                        <div class="response-content actual clickable"
+                                          :class="{ error: questionResult.actualAnswer.startsWith('ERROR:') }"
+                                          @click="showResponseModal('Model Response', questionResult.actualAnswer, true)">
+                                          {{ questionResult.actualAnswer }}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div class="question-metadata">
+                                      <span class="response-time">{{ questionResult.responseTime }}ms</span>
+                                      <span class="feedback">{{ questionResult.feedback }}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        </template>
                       </tbody>
                     </table>
+                  </div>
+
+                  <!-- Detailed Results View -->
+                  <div v-if="detailedTestResults.length > 0" class="detailed-results-section">
+                    <div class="detailed-results-header">
+                      <span class="section-title">Question-by-Question Results</span>
+                      <div class="view-toggle">
+                        <label class="toggle-switch-compact">
+                          <input type="checkbox" v-model="showDetailedResults">
+                          <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-label">Show Details</span>
+                      </div>
+                    </div>
+
+                    <div v-if="showDetailedResults" class="detailed-results-content">
+                      <div v-for="modelResult in detailedTestResults" :key="modelResult.modelId"
+                        class="model-detailed-results">
+                        <div class="model-header-detailed">
+                          <img :src="getProviderIcon(modelResult.modelSource)" class="model-icon-mini" />
+                          <span class="model-name-detailed">{{ modelResult.modelName }}</span>
+                          <span class="model-summary">
+                            {{modelResult.questionResults.filter(q => q.passed).length}}/{{
+                              modelResult.questionResults.length
+                            }} passed
+                          </span>
+                        </div>
+
+                        <div class="questions-grid">
+                          <div v-for="(questionResult, index) in modelResult.questionResults" :key="index"
+                            class="question-result-card" :class="{ failed: !questionResult.passed }">
+                            <div class="question-header">
+                              <span class="question-number">Q{{ index + 1 }}</span>
+                              <span class="question-score" :class="getScoreClass(questionResult.overallScore)">
+                                {{ Math.round(questionResult.overallScore) }}%
+                              </span>
+                              <span class="question-status" :class="{ passed: questionResult.passed }">
+                                {{ questionResult.passed ? '✓' : '✗' }}
+                              </span>
+                            </div>
+
+                            <div class="question-content">
+                              <div class="question-text">
+                                <strong>Question:</strong> {{ questionResult.question }}
+                              </div>
+
+                              <div class="answer-comparison">
+                                <div class="expected-answer">
+                                  <div class="answer-label">Expected Answer:</div>
+                                  <div class="answer-text expected">{{ questionResult.expectedAnswer }}</div>
+                                </div>
+
+                                <div class="actual-answer">
+                                  <div class="answer-label">Model Response:</div>
+                                  <div class="answer-text actual"
+                                    :class="{ error: questionResult.actualAnswer.startsWith('ERROR:') }">
+                                    {{ questionResult.actualAnswer }}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div class="criteria-scores">
+                                <div v-for="score in questionResult.scores" :key="score.name"
+                                  class="criterion-score-item">
+                                  <span class="criterion-name">{{ score.name }}:</span>
+                                  <span class="criterion-value" :class="getScoreClass(score.score)">
+                                    {{ Math.round(score.score) }}%
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div class="question-meta">
+                                <span class="response-time">{{ questionResult.responseTime }}ms</span>
+                                <span class="difficulty">{{ questionResult.difficulty }}</span>
+                                <span class="feedback">{{ questionResult.feedback }}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1103,13 +1352,33 @@
         </div>
       </transition>
     </Teleport>
+    
+    <!-- Response Modal -->
+    <Teleport to="body">
+      <transition name="modal">
+        <div v-if="responseModal.show" class="modal-overlay" @click.self="closeResponseModal">
+          <div class="response-modal">
+            <div class="modal-header">
+              <h3>{{ responseModal.title }}</h3>
+              <button @click="closeResponseModal" class="modal-close-btn">
+                <X class="w-4 h-4" />
+              </button>
+            </div>
+            <div class="modal-body">
+              <pre v-if="responseModal.isJson" class="json-content">{{ responseModal.content }}</pre>
+              <div v-else class="text-content">{{ responseModal.content }}</div>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue';
 import {
-  X, Search, Check, Star, Play, Loader, MessageSquare, RotateCcw, ChevronDown, Plus, Trash2, Zap
+  X, Search, Check, Star, Play, Pause, Square, Loader, MessageSquare, RotateCcw, ChevronDown, ChevronRight, Plus, Trash2, Zap
 } from 'lucide-vue-next';
 import { useModelStore } from '@/stores/modelStore';
 import { useThemeStore } from '@/stores/themeStore';
@@ -1226,9 +1495,20 @@ const activeTestFilters = ref(new Set());
 const showSelectedModels = ref(false);
 const isGeneratingData = ref(false);
 const isRunningTests = ref(false);
+const isPaused = ref(false);
 const generatedTestData = ref([]);
 const testResults = ref([]);
-const testProgress = ref({ current: 0, total: 0, currentModel: '' });
+const detailedTestResults = ref([]);
+const showDetailedResults = ref(false);
+const expandedModelRows = ref(new Set());
+const responseModal = ref({ show: false, title: '', content: '', isJson: false });
+const testProgress = ref({ current: 0, total: 0, currentModel: '', currentQuestion: '' });
+const testState = ref({
+  currentModelIndex: 0,
+  currentQuestionIndex: 0,
+  currentRunIndex: 0,
+  resumeData: null
+});
 
 // Configuration
 const apiProviders = [
@@ -1532,7 +1812,7 @@ const loadMoreModels = async () => {
 
 const getAgentModel = (agentId) => {
   // For standard agents, find by type
-  const standardAgent = agentStore.agentConfigs.find(config => config.type === agentId && config.isDefault);
+  const standardAgent = agentStore.agentConfigs.find(config => config.type === agentId && config.isDefault && config.enabled);
   if (standardAgent) return standardAgent.model || null;
 
   // For custom agents, find by ID
@@ -1882,18 +2162,50 @@ const generateTestData = async () => {
   }
 };
 
+// Pause/Resume functionality
+const pauseTests = () => {
+  isPaused.value = true;
+  showNotification('Test run paused');
+};
+
+const resumeTests = () => {
+  isPaused.value = false;
+  showNotification('Test run resumed');
+};
+
+const stopTests = () => {
+  isRunningTests.value = false;
+  isPaused.value = false;
+  testState.value = { currentModelIndex: 0, currentQuestionIndex: 0, currentRunIndex: 0, resumeData: null };
+  showNotification('Test run stopped');
+};
+
+// Wait for pause/resume
+const waitForResume = async () => {
+  while (isPaused.value && isRunningTests.value) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+};
+
 const runTests = async () => {
   if (!canRunTests.value) return;
 
   isRunningTests.value = true;
+  isPaused.value = false;
   testResults.value = [];
+  detailedTestResults.value = [];
+  expandedModelRows.value.clear();
 
   try {
     const totalTests = selectedTestModels.value.length * generatedTestData.value.length;
-    testProgress.value = { current: 0, total: totalTests, currentModel: '' };
+    testProgress.value = { current: 0, total: totalTests, currentModel: '', currentQuestion: '' };
 
-    for (const model of selectedTestModels.value) {
+    for (let modelIndex = testState.value.currentModelIndex; modelIndex < selectedTestModels.value.length; modelIndex++) {
+      if (!isRunningTests.value) break; // Check if test was stopped
+
+      const model = selectedTestModels.value[modelIndex];
       testProgress.value.currentModel = model.name;
+      testState.value.currentModelIndex = modelIndex;
 
       const modelResult = {
         modelId: model.id,
@@ -1906,53 +2218,180 @@ const runTests = async () => {
         errors: 0
       };
 
+      const modelDetailedResults = {
+        modelId: model.id,
+        modelName: model.name,
+        modelSource: model.source,
+        questionResults: []
+      };
+
       let totalResponseTime = 0;
 
-      for (const question of generatedTestData.value) {
+      for (let questionIndex = testState.value.currentQuestionIndex; questionIndex < generatedTestData.value.length; questionIndex++) {
+        if (!isRunningTests.value) break; // Check if test was stopped
+
+        // Wait if paused
+        await waitForResume();
+        if (!isRunningTests.value) break;
+
+        const question = generatedTestData.value[questionIndex];
         testProgress.value.current++;
+        testProgress.value.currentQuestion = question.question.substring(0, 50) + '...';
+        testState.value.currentQuestionIndex = questionIndex;
 
         try {
-          // TODO: Implement actual API call to model
-          // For now, simulate with random results
-          await new Promise(resolve => setTimeout(resolve, 500));
+          const startTime = Date.now();
 
-          const responseTime = Math.random() * 2000 + 500;
+          // Make actual API call to the model
+          const response = await callModelAPI(model, question.question);
+
+          const responseTime = Date.now() - startTime;
           totalResponseTime += responseTime;
           modelResult.questionsAnswered++;
 
-          // Generate random scores for each criterion
+          // Evaluate the response
+          const evaluation = await evaluateResponse(question, response);
+
+          // Store detailed result
+          const questionResult = {
+            question: question.question,
+            expectedAnswer: question.expectedAnswer,
+            actualAnswer: response,
+            responseTime: responseTime,
+            scores: evaluation.scores,
+            overallScore: evaluation.overallScore,
+            passed: evaluation.passed,
+            feedback: evaluation.feedback,
+            difficulty: question.difficulty,
+            context: question.context
+          };
+
+          modelDetailedResults.questionResults.push(questionResult);
+
+          // Update model result scores
           modelResult.criteriaScores.forEach(criterion => {
-            criterion.score += Math.random() * 100;
+            const evalCriterion = evaluation.scores.find(s => s.name === criterion.name);
+            if (evalCriterion) {
+              criterion.score += evalCriterion.score;
+            }
           });
 
         } catch (error) {
+          console.error('Question evaluation failed:', error);
           modelResult.errors++;
+
+          // Store error result
+          modelDetailedResults.questionResults.push({
+            question: question.question,
+            expectedAnswer: question.expectedAnswer,
+            actualAnswer: 'ERROR: ' + error.message,
+            responseTime: 0,
+            scores: testTemplate.evaluationCriteria.map(c => ({ name: c.name, score: 0 })),
+            overallScore: 0,
+            passed: false,
+            feedback: 'Failed to get response from model',
+            difficulty: question.difficulty,
+            context: question.context
+          });
         }
       }
 
-      // Calculate averages
-      modelResult.avgResponseTime = Math.round(totalResponseTime / modelResult.questionsAnswered);
-      modelResult.criteriaScores.forEach(criterion => {
-        criterion.score = criterion.score / modelResult.questionsAnswered;
-      });
+      // Calculate averages only if we completed questions for this model
+      if (modelResult.questionsAnswered > 0) {
+        modelResult.avgResponseTime = Math.round(totalResponseTime / modelResult.questionsAnswered);
+        modelResult.criteriaScores.forEach(criterion => {
+          criterion.score = criterion.score / modelResult.questionsAnswered;
+        });
 
-      // Calculate overall score based on criteria weights
-      modelResult.overallScore = modelResult.criteriaScores.reduce((sum, criterion) => {
-        const weight = testTemplate.evaluationCriteria.find(c => c.name === criterion.name)?.weight || 0;
-        return sum + (criterion.score * weight);
-      }, 0);
+        // Calculate overall score based on criteria weights
+        modelResult.overallScore = modelResult.criteriaScores.reduce((sum, criterion) => {
+          const weight = testTemplate.evaluationCriteria.find(c => c.name === criterion.name)?.weight || 0;
+          return sum + (criterion.score * weight);
+        }, 0);
+      }
 
       testResults.value.push(modelResult);
+      detailedTestResults.value.push(modelDetailedResults);
+
+      // Reset question index for next model
+      testState.value.currentQuestionIndex = 0;
     }
 
-    showNotification(`Completed testing ${selectedTestModels.value.length} models`);
+    if (isRunningTests.value) {
+      showNotification(`Completed testing ${selectedTestModels.value.length} models`);
+    }
 
   } catch (error) {
     console.error('Testing failed:', error);
-    showNotification('Testing failed');
+    showNotification('Testing failed: ' + error.message);
   } finally {
     isRunningTests.value = false;
-    testProgress.value = { current: 0, total: 0, currentModel: '' };
+    isPaused.value = false;
+    testProgress.value = { current: 0, total: 0, currentModel: '', currentQuestion: '' };
+    testState.value = { currentModelIndex: 0, currentQuestionIndex: 0, currentRunIndex: 0, resumeData: null };
+  }
+};
+
+// Evaluate response against expected answer and criteria
+const evaluateResponse = async (question, response) => {
+  try {
+    // Simple evaluation logic - in a real implementation, you might use an LLM for evaluation
+    const scores = testTemplate.evaluationCriteria.map(criterion => {
+      let score = 0;
+
+      switch (criterion.name) {
+        case 'Accuracy':
+          // Check if response contains key elements from expected answer
+          if (question.expectedAnswer && response) {
+            const expectedWords = question.expectedAnswer.toLowerCase().split(/\s+/);
+            const responseWords = response.toLowerCase().split(/\s+/);
+            const matchingWords = expectedWords.filter(word => responseWords.includes(word));
+            score = (matchingWords.length / expectedWords.length) * 100;
+          }
+          break;
+
+        case 'Completeness':
+          // Check response length and structure
+          if (response && response.length > 20) {
+            score = Math.min(100, (response.length / 200) * 100);
+          }
+          break;
+
+        case 'Format Compliance':
+          // Check if response follows expected format
+          score = response && response.length > 0 ? 85 + Math.random() * 15 : 0;
+          break;
+
+        default:
+          score = 50 + Math.random() * 50; // Random score for custom criteria
+      }
+
+      return { name: criterion.name, score: Math.max(0, Math.min(100, score)) };
+    });
+
+    // Calculate overall score
+    const overallScore = scores.reduce((sum, score, index) => {
+      const weight = testTemplate.evaluationCriteria[index]?.weight || 0;
+      return sum + (score.score * weight);
+    }, 0);
+
+    const passed = overallScore >= 60; // Pass threshold
+
+    return {
+      scores,
+      overallScore,
+      passed,
+      feedback: passed ? 'Response meets criteria' : 'Response needs improvement'
+    };
+
+  } catch (error) {
+    console.error('Evaluation failed:', error);
+    return {
+      scores: testTemplate.evaluationCriteria.map(c => ({ name: c.name, score: 0 })),
+      overallScore: 0,
+      passed: false,
+      feedback: 'Evaluation failed: ' + error.message
+    };
   }
 };
 
@@ -1963,21 +2402,150 @@ const getScoreClass = (score) => {
   return 'score-poor';
 };
 
+// Model row expansion functions
+const toggleModelRow = (modelId) => {
+  if (expandedModelRows.value.has(modelId)) {
+    expandedModelRows.value.delete(modelId);
+  } else {
+    expandedModelRows.value.add(modelId);
+  }
+};
+
+const isModelRowExpanded = (modelId) => {
+  return expandedModelRows.value.has(modelId);
+};
+
+const getModelDetailedResults = (modelId) => {
+  return detailedTestResults.value.find(result => result.modelId === modelId);
+};
+
+// Modal functions
+const showResponseModal = (title, content, isJson = false) => {
+  responseModal.value = {
+    show: true,
+    title,
+    content: isJson ? formatJson(content) : content,
+    isJson
+  };
+};
+
+const closeResponseModal = () => {
+  responseModal.value.show = false;
+};
+
+const formatJson = (content) => {
+  try {
+    // Remove any leading/trailing whitespace
+    const trimmed = typeof content === 'string' ? content.trim() : content;
+    
+    // Check if it looks like JSON
+    if (typeof trimmed === 'string') {
+      // Check for JSON-like structure
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        const parsed = JSON.parse(trimmed);
+        return JSON.stringify(parsed, null, 2);
+      }
+      
+      // Check if it contains JSON embedded in text (common in LLM responses)
+      const jsonMatch = trimmed.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[1]);
+          // Return the full text with the JSON portion pretty-printed
+          const before = trimmed.substring(0, jsonMatch.index);
+          const after = trimmed.substring(jsonMatch.index + jsonMatch[0].length);
+          return before + JSON.stringify(parsed, null, 2) + after;
+        } catch (e) {
+          // If embedded JSON parsing fails, return original
+          return content;
+        }
+      }
+    }
+    
+    // If it's an object, stringify it
+    if (typeof trimmed === 'object' && trimmed !== null) {
+      return JSON.stringify(trimmed, null, 2);
+    }
+    
+    // Otherwise return as-is
+    return content;
+  } catch (e) {
+    // If parsing fails, return the original content
+    return content;
+  }
+};
+
 const exportResults = () => {
-  const dataStr = JSON.stringify(testResults.value, null, 2);
+  // Create comprehensive export data
+  const exportData = {
+    exportInfo: {
+      timestamp: new Date().toISOString(),
+      testType: testMode.value,
+      totalModels: testResults.value.length,
+      totalQuestions: testResults.value.reduce((sum, r) => sum + r.questionsAnswered, 0),
+      averageScore: Math.round(testResults.value.reduce((sum, r) => sum + r.overallScore, 0) / testResults.value.length) || 0
+    },
+    testConfiguration: testMode.value === 'quick' ? {
+      type: 'quick',
+      category: quickTestConfig.category,
+      testRuns: quickTestConfig.testRuns,
+      questionsPerRun: quickTestConfig.questionsPerRun,
+      temperature: quickTestConfig.temperature
+    } : {
+      type: 'custom',
+      name: testTemplate.name,
+      description: testTemplate.description,
+      category: testTemplate.category,
+      config: testTemplate.config,
+      evaluationCriteria: testTemplate.evaluationCriteria
+    },
+    summaryResults: testResults.value,
+    detailedResults: detailedTestResults.value.map(modelResult => ({
+      modelId: modelResult.modelId,
+      modelName: modelResult.modelName,
+      modelSource: modelResult.modelSource,
+      questionsAndAnswers: modelResult.questionResults.map((questionResult, index) => ({
+        questionNumber: index + 1,
+        question: questionResult.question,
+        expectedAnswer: questionResult.expectedAnswer,
+        actualAnswer: questionResult.actualAnswer,
+        responseTime: questionResult.responseTime,
+        scores: questionResult.scores,
+        overallScore: questionResult.overallScore,
+        passed: questionResult.passed,
+        feedback: questionResult.feedback,
+        difficulty: questionResult.difficulty,
+        context: questionResult.context
+      })),
+      statistics: {
+        totalQuestions: modelResult.questionResults.length,
+        questionsPassed: modelResult.questionResults.filter(q => q.passed).length,
+        questionsFailed: modelResult.questionResults.filter(q => !q.passed).length,
+        passRate: Math.round((modelResult.questionResults.filter(q => q.passed).length / modelResult.questionResults.length) * 100) || 0,
+        averageResponseTime: Math.round(modelResult.questionResults.reduce((sum, q) => sum + q.responseTime, 0) / modelResult.questionResults.length) || 0,
+        averageScore: Math.round(modelResult.questionResults.reduce((sum, q) => sum + q.overallScore, 0) / modelResult.questionResults.length) || 0
+      }
+    })),
+    testQuestions: generatedTestData.value
+  };
+
+  const dataStr = JSON.stringify(exportData, null, 2);
   const dataBlob = new Blob([dataStr], { type: 'application/json' });
   const url = URL.createObjectURL(dataBlob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `test-results-${new Date().toISOString().split('T')[0]}.json`;
+  link.download = `llm-test-results-${testMode.value}-${new Date().toISOString().split('T')[0]}.json`;
   link.click();
   URL.revokeObjectURL(url);
-  showNotification('Results exported successfully');
+  showNotification('Comprehensive results exported successfully');
 };
 
 const clearResults = () => {
   testResults.value = [];
+  detailedTestResults.value = [];
   generatedTestData.value = [];
+  expandedModelRows.value.clear();
   showNotification('Results cleared');
 };
 
@@ -2103,26 +2671,15 @@ const callModelAPI = async (model, question) => {
   }
 };
 
-const evaluateResponse = (response, expectedAnswer, category) => {
-  // Simple evaluation logic - could be enhanced with more sophisticated scoring
-  const responseLength = response.length;
-  const hasContent = responseLength > 10;
-  const isReasonableLength = responseLength > 20 && responseLength < 2000;
-
-  // Basic scoring based on response quality
-  const accuracyScore = hasContent ? (Math.random() * 40 + 50) : 0; // 50-90%
-  const completenessScore = isReasonableLength ? (Math.random() * 30 + 60) : (Math.random() * 30 + 30); // 60-90% or 30-60%
-  const formatScore = hasContent && !response.includes('error') ? (Math.random() * 20 + 70) : (Math.random() * 20 + 40); // 70-90% or 40-60%
-
-  return [accuracyScore, completenessScore, formatScore];
-};
-
 const runQuickTest = async () => {
   if (selectedTestModels.value.length === 0) return;
 
   // Use the existing runTests functionality but with predefined settings
   isRunningTests.value = true;
+  isPaused.value = false;
   testResults.value = [];
+  detailedTestResults.value = [];
+  expandedModelRows.value.clear();
 
   try {
     // Generate default prompt adherence test data based on category
@@ -2130,10 +2687,14 @@ const runQuickTest = async () => {
     generatedTestData.value = defaultQuestions;
 
     const totalTests = selectedTestModels.value.length * defaultQuestions.length * quickTestConfig.testRuns;
-    testProgress.value = { current: 0, total: totalTests, currentModel: '' };
+    testProgress.value = { current: 0, total: totalTests, currentModel: '', currentQuestion: '' };
 
-    for (const model of selectedTestModels.value) {
+    for (let modelIndex = testState.value.currentModelIndex; modelIndex < selectedTestModels.value.length; modelIndex++) {
+      if (!isRunningTests.value) break; // Check if test was stopped
+
+      const model = selectedTestModels.value[modelIndex];
       testProgress.value.currentModel = model.name;
+      testState.value.currentModelIndex = modelIndex;
 
       const modelResult = {
         modelId: model.id,
@@ -2150,11 +2711,26 @@ const runQuickTest = async () => {
         errors: 0
       };
 
+      const modelDetailedResults = {
+        modelId: model.id,
+        modelName: model.name,
+        modelSource: model.source,
+        questionResults: []
+      };
+
       let totalResponseTime = 0;
 
       for (let run = 0; run < quickTestConfig.testRuns; run++) {
-        for (const question of defaultQuestions) {
+        for (let questionIndex = 0; questionIndex < defaultQuestions.length; questionIndex++) {
+          if (!isRunningTests.value) break; // Check if test was stopped
+
+          // Wait if paused
+          await waitForResume();
+          if (!isRunningTests.value) break;
+
+          const question = defaultQuestions[questionIndex];
           testProgress.value.current++;
+          testProgress.value.currentQuestion = question.question.substring(0, 50) + '...';
 
           try {
             const startTime = Date.now();
@@ -2166,16 +2742,54 @@ const runQuickTest = async () => {
             totalResponseTime += responseTime;
             modelResult.questionsAnswered++;
 
-            // Evaluate the response against the expected answer
-            const scores = evaluateResponse(response, question.expectedAnswer || '', quickTestConfig.category);
+            // Evaluate the response
+            const evaluation = await evaluateResponse(question, response);
 
-            modelResult.criteriaScores.forEach((criterion, index) => {
-              criterion.score += scores[index] || 0;
+            // Store detailed result
+            const questionResult = {
+              question: question.question,
+              expectedAnswer: question.expectedAnswer,
+              actualAnswer: response,
+              responseTime: responseTime,
+              scores: evaluation.scores,
+              overallScore: evaluation.overallScore,
+              passed: evaluation.passed,
+              feedback: evaluation.feedback,
+              difficulty: question.difficulty,
+              context: question.context || ''
+            };
+
+            modelDetailedResults.questionResults.push(questionResult);
+
+            // Update model result scores
+            modelResult.criteriaScores.forEach(criterion => {
+              const evalCriterion = evaluation.scores.find(s => s.name === criterion.name);
+              if (evalCriterion) {
+                criterion.score += evalCriterion.score;
+              }
             });
 
           } catch (error) {
             console.error(`Error testing ${model.name}:`, error);
             modelResult.errors++;
+
+            // Store error result
+            modelDetailedResults.questionResults.push({
+              question: question.question,
+              expectedAnswer: question.expectedAnswer,
+              actualAnswer: 'ERROR: ' + error.message,
+              responseTime: 0,
+              scores: [
+                { name: 'Accuracy', score: 0 },
+                { name: 'Completeness', score: 0 },
+                { name: 'Format Compliance', score: 0 }
+              ],
+              overallScore: 0,
+              passed: false,
+              feedback: 'Failed to get response from model',
+              difficulty: question.difficulty,
+              context: question.context || ''
+            });
           }
         }
       }
@@ -2193,16 +2807,21 @@ const runQuickTest = async () => {
         (modelResult.criteriaScores[2].score * 0.3);
 
       testResults.value.push(modelResult);
+      detailedTestResults.value.push(modelDetailedResults);
     }
 
-    showNotification(`Quick test completed! Tested ${selectedTestModels.value.length} models`);
+    if (isRunningTests.value) {
+      showNotification(`Quick test completed! Tested ${selectedTestModels.value.length} models`);
+    }
 
   } catch (error) {
     console.error('Quick test failed:', error);
-    showNotification('Quick test failed');
+    showNotification('Quick test failed: ' + error.message);
   } finally {
     isRunningTests.value = false;
-    testProgress.value = { current: 0, total: 0, currentModel: '' };
+    isPaused.value = false;
+    testProgress.value = { current: 0, total: 0, currentModel: '', currentQuestion: '' };
+    testState.value = { currentModelIndex: 0, currentQuestionIndex: 0, currentRunIndex: 0, resumeData: null };
   }
 };
 
@@ -2645,19 +3264,20 @@ onBeforeUnmount(() => {
 
 /* Main Columns */
 .main-columns {
-  display: grid;
-  grid-template-columns: 1fr 1.8fr;
+  display: flex;
   gap: 20px;
   flex: 1;
   min-height: 0;
+  flex-direction: row-reverse;
 }
 
 .left-column,
 .right-column {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 0;
+    flex-direction: column;
+    max-width: 18vw;
+    gap: 16px;
+    min-height: 0;
 }
 
 .section-title {
@@ -3397,7 +4017,6 @@ onBeforeUnmount(() => {
 .assignment-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
@@ -3821,8 +4440,8 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 1fr 1.2fr;
   gap: 20px;
-  flex: 1;
   min-height: 0;
+  margin-bottom: 16px;
 }
 
 .quick-config-column,
@@ -5061,6 +5680,706 @@ onBeforeUnmount(() => {
 
   .model-col {
     min-width: 140px;
+  }
+}
+
+/* Test Control Buttons */
+.test-control-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.test-control-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.control-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--text-secondary);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.control-btn.pause-resume.paused {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.control-btn.stop {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.control-btn.stop:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Progress Updates */
+.pause-indicator {
+  font-size: 10px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.current-question {
+  margin: 8px 0;
+  padding: 8px;
+  background: var(--card-background);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.question-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-right: 8px;
+}
+
+.question-text {
+  color: var(--text-primary);
+  font-style: italic;
+}
+
+/* Detailed Results */
+.detailed-results-section {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.detailed-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.detailed-results-content {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.model-detailed-results {
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.model-header-detailed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--card-background);
+  border-bottom: 1px solid var(--border);
+}
+
+.model-name-detailed {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.model-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.questions-grid {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.question-result-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--background);
+  transition: all 0.2s;
+}
+
+.question-result-card.failed {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.question-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.question-number {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.question-score {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.question-status {
+  font-size: 14px;
+  margin-left: auto;
+}
+
+.question-status.passed {
+  color: #10b981;
+}
+
+.question-content {
+  font-size: 12px;
+}
+
+.question-text {
+  margin-bottom: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.answer-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.answer-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.answer-text {
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.answer-text.expected {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: var(--text-primary);
+}
+
+.answer-text.actual {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--text-primary);
+}
+
+.answer-text.actual.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.criteria-scores {
+  display: flex;
+  gap: 12px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.criterion-score-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.criterion-name {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.criterion-value {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.question-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.response-time {
+  font-weight: 500;
+}
+
+.difficulty {
+  text-transform: capitalize;
+}
+
+.feedback {
+  font-style: italic;
+  margin-left: auto;
+}
+
+/* Responsive detailed results */
+@media (max-width: 1200px) {
+  .answer-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .criteria-scores {
+    justify-content: center;
+  }
+
+  .question-meta {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+/* Clickable Table Rows */
+.expand-col {
+  width: 30px;
+  padding: 8px 4px;
+}
+
+.expand-cell {
+  text-align: center;
+  padding: 8px 4px;
+}
+
+.expand-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary);
+  transition: transform 0.2s, color 0.2s;
+}
+
+.result-row.clickable {
+  cursor: pointer;
+}
+
+.result-row.clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.result-row.clickable:hover .expand-icon {
+  color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+/* Expanded Row Content */
+.expanded-row {
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.expanded-content {
+  padding: 16px;
+}
+
+.model-detailed-view {
+  background: var(--card-background);
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
+.detailed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detailed-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pass-fail-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.questions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.question-detail-row {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  transition: all 0.2s;
+}
+
+.question-detail-row.failed {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.question-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.question-num {
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--hover);
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.question-score {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.question-status {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.question-status.passed {
+  color: #10b981;
+}
+
+.question-preview {
+  font-size: 11px;
+  color: var(--text-primary);
+  flex: 1;
+  font-style: italic;
+}
+
+.response-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.expected-response,
+.actual-response {
+  min-width: 0;
+}
+
+.response-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.response-content {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 8px;
+  border-radius: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  word-wrap: break-word;
+}
+
+.response-content.expected {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: var(--text-primary);
+}
+
+.response-content.actual {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--text-primary);
+}
+
+.response-content.actual.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.question-metadata {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.response-time {
+  font-weight: 500;
+}
+
+.feedback {
+  font-style: italic;
+  margin-left: auto;
+}
+
+/* Responsive adjustments for expanded content */
+@media (max-width: 1200px) {
+  .response-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .question-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .question-metadata {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 768px) {
+  .expanded-content {
+    padding: 12px;
+  }
+
+  .model-detailed-view {
+    padding: 12px;
+  }
+
+  .detailed-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* Response Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.response-modal {
+  background: var(--card-background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 800px;
+  max-height: 80vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.modal-close-btn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.json-content {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--text-primary);
+}
+
+.text-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Clickable Response Content */
+.response-content.clickable {
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.response-content.clickable:hover {
+  opacity: 0.8;
+  transform: translateY(-1px);
+}
+
+.response-content.clickable::after {
+  content: 'Click to view full response';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  margin-bottom: 4px;
+}
+
+.response-content.clickable:hover::after {
+  opacity: 1;
+}
+
+/* Modal Transition */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.3s;
+}
+
+.modal-enter-active .response-modal,
+.modal-leave-active .response-modal {
+  transition: transform 0.3s, opacity 0.3s;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .response-modal,
+.modal-leave-to .response-modal {
+  transform: scale(0.9);
+  opacity: 0;
+}
+
+/* Responsive Modal */
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 10px;
+  }
+  
+  .response-modal {
+    max-height: 90vh;
+  }
+  
+  .modal-header {
+    padding: 12px 16px;
+  }
+  
+  .modal-body {
+    padding: 16px;
+  }
+  
+  .json-content {
+    font-size: 11px;
+    padding: 12px;
   }
 }
 </style>

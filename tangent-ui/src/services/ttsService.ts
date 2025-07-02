@@ -1,4 +1,5 @@
 import { ref, computed, reactive } from 'vue'
+import { apiService } from '../utils/api'
 
 export interface TTSVoice {
   id: string
@@ -13,7 +14,7 @@ export interface TTSSettings {
 }
 
 class TTSService {
-  private apiUrl = 'http://localhost:5050/api'
+  private get apiUrl() { return apiService.getApiUrl() }
   
   // Reactive state
   public isPlaying = ref(false)

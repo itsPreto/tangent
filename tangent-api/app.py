@@ -2302,4 +2302,4 @@ app.register_blueprint(api_routes, url_prefix='/api')
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5050, use_reloader=True, host='0.0.0.0')
+    app.run(debug=False, port=5050, use_reloader=True, host='0.0.0.0')

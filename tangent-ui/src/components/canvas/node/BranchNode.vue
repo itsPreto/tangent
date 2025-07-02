@@ -64,12 +64,32 @@
                     placeholder="Enter title..." />
                 </template>
                 <template v-else>
-                  <span class="text-lg font-semibold truncate max-w-lg text-base-content">
-                    {{ node.title || "Untitled Thread" }}
-                  </span>
-                  <button @click.stop="startEditing" class="p-1 rounded-full hover:bg-white/10 flex-shrink-0">
-                    <Edit2 class="w-4 h-4 text-base-content/60" />
-                  </button>
+                  <!-- Show loading animation when generating title -->
+                  <template v-if="node.isGeneratingTitle">
+                    <TitleGenerationLoader />
+                  </template>
+                  <!-- Show normal title when not generating -->
+                  <template v-else>
+                    <span class="text-lg font-semibold truncate max-w-lg text-base-content">
+                      {{ node.title || "Untitled Thread" }}
+                    </span>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                      <!-- Regenerate title button -->
+                      <button 
+                        @click.stop="regenerateTitle" 
+                        class="p-1 rounded-full hover:bg-white/10 transition-all duration-200"
+                        :class="{ 'animate-pulse': isRegeneratingTitle }"
+                        :disabled="isRegeneratingTitle"
+                        title="Regenerate title with AI"
+                      >
+                        <Sparkles class="w-4 h-4 text-base-content/60 hover:text-primary" />
+                      </button>
+                      <!-- Manual edit button -->
+                      <button @click.stop="startEditing" class="p-1 rounded-full hover:bg-white/10 transition-all duration-200">
+                        <Edit2 class="w-4 h-4 text-base-content/60" />
+                      </button>
+                    </div>
+                  </template>
                 </template>
               </div>
 
@@ -85,22 +105,53 @@
 
           <!-- Control Buttons -->
           <div class="flex items-center gap-2">
-            <TokenCounter 
-              :text="getAllMessagesText" 
-              :context-limit="activeModel?.inputTokenLimit"
-              :show-percentage="true"
-              :show-progress-bar="true"
-              :cache-key="`branch-${node.id}`"
-              class="mr-2" 
-              size="small" 
-            />
+            <!-- Enhanced Context Usage Indicator -->
+            <div class="flex items-center gap-2">
+              <TokenCounter 
+                :text="getAllMessagesText" 
+                :context-limit="actualContextLimit"
+                :show-percentage="true"
+                :show-progress-bar="true"
+                :cache-key="`branch-${node.id}`"
+                class="mr-1" 
+                size="small"
+                :class="contextStatusClass"
+              />
+              
+              <!-- Context status indicator -->
+              <div 
+                v-if="contextUsagePercentage >= 60"
+                class="flex items-center gap-1"
+                :title="contextStatusMessage"
+              >
+                <div 
+                  class="w-2 h-2 rounded-full"
+                  :class="contextIndicatorClass"
+                ></div>
+              </div>
+              
+              <!-- Compacted conversation indicator -->
+              <div 
+                v-if="hasCompactedMessages"
+                class="flex items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-xs"
+                title="This conversation includes compacted summaries"
+              >
+                <Archive class="w-3 h-3" />
+                <span>{{ compactedMessageCount }}</span>
+              </div>
+            </div>
             
             <!-- Auto-compact button when approaching limits -->
             <button 
-              v-if="tokenUsage.shouldCompact && !hasCompactedSections"
+              v-if="shouldShowCompactButton"
               @click.stop="handleAutoCompact"
-              class="p-2 rounded-full bg-orange-500/20 hover:bg-orange-500/30 text-orange-600 transition-colors"
-              title="Auto-compact old messages to save context"
+              :class="[
+                'p-2 rounded-full transition-colors',
+                contextUsagePercentage >= 85 
+                  ? 'bg-red-500/20 hover:bg-red-500/30 text-red-600 animate-pulse' 
+                  : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-600'
+              ]"
+              :title="contextUsagePercentage >= 85 ? 'Context limit approaching - compact now!' : 'Auto-compact old messages to save context'"
             >
               <Archive class="w-4 h-4" />
             </button>
@@ -142,11 +193,8 @@
                 <p class="font-medium text-sm text-base-content truncate">{{ node.mediaContent.filename }}</p>
                 <p class="text-xs text-base-content/60 mt-1">{{ node.mediaContent.mime_type }}</p>
                 <!-- Processing status in header -->
-                <div v-if="isMediaProcessing" class="flex items-center gap-2 mt-2">
-                  <div class="loading loading-spinner loading-xs"></div>
-                  <span class="text-xs text-base-content/60">
-                    {{ mediaProcessingStatus }}
-                  </span>
+                <div v-if="node.isProcessingMedia || isMediaProcessing" class="flex items-center gap-2 mt-2">
+                  <ImageAnalysisLoader />
                 </div>
               </div>
             </div>
@@ -213,30 +261,62 @@
 
               <!-- Message Content Container -->
               <div class="relative z-10">
-                <!-- Message Header -->
-                <div class="flex items-center justify-between mb-2">
-                  <Badge :variant="msg.role === 'user' ? 'default' : msg.isStreaming ? 'outline' : 'secondary'"
-                    class="text-xs">
-                    {{ msg.role === 'user' ? 'You' : msg.isStreaming ? 'AI Typing...' : 'AI' }}
-                  </Badge>
-
-                  <div class="flex items-center gap-2" v-if="!msg.isStreaming">
-                    <button @click.stop="expandMessage(i)" class="p-1.5 rounded-full hover:bg-white/10">
-                      <component :is="expandedMessages.has(i) ? Maximize2 : Minimize2"
-                        class="w-4 h-4 text-base-content/60" />
-                    </button>
+                <!-- Message Content with Hanging Indent -->
+                <div class="relative">
+                  <div class="flex items-start gap-3">
+                    <!-- Action Buttons -->
+                    <div class="flex items-center gap-2 flex-shrink-0 ml-auto" v-if="!msg.isStreaming">
+                      <button @click.stop="expandMessage(i)" class="p-1.5 rounded-full hover:bg-white/10">
+                        <component :is="expandedMessages.has(i) ? Maximize2 : Minimize2"
+                          class="w-4 h-4 text-base-content/60" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-
-                <!-- Message Content -->
-                <div class="text-sm break-words overflow-hidden message-text" :style="{ color: textContentColor }"
-                  :class="{
-                    'line-clamp-2': expandedMessages.has(i),
-                    'whitespace-pre-wrap': !msg.isStreaming,
-                    'whitespace-normal': msg.isStreaming
-                  }">
-                  <MessageContent :content="msg.content" :is-streaming="msg.isStreaming" :node-id="node.id"
-                    :content-parts="msg.contentParts" :message-index="i" :data-message-idx="i" />
+                  
+                  <!-- Message layout - different for snapped vs standard mode -->
+                  <div v-if="isSnapped" class="message-with-label text-sm break-words overflow-hidden" :style="{ color: textContentColor }"
+                    :class="{
+                      'line-clamp-2': expandedMessages.has(i),
+                      'whitespace-pre-wrap': !msg.isStreaming,
+                      'whitespace-normal': msg.isStreaming
+                    }">
+                    <span v-if="msg.role === 'assistant'" class="message-label text-xs font-medium">
+                      {{ msg.isStreaming ? 'AI Typing...' : getModelDisplayName(msg) }}:
+                    </span>
+                    <span class="message-content-inline">
+                      <MessageContent 
+                        :content="msg.content" 
+                        :is-streaming="msg.isStreaming" 
+                        :node-id="node.id"
+                        :content-parts="msg.contentParts" 
+                        :message-index="i" 
+                        :data-message-idx="i"
+                      />
+                    </span>
+                  </div>
+                  
+                  <!-- Standard mode - stacked layout -->
+                  <div v-else class="message-stacked">
+                    <!-- Only show label for AI messages -->
+                    <div v-if="msg.role === 'assistant'" class="ai-model-label text-xs font-medium mb-1">
+                      {{ msg.isStreaming ? 'AI Typing...' : getModelDisplayName(msg) }}:
+                    </div>
+                    <div class="message-content-block text-sm break-words overflow-hidden" :style="{ color: textContentColor }"
+                      :class="{
+                        'line-clamp-2': expandedMessages.has(i),
+                        'whitespace-pre-wrap': !msg.isStreaming,
+                        'whitespace-normal': msg.isStreaming
+                      }">
+                      <MessageContent 
+                        :content="msg.content" 
+                        :is-streaming="msg.isStreaming" 
+                        :node-id="node.id"
+                        :content-parts="msg.contentParts" 
+                        :message-index="i" 
+                        :data-message-idx="i"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Message Actions -->
@@ -362,7 +442,8 @@ import {
   Shrink,
   GitBranch,
   Volume2,
-  Archive
+  Archive,
+  Sparkles
 } from 'lucide-vue-next';
 
 import MessageInput from '../../messages/MessageInput.vue';
@@ -375,6 +456,8 @@ import MessageContent from '../../messages/MessageContent.vue';
 import MessageTimestamp from '../../messages/MessageTimestamp.vue';
 import ModelParamsEditor from '../../models/ModelParamsEditor.vue';
 import TokenCounter from '@/components/ui/TokenCounter.vue';
+import TitleGenerationLoader from '@/components/ui/TitleGenerationLoader.vue';
+import ImageAnalysisLoader from '@/components/ui/ImageAnalysisLoader.vue';
 import TTSControls from '../../messages/TTSControls.vue';
 import { tokenTrackingService, type CompactedSection, type TokenUsage } from '@/services/tokenTrackingService';
 import type { ModelParameters } from '@/types/model';
@@ -446,6 +529,7 @@ const isSnapped = ref(false);
 const isTransitioningSnap = ref(false);
 const originalPosition = ref<{ x: number; y: number; left?: number; top?: number }>({ x: 0, y: 0 });
 const autoTTSEnabled = ref(false);
+const isRegeneratingTitle = ref(false);
 
 // Compaction state
 const compactedSections = ref<CompactedSection[]>([]);
@@ -601,6 +685,61 @@ const tokenUsage = computed((): TokenUsage => {
 
 const hasCompactedSections = computed(() => compactedSections.value.length > 0);
 
+// Enhanced context tracking computed properties
+const actualContextLimit = computed(() => {
+  // Try to get real context limit from model, fallback to activeModel estimate
+  return activeModel.value?.inputTokenLimit || 4096;
+});
+
+const contextUsagePercentage = computed(() => {
+  const limit = actualContextLimit.value;
+  const usage = currentTokenCount.value;
+  return limit > 0 ? Math.round((usage / limit) * 100) : 0;
+});
+
+const hasCompactedMessages = computed(() => {
+  return props.node.messages?.some(msg => 
+    msg.contentParts?.some(part => part.type === 'compacted')
+  ) || false;
+});
+
+const compactedMessageCount = computed(() => {
+  return props.node.messages?.filter(msg => 
+    msg.contentParts?.some(part => part.type === 'compacted')
+  ).length || 0;
+});
+
+const shouldShowCompactButton = computed(() => {
+  return (contextUsagePercentage.value >= 70 || tokenUsage.value.shouldCompact) && 
+         !hasCompactedSections.value &&
+         props.node.messages &&
+         props.node.messages.length >= 5;
+});
+
+const contextStatusClass = computed(() => {
+  const percentage = contextUsagePercentage.value;
+  if (percentage >= 85) return 'text-red-600';
+  if (percentage >= 70) return 'text-orange-600';
+  if (percentage >= 60) return 'text-yellow-600';
+  return '';
+});
+
+const contextIndicatorClass = computed(() => {
+  const percentage = contextUsagePercentage.value;
+  if (percentage >= 85) return 'bg-red-500 animate-pulse';
+  if (percentage >= 70) return 'bg-orange-500';
+  if (percentage >= 60) return 'bg-yellow-500';
+  return 'bg-green-500';
+});
+
+const contextStatusMessage = computed(() => {
+  const percentage = contextUsagePercentage.value;
+  if (percentage >= 85) return 'Context limit critical - compaction recommended';
+  if (percentage >= 70) return 'Context usage high - consider compacting';
+  if (percentage >= 60) return 'Context usage moderate';
+  return 'Context usage normal';
+});
+
 const displayMessages = computed((): ExtendedMessage[] => {
   let baseMessages: ExtendedMessage[] = [];
   
@@ -626,6 +765,29 @@ const displayMessages = computed((): ExtendedMessage[] => {
     ]
     : baseMessages;
 });
+
+// Get model display name for message labels
+const getModelDisplayName = (message: any): string => {
+  // For streaming messages, use the current active model
+  if (message.isStreaming && activeModel.value?.name) {
+    return activeModel.value.name;
+  }
+  
+  // For completed messages, try to get the model from the message's modelId
+  if (message.modelId) {
+    const modelInfo = getModelInfo(message.modelId);
+    if (modelInfo?.name) {
+      return modelInfo.name;
+    }
+  }
+  
+  // Fallback to active model name if no modelId on message
+  if (activeModel.value?.name) {
+    return activeModel.value.name;
+  }
+  
+  return 'AI';
+};
 
 // Media processing function
 const processMediaForNode = async (file: File) => {
@@ -1435,6 +1597,37 @@ const handleTitleUpdate = () => {
   isEditing.value = false;
 };
 
+const regenerateTitle = async () => {
+  if (isRegeneratingTitle.value) return;
+  
+  isRegeneratingTitle.value = true;
+  
+  try {
+    // Find the first user message in this node for title generation
+    let firstUserMessage = '';
+    
+    if (props.node.messages && props.node.messages.length > 0) {
+      const userMessage = props.node.messages.find(msg => msg.role === 'user');
+      if (userMessage) {
+        firstUserMessage = userMessage.content;
+      }
+    }
+    
+    if (!firstUserMessage) {
+      console.warn('No user message found for title generation');
+      return;
+    }
+    
+    // Call the canvas store method to regenerate title
+    await canvasStore.regenerateNodeTitle(props.node.id, firstUserMessage);
+    
+  } catch (error) {
+    console.error('Failed to regenerate title:', error);
+  } finally {
+    isRegeneratingTitle.value = false;
+  }
+};
+
 const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
   const horizontalOffset = direction === 'left'
     ? -canvasStore.CARD_WIDTH - 100
@@ -1459,6 +1652,143 @@ const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
   emit('create-branch', props.node.id, messageIndex, position, initialData);
 };
 
+// Get the vertical position of a message container within the node
+const getMessageVerticalOffset = (messageIndex: number): number => {
+  if (!messagesContainerRef.value) return 40; // Default fallback
+  
+  // Find the message container element
+  const messageElement = messagesContainerRef.value.querySelector(
+    `[data-message-index="${messageIndex}"]`
+  ) as HTMLElement;
+  
+  if (!messageElement) return 40; // Default if not found
+  
+  // Get the offset relative to the messages container
+  const containerRect = messagesContainerRef.value.getBoundingClientRect();
+  const messageRect = messageElement.getBoundingClientRect();
+  
+  // Calculate the center position of the message
+  const relativeTop = messageRect.top - containerRect.top;
+  const messageCenter = relativeTop + (messageRect.height / 2);
+  
+  // Add the container's offset within the node card
+  // Account for node header, padding, etc.
+  const nodeHeaderHeight = 120; // Approximate height of node header
+  
+  return nodeHeaderHeight + messageCenter;
+};
+
+// Get the branch button position for spline connection
+const getBranchButtonPosition = (messageIndex: number): { x: number; y: number } => {
+  if (!messagesContainerRef.value) return { x: 0, y: 40 };
+  
+  const messageElement = messagesContainerRef.value.querySelector(
+    `[data-message-index="${messageIndex}"]`
+  ) as HTMLElement;
+  
+  if (!messageElement) return { x: 0, y: 40 };
+  
+  const containerRect = messagesContainerRef.value.getBoundingClientRect();
+  const messageRect = messageElement.getBoundingClientRect();
+  
+  // Calculate message center vertically
+  const relativeTop = messageRect.top - containerRect.top;
+  const messageCenter = relativeTop + (messageRect.height / 2);
+  const nodeHeaderHeight = 120;
+  const y = nodeHeaderHeight + messageCenter;
+  
+  // Calculate horizontal position of branch button
+  // For user messages: button is at -left-12 (48px left of message)
+  // For assistant messages: button is at -right-12 (48px right of message)
+  const message = props.node.messages?.[messageIndex];
+  const isUserMessage = message?.role === 'user';
+  
+  // Branch button is 48px (12 * 4) outside the message container
+  // Button itself is 40px wide (p-2 + icon), so center is 20px from edge
+  const buttonOffset = 48 + 20; // Distance from card edge to button center
+  
+  const x = isUserMessage ? -buttonOffset : canvasStore.CARD_WIDTH + buttonOffset;
+  
+  return { x, y };
+};
+
+// Emit message position updates when needed
+const emitMessagePositions = () => {
+  if (!props.node.messages || !messagesContainerRef.value) return;
+  
+  const positions: Record<number, number> = {};
+  const buttonPositions: Record<number, { x: number; y: number }> = {};
+  
+  props.node.messages.forEach((_, index) => {
+    positions[index] = getMessageVerticalOffset(index);
+    buttonPositions[index] = getBranchButtonPosition(index);
+  });
+  
+  // Emit to canvas store or parent component
+  emitter.emit('node-message-positions-updated', {
+    nodeId: props.node.id,
+    positions,
+    buttonPositions
+  });
+};
+
+// Build multi-level branch context with summaries
+const buildBranchContext = async (node: any): Promise<string> => {
+  try {
+    const { modelContextService } = await import('@/services/modelContextService');
+    const summaries: any[] = [];
+    
+    // Collect summaries from parent branches
+    const collectParentSummaries = (currentNode: any) => {
+      if (!currentNode.parentId) return;
+      
+      const parentNode = canvasStore.nodes.find(n => n.id === currentNode.parentId);
+      if (!parentNode) return;
+      
+      // Look for compacted summaries in parent's messages
+      const compactedMessages = parentNode.messages?.filter(msg => 
+        msg.contentParts?.some(part => part.type === 'compacted')
+      ) || [];
+      
+      // Add parent summaries
+      compactedMessages.forEach(msg => {
+        const compactedPart = msg.contentParts?.find(part => part.type === 'compacted');
+        if (compactedPart?.compactedData) {
+          summaries.unshift({
+            branchTitle: compactedPart.compactedData.branchTitle,
+            summary: compactedPart.compactedData.summary
+          });
+        }
+      });
+      
+      // Recursively collect from grandparents
+      collectParentSummaries(parentNode);
+    };
+    
+    // Start collecting from current node's parent
+    collectParentSummaries(node);
+    
+    // Add current branch's recent context (non-compacted messages)
+    const recentMessages = node.messages?.filter(msg => 
+      !msg.contentParts?.some(part => part.type === 'compacted')
+    ).slice(-3) || [];
+    
+    const recentContext = recentMessages.map(m => m.content).join(' ');
+    
+    // Build the multi-level context string
+    if (summaries.length > 0) {
+      const contextText = modelContextService.buildMultiBranchContext(summaries);
+      return contextText + (recentContext ? `\n\nRecent conversation:\n${recentContext}` : '');
+    }
+    
+    return recentContext;
+  } catch (error) {
+    console.error('Error building branch context:', error);
+    // Fallback to simple context
+    return node.messages?.slice(-3).map(m => m.content).join(' ') || '';
+  }
+};
+
 const handleMessageSend = async (messageData) => {
   isLoading.value = true;
   try {
@@ -1480,6 +1810,15 @@ const handleMessageSend = async (messageData) => {
       source: props.modelType
     };
 
+    // Build multi-level branch context (needed regardless of routing)
+    let branchContext = [];
+    try {
+      branchContext = await buildBranchContext(props.node);
+    } catch (contextError) {
+      console.warn('[BranchNode] Failed to build branch context:', contextError);
+      branchContext = [];
+    }
+
     try {
       // Import router service
       const { routerService } = await import('@/services/routerService');
@@ -1488,7 +1827,7 @@ const handleMessageSend = async (messageData) => {
       const routingRequest = {
         message: messageText,
         hasImages: pasteEntries?.some(entry => entry.type === 'image') || false,
-        context: props.node.messages?.slice(-3).map(m => m.content).join(' ') || ''
+        context: branchContext
       };
 
       console.log('[BranchNode] Routing request:', {
@@ -1528,7 +1867,11 @@ const handleMessageSend = async (messageData) => {
 
     await canvasStore.sendMessage(
       props.node.id,
-      messageText,
+      {
+        text: messageText,
+        pasteEntries: pasteEntries,
+        branchContext: branchContext
+      },
       modelInfo,
       props.openRouterApiKey,
       true, // add user message
@@ -1758,36 +2101,91 @@ watch(() => props.node.streamingContent, (newVal) => {
 const handleAutoCompact = async () => {
   if (!props.node.messages || props.node.messages.length < 5) return;
   
-  // Take the first half of messages for compaction
-  const splitIndex = Math.floor(props.node.messages.length / 2);
-  const messagesToCompact = props.node.messages.slice(0, splitIndex);
+  // Get the current model to check context limits
+  const currentModel = activeModel.value;
+  if (!currentModel) return;
   
   try {
-    const summary = await tokenTrackingService.createCompactSummary(messagesToCompact);
-    const tokenCount = await tokenTrackingService.countTokens(
-      tokenTrackingService.messagesToText(messagesToCompact)
+    // Import the model context service
+    const { modelContextService } = await import('@/services/modelContextService');
+    
+    // Check if compaction is needed
+    const shouldCompact = await modelContextService.shouldCompactConversation(
+      props.node.messages,
+      currentModel.name,
+      { maxSummaryWords: 400, includeParentContext: true, compactThreshold: 80 }
     );
     
-    const compactedSection: CompactedSection = {
-      id: `compact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      originalMessages: messagesToCompact,
-      summary,
-      tokenCount,
-      createdAt: new Date().toISOString()
+    if (!shouldCompact) return;
+    
+    // Take the first 75% of messages for compaction, leaving recent context
+    const splitIndex = Math.floor(props.node.messages.length * 0.75);
+    const messagesToCompact = props.node.messages.slice(0, splitIndex);
+    const remainingMessages = props.node.messages.slice(splitIndex);
+    
+    // Create compacted summary using the new service
+    const compactSummary = await modelContextService.compactConversation(
+      messagesToCompact,
+      props.node.title || 'Untitled Thread'
+    );
+    
+    // Create a compacted message content part
+    const compactedMessage = {
+      role: 'assistant' as const,
+      content: `Conversation summary (${compactSummary.originalMessageCount} messages compacted)`,
+      contentParts: [{
+        type: 'compacted' as const,
+        content: compactSummary.summary,
+        compactedData: {
+          id: compactSummary.id,
+          originalMessageCount: compactSummary.originalMessageCount,
+          compactedAt: compactSummary.compactedAt,
+          summary: compactSummary.summary,
+          branchTitle: compactSummary.branchTitle,
+          isExpanded: false,
+          originalMessages: messagesToCompact
+        }
+      }],
+      timestamp: new Date().toISOString()
     };
     
-    compactedSections.value.push(compactedSection);
+    // Update the node with compacted message + remaining messages
+    const updatedMessages = [compactedMessage, ...remainingMessages];
     
-    // Remove compacted messages from the node
-    canvasStore.updateNode(props.node.id, {
-      messages: props.node.messages.slice(splitIndex)
+    await canvasStore.updateNode(props.node.id, {
+      messages: updatedMessages
     });
     
     // Clear token cache for this branch
     tokenTrackingService.clearBranchCache(props.node.id);
+    
+    console.log(`[BranchNode] Compacted ${messagesToCompact.length} messages into summary`);
   } catch (error) {
-    console.error('Error creating compacted section:', error);
+    console.error('Error creating compacted conversation:', error);
   }
+};
+
+const handleBranchFromLastMessage = () => {
+  // Find the last non-compacted message
+  const messages = props.node.messages || [];
+  let lastNonCompactedIndex = messages.length - 1;
+  
+  // Look backwards for the last message that isn't compacted
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    const hasCompactedContent = message.contentParts?.some(part => part.type === 'compacted');
+    if (!hasCompactedContent) {
+      lastNonCompactedIndex = i;
+      break;
+    }
+  }
+  
+  // Emit event to create a new branch from this message
+  emitter.emit('create-branch-from-message', {
+    nodeId: props.node.id,
+    messageIndex: lastNonCompactedIndex,
+    includeParentContext: true
+  });
 };
 
 const handleExpandSection = (sectionId: string) => {
@@ -1898,6 +2296,37 @@ onMounted(() => {
     }
   });
 
+  // Handle compacted conversation events
+  emitter.on('continue-conversation', ({ nodeId }) => {
+    if (nodeId === props.node.id) {
+      // Focus on the message input to continue the conversation
+      document.querySelector(`[data-node-id="${nodeId}"] textarea`)?.focus();
+    }
+  });
+
+  emitter.on('branch-from-last', ({ nodeId }) => {
+    if (nodeId === props.node.id) {
+      // Create a new branch from the last non-compacted message
+      handleBranchFromLastMessage();
+    }
+  });
+
+  emitter.on('toggle-compacted-expansion', ({ nodeId, expanded }) => {
+    if (nodeId === props.node.id) {
+      // Handle toggling expansion of compacted messages
+      console.log(`Toggling compacted expansion for ${nodeId}: ${expanded}`);
+    }
+  });
+
+  emitter.on('request-node-position-update', ({ nodeId }) => {
+    if (nodeId === props.node.id) {
+      // Update message positions when requested
+      nextTick(() => {
+        emitMessagePositions();
+      });
+    }
+  });
+
   window.addEventListener("keydown", onKeyDown);
   if (props.node.messages && props.node.messages.length > 0) {
     let lastMessage = props.node.messages[props.node.messages.length - 1];
@@ -1910,7 +2339,26 @@ onMounted(() => {
       requestAnimationFrame(updateScrollButtonsVisibility);
     });
     calculateAndUpdateSnappedPosition();
+    
+    // Emit initial message positions
+    nextTick(() => {
+      emitMessagePositions();
+    });
   }
+});
+
+// Watch for message changes and update positions
+watch(() => props.node.messages?.length, () => {
+  nextTick(() => {
+    emitMessagePositions();
+  });
+});
+
+// Watch for expansion state changes
+watch(isExpanded, () => {
+  nextTick(() => {
+    emitMessagePositions();
+  });
 });
 
 onBeforeUnmount(() => {
@@ -1921,6 +2369,10 @@ onBeforeUnmount(() => {
   emitter.off('debug-sandbox');
   emitter.off('streaming-complete');
   emitter.off('scroll-to-code-bubble', scrollToCodeBubble);
+  emitter.off('continue-conversation');
+  emitter.off('branch-from-last');
+  emitter.off('toggle-compacted-expansion');
+  emitter.off('request-node-position-update');
   window.removeEventListener("keydown", onKeyDown);
   if (messagesContainerRef.value) {
     messagesContainerRef.value.removeEventListener('scroll', updateScrollButtonsVisibility);
@@ -2485,6 +2937,100 @@ onBeforeUnmount(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Message with hanging indent layout */
+.message-with-label {
+  position: relative;
+}
+
+.message-label {
+  float: left;
+  margin-right: 0.5rem;
+  line-height: 1.4;
+}
+
+.message-content-inline {
+  display: block;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+/* Ensure subsequent lines align with container edge, not the label */
+.message-content-inline :deep(.whitespace-pre-wrap) {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Handle code blocks and other content properly */
+.message-content-inline :deep(.mt-3) {
+  margin-top: 0.75rem;
+  clear: both;
+  margin-left: 0;
+}
+
+.message-content-inline :deep(.mb-3) {
+  margin-bottom: 0.75rem;
+  clear: both;
+  margin-left: 0;
+}
+
+/* Standard mode - stacked layout for better space utilization */
+.message-stacked {
+  width: 100%;
+}
+
+.message-label-block {
+  display: block;
+  line-height: 1.4;
+}
+
+.message-content-block {
+  display: block;
+  width: 100%;
+  line-height: 1.4;
+}
+
+/* AI model label styling for better contrast */
+.ai-model-label {
+  background: hsl(var(--p) / 0.1);
+  color: hsl(var(--p));
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--p) / 0.2);
+  display: inline-block;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.025em;
+}
+
+/* Dark theme adjustments for AI label */
+[data-theme="dark"] .ai-model-label,
+[data-theme="synthwave"] .ai-model-label,
+[data-theme="cyberpunk"] .ai-model-label,
+[data-theme="dracula"] .ai-model-label,
+[data-theme="night"] .ai-model-label,
+[data-theme="halloween"] .ai-model-label,
+[data-theme="forest"] .ai-model-label,
+[data-theme="black"] .ai-model-label,
+[data-theme="luxury"] .ai-model-label,
+[data-theme="business"] .ai-model-label,
+[data-theme="coffee"] .ai-model-label {
+  background: hsl(var(--p) / 0.15);
+  border: 1px solid hsl(var(--p) / 0.3);
+}
+
+/* Snapped mode AI label styling */
+.message-label {
+  background: hsl(var(--p) / 0.1);
+  color: hsl(var(--p));
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--p) / 0.2);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.025em;
+  margin-right: 0.75rem;
 }
 
 /* Enhanced snapped view styling with THEME-CONSISTENT backgrounds */
@@ -3092,7 +3638,7 @@ onBeforeUnmount(() => {
 
 .snapped-messages-container .user-message,
 .snapped-messages-container .ai-message {
-  max-width: 95% !important;
+  max-width: 75% !important;
   margin: 0 auto !important;
   color: var(--node-text-color) !important;
 }

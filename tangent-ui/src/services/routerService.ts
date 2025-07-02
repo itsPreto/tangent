@@ -19,6 +19,7 @@ export interface RoutingResult {
   reasoning?: string;
   fallbackUsed?: boolean;
   responseTime?: number;
+  title?: string; // Generated title for the branch
 }
 
 export interface RouterSettings {
@@ -26,11 +27,31 @@ export interface RouterSettings {
   routerModel: string;
   fallbackToKeywords: boolean;
   confidenceThreshold: number;
+  generateTitles: boolean;
+  titleModel?: string;
 }
 
 class RouterService {
   private readonly OLLAMA_URL = 'http://localhost:11434';
   private readonly ROUTER_MODEL = 'qwen2.5vl:3b';
+  private readonly TITLE_MODEL = 'llama3.2:3b'; // Fast, lightweight model for title generation
+  
+  // Cache for existing titles to avoid duplicates
+  private titleCache = new Set<string>();
+  
+  // Synonym map for creating unique titles
+  private readonly SYNONYMS: Record<string, string[]> = {
+    'create': ['build', 'make', 'craft', 'develop', 'design'],
+    'fix': ['repair', 'solve', 'debug', 'resolve', 'patch'],
+    'analyze': ['examine', 'study', 'review', 'inspect', 'assess'],
+    'help': ['assist', 'guide', 'support', 'aid', 'advise'],
+    'code': ['script', 'program', 'software', 'app', 'system'],
+    'data': ['info', 'details', 'facts', 'content', 'material'],
+    'question': ['query', 'ask', 'inquiry', 'doubt', 'problem'],
+    'solution': ['answer', 'fix', 'remedy', 'approach', 'method'],
+    'project': ['task', 'work', 'plan', 'effort', 'mission'],
+    'design': ['layout', 'style', 'pattern', 'format', 'structure']
+  };
   
   // High-confidence routing prompt optimized for qwen2.5vl:3b
   private readonly ROUTING_PROMPT = `You are a request router. Analyze the user's request and categorize it into exactly one category.
@@ -82,7 +103,9 @@ Category:`;
       enabled: true,
       routerModel: this.ROUTER_MODEL,
       fallbackToKeywords: true,
-      confidenceThreshold: 0.8
+      confidenceThreshold: 0.8,
+      generateTitles: true,
+      titleModel: this.TITLE_MODEL
     };
   }
 
@@ -96,7 +119,13 @@ Category:`;
   /**
    * Route a request to the appropriate agent
    */
-  async routeRequest(request: RoutingRequest): Promise<RoutingResult> {
+  async routeRequest(
+    request: RoutingRequest, 
+    options?: { 
+      generateTitle?: boolean;
+      onTitleUpdate?: (partialTitle: string) => void;
+    }
+  ): Promise<RoutingResult> {
     const settings = this.getSettings();
     
     // Quick check for images - always route to vision
@@ -119,7 +148,7 @@ Category:`;
 
     if (!settings.enabled) {
       // Fallback to keyword routing if router is disabled
-      return await this.keywordRouting(request);
+      return await this.keywordRouting(request, options);
     }
 
     try {
@@ -129,9 +158,24 @@ Category:`;
       // If confidence is too low, fallback to keywords
       if (settings.fallbackToKeywords && result.confidence < settings.confidenceThreshold) {
         console.log('[Router] Low confidence, falling back to keyword routing');
-        const keywordResult = await this.keywordRouting(request);
+        const keywordResult = await this.keywordRouting(request, options);
         keywordResult.fallbackUsed = true;
         return keywordResult;
+      }
+      
+      // Generate title if requested and this is the first request
+      if (options?.generateTitle && settings.generateTitles) {
+        try {
+          const title = await this.generateBranchTitle(
+            request.message, 
+            request.context,
+            options.onTitleUpdate
+          );
+          result.title = title;
+        } catch (titleError) {
+          console.error('[Router] Title generation failed during routing:', titleError);
+          // Continue without title - not critical
+        }
       }
       
       return result;
@@ -140,7 +184,7 @@ Category:`;
       
       if (settings.fallbackToKeywords) {
         console.log('[Router] LLM failed, falling back to keyword routing');
-        const keywordResult = await this.keywordRouting(request);
+        const keywordResult = await this.keywordRouting(request, options);
         keywordResult.fallbackUsed = true;
         return keywordResult;
       } else {
@@ -246,7 +290,13 @@ Category:`;
   /**
    * Keyword-based fallback routing
    */
-  private async keywordRouting(request: RoutingRequest): Promise<RoutingResult> {
+  private async keywordRouting(
+    request: RoutingRequest, 
+    options?: { 
+      generateTitle?: boolean;
+      onTitleUpdate?: (partialTitle: string) => void;
+    }
+  ): Promise<RoutingResult> {
     const message = request.message.toLowerCase();
     
     // Check for code keywords
@@ -275,13 +325,33 @@ Category:`;
     
     console.log(`[Router] Keyword: ${request.message.substring(0, 50)}... → ${category} (${confidence.toFixed(2)} confidence)`);
     
-    return {
+    const result: RoutingResult = {
       category,
       confidence,
       model,
       agent,
       reasoning
     };
+
+    // Generate title if requested
+    if (options?.generateTitle) {
+      const settings = this.getSettings();
+      if (settings.generateTitles) {
+        try {
+          const title = await this.generateBranchTitle(
+            request.message, 
+            request.context,
+            options.onTitleUpdate
+          );
+          result.title = title;
+        } catch (titleError) {
+          console.error('[Router] Title generation failed during keyword routing:', titleError);
+          // Continue without title - not critical
+        }
+      }
+    }
+    
+    return result;
   }
 
   /**
@@ -378,6 +448,193 @@ Category:`;
       console.error('[Router] Failed to get router model:', error);
       return null;
     }
+  }
+
+  /**
+   * Generate a concise title for a branch node using small LLM
+   */
+  async generateBranchTitle(
+    message: string, 
+    context?: string,
+    onTitleUpdate?: (partialTitle: string) => void
+  ): Promise<string> {
+    const settings = this.getSettings();
+    
+    if (!settings.generateTitles) {
+      return this.generateFallbackTitle(message);
+    }
+
+    try {
+      // Build a focused prompt for title generation
+      const contextText = context ? `\nContext: ${context}` : '';
+      const prompt = `Generate a concise 2-4 word title for this conversation starter. Be creative but clear.${contextText}
+
+User message: "${message}"
+
+Title:`;
+
+      const modelToUse = settings.titleModel || this.TITLE_MODEL;
+      
+      const response = await fetch(`${this.OLLAMA_URL}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelToUse,
+          prompt: prompt,
+          stream: true,
+          options: {
+            temperature: 0.7, // Higher creativity for titles
+            num_predict: 15,  // Short titles
+            stop: ['\n', '.', '!', '?', ':', ';']
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Title generation API error: ${response.status}`);
+      }
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let title = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n').filter(line => line.trim());
+          
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line);
+              if (data.response) {
+                title += data.response;
+                // Stream partial updates for real-time animation
+                if (onTitleUpdate) {
+                  onTitleUpdate(title.trim());
+                }
+              }
+            } catch (e) {
+              // Ignore malformed JSON
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      // Clean up the title
+      title = this.cleanupTitle(title);
+      
+      // Handle duplicates
+      title = this.ensureUniqueTitle(title);
+      
+      // Cache the title
+      this.titleCache.add(title.toLowerCase());
+      
+      console.log(`[Router] Generated title: "${title}" for message: "${message.substring(0, 50)}..."`);
+      
+      return title;
+      
+    } catch (error) {
+      console.error('[Router] Title generation failed:', error);
+      return this.generateFallbackTitle(message);
+    }
+  }
+
+  /**
+   * Clean up generated title
+   */
+  private cleanupTitle(title: string): string {
+    return title
+      .trim()
+      .replace(/^["'`]+|["'`]+$/g, '') // Remove quotes
+      .replace(/^\w+:?\s*/, '') // Remove "Title:" prefix
+      .replace(/[.!?]+$/, '') // Remove ending punctuation
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  }
+
+  /**
+   * Ensure title is unique by using synonyms
+   */
+  private ensureUniqueTitle(title: string): string {
+    const normalizedTitle = title.toLowerCase();
+    
+    if (!this.titleCache.has(normalizedTitle)) {
+      return title;
+    }
+
+    // Try to create unique variants using synonyms
+    const words = title.split(' ');
+    
+    for (let attempts = 0; attempts < 5; attempts++) {
+      const modifiedWords = words.map(word => {
+        const lowerWord = word.toLowerCase();
+        const synonyms = this.SYNONYMS[lowerWord];
+        
+        if (synonyms && synonyms.length > 0) {
+          // Use the attempt number to cycle through synonyms
+          const synonymIndex = attempts % synonyms.length;
+          return word.charAt(0).toUpperCase() + synonyms[synonymIndex].slice(1);
+        }
+        return word;
+      });
+      
+      const newTitle = modifiedWords.join(' ');
+      const normalizedNewTitle = newTitle.toLowerCase();
+      
+      if (!this.titleCache.has(normalizedNewTitle)) {
+        return newTitle;
+      }
+    }
+
+    // If all synonyms are taken, add a number
+    for (let i = 2; i <= 10; i++) {
+      const numberedTitle = `${title} ${i}`;
+      if (!this.titleCache.has(numberedTitle.toLowerCase())) {
+        return numberedTitle;
+      }
+    }
+
+    // Fallback: timestamp
+    return `${title} ${Date.now().toString().slice(-3)}`;
+  }
+
+  /**
+   * Generate a simple fallback title from the message
+   */
+  private generateFallbackTitle(message: string): string {
+    // Extract key words from the message
+    const words = message
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2)
+      .filter(word => !['the', 'and', 'but', 'for', 'are', 'with', 'can', 'you', 'how', 'what', 'when', 'where', 'why'].includes(word))
+      .slice(0, 3);
+
+    if (words.length === 0) {
+      return 'New Chat';
+    }
+
+    const title = words
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
+    return this.ensureUniqueTitle(title);
+  }
+
+  /**
+   * Initialize title cache from existing nodes
+   */
+  initializeTitleCache(existingTitles: string[]): void {
+    this.titleCache.clear();
+    existingTitles.forEach(title => {
+      this.titleCache.add(title.toLowerCase());
+    });
   }
 
   /**

@@ -517,14 +517,18 @@ const getMediaUrl = (mediaContent) => {
 };
 
 // Generate concise title for image using vision model
-const generateConciseImageTitle = async (file: File): Promise<string> => {
+const generateTitleFromDescription = async (description: string): Promise<string> => {
   try {
-    const base64Data = await fileToBase64(file);
+    // Use a text model to generate a concise title from the description
+    const { routerService } = await import('@/services/routerService');
+    const routingResult = await routerService.routeRequest({
+      message: `Based on this image description, generate a concise title in 3-5 words: "${description}". Respond with only the title, no additional text.`,
+      hasImages: false
+    });
     
-    // Use the same model that the router service uses for vision tasks
-    const routerModel = 'qwen2.5vl:3b';
-    
-    const titlePrompt = 'Generate a concise, descriptive title for this image in 3-5 words. Focus on the main subject or action. Respond with only the title, no additional text.';
+    if (!routingResult.model) {
+      throw new Error('No text model available for title generation');
+    }
     
     const response = await fetch('http://localhost:5050/api/ollama-proxy/generate', {
       method: 'POST',
@@ -532,9 +536,8 @@ const generateConciseImageTitle = async (file: File): Promise<string> => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: routerModel,
-        prompt: titlePrompt,
-        images: [base64Data],
+        model: routingResult.model.name || routingResult.model.id,
+        prompt: `Based on this image description, generate a concise title in 3-5 words: "${description}". Respond with only the title, no additional text.`,
         stream: false,
         options: {
           temperature: 0.3,
@@ -554,11 +557,11 @@ const generateConciseImageTitle = async (file: File): Promise<string> => {
     const cleanTitle = title.replace(/["']/g, '').replace(/\.$/, '').trim();
     
     console.log(`[InfiniteCanvas] Generated title: "${cleanTitle}"`);
-    return cleanTitle || file.name;
+    return cleanTitle || 'Untitled Image';
     
   } catch (error) {
     console.error('[InfiniteCanvas] Title generation error:', error);
-    return file.name; // Fallback to filename
+    return 'Untitled Image'; // Fallback
   }
 };
 
@@ -648,7 +651,8 @@ const processMediaForNode = async (node, file) => {
               timestamp: new Date().toISOString()
             }
           ],
-          isProcessingMedia: false
+          isProcessingMedia: false,
+          isGeneratingTitle: false
         });
         return;
       }
@@ -692,11 +696,24 @@ const processMediaForNode = async (node, file) => {
         console.log(`[InfiniteCanvas] Auto-caption generated in ${result.responseTime}ms`);
         console.log('[InfiniteCanvas] Updating node with caption:', result.caption.substring(0, 100) + '...');
         
+        // Generate a concise title from the image description
+        let conciseTitle = node.title;
+        if (node.isGeneratingTitle) {
+          try {
+            conciseTitle = await generateTitleFromDescription(result.caption);
+            console.log('[InfiniteCanvas] Generated title from description:', conciseTitle);
+          } catch (error) {
+            console.warn('[InfiniteCanvas] Title generation from description failed:', error);
+          }
+        }
+        
         // Save updated content to database
         await store.updateNode(node.id, { 
           mediaContent: updatedMediaContent,
           messages: updatedMessages,
           isProcessingMedia: false,
+          isGeneratingTitle: false,
+          title: conciseTitle,
           metadata: {
             ...node.metadata,
             mediaContent: updatedMediaContent
@@ -725,6 +742,7 @@ const processMediaForNode = async (node, file) => {
           mediaContent: updatedMediaContent,
           messages: updatedMessages,
           isProcessingMedia: false,
+          isGeneratingTitle: false,
           metadata: {
             ...node.metadata,
             mediaContent: updatedMediaContent
@@ -740,7 +758,8 @@ const processMediaForNode = async (node, file) => {
           ...node.mediaContent,
           analysis: 'Media uploaded successfully'
         },
-        isProcessingMedia: false
+        isProcessingMedia: false,
+        isGeneratingTitle: false
       });
     }
 
@@ -752,7 +771,8 @@ const processMediaForNode = async (node, file) => {
         ...node.mediaContent,
         analysis: `Processing failed: ${error.message}`
       },
-      isProcessingMedia: false
+      isProcessingMedia: false,
+      isGeneratingTitle: false
     });
   }
 };
@@ -1007,6 +1027,11 @@ const centerAndSnapNode = (nodeId: string) => {
   store.isTransitioning = true;
 
   const center = getNodeCenter(node);
+  if (!canvasRef.value) {
+    console.warn('[InfiniteCanvas] canvasRef is null, cannot center node');
+    store.isTransitioning = false;
+    return;
+  }
   const rect = canvasRef.value.getBoundingClientRect();
 
   panX.value = rect.width / 2 - center.x * zoom.value;
@@ -1465,19 +1490,12 @@ const handleDrop = async (e: DragEvent) => {
         y: (e.clientY - rect.top - panY.value) / zoom.value,
       };
 
-      // Generate concise title for the image
-      let nodeTitle = file.name;
-      try {
-        nodeTitle = await generateConciseImageTitle(file);
-      } catch (error) {
-        console.warn('[InfiniteCanvas] Title generation failed, using filename:', error);
-      }
-      
-      // Create a new branch node that will handle the media
+      // Create a new branch node immediately with filename as temporary title
       const newNode = await store.addNode(null, -1, position, {
         type: "branch",
-        title: nodeTitle,
-        isProcessingMedia: true
+        title: file.name,
+        isProcessingMedia: true,
+        isGeneratingTitle: true
       });
 
       // Wait a moment to ensure the node ID has been updated by the database
@@ -1667,7 +1685,7 @@ const centerOnNode = (nodeId) => {
 };
 
 // Handle branch creation
-const handleCreateBranch = (
+const handleCreateBranch = async (
   parentId: string,
   messageIndex: number,
   position: { x: number; y: number },
@@ -1686,9 +1704,36 @@ const handleCreateBranch = (
     y: parentNode.y + verticalOffset,
   };
 
-  const newNode = store.addNode(parentId, messageIndex, adjustedPosition, {
+  // Extract the first user message for title generation
+  // This could be from the initial data or the most recent message
+  let firstUserMessage = '';
+  
+  if (initialData?.userMessage) {
+    firstUserMessage = initialData.userMessage;
+  } else if (parentNode.messages && parentNode.messages.length > 0) {
+    // Get the user message at the branch point
+    const branchMessage = parentNode.messages[messageIndex];
+    if (branchMessage && branchMessage.role === 'user') {
+      firstUserMessage = branchMessage.content;
+    } else {
+      // Find the most recent user message
+      for (let i = messageIndex; i >= 0; i--) {
+        const msg = parentNode.messages[i];
+        if (msg && msg.role === 'user') {
+          firstUserMessage = msg.content;
+          break;
+        }
+      }
+    }
+  }
+
+  // Create the branch node with title generation enabled
+  const newNode = await store.addNode(parentId, messageIndex, adjustedPosition, {
     ...initialData,
     y: adjustedPosition.y,
+  }, {
+    generateTitle: true,
+    firstUserMessage: firstUserMessage
   });
 
   centerOnNode(newNode.id);

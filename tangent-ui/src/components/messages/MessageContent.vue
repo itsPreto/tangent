@@ -32,6 +32,16 @@
               complete: true
             })" />
         </div>
+
+        <!-- Handle compacted conversation summaries -->
+        <div v-else-if="part.type === 'compacted'" class="mt-3 mb-3">
+          <CompactedMessageView 
+            :compacted-data="part.compactedData!"
+            @continue-conversation="handleContinueConversation"
+            @branch-from-last="handleBranchFromLast"
+            @toggle-expansion="handleToggleExpansion"
+          />
+        </div>
       </span>
     </template>
   </div>
@@ -43,6 +53,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import emitter, { Events } from '@/utils/eventBus'
 import CodePreview from './CodePreview.vue'
+import CompactedMessageView from './CompactedMessageView.vue'
 import type { ContentPart } from '@/types/message'
 import { useAppStore } from '@/stores/appStore'
 import { useChatStore } from "@/stores/chatStore";
@@ -436,6 +447,25 @@ const handleCodeClick = (part: ContentPart & { messageIndex?: number }) => {
 const handleCodePreview = (part: ContentPart) => {
   // Preview functionality - this could show an inline preview
   console.log('Preview requested for:', part);
+};
+
+// Handle compacted message events
+const handleContinueConversation = () => {
+  // Continue conversation on the same branch after compaction
+  emitter.emit('continue-conversation', { nodeId: props.nodeId });
+};
+
+const handleBranchFromLast = () => {
+  // Create a new branch from the last message before compaction
+  emitter.emit('branch-from-last', { nodeId: props.nodeId });
+};
+
+const handleToggleExpansion = (expanded: boolean) => {
+  // Toggle expansion of compacted message
+  emitter.emit('toggle-compacted-expansion', { 
+    nodeId: props.nodeId, 
+    expanded 
+  });
 };
 
 // Update current theme when it changes in the DOM

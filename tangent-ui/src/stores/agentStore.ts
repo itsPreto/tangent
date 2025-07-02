@@ -174,9 +174,16 @@ export const useAgentStore = defineStore('agents', () => {
 
   // Set the model for a specific agent type
   const setAgentModel = (type: 'text' | 'vision' | 'code' | 'router' | 'custom', model: ModelInfo) => {
-    const agent = agentConfigs.value.find(a => a.type === type && a.isDefault);
+    // First try to find the default agent
+    let agent = agentConfigs.value.find(a => a.type === type && a.isDefault);
+    
+    // If not found, try to find any agent of this type (handles corrupted localStorage)
+    if (!agent) {
+      agent = agentConfigs.value.find(a => a.type === type);
+    }
+    
     if (agent) {
-      updateAgentConfig(agent.id, { model, enabled: true });
+      updateAgentConfig(agent.id, { model, enabled: true, isDefault: true });
     }
   };
 

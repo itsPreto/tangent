@@ -1,95 +1,162 @@
 <template>
-  <div class="grid-workspace-view">
-    <div class="grid-container">
-      <div v-for="(workspace, index) in filteredWorkspaces" :key="workspace.id" class="grid-item">
-        <div class="grid-workspace-card" 
-            :class="{ 
-              'selected': selectedWorkspaceId === workspace.id,
-              'favorite': workspace.isFavorite 
-            }"
-            :style="cardStyles"
-            @click="$emit('select-workspace', workspace.id)" 
-            :data-workspace-id="workspace.id">
-          <div class="card-header" :style="headerStyles">
-            <h3 class="card-title">{{ workspace.title || 'Untitled Workspace' }}</h3>
-            <div class="card-actions">
-              <button @click.stop="$emit('favorite-workspace', workspace.id)" 
-                      class="action-btn"
-                      :style="actionButtonStyles">
-                <Star class="w-4 h-4" :class="{ 'text-yellow-400 fill-yellow-400': workspace.isFavorite }" />
-              </button>
-              <button @click.stop="showContextMenu(workspace.id, $event)" 
-                      class="action-btn"
-                      :style="actionButtonStyles">
-                <MoreVertical class="w-4 h-4" />
-              </button>
+  <div class="grid-workspace-view" ref="containerRef">
+    <!-- Virtual Scroll Container -->
+    <div class="virtual-scroll-container" 
+         :style="{ height: `${totalHeight}px` }">
+      
+      <!-- Visible Items -->
+      <div class="visible-items" 
+           :style="{ transform: `translateY(${offsetY}px)` }">
+        
+        <TransitionGroup name="grid-item" tag="div" class="grid-container">
+          <div v-for="workspace in visibleWorkspaces" 
+               :key="workspace.id" 
+               class="grid-item"
+               :data-index="workspace._index">
+            
+            <!-- Workspace Card -->
+            <div class="workspace-card" 
+                 :class="{ 
+                   'selected': selectedWorkspaceId === workspace.id,
+                   'favorite': workspace.isFavorite,
+                   'loading': workspace._loading
+                 }"
+                 @click="handleSelectWorkspace(workspace.id)"
+                 @mouseenter="preloadWorkspace(workspace.id)"
+                 :data-workspace-id="workspace.id">
+              
+              <!-- Card Background Effects -->
+              <div class="card-background">
+                <div class="gradient-overlay"></div>
+                <div class="noise-overlay"></div>
+                <div class="shimmer-effect" v-if="workspace._loading"></div>
+              </div>
+              
+              <!-- Card Content -->
+              <div class="card-content">
+                <!-- Header Section -->
+                <div class="card-header">
+                  <div class="title-section">
+                    <h3 class="workspace-title">
+                      {{ workspace.title || 'Untitled Workspace' }}
+                    </h3>
+                    <div class="workspace-subtitle" v-if="workspace.description">
+                      {{ truncateText(workspace.description, 60) }}
+                    </div>
+                  </div>
+                  
+                  <div class="actions-section">
+                    <button @click.stop="toggleFavorite(workspace.id)" 
+                            class="action-btn favorite-btn"
+                            :class="{ 'is-favorite': workspace.isFavorite }">
+                      <Star :size="18" :fill="workspace.isFavorite ? 'currentColor' : 'none'" />
+                    </button>
+                    <button @click.stop="showContextMenu(workspace, $event)" 
+                            class="action-btn menu-btn">
+                      <MoreVertical :size="18" />
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Stats Row -->
+                <div class="stats-row">
+                  <div class="stat-item">
+                    <GitBranch :size="12" class="stat-icon" />
+                    <span class="stat-value">{{ workspace.nodeCount || workspace.branches?.length || 0 }}</span>
+                  </div>
+                  <div class="stat-item">
+                    <MessageSquare :size="12" class="stat-icon" />
+                    <span class="stat-value">{{ workspace.messageCount || workspace.messages?.length || 0 }}</span>
+                  </div>
+                  <div class="stat-item">
+                    <Clock :size="12" class="stat-icon" />
+                    <span class="stat-value">{{ formatRelativeTime(workspace.lastUpdated || workspace.updatedAt || workspace.createdAt) }}</span>
+                  </div>
+                </div>
+                
+                <!-- Tags Section -->
+                <div v-if="workspace.tags?.length" class="tags-section">
+                  <TransitionGroup name="tag" tag="div" class="tags-container">
+                    <span v-for="tag in workspace.tags.slice(0, 3)" 
+                          :key="`${workspace.id}-${tag.id}`"
+                          class="tag-pill"
+                          :style="getTagStyle(tag)">
+                      {{ tag.name }}
+                    </span>
+                    <span v-if="workspace.tags.length > 3" 
+                          class="tag-pill more-tags">
+                      +{{ workspace.tags.length - 3 }}
+                    </span>
+                  </TransitionGroup>
+                </div>
+                
+              </div>
+              
+              <!-- Hover Effects -->
+              <div class="hover-layer"></div>
             </div>
           </div>
-
-          <div class="card-content">
-            <div class="card-metadata">
-              <div class="metadata-item">
-                <MessageCircle class="w-4 h-4" />
-                <span>{{ workspace.nodeCount || 0 }} branches</span>
-              </div>
-              <div class="metadata-item">
-                <Clock class="w-4 h-4" />
-                <span>{{ formatDate(workspace.lastUpdated) }}</span>
-              </div>
-            </div>
-
-            <div v-if="workspace.tags && workspace.tags.length > 0" class="tags-container">
-              <div v-for="tag in workspace.tags" :key="tag.id" 
-                  class="tag"
-                  :style="getTagStyles(tag)">
-                {{ tag.name }}
-              </div>
-            </div>
-          </div>
-        </div>
+        </TransitionGroup>
       </div>
     </div>
-
+    
+    <!-- Loading Indicator -->
+    <Transition name="fade">
+      <div v-if="isLoading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+      </div>
+    </Transition>
+    
     <!-- Context Menu -->
-    <ContextMenu v-if="activeContextMenu.isVisible" :position="activeContextMenu.position" @close="closeContextMenu">
-      <button @click="handleContextMenuAction('duplicate')" class="context-menu-item">
-        <Copy class="w-4 h-4" /> Duplicate
-      </button>
-      <button @click="handleContextMenuAction('archive')" class="context-menu-item">
-        <Archive class="w-4 h-4" /> Archive
-      </button>
-      <button @click="handleContextMenuAction('export')" class="context-menu-item">
-        <Download class="w-4 h-4" /> Export
-      </button>
-      <hr class="my-2 border-base-200" />
-      <button @click="handleContextMenuAction('delete')" class="context-menu-item text-error">
-        <Trash2 class="w-4 h-4" /> Delete
-      </button>
-    </ContextMenu>
+    <Teleport to="body">
+      <Transition name="context-menu">
+        <ContextMenu 
+          v-if="contextMenu.visible" 
+          :position="contextMenu.position"
+          @close="closeContextMenu">
+          <button @click="handleAction('duplicate')" class="menu-item">
+            <Copy :size="16" /> Duplicate
+          </button>
+          <button @click="handleAction('archive')" class="menu-item">
+            <Archive :size="16" /> Archive
+          </button>
+          <button @click="handleAction('export')" class="menu-item">
+            <Download :size="16" /> Export
+          </button>
+          <div class="menu-divider"></div>
+          <button @click="handleAction('delete')" class="menu-item danger">
+            <Trash2 :size="16" /> Delete
+          </button>
+        </ContextMenu>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import {
-  MessageCircle, Clock, Star, MoreVertical,
-  Copy, Archive, Download, Trash2
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, reactive } from 'vue';
+import { 
+  Star, MoreVertical, GitBranch, MessageSquare, Clock,
+  Copy, Archive, Download, Trash2 
 } from 'lucide-vue-next';
-import ContextMenu from '@/components/ui/ContextMenu.vue';
+import { useVirtualScroll } from '@/composables/useVirtualScroll';
 import { useThemeStore } from '@/stores/themeStore';
-import type { ThemeName } from '@/stores/themeStore';
+import ContextMenu from '@/components/ui/ContextMenu.vue';
 
-// Props
+// Props & Emits
 const props = defineProps({
   workspaces: {
     type: Array,
     required: true
   },
   selectedWorkspaceId: String,
-  searchQuery: String
+  searchQuery: String,
+  itemsPerRow: {
+    type: Number,
+    default: 5
+  }
 });
 
-// Emits
 const emit = defineEmits([
   'select-workspace',
   'favorite-workspace',
@@ -99,469 +166,536 @@ const emit = defineEmits([
   'delete-workspace'
 ]);
 
-// State
-const activeContextMenu = ref({
-  isVisible: false,
-  workspaceId: null,
-  position: { x: 0, y: 0 }
-});
+// Refs
+const containerRef = ref<HTMLElement>();
+const isLoading = ref(false);
+const preloadedIds = new Set<string>();
 
-// Theme management
+// Local state for favorites to handle optimistic updates
+const localFavorites = ref<Set<string>>(new Set());
+
+// Theme & Performance
 const themeStore = useThemeStore();
-const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
 
-// Theme observer
-let themeObserver;
-
-onMounted(() => {
-  themeObserver = new MutationObserver(() => {
-    currentTheme.value = document.documentElement.getAttribute('data-theme') || 'light';
-  });
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme']
-  });
+// Context Menu State
+const contextMenu = ref({
+  visible: false,
+  position: { x: 0, y: 0 },
+  workspace: null
 });
 
-onBeforeUnmount(() => {
-  if (themeObserver) {
-    themeObserver.disconnect();
-  }
-});
+// Virtual Scrolling Configuration
+const ITEM_HEIGHT = 160; // Height of each card
+const ITEM_GAP = 24; // Gap between items
+const BUFFER_ITEMS = 2; // Extra rows to render off-screen
+const SCROLL_DEBOUNCE = 16; // 60fps
 
-// Theme-aware computed properties
-const isDarkTheme = computed(() => {
-  return themeStore.isDarkTheme(currentTheme.value as ThemeName);
-});
+// Initialize local favorites from props
+watch(() => props.workspaces, (newWorkspaces) => {
+  localFavorites.value = new Set(
+    newWorkspaces.filter(w => w.isFavorite).map(w => w.id)
+  );
+}, { immediate: true });
 
-const themeColors = computed(() => {
-  return themeStore.getThemeColors(currentTheme.value as ThemeName);
-});
-
-// Enhanced card styling with better contrast
-const cardStyles = computed(() => {
-  const baseStyles = {
-    transition: 'all 0.3s ease',
-    cursor: 'pointer',
-    // Ensure proper text color based on theme
-    color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)'
-  };
-
-  // Theme-specific card backgrounds for better contrast
-  switch (currentTheme.value) {
-    case 'cyberpunk':
-      return {
-        ...baseStyles,
-        backgroundColor: 'rgba(15, 15, 25, 0.95)',
-        backdropFilter: 'blur(10px)',
-        border: `1px solid ${themeColors.value.primary}40`,
-        boxShadow: `0 4px 15px rgba(0, 0, 0, 0.4), inset 0 1px 0 ${themeColors.value.primary}20`,
-        color: 'rgba(255, 255, 255, 0.9)' // Ensure light text on dark background
-      };
-    
-    case 'synthwave':
-      return {
-        ...baseStyles,
-        backgroundColor: 'rgba(30, 15, 50, 0.9)',
-        backdropFilter: 'blur(8px)',
-        border: `1px solid ${themeColors.value.secondary}50`,
-        boxShadow: `0 4px 20px rgba(80, 30, 110, 0.3), inset 0 1px 0 ${themeColors.value.secondary}30`
-      };
-    
-    case 'aqua':
-      return {
-        ...baseStyles,
-        backgroundColor: 'rgba(0, 40, 70, 0.85)',
-        backdropFilter: 'blur(8px)',
-        border: `1px solid ${themeColors.value.primary}60`,
-        boxShadow: '0 4px 15px rgba(0, 60, 90, 0.3)'
-      };
-    
-    case 'forest':
-    case 'garden':
-      return {
-        ...baseStyles,
-        backgroundColor: isDarkTheme.value ? 'rgba(20, 35, 25, 0.9)' : 'rgba(245, 250, 245, 0.95)',
-        backdropFilter: 'blur(8px)',
-        border: `1px solid ${themeColors.value.primary}40`,
-        boxShadow: isDarkTheme.value 
-          ? '0 4px 15px rgba(0, 0, 0, 0.4)' 
-          : '0 4px 15px rgba(0, 0, 0, 0.1)'
-      };
-    
-    case 'valentine':
-    case 'cupcake':
-      return {
-        ...baseStyles,
-        backgroundColor: isDarkTheme.value ? 'rgba(40, 25, 35, 0.9)' : 'rgba(255, 248, 252, 0.95)',
-        backdropFilter: 'blur(8px)',
-        border: `1px solid ${themeColors.value.primary}50`,
-        boxShadow: isDarkTheme.value 
-          ? '0 4px 15px rgba(0, 0, 0, 0.4)' 
-          : '0 4px 15px rgba(255, 192, 203, 0.2)'
-      };
-    
-    case 'retro':
-      return {
-        ...baseStyles,
-        backgroundColor: 'rgba(40, 35, 25, 0.9)',
-        backdropFilter: 'blur(6px)',
-        border: `2px solid ${themeColors.value.primary}60`,
-        borderStyle: 'solid',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)'
-      };
-    
-    case 'black':
-      return {
-        ...baseStyles,
-        backgroundColor: 'rgba(40, 40, 40, 0.95)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(255, 255, 255, 0.2)',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.6)'
-      };
-    
-    case 'light':
-    case 'corporate':
-    case 'wireframe':
-      return {
-        ...baseStyles,
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(0, 0, 0, 0.15)',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.1)',
-        color: 'rgba(0, 0, 0, 0.9)' // Ensure dark text on light backgrounds
-      };
-    
-    default:
-      // Default enhanced contrast for unknown themes
-      return {
-        ...baseStyles,
-        backgroundColor: isDarkTheme.value 
-          ? 'rgba(25, 25, 35, 0.9)' 
-          : 'rgba(250, 250, 255, 0.95)',
-        backdropFilter: 'blur(8px)',
-        border: isDarkTheme.value 
-          ? `1px solid ${themeColors.value.primary}40` 
-          : `1px solid ${themeColors.value.primary}30`,
-        boxShadow: isDarkTheme.value 
-          ? '0 4px 15px rgba(0, 0, 0, 0.4)' 
-          : '0 4px 15px rgba(0, 0, 0, 0.1)'
-      };
-  }
-});
-
-const headerStyles = computed(() => {
-  const borderColor = isDarkTheme.value 
-    ? `${themeColors.value.primary}30` 
-    : `${themeColors.value.primary}20`;
-  
-  return {
-    borderBottom: `1px solid ${borderColor}`,
-    padding: '1rem'
-  };
-});
-
-const actionButtonStyles = computed(() => {
-  const primary = themeColors.value.primary;
-  
-  return {
-    backgroundColor: isDarkTheme.value 
-      ? `${primary}20` 
-      : `${primary}15`,
-    border: `1px solid ${primary}30`,
-    transition: 'all 0.2s ease'
-  };
-});
-
-// Computed
+// Computed Properties
 const filteredWorkspaces = computed(() => {
-  if (!props.searchQuery) return props.workspaces;
+  const workspaces = props.searchQuery 
+    ? props.workspaces.filter(workspace => {
+        const query = props.searchQuery.toLowerCase();
+        const title = (workspace.title || '').toLowerCase();
+        const description = (workspace.description || '').toLowerCase();
+        const tags = workspace.tags?.map(t => t.name.toLowerCase()) || [];
+        
+        return title.includes(query) || 
+               description.includes(query) || 
+               tags.some(tag => tag.includes(query));
+      })
+    : props.workspaces;
+  
+  // Apply local favorite state
+  return workspaces.map(w => ({
+    ...w,
+    isFavorite: localFavorites.value.has(w.id)
+  }));
+});
 
-  const query = props.searchQuery.toLowerCase();
-  return props.workspaces.filter(workspace => {
-    const title = (workspace.title || '').toLowerCase();
-    const tags = workspace.tags ? workspace.tags.map(tag => tag.name.toLowerCase()) : [];
-
-    return title.includes(query) || tags.some(tag => tag.includes(query));
-  });
+// Virtual Scroll Setup
+const {
+  visibleItems: visibleWorkspaces,
+  totalHeight,
+  offsetY,
+  handleScroll
+} = useVirtualScroll({
+  items: filteredWorkspaces,
+  containerRef,
+  itemHeight: ITEM_HEIGHT,
+  itemsPerRow: props.itemsPerRow,
+  gap: ITEM_GAP,
+  buffer: BUFFER_ITEMS,
+  debounce: SCROLL_DEBOUNCE
 });
 
 // Methods
-const formatDate = (date: string) => {
-  return new Date(date).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+const handleSelectWorkspace = (id: string) => {
+  emit('select-workspace', id);
 };
 
-const showContextMenu = (workspaceId, event) => {
-  activeContextMenu.value = {
-    isVisible: true,
-    workspaceId,
-    position: { x: event.clientX, y: event.clientY }
+const toggleFavorite = (id: string) => {
+  // Toggle local state for immediate feedback
+  if (localFavorites.value.has(id)) {
+    localFavorites.value.delete(id);
+  } else {
+    localFavorites.value.add(id);
+  }
+  
+  // Force reactivity update
+  localFavorites.value = new Set(localFavorites.value);
+  
+  // Emit event to parent
+  emit('favorite-workspace', id);
+};
+
+const showContextMenu = (workspace: any, event: MouseEvent) => {
+  contextMenu.value = {
+    visible: true,
+    position: { x: event.clientX, y: event.clientY },
+    workspace
   };
-  event.stopPropagation();
 };
 
 const closeContextMenu = () => {
-  activeContextMenu.value.isVisible = false;
+  contextMenu.value.visible = false;
 };
 
-const handleContextMenuAction = (action) => {
-  const workspaceId = activeContextMenu.value.workspaceId;
-  if (!workspaceId) return;
-
-  switch (action) {
-    case 'duplicate':
-      emit('duplicate-workspace', workspaceId);
-      break;
-    case 'archive':
-      emit('archive-workspace', workspaceId);
-      break;
-    case 'export':
-      emit('export-workspace', workspaceId);
-      break;
-    case 'delete':
-      emit('delete-workspace', workspaceId);
-      break;
-  }
-
+const handleAction = (action: string) => {
+  const workspace = contextMenu.value.workspace;
+  if (!workspace) return;
+  
+  emit(`${action}-workspace`, workspace.id);
   closeContextMenu();
 };
 
-// Enhanced tag styling with theme awareness
-const getTagStyles = (tag) => {
-  const primary = themeColors.value.primary;
-  const secondary = themeColors.value.secondary;
-  const accent = themeColors.value.accent;
+const preloadWorkspace = async (id: string) => {
+  if (preloadedIds.has(id)) return;
+  preloadedIds.add(id);
   
-  // Create contrasting tag colors based on theme
-  const tagColors = {
-    primary: {
-      backgroundColor: `${primary}25`,
-      color: isDarkTheme.value ? primary : primary,
-      border: `1px solid ${primary}40`
-    },
-    secondary: {
-      backgroundColor: `${secondary}25`,
-      color: isDarkTheme.value ? secondary : secondary,
-      border: `1px solid ${secondary}40`
-    },
-    accent: {
-      backgroundColor: `${accent}25`,
-      color: isDarkTheme.value ? accent : accent,
-      border: `1px solid ${accent}40`
-    },
-    success: {
-      backgroundColor: isDarkTheme.value ? 'rgba(34, 197, 94, 0.2)' : 'rgba(34, 197, 94, 0.15)',
-      color: isDarkTheme.value ? '#22c55e' : '#16a34a',
-      border: '1px solid rgba(34, 197, 94, 0.3)'
-    },
-    warning: {
-      backgroundColor: isDarkTheme.value ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.15)',
-      color: isDarkTheme.value ? '#f59e0b' : '#d97706',
-      border: '1px solid rgba(245, 158, 11, 0.3)'
-    },
-    error: {
-      backgroundColor: isDarkTheme.value ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)',
-      color: isDarkTheme.value ? '#ef4444' : '#dc2626',
-      border: '1px solid rgba(239, 68, 68, 0.3)'
-    }
+  // Simulate preloading workspace data
+  // In real implementation, this would fetch additional data
+  await nextTick();
+};
+
+const truncateText = (text: string, maxLength: number) => {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};
+
+const formatRelativeTime = (dateString: string) => {
+  if (!dateString) return 'Never';
+  
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffDays > 7) {
+    return date.toLocaleDateString(undefined, { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  } else if (diffDays > 0) {
+    return `${diffDays}d ago`;
+  } else if (diffHours > 0) {
+    return `${diffHours}h ago`;
+  } else if (diffMins > 0) {
+    return `${diffMins}m ago`;
+  } else {
+    return 'Just now';
+  }
+};
+
+const getTagStyle = (tag: any) => {
+  const colors = {
+    primary: { bg: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' },
+    secondary: { bg: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' },
+    success: { bg: 'rgba(34, 197, 94, 0.1)', color: '#22c55e' },
+    warning: { bg: 'rgba(251, 146, 60, 0.1)', color: '#fb923c' },
+    error: { bg: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }
   };
   
-  // Use tag's colorName if it exists and is in our map, otherwise default to primary
-  const colorKey = (tag.colorName && tagColors[tag.colorName]) ? tag.colorName : 'primary';
+  const colorScheme = colors[tag.color] || colors.primary;
   
   return {
-    ...tagColors[colorKey],
-    padding: '0.25rem 0.5rem',
-    borderRadius: '9999px',
-    fontSize: '0.75rem',
-    fontWeight: '500',
-    maxWidth: '100%',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap'
+    backgroundColor: colorScheme.bg,
+    color: colorScheme.color,
+    border: `1px solid ${colorScheme.color}20`
   };
 };
+
+// Lifecycle
+onMounted(() => {
+  if (containerRef.value) {
+    containerRef.value.addEventListener('scroll', handleScroll, { passive: true });
+    
+    // Handle responsive grid
+    const resizeObserver = new ResizeObserver(() => {
+      handleScroll();
+    });
+    resizeObserver.observe(containerRef.value);
+    
+    onBeforeUnmount(() => {
+      containerRef.value?.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+    });
+  }
+});
+
+// Watch for changes
+watch(() => props.searchQuery, () => {
+  // Reset scroll position on search
+  if (containerRef.value) {
+    containerRef.value.scrollTop = 0;
+  }
+});
+
 </script>
 
 <style scoped>
 .grid-workspace-view {
-  width: 100%;
-  height: 100%;
-  overflow-y: auto;
-  padding: 1rem;
+  @apply w-full h-full overflow-auto relative;
+  container-type: inline-size;
+}
+
+.virtual-scroll-container {
+  @apply relative w-full;
+}
+
+.visible-items {
+  @apply absolute top-0 left-0 right-0;
+  will-change: transform;
 }
 
 .grid-container {
-  display: grid;
+  @apply grid gap-6 p-6;
   grid-template-columns: repeat(5, 1fr);
-  gap: 1.5rem;
 }
 
-.grid-item {
-  height: 100%;
-}
-
-.grid-workspace-card {
-  border-radius: 0.75rem;
-  overflow: hidden;
-  height: 100%;
-  position: relative;
-}
-
-.grid-workspace-card:hover {
-  transform: translateY(-4px) scale(1.02);
-  filter: brightness(1.05);
-}
-
-.grid-workspace-card.selected {
-  transform: translateY(-2px) scale(1.01);
-  filter: brightness(1.1);
-  box-shadow: 0 0 0 2px currentColor !important;
-}
-
-.grid-workspace-card.favorite::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 0;
-  height: 0;
-  border-left: 20px solid transparent;
-  border-top: 20px solid #fbbf24;
-  z-index: 10;
-}
-
-.grid-workspace-card.favorite::after {
-  content: '★';
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  color: white;
-  font-size: 0.75rem;
-  z-index: 11;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-title {
-  font-weight: 600;
-  font-size: 1.1rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  margin-right: 0.5rem;
-  color: inherit; /* Inherit color from parent */
-}
-
-.card-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-}
-
-.action-btn:hover {
-  transform: scale(1.1);
-  filter: brightness(1.2);
-}
-
-.card-content {
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.card-metadata {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.metadata-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  opacity: 0.8;
-  color: inherit; /* Inherit color from parent */
-}
-
-.tags-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.tag {
-  transition: all 0.2s ease;
-}
-
-.tag:hover {
-  transform: scale(1.05);
-  filter: brightness(1.1);
-}
-
-.context-menu-item {
-  @apply flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-base-200/50 text-left;
-}
-
-.text-error {
-  color: #ef4444;
-}
-
-/* Responsive Adjustments */
-@media (max-width: 1600px) {
+/* Responsive Grid */
+@container (max-width: 1400px) {
   .grid-container {
     grid-template-columns: repeat(4, 1fr);
   }
 }
 
-@media (max-width: 1200px) {
+@container (max-width: 1100px) {
   .grid-container {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
-@media (max-width: 768px) {
+@container (max-width: 800px) {
   .grid-container {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 480px) {
+@container (max-width: 500px) {
   .grid-container {
     grid-template-columns: 1fr;
   }
 }
 
-/* Enhanced animations */
-@keyframes cardPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.02); }
+.grid-item {
+  @apply relative;
+  contain: layout style paint;
 }
 
-.grid-workspace-card.selected {
-  animation: cardPulse 2s infinite;
+.workspace-card {
+  @apply relative h-[160px] rounded-xl overflow-hidden cursor-pointer;
+  @apply transition-all duration-300 ease-out;
+  @apply bg-base-100 border border-base-300;
+  transform: translateZ(0); /* Force GPU acceleration */
+  will-change: transform;
+}
+
+.workspace-card:hover {
+  @apply shadow-2xl border-primary/50;
+  transform: translateY(-4px) scale(1.02);
+}
+
+.workspace-card.selected {
+  @apply ring-2 ring-primary ring-offset-2 ring-offset-base-100;
+  transform: translateY(-2px) scale(1.01);
+}
+
+/* Remove the corner indicator - we have the star button now */
+/* .workspace-card.favorite::before {
+  @apply absolute top-0 right-0 w-16 h-16;
+  content: '';
+  background: linear-gradient(135deg, #fbbf24 0%, transparent 50%);
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+} */
+
+.workspace-card.loading {
+  @apply animate-pulse;
+}
+
+/* Card Background Effects */
+.card-background {
+  @apply absolute inset-0 -z-10;
+}
+
+.gradient-overlay {
+  @apply absolute inset-0;
+  background: linear-gradient(135deg, 
+    rgba(var(--p), 0.05) 0%, 
+    transparent 50%,
+    rgba(var(--s), 0.05) 100%);
+}
+
+.noise-overlay {
+  @apply absolute inset-0 opacity-[0.02];
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+.shimmer-effect {
+  @apply absolute inset-0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.1) 50%, 
+    transparent 100%);
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Card Content */
+.card-content {
+  @apply relative h-full p-4 flex flex-col gap-3;
+}
+
+.card-header {
+  @apply flex justify-between items-start gap-3;
+}
+
+.title-section {
+  @apply flex-1 min-w-0;
+}
+
+.workspace-title {
+  @apply text-base font-semibold truncate;
+  @apply text-base-content;
+}
+
+.workspace-subtitle {
+  @apply text-xs text-base-content/60 mt-0.5;
+  @apply line-clamp-1;
+}
+
+.actions-section {
+  @apply flex gap-2 flex-shrink-0;
+}
+
+.action-btn {
+  @apply w-8 h-8 rounded-lg flex items-center justify-center;
+  @apply bg-base-200 hover:bg-base-300;
+  @apply transition-all duration-200;
+  @apply text-base-content/70 hover:text-base-content;
+}
+
+.favorite-btn.is-favorite {
+  @apply text-warning bg-warning/20;
+  @apply border border-warning/30;
+}
+
+.favorite-btn:hover {
+  @apply bg-warning/10 text-warning;
+}
+
+/* Stats Row */
+.stats-row {
+  @apply flex justify-between items-center gap-2 mt-auto;
+}
+
+.stat-item {
+  @apply flex items-center gap-1 text-xs;
+  @apply text-base-content/70;
+}
+
+.stat-icon {
+  @apply text-primary/70;
+}
+
+.stat-value {
+  @apply font-medium;
+}
+
+/* Tags Section */
+.tags-section {
+  @apply mt-2;
+}
+
+.tags-container {
+  @apply flex flex-wrap gap-1;
+}
+
+.tag-pill {
+  @apply px-2 py-0.5 rounded-full text-xs font-medium;
+  @apply transition-all duration-200;
+}
+
+.tag-pill:hover {
+  @apply scale-105 brightness-110;
+}
+
+.more-tags {
+  @apply bg-base-200 text-base-content/60;
+}
+
+
+/* Hover Layer */
+.hover-layer {
+  @apply absolute inset-0 pointer-events-none;
+  @apply bg-gradient-to-t from-primary/5 to-transparent opacity-0;
+  @apply transition-opacity duration-300;
+}
+
+.workspace-card:hover .hover-layer {
+  @apply opacity-100;
+}
+
+/* Loading State */
+.loading-overlay {
+  @apply absolute inset-0 flex items-center justify-center;
+  @apply bg-base-100/80 backdrop-blur-sm;
+}
+
+.loading-spinner {
+  @apply w-12 h-12 border-primary/30 border-t-primary;
+  @apply rounded-full animate-spin;
+}
+
+/* Context Menu */
+.menu-item {
+  @apply flex items-center gap-3 w-full px-4 py-2.5;
+  @apply text-sm hover:bg-base-200;
+  @apply transition-colors duration-150;
+}
+
+.menu-item.danger {
+  @apply text-error hover:bg-error/10;
+}
+
+.menu-divider {
+  @apply h-px bg-base-200 my-1;
+}
+
+/* Animations */
+.grid-item-enter-active,
+.grid-item-leave-active {
+  transition: all 0.3s ease;
+}
+
+.grid-item-enter-from {
+  opacity: 0;
+  transform: scale(0.9) translateY(20px);
+}
+
+.grid-item-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.tag-enter-active,
+.tag-leave-active {
+  transition: all 0.2s ease;
+}
+
+.tag-enter-from,
+.tag-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.context-menu-enter-active,
+.context-menu-leave-active {
+  transition: all 0.2s ease;
+}
+
+.context-menu-enter-from,
+.context-menu-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Performance Optimizations */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Performance Debug Panel */
+.performance-debug {
+  @apply fixed top-4 right-4 z-50;
+  pointer-events: none;
+}
+
+.debug-panel {
+  @apply bg-base-100/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-base-300;
+  @apply text-xs font-mono;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 120px;
+}
+
+.debug-metric {
+  @apply flex justify-between items-center;
+}
+
+.metric-label {
+  @apply text-base-content/60 font-medium;
+}
+
+.metric-value {
+  @apply text-base-content font-semibold;
+}
+
+.metric-value.good {
+  @apply text-success;
+}
+
+.metric-value.bad {
+  @apply text-error;
+}
+
+/* Dark Mode Enhancements */
+:root[data-theme="dark"] .workspace-card {
+  @apply bg-base-100/50 backdrop-blur-sm;
+}
+
+:root[data-theme="dark"] .gradient-overlay {
+  background: linear-gradient(135deg, 
+    rgba(var(--p), 0.1) 0%, 
+    transparent 50%,
+    rgba(var(--s), 0.1) 100%);
 }
 </style>

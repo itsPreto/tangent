@@ -10,6 +10,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/ge
 import emitter from '@/utils/eventBus'
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { routerService } from '@/services/routerService';
 
 // Helper types for model info
 type ModelSource = "custom" | "ollama" | "google" | "openrouter" | "anthropic" | "openai";
@@ -616,7 +617,11 @@ export const useCanvasStore = defineStore('canvas', () => {
     parentId: string | null,
     branchMessageIndex: number,
     position: { x: number, y: number },
-    initialData = {}
+    initialData = {},
+    options?: {
+      generateTitle?: boolean;
+      firstUserMessage?: string;
+    }
   ) => {
     const newId = (Math.max(...nodes.value.map(n => parseInt(n.id || '0')), 0) + 1).toString(); //handle the empty nodes array for inital node
     const parentNode = nodes.value.find(n => n.id === parentId);
@@ -628,6 +633,12 @@ export const useCanvasStore = defineStore('canvas', () => {
       timestamp: new Date().toISOString()
     }));
 
+    // Initialize with placeholder title for branches
+    let initialTitle = 'New Thread';
+    if (parentId && options?.generateTitle) {
+      initialTitle = 'Generating...'; // Will be replaced by router service
+    }
+
     const newNode: Node = {
       id: newId,
       x: position.x,
@@ -637,11 +648,58 @@ export const useCanvasStore = defineStore('canvas', () => {
       type: 'branch',
       branchMessageIndex,
       streamingContent: null,
+      title: initialTitle,
+      isGeneratingTitle: options?.generateTitle || false,
       ...initialData
     };
 
     // Add to local state
     nodes.value.push(newNode);
+
+    // Generate title for branch nodes if requested
+    if (parentId && options?.generateTitle && options?.firstUserMessage) {
+      try {
+        // Initialize router's title cache with existing node titles
+        const existingTitles = nodes.value
+          .filter(n => n.title && n.title !== 'New Thread' && n.title !== 'Generating...')
+          .map(n => n.title!);
+        routerService.initializeTitleCache(existingTitles);
+
+        // Generate title using router service
+        const title = await routerService.generateBranchTitle(
+          options.firstUserMessage,
+          contextMessages.map(m => `${m.role}: ${m.content}`).join('\n'),
+          (partialTitle: string) => {
+            // Real-time title updates for animation effect
+            const node = nodes.value.find(n => n.id === newId);
+            if (node) {
+              node.title = partialTitle;
+            }
+          }
+        );
+
+        // Set final title and clear loading state
+        const node = nodes.value.find(n => n.id === newId);
+        if (node) {
+          node.title = title;
+          node.isGeneratingTitle = false;
+          
+          // Persist the title
+          updateNodeTitle(newId, title);
+        }
+
+        console.log(`[CanvasStore] Generated title "${title}" for new branch node ${newId}`);
+      } catch (error) {
+        console.error('[CanvasStore] Title generation failed:', error);
+        // Fallback to default title
+        const node = nodes.value.find(n => n.id === newId);
+        if (node) {
+          node.title = 'New Branch';
+          node.isGeneratingTitle = false;
+          updateNodeTitle(newId, 'New Branch');
+        }
+      }
+    }
 
     // Auto-save if in a chat
     if (chatStore.currentChatId) {
@@ -962,12 +1020,14 @@ export const useCanvasStore = defineStore('canvas', () => {
     let messageText: string;
     let messagePasteEntries: any[] | undefined;
     let ttsConfig: TTSConfig | undefined;
+    let branchContext: string | undefined;
 
     if (typeof messageData === 'object') {
       // Structured message
       messageText = messageData.text;
       messagePasteEntries = messageData.pasteEntries;
       ttsConfig = (messageData as any).tts; // For backward compatibility
+      branchContext = (messageData as any).branchContext;
     } else {
       // Simple string message
       messageText = messageData;
@@ -999,6 +1059,13 @@ export const useCanvasStore = defineStore('canvas', () => {
       pasteEntries: messagePasteEntries
     });
 
+    // Check if this is the first user message in a branch node that needs title generation
+    const isFirstUserMessage = addUserMessage && 
+      node.type === 'branch' && 
+      node.parentId && // Only for branch nodes
+      (!node.title || node.title === 'New Thread' || node.title === 'Untitled Thread') &&
+      node.messages.filter(m => m.role === 'user').length === 0; // No user messages yet
+
     try {
       if (addUserMessage) {
         // Create paste content parts if needed
@@ -1013,6 +1080,14 @@ export const useCanvasStore = defineStore('canvas', () => {
           isStreaming: false,
         };
         await addMessage(nodeId, userMessage, messagePasteEntries);
+
+        // Generate title for branch nodes on first user message
+        if (isFirstUserMessage) {
+          // Don't await this - let it run in background
+          generateTitleForBranch(nodeId, messageText).catch(error => {
+            console.error('[CanvasStore] Background title generation failed:', error);
+          });
+        }
       }
 
       // Determine conversation context based on message history
@@ -1060,8 +1135,15 @@ export const useCanvasStore = defineStore('canvas', () => {
         try {
           // For Google/Gemini, we prepend the system prompt to the first message since it doesn't have system messages
           const systemPromptText = generateSystemPrompt(detectedIsCodeRequest, codeType);
+          let fullSystemPrompt = systemPromptText;
+          
+          // Add branch context if available
+          if (branchContext && branchContext.trim()) {
+            fullSystemPrompt += `\n\n${branchContext}`;
+          }
+          
           if (history.length > 0 && history[0].role === 'user') {
-            history[0].parts[0].text = `${systemPromptText}\n\nUser request: ${history[0].parts[0].text}`;
+            history[0].parts[0].text = `${fullSystemPrompt}\n\nUser request: ${history[0].parts[0].text}`;
           }
 
           const chat = model.startChat({
@@ -1132,7 +1214,12 @@ export const useCanvasStore = defineStore('canvas', () => {
           });
 
         // Generate appropriate system prompt based on message context and detected code request
-        const systemPrompt = generateSystemPrompt(detectedIsCodeRequest, codeType);
+        let systemPrompt = generateSystemPrompt(detectedIsCodeRequest, codeType);
+        
+        // Add branch context if available
+        if (branchContext && branchContext.trim()) {
+          systemPrompt += `\n\n${branchContext}`;
+        }
 
         const { endpoint, headers, requestBody } = prepareRequest(
           selectedModel,
@@ -1550,6 +1637,131 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
+  const generateTitleForBranch = async (nodeId: string, firstUserMessage: string) => {
+    const node = nodes.value.find(n => n.id === nodeId);
+    if (!node) {
+      console.error(`[CanvasStore] Node ${nodeId} not found for title generation`);
+      return;
+    }
+
+    try {
+      // Set loading state
+      node.isGeneratingTitle = true;
+      node.title = 'Generating...';
+      
+      // Initialize router's title cache with existing node titles
+      const existingTitles = nodes.value
+        .filter(n => n.title && n.title !== 'New Thread' && n.title !== 'Generating...' && n.id !== nodeId)
+        .map(n => n.title!);
+      routerService.initializeTitleCache(existingTitles);
+
+      // Build context from node messages for better title generation
+      const context = node.messages
+        .slice(0, 3) // Use first few messages for context
+        .map(m => `${m.role}: ${m.content}`)
+        .join('\n');
+
+      // Generate new title using router service
+      const newTitle = await routerService.generateBranchTitle(
+        firstUserMessage,
+        context,
+        (partialTitle: string) => {
+          // Real-time title updates for animation effect
+          const currentNode = nodes.value.find(n => n.id === nodeId);
+          if (currentNode) {
+            currentNode.title = partialTitle;
+          }
+        }
+      );
+
+      // Set final title and clear loading state
+      const currentNode = nodes.value.find(n => n.id === nodeId);
+      if (currentNode) {
+        currentNode.title = newTitle;
+        currentNode.isGeneratingTitle = false;
+        
+        // Persist the new title
+        updateNodeTitle(nodeId, newTitle);
+      }
+
+      console.log(`[CanvasStore] Generated title "${newTitle}" for branch node ${nodeId}`);
+      return newTitle;
+      
+    } catch (error) {
+      console.error('[CanvasStore] Title generation failed:', error);
+      
+      // Clear loading state and revert to fallback
+      const currentNode = nodes.value.find(n => n.id === nodeId);
+      if (currentNode) {
+        currentNode.isGeneratingTitle = false;
+        currentNode.title = 'New Branch'; // Fallback title
+        updateNodeTitle(nodeId, 'New Branch');
+      }
+    }
+  };
+
+  const regenerateNodeTitle = async (nodeId: string, firstUserMessage: string) => {
+    const node = nodes.value.find(n => n.id === nodeId);
+    if (!node) {
+      throw new Error(`Node ${nodeId} not found`);
+    }
+
+    try {
+      // Set loading state
+      node.isGeneratingTitle = true;
+      
+      // Initialize router's title cache with existing node titles
+      const existingTitles = nodes.value
+        .filter(n => n.title && n.title !== 'New Thread' && n.title !== 'Generating...' && n.id !== nodeId)
+        .map(n => n.title!);
+      routerService.initializeTitleCache(existingTitles);
+
+      // Build context from node messages for better title generation
+      const context = node.messages
+        .slice(0, 3) // Use first few messages for context
+        .map(m => `${m.role}: ${m.content}`)
+        .join('\n');
+
+      // Generate new title using router service
+      const newTitle = await routerService.generateBranchTitle(
+        firstUserMessage,
+        context,
+        (partialTitle: string) => {
+          // Real-time title updates for animation effect
+          const currentNode = nodes.value.find(n => n.id === nodeId);
+          if (currentNode) {
+            currentNode.title = partialTitle;
+          }
+        }
+      );
+
+      // Set final title and clear loading state
+      const currentNode = nodes.value.find(n => n.id === nodeId);
+      if (currentNode) {
+        currentNode.title = newTitle;
+        currentNode.isGeneratingTitle = false;
+        
+        // Persist the new title
+        updateNodeTitle(nodeId, newTitle);
+      }
+
+      console.log(`[CanvasStore] Regenerated title "${newTitle}" for node ${nodeId}`);
+      return newTitle;
+      
+    } catch (error) {
+      console.error('[CanvasStore] Title regeneration failed:', error);
+      
+      // Clear loading state and revert to fallback
+      const currentNode = nodes.value.find(n => n.id === nodeId);
+      if (currentNode) {
+        currentNode.isGeneratingTitle = false;
+        // Keep the existing title if regeneration fails
+      }
+      
+      throw error;
+    }
+  };
+
 
 
   const setNodeHeightLock = (nodeId: string, height: number) => {
@@ -1705,6 +1917,8 @@ export const useCanvasStore = defineStore('canvas', () => {
   };
 
   const createNewWorkspace = async () => {
+    console.log('[CanvasStore] Starting createNewWorkspace');
+    
     // First, handle any existing snapped node
     if (snappedNodesStack.value.length > 0) {
       // Clear the snapped nodes stack
@@ -1715,10 +1929,12 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     const timestamp = new Date().toLocaleString();
     const defaultTitle = `WS:${timestamp}`;
+    console.log('[CanvasStore] Generated title:', defaultTitle);
 
     // Calculate center position
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
+    console.log('[CanvasStore] Center position:', { centerX, centerY });
 
     // Create the root node
     const rootNode: Node = {
@@ -1740,12 +1956,13 @@ export const useCanvasStore = defineStore('canvas', () => {
       streamingContent: null
     };
 
+    console.log('[CanvasStore] Created root node:', rootNode);
+
     // Clear existing nodes and set new root node
     nodes.value = [rootNode];
     isOverviewMode.value = false;
 
-    // Create and save the workspace
-    const chatId = await chatStore.createChat(defaultTitle, {
+    const initialNodeData = {
       type: rootNode.type,
       title: rootNode.title,
       x: rootNode.x,
@@ -1754,7 +1971,14 @@ export const useCanvasStore = defineStore('canvas', () => {
       metadata: {
         type: rootNode.type
       }
-    });
+    };
+    
+    console.log('[CanvasStore] Calling chatStore.createChat with:', { defaultTitle, initialNodeData });
+
+    // Create and save the workspace
+    const chatId = await chatStore.createChat(defaultTitle, initialNodeData);
+
+    console.log('[CanvasStore] chatStore.createChat returned:', chatId);
 
     if (chatId) {
       lastSavedWorkspaceId.value = chatId;
@@ -1764,6 +1988,9 @@ export const useCanvasStore = defineStore('canvas', () => {
         isOverviewMode: false
       };
       localStorage.setItem('canvasState', JSON.stringify(state));
+      console.log('[CanvasStore] Workspace created successfully, saved to localStorage');
+    } else {
+      console.error('[CanvasStore] Failed to create workspace - chatId is null');
     }
 
     return chatId;
@@ -1900,6 +2127,8 @@ export const useCanvasStore = defineStore('canvas', () => {
     updateNodePosition,
     removeNode,
     updateNodeTitle,
+    generateTitleForBranch,
+    regenerateNodeTitle,
     addMessage,
     removeMessage,
     setStreamingContent,

@@ -3,11 +3,9 @@
 
     <!-- Side Panel -->
     <SidePanel
+      v-if="appStore.isSidePanelOpen"
       class="fixed left-0 top-0 h-full w-[40vw] bg-background transform transition-transform shadow-xl duration-300 z-40 side-panel overflow-hidden"
-      :class="[
-        appStore.isSidePanelOpen ? 'translate-x-0' : '-translate-x-full',
-        'theme-' + currentTheme
-      ]"
+      :class="'theme-' + currentTheme"
       style="margin: 2rem 2rem 2rem 0rem; border-color: #334155; border-width: 1px; height: calc(100vh - 4rem); border-radius: 0 1.5rem 1.5rem 0; border-left: none;"
       :node-id="currentNodeId" @panel-opened="appStore.openSidePanel" @panel-closed="appStore.closeSidePanel" />
 
@@ -170,15 +168,25 @@
     </div>
 
     <!-- Bottom Controls Container -->
-    <div v-if="!isInOverview" class="fixed bottom-0 z-50 transition-all duration-300 flex justify-start" :style="{
-      left: appStore.isSidePanelOpen ? '40vw' : '0',
-      right: appStore.isAgentConfiguratorOpen ? '40vw' : '0'
-    }">
-      <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mb-4">
-        <button @click="handleBackToWorkspaces" class="btn btn-sm back-to-workspaces-btn hover:bg-base-300/90"
+    <div class="fixed bottom-0 transition-all duration-300 flex justify-start pointer-events-none" 
+         :class="isInOverview ? 'z-40' : 'z-50'"
+         :style="{
+           left: (!isInOverview && appStore.isSidePanelOpen) ? '40vw' : '1rem',
+           right: (!isInOverview && appStore.isAgentConfiguratorOpen) ? '40vw' : 'auto'
+         }">
+      <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mb-4 pointer-events-auto">
+        <button v-if="!isInOverview" @click="handleBackToWorkspaces" class="btn btn-sm back-to-workspaces-btn hover:bg-base-300/90"
           :style="controlButtonStyle">
           <ArrowLeft class="w-4 h-4" />
-          <span class="text-sm">Back to Workspaces</span>
+          <span class="text-md"></span>
+        </button>
+        <button @click="appStore.toggleRAGPanel" 
+          class="btn btn-sm hover:bg-base-300/90 flex items-center gap-2"
+          :class="{ 'btn-primary': appStore.isRAGPanelOpen }"
+          :style="controlButtonStyle"
+          title="Toggle Document Search Panel">
+          <FileText class="w-4 h-4" />
+          <span class="text-sm">Documents</span>
         </button>
       </div>
     </div>
@@ -256,12 +264,21 @@
       </div>
     </div>
 
+    <!-- RAG Document Panel -->
+    <RAGDocumentPanel
+      :is-open="appStore.isRAGPanelOpen"
+      @close="appStore.closeRAGPanel"
+      @toggle="appStore.toggleRAGPanel"
+      @document-selected="handleDocumentSelected"
+      @document-dragged="handleDocumentDragged"
+    />
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, provide, watch, nextTick } from 'vue';
-import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical } from 'lucide-vue-next';
+import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText } from 'lucide-vue-next';
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
@@ -269,6 +286,7 @@ import TangentLogo from './components/logo/TangentLogo.vue';
 import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
 import SidePanel from './components/sidebar/SandPackSidePanel.vue';
 import AgentConfiguratorSidePanel from './components/settings/AgentConfiguratorSidePanel.vue';
+import RAGDocumentPanel from './components/ui/RAGDocumentPanel.vue';
 import Badge from './components/ui/Badge.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
@@ -494,10 +512,13 @@ const toggleButtonStyle = computed(() => {
 const canvasWrapperStyle = computed(() => {
   const leftPanelOpen = appStore.isSidePanelOpen;
   const rightPanelOpen = appStore.isAgentConfiguratorOpen;
+  const ragPanelOpen = appStore.isRAGPanelOpen;
 
   let width = '100vw';
   let marginLeft = '0';
   let marginRight = '0';
+  let height = '100vh';
+  let marginBottom = '0';
 
   if (leftPanelOpen && rightPanelOpen) {
     width = '20vw';
@@ -511,10 +532,18 @@ const canvasWrapperStyle = computed(() => {
     marginRight = '40vw';
   }
 
+  // Account for RAG panel height
+  if (ragPanelOpen) {
+    height = '80vh'; // Reduce height by 20vh for RAG panel
+    marginBottom = '20vh';
+  }
+
   return {
     width,
     marginLeft,
-    marginRight
+    marginRight,
+    height,
+    marginBottom
   };
 });
 
@@ -1110,6 +1139,17 @@ const handleNavigateToCodeBubble = async (data: {
 
 // Note: Drag and drop handlers removed - archive uploads now handled by ArchiveUpload component
 
+// RAG Document Panel event handlers
+const handleDocumentSelected = (document: any) => {
+  console.log('Document selected:', document);
+  // TODO: Handle document selection for context
+};
+
+const handleDocumentDragged = (document: any, event: DragEvent) => {
+  console.log('Document dragged:', document);
+  // TODO: Handle document drag to create new nodes with context
+};
+
 // Theme update function
 const updateThemeFromDOM = () => {
   const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
@@ -1416,5 +1456,27 @@ onBeforeUnmount(() => {
 /* Override canvas background for cyberpunk theme */
 [data-theme="cyberpunk"] .bg-background {
   background-color: #1a1a2e !important;
+}
+
+/* Slide Panel Transitions for Memory Optimization */
+.slide-panel-enter-active,
+.slide-panel-leave-active {
+  transition: transform 0.3s ease-out;
+}
+
+.slide-panel-enter-from {
+  transform: translateX(-100%);
+}
+
+.slide-panel-enter-to {
+  transform: translateX(0);
+}
+
+.slide-panel-leave-from {
+  transform: translateX(0);
+}
+
+.slide-panel-leave-to {
+  transform: translateX(-100%);
 }
 </style>

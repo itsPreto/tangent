@@ -28,6 +28,30 @@ export type Events = {
     codeIndex: number;
     isEdited: boolean;
   };
+  // Compacted conversation events
+  'continue-conversation': {
+    nodeId: string;
+  };
+  'branch-from-last': {
+    nodeId: string;
+  };
+  'toggle-compacted-expansion': {
+    nodeId: string;
+    expanded: boolean;
+  };
+  'create-branch-from-message': {
+    nodeId: string;
+    messageIndex: number;
+    includeParentContext: boolean;
+  };
+  'node-message-positions-updated': {
+    nodeId: string;
+    positions: Record<number, number>;
+    buttonPositions: Record<number, { x: number; y: number }>;
+  };
+  'request-node-position-update': {
+    nodeId: string;
+  };
 };
 
 const emitter = mitt<Events>();

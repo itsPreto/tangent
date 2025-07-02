@@ -6,7 +6,7 @@ tiktoken
 google-generativeai
 requests
 Pillow
-kokoro>=0.9.4
+kokoro>=0.7.16
 soundfile
 torch
 sentence-transformers>=2.2.2
@@ -17,3 +17,4 @@ chromadb>=0.4.0
 numpy>=1.24.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
+sseclient-py

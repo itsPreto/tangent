@@ -138,6 +138,7 @@ import {
 import emitter from '@/utils/eventBus'
 import { debounce } from 'lodash'
 import { useThemeStore } from '@/stores/themeStore'
+import { useCanvasStore } from '@/stores/canvasStore'
 import type { ThemeName } from '@/stores/themeStore'
 
 const props = defineProps({
@@ -159,6 +160,7 @@ const particles = ref<Particle[]>([])
 
 // Theme store for accessing theme colors
 const themeStore = useThemeStore()
+const canvasStore = useCanvasStore()
 const currentThemeName = ref<ThemeName>('light')
 const isThemeDark = ref(false)
 
@@ -772,7 +774,12 @@ watch(
     props.zoomLevel
   ],
   () => {
-    debouncedResetAnimation()
+    // Use immediate updates during drag operations for responsive spline rendering
+    if (canvasStore.isDragging) {
+      resetAnimation()
+    } else {
+      debouncedResetAnimation()
+    }
   }
 )
 

@@ -28,24 +28,35 @@ export const useChatStore = defineStore('chat', () => {
     };
     // Create new chat
     const createChat = async (title: string, initialNode: any) => {
+        console.log('[ChatStore] Starting createChat with:', { title, initialNode });
         isLoading.value = true;
         error.value = null;
         try {
+            const requestBody = { title, initialNode };
+            console.log('[ChatStore] Request body:', JSON.stringify(requestBody, null, 2));
+            
             const response = await fetch('http://127.0.0.1:5050/chats', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, initialNode })
+                body: JSON.stringify(requestBody)
             });
+            
+            console.log('[ChatStore] Response status:', response.status, response.statusText);
+            
             if (!response.ok) { // Check for HTTP errors here too
+                const errorText = await response.text();
+                console.error('[ChatStore] Error response:', errorText);
                 throw new Error(`Failed to create chat: ${response.status} ${response.statusText}`);
             }
             const data = await response.json();
+            console.log('[ChatStore] Success response:', data);
+            
             await loadChats();
    
             return data.chatId; // Return the ID.
         } catch (e: any) {
             error.value = e.message || 'Failed to create chat'; // Store user friendly error
-            console.error(e);
+            console.error('[ChatStore] Error in createChat:', e);
             return null;
         } finally {
             isLoading.value = false;
