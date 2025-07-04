@@ -14,14 +14,50 @@
       }
     ]" @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
     @dragover="supportsVision ? handleDragOver : undefined" @drop="supportsVision ? handleDrop : undefined"
-    :style="[nodePositionStyle, nodeThemeStyle]">
+    @wheel="handleNodeWheel"
+    :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle]">
     <div v-if="isSnapped" class="fixed inset-0 backdrop-blur-xl -z-10 pointer-events-none" :style="{
       backgroundColor: snappedBackgroundStyle
     }">
     </div>
 
-    <Card :class="[
-      'node-card',
+    <!-- Block LOD: Simple colored rectangle -->
+    <div v-if="shouldShowBlock" class="w-64 h-16 rounded-lg border-2 transition-all duration-300" :style="{
+      backgroundColor: baseColorSet.transparent,
+      borderColor: baseColorSet.base
+    }"></div>
+    
+    <!-- Summary LOD: Compact title card with last message preview -->
+    <div v-else-if="shouldShowSummary" class="w-[480px] h-[100px] rounded-lg border backdrop-blur-sm p-4 transition-all duration-300" :style="{
+      backgroundColor: baseColorSet.transparent,
+      borderColor: baseColorSet.base
+    }">
+      <div class="flex flex-col h-full">
+        <!-- Title and message count -->
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium truncate text-base-content flex-1">
+            {{ node.title || "Untitled Thread" }}
+          </span>
+          <span class="text-xs text-base-content/60 ml-2 flex-shrink-0">
+            ({{ node.messages?.length || 0 }})
+          </span>
+        </div>
+        
+        <!-- Last message preview -->
+        <div class="flex-1 overflow-hidden">
+          <div class="text-xs text-base-content/70 leading-relaxed" v-if="lastMessagePreview">
+            {{ lastMessagePreview }}
+          </div>
+          <div class="text-xs text-base-content/50 italic" v-else>
+            No messages yet
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Full LOD: Normal card -->
+    <Card v-else :class="[
+      'node-card overflow-x-hidden',
       'backdrop-blur transition-all duration-300',
       isSnapped ? 'snapped-card' : 'max-w-2xl w-[42rem]'
     ]" :style="computedCardStyle">
@@ -45,6 +81,8 @@
           :current-parameters="canvasStore.getModelParams(node.id, currentModel.id)" :trigger-rect="avatarRect" @save="updateModelParams"
           @close="() => { showParamsEditor = false }" />
       </Teleport>
+      
+      <!-- Full LOD: Complete content -->
       <div :class="['p-4 mt-4', isSnapped ? 'snapped-content' : '']"
         :style="isSnapped ? { height: '100%', display: 'flex', flexDirection: 'column' } : {}">
         <!-- Header Row -->
@@ -231,7 +269,7 @@
 
         <!-- Messages Container -->
         <div :class="[
-          'messages-container transition-all duration-300 relative flex-grow overflow-hidden',
+          'messages-container transition-all duration-300 relative flex-grow overflow-hidden overflow-x-hidden',
           isSnapped ? 'snapped-messages-container' : '',
           isExpanded && node.messages ? 'space-y-4' : ''
         ]">
@@ -251,9 +289,9 @@
 
           <!-- Expanded Messages View -->
           <div v-if="isExpanded && node.messages"
-            class="space-y-4 h-full overflow-y-auto px-2 messages-scroll-container" ref="messagesContainerRef"
-            tabindex="0" @wheel.capture.stop="handleMessagesWheel">
-            <div v-for="(msg, i) in displayMessages" :key="i" class="relative group message-container"
+            class="space-y-4 h-full overflow-y-auto overflow-x-hidden px-2 messages-scroll-container" ref="messagesContainerRef"
+            tabindex="0" @wheel="handleMessagesWheel">
+            <div v-for="(msg, i) in displayMessages" :key="i" class="relative group message-container overflow-x-hidden"
               :class="{ 'user-message': msg.role === 'user', 'ai-message': msg.role === 'assistant' }"
               :data-message-index="i" :data-message-id="`${node.id}-message-${i}`" :data-code-bubble-parent="true"
               :style="getMessageStyles(i)">
@@ -274,7 +312,7 @@
                   </div>
                   
                   <!-- Message layout - different for snapped vs standard mode -->
-                  <div v-if="isSnapped" class="message-with-label text-sm break-words overflow-hidden" :style="{ color: textContentColor }"
+                  <div v-if="isSnapped" class="message-with-label text-sm break-words overflow-hidden overflow-x-hidden" :style="{ color: textContentColor }"
                     :class="{
                       'line-clamp-2': expandedMessages.has(i),
                       'whitespace-pre-wrap': !msg.isStreaming,
@@ -301,7 +339,7 @@
                     <div v-if="msg.role === 'assistant'" class="ai-model-label text-xs font-medium mb-1">
                       {{ msg.isStreaming ? 'AI Typing...' : getModelDisplayName(msg) }}:
                     </div>
-                    <div class="message-content-block text-sm break-words overflow-hidden" :style="{ color: textContentColor }"
+                    <div class="message-content-block text-sm break-words overflow-hidden overflow-x-hidden" :style="{ color: textContentColor }"
                       :class="{
                         'line-clamp-2': expandedMessages.has(i),
                         'whitespace-pre-wrap': !msg.isStreaming,
@@ -485,6 +523,7 @@ interface BranchNodeProps {  // Use a dedicated interface
   openRouterApiKey: string;
   modelType: string;
   zoom: number;
+  lodLevel?: string;
   modelRegistry: Map<string, ModelInfo>;
   isSidePanelOpen: boolean;
   isRightPanelOpen?: boolean;
@@ -644,6 +683,73 @@ let abortController: AbortController | null = null;
 // Media handling state
 const isMediaProcessing = ref(false);
 const isAutoCaptioning = ref(false);
+
+// LOD System - Level of Detail based rendering
+const shouldShowFullDetail = computed(() => {
+  const result = props.lodLevel === 'full';
+  return result;
+});
+const shouldShowSummary = computed(() => {
+  const result = props.lodLevel === 'summary';
+  return result;
+});
+const shouldShowBlock = computed(() => {
+  const result = props.lodLevel === 'block';
+  return result;
+});
+const shouldHide = computed(() => {
+  const result = props.lodLevel === 'hidden';
+  return result;
+});
+
+// Last message preview for summary LOD
+const lastMessagePreview = computed(() => {
+  if (!props.node.messages || props.node.messages.length === 0) {
+    return '';
+  }
+  
+  // Get the last message
+  const lastMessage = props.node.messages[props.node.messages.length - 1];
+  if (!lastMessage || !lastMessage.content) {
+    return '';
+  }
+  
+  // Clean and truncate the content
+  let content = lastMessage.content.trim();
+  
+  // Remove markdown formatting for cleaner preview
+  content = content
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+    .replace(/\*(.*?)\*/g, '$1')     // Remove italic
+    .replace(/`(.*?)`/g, '$1')       // Remove inline code
+    .replace(/#{1,6}\s+/g, '')       // Remove headers
+    .replace(/\n+/g, ' ')            // Replace line breaks with spaces
+    .replace(/\s+/g, ' ')            // Normalize whitespace
+    .trim();
+  
+  // Truncate to approximately 2-3 lines (about 120 characters)
+  if (content.length > 120) {
+    content = content.substring(0, 117) + '...';
+  }
+  
+  return content;
+});
+
+const lodNodeStyle = computed(() => {
+  const baseStyle = {
+    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, width 0.3s ease, height 0.3s ease'
+  };
+  
+  if (shouldHide.value) {
+    return { ...baseStyle, opacity: 0.1, pointerEvents: 'none', transform: 'scale(0.8)' };
+  } else if (shouldShowBlock.value) {
+    return { ...baseStyle, opacity: 0.7, transform: 'scale(0.95)' };
+  } else if (shouldShowSummary.value) {
+    return { ...baseStyle, opacity: 0.85, transform: 'scale(0.98)' };
+  }
+  
+  return { ...baseStyle, opacity: 1, transform: 'scale(1)' };
+});
 
 // Media computed properties
 const hasMediaContent = computed(() => !!props.node.mediaContent);
@@ -1270,23 +1376,32 @@ const handleNodeClick = (e: MouseEvent) => {
 };
 
 const nodePositionStyle = computed(() => {
-  if (isSnapped.value) {
+  if (isSnapped.value && !isTransitioningSnap.value) {
+    // Only apply final snapped position when transition is complete
     const snappedPosition = calculateSnappedPosition();
     if (!snappedPosition) return {};
 
-    // During the transition, animate from current position to target position
     return {
       position: 'fixed',
       transform: `translate3d(${snappedPosition.targetLeft}px, ${snappedPosition.targetTop}px, 0) scale(${snappedPosition.scale})`,
       transformOrigin: '0 0',
-      transition: isTransitioningSnap.value ? 'transform 0.3s ease-out' : 'none'
+      transition: 'none'
+    };
+  }
+
+  if (isTransitioningSnap.value) {
+    // During transition, let manual transforms handle the animation
+    return {
+      transition: isSnapped.value ? 
+        'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' : 
+        'transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19)'
     };
   }
 
   // Normal positioning
   return {
     transform: `translate(${props.node.x}px, ${props.node.y}px)`,
-    transition: isTransitioningSnap.value ? 'transform 0.3s ease-out' : 'none'
+    transition: 'none'
   };
 });
 
@@ -1311,8 +1426,21 @@ const toggleSnap = async () => {
         top: currentRect?.top || 0
       };
 
-      // First, set the node to its current screen position with fixed positioning
+      // Calculate animation origin points for enhanced bezier effect
       if (nodeElement.value && currentRect) {
+        const targetSnappedPos = calculateSnappedPosition();
+        if (targetSnappedPos) {
+          // Set CSS variables for origin-based animation
+          const startX = currentRect.left - targetSnappedPos.targetLeft;
+          const startY = currentRect.top - targetSnappedPos.targetTop;
+          const startScale = props.zoom / targetSnappedPos.scale;
+          
+          nodeElement.value.style.setProperty('--snap-start-x', `${startX}px`);
+          nodeElement.value.style.setProperty('--snap-start-y', `${startY}px`);
+          nodeElement.value.style.setProperty('--snap-start-scale', startScale.toString());
+        }
+        
+        // Set initial position with fixed positioning
         nodeElement.value.style.position = 'fixed';
         nodeElement.value.style.transform = `translate3d(${currentRect.left}px, ${currentRect.top}px, 0) scale(${props.zoom})`;
         nodeElement.value.style.transformOrigin = '0 0';
@@ -1322,27 +1450,45 @@ const toggleSnap = async () => {
       isTransitioningSnap.value = true;
       await nextTick();
 
-      emit('snap', {
-        nodeId: props.node.id,
-        originalPosition: originalPosition.value
-      });
+      // Wait a frame to ensure the initial position is rendered
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      
+      // Now trigger the snap animation by setting isSnapped after a short delay
+      setTimeout(() => {
+        emit('snap', {
+          nodeId: props.node.id,
+          originalPosition: originalPosition.value
+        });
 
-      document.body.classList.add('has-snapped-node');
-      isSnapped.value = true;
-      canvasStore.snapNode(props.node.id);
+        document.body.classList.add('has-snapped-node');
+        isSnapped.value = true;
+        canvasStore.snapNode(props.node.id);
+      }, 50);
 
-      // Disable transition after animation completes
+      // Disable transition after animation completes (longer for bouncy animation)
       setTimeout(() => {
         isTransitioningSnap.value = false;
-      }, 300);
+      }, 450);
     } else {
       console.log('Unsnapping node:', props.node.id);
       // Enable transition for unsnapping
       isTransitioningSnap.value = true;
 
-      // Set initial position to current snapped position
+      // Set initial position to current snapped position and prepare unsnap animation
       const snappedPosition = calculateSnappedPosition();
-      if (snappedPosition && nodeElement.value) {
+      if (snappedPosition && nodeElement.value && originalPosition.value) {
+        // Calculate unsnap target position
+        const targetX = originalPosition.value.left;
+        const targetY = originalPosition.value.top;
+        const deltaX = snappedPosition.targetLeft - targetX;
+        const deltaY = snappedPosition.targetTop - targetY;
+        const scaleRatio = snappedPosition.scale / props.zoom;
+        
+        // Set CSS variables for unsnap animation
+        nodeElement.value.style.setProperty('--unsnap-delta-x', `${deltaX}px`);
+        nodeElement.value.style.setProperty('--unsnap-delta-y', `${deltaY}px`);
+        nodeElement.value.style.setProperty('--unsnap-scale-ratio', scaleRatio.toString());
+        
         nodeElement.value.style.transform = `translate3d(${snappedPosition.currentLeft}px, ${snappedPosition.currentTop}px, 0) scale(${snappedPosition.currentScale})`;
       }
 
@@ -2054,9 +2200,52 @@ function getMessageStyles(index: number) {
   };
 }
 
+const handleNodeWheel = (e: WheelEvent) => {
+  // Always allow canvas zoom/pan gestures to pass through
+  const isCanvasGesture = e.metaKey || e.ctrlKey; // CMD/Ctrl for zoom
+  
+  if (isCanvasGesture) {
+    // Let canvas handle zoom/pan gestures
+    return;
+  }
+  
+  // For non-canvas gestures, check if this is over the messages container
+  const messagesContainer = (e.target as HTMLElement).closest('.messages-scroll-container');
+  if (!messagesContainer) {
+    // Not over messages, let canvas handle regular pan
+    return;
+  }
+  
+  // If over messages container, let handleMessagesWheel deal with it
+  // (it will be called separately)
+};
+
 const handleMessagesWheel = (e: WheelEvent) => {
-  // This captures wheel events in the messages container
-  // console.log('Messages container wheel event', e);
+  // Allow canvas zoom/pan gestures to pass through
+  const isCanvasGesture = e.metaKey || e.ctrlKey; // CMD/Ctrl for zoom
+  
+  if (isCanvasGesture) {
+    // Let canvas handle zoom/pan gestures
+    return;
+  }
+  
+  // Only handle regular scrolling within messages
+  // Check if we're at scroll boundaries to allow canvas pan when needed
+  const container = messagesContainerRef.value;
+  if (!container) return;
+  
+  const isScrollingUp = e.deltaY < 0;
+  const isScrollingDown = e.deltaY > 0;
+  const isAtTop = container.scrollTop <= 0;
+  const isAtBottom = container.scrollTop >= container.scrollHeight - container.clientHeight;
+  
+  // Allow canvas pan when at scroll boundaries
+  if ((isScrollingUp && isAtTop) || (isScrollingDown && isAtBottom)) {
+    return; // Let canvas handle it
+  }
+  
+  // Stop propagation only for actual message scrolling
+  e.stopPropagation();
 };
 
 watch(() => displayMessages.value, () => {
@@ -2251,6 +2440,15 @@ onMounted(() => {
     autoTTSEnabled.value = savedAutoTTS === 'true';
   }
 
+  // Listen for auto-snap events
+  const handleAutoSnap = (data: any) => {
+    if (data.nodeId === props.node.id) {
+      console.log('[BranchNode] Received auto-snap event for:', props.node.id);
+      toggleSnap();
+    }
+  };
+  emitter.on('auto-snap-node', handleAutoSnap);
+
   emitter.on('streaming-complete', (data) => {
     if (data.nodeId === props.node.id) {
       // Clear streaming state
@@ -2372,6 +2570,7 @@ onBeforeUnmount(() => {
   emitter.off('continue-conversation');
   emitter.off('branch-from-last');
   emitter.off('toggle-compacted-expansion');
+  emitter.off('auto-snap-node');
   emitter.off('request-node-position-update');
   window.removeEventListener("keydown", onKeyDown);
   if (messagesContainerRef.value) {
@@ -3132,8 +3331,6 @@ onBeforeUnmount(() => {
   flex-direction: column !important;
   flex: 1 1 auto !important;
   overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  scroll-behavior: smooth !important;
   padding: 1rem !important;
 }
 
@@ -3181,7 +3378,39 @@ onBeforeUnmount(() => {
 }
 
 .transition-snap {
-  transition: transform 0.3s ease-out !important;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.transition-unsnap {
+  transition: transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) !important;
+}
+
+/* Enhanced keyframe animations for origin-based snapping */
+@keyframes nodeSnapToCenter {
+  from {
+    transform: translate3d(var(--snap-start-x, 0), var(--snap-start-y, 0), 0) scale(var(--snap-start-scale, 1));
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes nodeUnsnapToOrigin {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(var(--unsnap-delta-x, 0), var(--unsnap-delta-y, 0), 0) scale(var(--unsnap-scale-ratio, 1));
+  }
+}
+
+/* Enhanced snap animations with overshoot */
+.snapping {
+  animation: nodeSnapToCenter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.unsnapping {
+  animation: nodeUnsnapToOrigin 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
 }
 
 .relative.group {
@@ -3301,9 +3530,7 @@ onBeforeUnmount(() => {
 }
 
 .theme-night .user-message {
-  background: linear-gradient(135deg,
-      rgba(255, 200, 100, 0.25),
-      rgba(255, 150, 50, 0.3)) !important;
+  background: linear-gradient(135deg, rgb(132 32 231), rgb(129 140 248)) !important;
   border-color: rgba(255, 200, 100, 0.6) !important;
 }
 
@@ -3678,5 +3905,34 @@ onBeforeUnmount(() => {
 
 .message-container:last-child {
   animation: messageAppear 0.3s ease-out;
+}
+
+/* LOD Transition Effects */
+.lod-scale-enter-active,
+.lod-scale-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lod-scale-enter-from {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.lod-scale-leave-to {
+  opacity: 0;
+  transform: scale(1.1);
+}
+
+.lod-scale-enter-to,
+.lod-scale-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Smooth transitions for LOD elements */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
 }
 </style>

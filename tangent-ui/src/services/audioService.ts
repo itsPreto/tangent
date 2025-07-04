@@ -234,7 +234,7 @@ class AudioRecordingService {
       }
 
       // Send to backend for processing
-      const response = await fetch('/api/transcribe-audio', {
+      const response = await fetch('http://localhost:5050/api/transcribe-audio', {
         method: 'POST',
         body: formData
       });

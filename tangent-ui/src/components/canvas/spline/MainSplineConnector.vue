@@ -1,58 +1,41 @@
 <template>
-  <g class="pointer-events-auto">
-    <!-- Glow effect for active paths -->
-    <defs v-if="isActive">
-      <filter :id="`glow-${startNode.id}-${endNode.id}`">
-        <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-        <feMerge>
-          <feMergeNode in="coloredBlur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
+  <g style="pointer-events: all !important; isolation: isolate;">
+    <!-- Gradient definitions for directional flow -->
+    <defs>
+      <linearGradient 
+        :id="`connection-gradient-${startNode.id}-${endNode.id}`"
+        gradientUnits="userSpaceOnUse"
+        :x1="gradientCoords.x1"
+        :y1="gradientCoords.y1" 
+        :x2="gradientCoords.x2"
+        :y2="gradientCoords.y2"
+      >
+        <!-- Strong color at parent (start) -->
+        <stop offset="0%" :stop-color="isActive ? activePathColor : inactivePathColor" :stop-opacity="isActive ? 1.0 : 0.8" />
+        <!-- Medium color in middle -->
+        <stop offset="50%" :stop-color="isActive ? activePathColor : inactivePathColor" :stop-opacity="isActive ? 0.7 : 0.5" />
+        <!-- Fade out at child (end) -->
+        <stop offset="100%" :stop-color="isActive ? activePathColor : inactivePathColor" :stop-opacity="isActive ? 0.3 : 0.2" />
+      </linearGradient>
     </defs>
     
-    <!-- Main dashed path with theme-aware styling -->
+    <!-- Main dashed path with gradient stroke -->
     <path
       :d="pathData"
-      :stroke="isActive ? activePathColor : inactivePathColor"
-      :stroke-width="strokeWidth"
+      :stroke="`url(#connection-gradient-${startNode.id}-${endNode.id})`"
+      :stroke-width="getVisualStrokeWidth()"
       :stroke-dasharray="dashPattern"
       fill="none"
-      :opacity="isActive ? 0.9 : 0.6"
-      :filter="isActive ? `url(#glow-${startNode.id}-${endNode.id})` : ''"
-      class="transition-all duration-300"
+      class="transition-all duration-300 connector-path"
+      :class="{ 'active-path': isActive, 'hovered-path': isHovered }"
       :style="{
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
-        ...(isActive && shouldUseNeonGlow() ? {
-          filter: `drop-shadow(0 0 ${glowIntensity}px ${glowColor})`
-        } : {})
+        pointerEvents: 'none',
+        filter: isHovered ? `drop-shadow(0 0 ${strokeWidth.value * 0.5}px ${activePathColor.value})` : 'none'
       }"
     />
 
-    <!-- Particles -->
-    <g v-for="particle in particles" :key="particle.id">
-      <circle
-        v-if="!isNaN(particle.x) && !isNaN(particle.y) && !isNaN(particleRadius)"
-        :cx="particle.x"
-        :cy="particle.y"
-        :r="particleRadius"
-        :fill="getParticleColor()"
-        :style="{
-          ...(shouldUseNeonGlow() ? {
-            filter: `drop-shadow(0 0 4px ${getParticleGlowColor()})`,
-            mixBlendMode: 'screen'
-          } : {})
-        }"
-      >
-        <animate
-          attributeName="opacity"
-          :values="shouldUseNeonGlow() ? '1;0.6;1' : '0.9;0.4;0.9'"
-          :dur="particle.duration"
-          repeatCount="indefinite"
-        />
-      </circle>
-    </g>
 
     <!-- Hidden path for text alignment -->
     <path
@@ -64,10 +47,27 @@
     />
 
     <!-- Label with contrast background -->
-    <g class="label-container" v-if="hasLabel" style="pointer-events:auto;z-index:10">
+    <g class="label-container" v-if="hasLabel" style="pointer-events: all; z-index: 10;">
+      
+      <!-- Enhanced glow path for active state -->
+      <path
+        v-if="isActive"
+        :d="pathData"
+        :stroke="`url(#connection-gradient-${startNode.id}-${endNode.id})`"
+        :stroke-width="strokeWidth * 3"
+        :stroke-dasharray="dashPattern"
+        fill="none"
+        class="glow-path"
+        :style="{
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          filter: `blur(${strokeWidth * 0.8}px)`,
+          opacity: 0.6
+        }"
+      />
       
       <!-- A single, clean text element. -->
-      <text class="text-container">
+      <text class="text-container" style="pointer-events: all;">
         <textPath
           :href="`#connection-path-${startNode.id}-${endNode.id}`"
           startOffset="50%"
@@ -97,12 +97,12 @@
       <!-- Inline editor -->
       <foreignObject
         v-if="isEditing"
-        :x="calculateLabelPosition().x"
-        :y="calculateLabelPosition().y"
+        :x="labelPosition.x"
+        :y="labelPosition.y"
         :width="300 / Math.min(1, zoomLevel)"
         :height="50 / Math.min(1, zoomLevel)"
         @dblclick.stop
-        style="z-index:20;pointer-events:auto"
+        style="z-index: 20; pointer-events: all;"
       >
         <div xmlns="http://www.w3.org/2000/svg" class="flex items-center justify-center w-full h-full">
           <input
@@ -123,6 +123,7 @@
         </div>
       </foreignObject>
     </g>
+    
   </g>
 </template>
 
@@ -136,7 +137,6 @@ import {
   nextTick
 } from 'vue'
 import emitter from '@/utils/eventBus'
-import { debounce } from 'lodash'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCanvasStore } from '@/stores/canvasStore'
 import type { ThemeName } from '@/stores/themeStore'
@@ -144,8 +144,12 @@ import type { ThemeName } from '@/stores/themeStore'
 const props = defineProps({
   startNode: { type: Object, required: true },
   endNode: { type: Object, required: true },
-  cardWidth: { type: Number, required: true },
-  cardHeight: { type: Number, required: true },
+  cardWidth: { type: Number, required: true }, // End node dimensions
+  cardHeight: { type: Number, required: true }, // End node dimensions
+  startCardWidth: { type: Number, required: true }, // Start node dimensions
+  startCardHeight: { type: Number, required: true }, // Start node dimensions
+  endLodLevel: { type: String, default: 'full' }, // End node LOD level
+  startLodLevel: { type: String, default: 'full' }, // Start node LOD level
   isActive: { type: Boolean, default: false },
   zoomLevel: { type: Number, default: 1 },
   isSourceNodeExpanded: { type: Boolean, default: true }
@@ -156,7 +160,7 @@ const isEditing = ref(false)
 const labelInput = ref('')
 const customLabel = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
-const particles = ref<Particle[]>([])
+const isHovered = ref(false)
 
 // Theme store for accessing theme colors
 const themeStore = useThemeStore()
@@ -165,9 +169,7 @@ const currentThemeName = ref<ThemeName>('light')
 const isThemeDark = ref(false)
 
 
-// Animation state
-let animationFrame: number | null = null
-let loopGen = 0
+// Visibility state
 let isVisible = true
 
 // Constants
@@ -311,23 +313,55 @@ const glowColor = computed(() => {
 // Geometry
 const isLeftBranch = computed(() => props.endNode.type === 'left-branch')
 
-function calculateConnectionPoints() {
+const connectionPoints = computed(() => {
+  // Explicitly reference all reactive dependencies
+  const startNodeX = props.startNode.x
+  const startNodeY = props.startNode.y
+  const endNodeX = props.endNode.x
+  const endNodeY = props.endNode.y
+  const endCardWidth = props.cardWidth
+  const endCardHeight = props.cardHeight
+  const startCardWidth = props.startCardWidth
+  const startCardHeight = props.startCardHeight
+  const isSourceExpanded = props.isSourceNodeExpanded
+  const isLeft = isLeftBranch.value
+  
   const idx = props.endNode.branchMessageIndex ?? 0
-  const yOff = props.isSourceNodeExpanded ? idx * 120 + 40 : 40
+  
+  // Calculate yOff based on specific LOD level
+  let yOff;
+  switch (props.startLodLevel) {
+    case 'block':
+      // Very small spacing for block LOD
+      yOff = isSourceExpanded ? Math.min(idx * 15 + 8, startCardHeight / 2) : startCardHeight / 2;
+      break;
+    case 'summary':
+      // Medium spacing for summary LOD
+      yOff = isSourceExpanded ? Math.min(idx * 30 + 15, startCardHeight / 2) : startCardHeight / 2;
+      break;
+    case 'full':
+    default:
+      // Full spacing for full LOD
+      yOff = isSourceExpanded ? idx * 120 + 40 : 40;
+      break;
+  }
 
   const startPoint = {
-    x: isLeftBranch.value
-      ? props.startNode.x - 1
-      : props.startNode.x + props.cardWidth + 1,
-    y: props.startNode.y + yOff
+    x: isLeft ? startNodeX - 1 : startNodeX + startCardWidth + 1,
+    y: startNodeY + Math.min(yOff, startCardHeight - 10)
   }
 
   const endPoint = {
-    x: props.endNode.x + (isLeftBranch.value ? props.cardWidth : 0),
-    y: props.endNode.y + props.cardHeight / 2
+    x: endNodeX + (isLeft ? endCardWidth : 0),
+    y: endNodeY + endCardHeight / 2
   }
 
+
   return { startPoint, endPoint }
+})
+
+function calculateConnectionPoints() {
+  return connectionPoints.value
 }
 
 const pathAndControlPoints = computed(() => {
@@ -370,6 +404,7 @@ const strokeWidth = computed(() => {
   const scale = 1 / Math.pow(props.zoomLevel, 1.2)
   return baseStroke * Math.min(scale, 4)
 })
+
 const dashPattern = computed(() => {
   const scale = 1 / Math.pow(props.zoomLevel, 1.2)
   return `${4 * Math.min(scale, 4)} ${6 * Math.min(scale, 4)}`
@@ -381,6 +416,18 @@ const particleRadius = computed(() => {
 const fontSize = computed(() =>
   Math.max(baseFontSize * (1 / Math.min(1, props.zoomLevel)), baseFontSize)
 )
+
+// Gradient coordinates for directional flow from parent to child
+const gradientCoords = computed(() => {
+  const { startPoint, endPoint } = calculateConnectionPoints()
+  
+  return {
+    x1: startPoint.x,
+    y1: startPoint.y,
+    x2: endPoint.x,
+    y2: endPoint.y
+  }
+})
 
 // Compute glow intensity based on theme
 const glowIntensity = computed(() => {
@@ -628,8 +675,8 @@ const inputWidth = computed(() => {
 })
 const inputHeight = computed(() => (fontSize.value * 1.5) / props.zoomLevel)
 
-function calculateLabelPosition() {
-  const { startPoint, endPoint } = calculateConnectionPoints()
+const labelPosition = computed(() => {
+  const { startPoint, endPoint } = connectionPoints.value
   const midX =
     startPoint.x + (endPoint.x - startPoint.x) / 2 +
     (isLeftBranch.value ? -inputWidth.value : 0)
@@ -638,6 +685,10 @@ function calculateLabelPosition() {
     inputHeight.value / 2 -
     labelOffset
   return { x: midX, y: midY }
+})
+
+function calculateLabelPosition() {
+  return labelPosition.value
 }
 
 // Event handlers
@@ -661,94 +712,34 @@ function handleKeyDown(e: KeyboardEvent) {
   else if (e.key === 'Escape') isEditing.value = false
 }
 
-// Particle animation
-interface Particle {
-  id: number
-  progress: number
-  speed: number
-  duration: string
-  x: number
-  y: number
-}
-
-function getParticleSpeed() {
-  const scale = 1 / Math.max(0.5, props.zoomLevel)
-  return Math.min(baseParticleSpeed * scale, baseParticleSpeed * 3)
-}
-
-function initializeParticles() {
-  const base = getParticleSpeed()
-  const arr: Particle[] = []
-  for (let i = 0; i < numParticles; i++) {
-    arr.push({
-      id: i,
-      progress: i / numParticles,
-      speed: base + Math.random() * base * 0.5,
-      duration: `${0.8 + Math.random() * 0.4}s`,
-      x: 0,
-      y: 0
-    })
-  }
-  particles.value = arr
-}
-
-function animateParticles(myGen: number) {
-  if (myGen !== loopGen) return
-
-  // MAJOR OPTIMIZATION: Skip if not visible or zoomed out too much
-  if (!pathAndControlPoints.value || props.zoomLevel < 0.1 || !isVisible) {
-    // Use slower update rate when not visible or zoomed out
-    setTimeout(() => animateParticles(myGen), 100) // 10fps instead of 60fps
-    return
-  }
-
-  const { startPoint, endPoint, controlPoint1, controlPoint2 } =
-    pathAndControlPoints.value
-
-  // OPTIMIZATION: Reduce particle calculations per frame
-  const frameSkip = props.zoomLevel < 0.5 ? 2 : 1 // Skip every other frame when zoomed out
+// Simple double-click handler
+function handleSimpleDoubleClick(e: MouseEvent) {
+  e.stopPropagation()
+  e.preventDefault()
   
-  if (Date.now() % frameSkip === 0) {
-    particles.value.forEach(p => {
-      p.progress += p.speed
-      if (p.progress > 1) p.progress -= 1
-
-      const t = p.progress
-      const t1 = 1 - t
-      
-      // Pre-calculate powers for better performance
-      const t2 = t * t
-      const t3 = t2 * t
-      const t1_2 = t1 * t1
-      const t1_3 = t1_2 * t1
-      
-      p.x = t1_3 * startPoint.x + 3 * t1_2 * t * controlPoint1.x + 3 * t1 * t2 * controlPoint2.x + t3 * endPoint.x
-      p.y = t1_3 * startPoint.y + 3 * t1_2 * t * controlPoint1.y + 3 * t1 * t2 * controlPoint2.y + t3 * endPoint.y
-    })
-  }
-
-  // Use variable frame rate based on zoom level
-  const targetFPS = props.zoomLevel > 0.8 ? 60 : 30
-  const delay = 1000 / targetFPS
+  console.log('Spline double-clicked!')
   
-  if (delay > 16) {
-    setTimeout(() => animateParticles(myGen), delay)
-  } else {
-    animationFrame = requestAnimationFrame(() => animateParticles(myGen))
+  // If no custom label exists, create a default one
+  if (!customLabel.value && !getDefaultLabel()) {
+    customLabel.value = `Branch ${(props.endNode.branchMessageIndex ?? 0) + 1}`
+  }
+  
+  // Trigger label editing
+  if (!isEditing.value) {
+    isEditing.value = true
+    labelInput.value = customLabel.value || getLabelText()
+    nextTick(() => inputRef.value?.focus())
   }
 }
 
-function resetAnimation() {
-  loopGen++
-  if (animationFrame !== null) {
-    cancelAnimationFrame(animationFrame)
-    animationFrame = null
-  }
-  initializeParticles()
-  animateParticles(loopGen)
+// Calculate visual stroke width based on state
+function getVisualStrokeWidth() {
+  let width = strokeWidth.value
+  if (props.isActive) width *= 1.5
+  if (isHovered.value && !props.isActive) width *= 1.2
+  return width
 }
 
-const debouncedResetAnimation = debounce(resetAnimation, 100)
 
 // Setup intersection observer
 function setupObserver() {
@@ -764,7 +755,7 @@ function setupObserver() {
   return () => obs.disconnect()
 }
 
-// Watch for changes
+// Watch for changes - simplified since we no longer have particle animations
 watch(
   () => [
     props.startNode.x,
@@ -774,19 +765,14 @@ watch(
     props.zoomLevel
   ],
   () => {
-    // Use immediate updates during drag operations for responsive spline rendering
-    if (canvasStore.isDragging) {
-      resetAnimation()
-    } else {
-      debouncedResetAnimation()
-    }
+    // Paths update automatically via computed properties
+    // No animation reset needed for gradient-based connections
   }
 )
 
 // Lifecycle
 onMounted(() => {
   const stopObs = setupObserver()
-  emitter.on('workspace-opened', resetAnimation)
   
   // Enhanced theme detection with full theme name support
   const updateTheme = () => {
@@ -805,14 +791,28 @@ onMounted(() => {
   // Initial theme check
   updateTheme()
   
-  resetAnimation()
+  // Listen for spline double-click events from interaction layer
+  const handleInteractionLayerClick = (data: any) => {
+    if (data.parentId === props.startNode.id && data.childId === props.endNode.id) {
+      handleSimpleDoubleClick(new MouseEvent('dblclick'))
+    }
+  }
+  
+  // Listen for spline hover events from interaction layer
+  const handleInteractionLayerHover = (data: any) => {
+    if (data.parentId === props.startNode.id && data.childId === props.endNode.id) {
+      isHovered.value = data.isHovering
+    }
+  }
+  
+  emitter.on('spline-double-click', handleInteractionLayerClick)
+  emitter.on('spline-hover', handleInteractionLayerHover)
 
   onBeforeUnmount(() => {
-    if (animationFrame !== null) cancelAnimationFrame(animationFrame)
     stopObs && stopObs()
-    emitter.off('workspace-opened', resetAnimation)
-    debouncedResetAnimation.cancel()
     themeObserver.disconnect()
+    emitter.off('spline-double-click', handleInteractionLayerClick)
+    emitter.off('spline-hover', handleInteractionLayerHover)
   })
 })
 </script>
@@ -864,8 +864,48 @@ path {
   transition: all 0.2s ease;
 }
 
-/* Enhanced particle glow for neon themes */
-circle {
-  mix-blend-mode: screen;
+/* Make sure pointer events work */
+.pointer-events-auto {
+  pointer-events: all !important;
 }
+
+.label-container {
+  pointer-events: all !important;
+}
+
+.label-text {
+  pointer-events: all !important;
+  cursor: pointer !important;
+}
+
+/* Hover effects for spline */
+.connector-path.hovered-path {
+  filter: brightness(1.2);
+  animation: splinePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes splinePulse {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1.2);
+  }
+  50% {
+    opacity: 0.85;
+    filter: brightness(1.3);
+  }
+}
+
+/* Interaction area visual feedback */
+.spline-interaction-area {
+  transition: all 0.2s ease;
+}
+
+/* Debug visualization (uncomment to see hitbox) */
+/*
+.spline-interaction-area rect {
+  fill: rgba(255, 0, 0, 0.1);
+  stroke: red;
+  stroke-width: 1;
+}
+*/
 </style>

@@ -21,17 +21,25 @@
 
         <!-- File controls (only visible in editor view) -->
         <div v-if="currentView === 'editor'" class="flex items-center gap-2">
-          <!-- <button @click="createNewFile" class="btn btn-sm btn-ghost file-btn" :style="controlButtonStyle"
-            title="New File">
-            <FilePlus class="w-4 h-4" />
-          </button>
-          <button @click="createNewFolder" class="btn btn-sm btn-ghost file-btn" :style="controlButtonStyle"
-            title="New Folder">
-            <FolderPlus class="w-4 h-4" />
-          </button> -->
-          <button @click="saveFile" class="btn btn-sm gap-2 save-btn" :class="hasEdits ? 'btn-primary' : 'btn-ghost'"
-            :style="getSaveButtonStyle(hasEdits)" :disabled="!hasEdits">
+          <!-- Project file controls (hidden for relics) -->
+          <div v-if="!currentFileId?.startsWith('relic-')" class="flex items-center gap-2">
+            <!-- <button @click="createNewFile" class="btn btn-sm btn-ghost file-btn" :style="controlButtonStyle"
+              title="New File">
+              <FilePlus class="w-4 h-4" />
+            </button>
+            <button @click="createNewFolder" class="btn btn-sm btn-ghost file-btn" :style="controlButtonStyle"
+              title="New Folder">
+              <FolderPlus class="w-4 h-4" />
+            </button> -->
+          </div>
+          
+          <!-- Save button (always visible) -->
+          <button @click="saveFile" class="btn btn-sm gap-2 save-btn" 
+            :class="currentFileId?.startsWith('relic-') ? 'btn-primary' : (hasEdits ? 'btn-primary' : 'btn-ghost')"
+            :style="currentFileId?.startsWith('relic-') ? actionButtonStyle : getSaveButtonStyle(hasEdits)" 
+            :disabled="currentFileId?.startsWith('relic-') ? false : !hasEdits">
             <Save class="w-4 h-4" />
+            <span v-if="currentFileId?.startsWith('relic-')" class="hidden sm:inline">Save Version</span>
           </button>
         </div>
 
@@ -85,8 +93,8 @@
       <template v-if="currentView === 'editor'">
         <!-- Main Editor Layout -->
         <div class="flex flex-1 overflow-hidden">
-          <!-- File Explorer Sidebar -->
-          <div 
+          <!-- File Explorer Sidebar (hidden for relics) -->
+          <div v-if="!currentFileId?.startsWith('relic-')"
             class="border-r flex flex-col overflow-hidden transition-all duration-300 ease-in-out" 
             :class="explorerCollapsed ? 'w-12' : 'w-64'"
             :style="explorerStyle">
@@ -119,6 +127,10 @@
                 :style="errorMessageStyle">
                 Error: {{ previewErrors }}
               </div>
+              <div v-else-if="compilationSuccess && currentLanguage !== 'python'" class="text-sm text-success"
+                :style="{ color: themeColors.primary }">
+                ✓ Compiled successfully
+              </div>
             </div>
 
             <!-- Editor/Preview Split -->
@@ -149,17 +161,21 @@
                 </div>
               </template>
               <template v-else>
-                <SandpackProvider :files="sandpackFiles" :template="getTemplate(currentLanguage)" :theme="editorTheme"
+                <SandpackProvider :files="debouncedSandpackFiles" :template="getTemplate(currentLanguage)" :theme="editorTheme"
                   :customSetup="sandpackSetup" :options="{
-                    autorun: !isStreaming,
+                    autorun: !isStreaming && !isCompiling,
                     recompileMode: 'immediate',
-                    recompileDelay: 250
+                    recompileDelay: 0
                   }" class="h-full">
 
                   <div class="h-full flex flex-col">
                     <!-- Editor container -->
                     <div :style="{ height: `${splitPosition}%` }" class="relative min-h-0 editor-container">
-                      <SandpackCodeEditor ref="sandpackEditorRef" @code-update="handleCodeUpdate" showLineNumbers
+                      <SandpackCodeEditor ref="sandpackEditorRef" 
+                        @code-update="handleCodeUpdate"
+                        @update="handleCodeUpdate"
+                        @change="handleCodeUpdate"
+                        showLineNumbers
                         :readOnly="isStreaming" class="h-full w-full" wrapContent closableTabs />
 
                       <!-- Inline AI Assistant Prompt -->
@@ -193,11 +209,32 @@
                     <!-- Preview container -->
                     <div :style="{ height: `calc(${100 - splitPosition - 1}%)` }"
                       class="min-h-0 preview-container flex flex-col">
-                      <PreviewContainer @refresh="refreshPreview">
+                      <PreviewContainer @refresh="refreshPreview" 
+                        :show-capture-button="showCaptureButton && !isStreaming && !isCompiling"
+                        :is-capturing="isCapturing"
+                        @capture="captureScreenshot">
+                        <!-- Loading animation overlay -->
+                        <div v-if="isStreaming || isCompiling" class="absolute inset-0 flex items-center justify-center bg-black/10 backdrop-blur-sm z-10">
+                          <div class="flex flex-col items-center space-y-4">
+                            <div class="w-24 h-24">
+                              <DotLottieVue 
+                                src="/loading-animation-1.lottie" 
+                                background="transparent" 
+                                speed="1" 
+                                loop 
+                                autoplay>
+                              </DotLottieVue>
+                            </div>
+                            <div class="text-sm font-medium opacity-80">
+                              {{ isStreaming ? 'Streaming code...' : 'Compiling...' }}
+                            </div>
+                          </div>
+                        </div>
+                        
                         <SandpackPreview ref="previewRef" class="flex-1 w-full" :options="{
                           showNavigator: false,
                           showRefreshButton: false,
-                          showSyntaxError: true,
+                          showSyntaxError: !isStreaming && !isCompiling,
                         }" @message="handlePreviewMessage" />
                       </PreviewContainer>
                     </div>
@@ -262,12 +299,16 @@
                   <h3 class="font-medium text-base truncate pr-2 relic-title"
                     :style="{ color: isDarkTheme ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.9)' }">{{ relic.name }}</h3>
                   <div class="flex items-center gap-1">
+                    <button @click.stop="showRelicVersionHistory(relic)" class="p-1 rounded-full relic-action-btn"
+                      :style="relicActionButtonStyle" title="Version History">
+                      <History class="w-3 h-3" />
+                    </button>
                     <button @click.stop="duplicateRelic(relic)" class="p-1 rounded-full relic-action-btn"
-                      :style="relicActionButtonStyle">
+                      :style="relicActionButtonStyle" title="Duplicate">
                       <Copy class="w-3 h-3" />
                     </button>
                     <button @click.stop="deleteRelic(relic)" class="p-1 rounded-full relic-action-btn"
-                      :style="relicActionButtonStyle">
+                      :style="relicActionButtonStyle" title="Delete">
                       <Trash class="w-3 h-3" />
                     </button>
                   </div>
@@ -396,6 +437,34 @@
         </div>
       </div>
     </dialog>
+    
+    <!-- Version History Modal -->
+    <dialog ref="versionHistoryDialog" class="modal">
+      <div class="modal-box max-w-2xl" :style="modalStyle">
+        <h3 class="font-bold text-lg modal-title mb-4" :style="modalTitleStyle">
+          Version History - {{ selectedRelicForHistory?.name }}
+        </h3>
+        <div class="space-y-2 max-h-96 overflow-y-auto">
+          <div v-for="version in relicVersions" :key="version.version"
+               @click="loadRelicVersion(version.version)"
+               class="p-3 rounded cursor-pointer transition-colors"
+               :style="getVersionItemStyle(version.version === selectedRelicForHistory?.latest_version?.version)">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="font-medium">Version {{ version.version }}</div>
+                <div class="text-sm opacity-70">{{ version.commit_message }}</div>
+              </div>
+              <div class="text-sm opacity-60">
+                {{ formatDate(new Date(version.created_at).getTime()) }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-action">
+          <button @click="closeVersionHistoryDialog" class="btn btn-ghost" :style="modalCloseButtonStyle">Close</button>
+        </div>
+      </div>
+    </dialog>
   </div>
 </template>
 
@@ -403,8 +472,9 @@
 import { ref, computed, onBeforeUnmount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import {
   XIcon, Copy, ChevronLeft, ChevronRight, Save, FilePlus, FolderPlus, FolderOpen, Box,
-  FileCode, Play, Sparkles, X, Code, LayoutGrid, Plus, Filter, Search, Layers, Trash
+  FileCode, Play, Sparkles, X, Code, LayoutGrid, Plus, Filter, Search, Layers, Trash, History, Camera
 } from 'lucide-vue-next'
+import { DotLottieVue } from '@lottiefiles/dotlottie-vue'
 import { getTemplateCode, getFiles } from '@/utils/relicTemplates'
 import { SandpackProvider, SandpackPreview, SandpackCodeEditor } from 'sandpack-vue3'
 import type { SandpackFiles, SandpackMessage } from '@codesandbox/sandpack-react'
@@ -421,6 +491,8 @@ import { useAppStore } from '@/stores/appStore'
 import { useChatStore } from "@/stores/chatStore"
 import { useProjectStore, type CodeProject, type ProjectFile } from '@/stores/projectStore'
 import { storeToRefs } from 'pinia'
+import { relicService, type Relic as RelicData, type CreateRelicData, type RelicVersion } from '@/services/relicService'
+import { thumbnailService } from '@/services/thumbnailService'
 
 // File Explorer Component
 import FileExplorer from './FileExplorer.vue'
@@ -460,22 +532,10 @@ interface CodeFile {
   path: string
 }
 
-interface Relic {
-  id: string
-  name: string
-  description: string
-  language: string
-  code: string
-  dependencies: Record<string, string>
+interface Relic extends RelicData {
   status: 'passed' | 'failed' | 'feedback'
   lastModified: number
   thumbnailUrl?: string
-  sourceInfo?: {
-    chatId: string
-    nodeId: string
-    messageIndex: number
-    codeIndex: number
-  }
 }
 
 interface NewRelicData {
@@ -533,6 +593,9 @@ let autoSaveTimeout: number | null = null
 const currentCode = ref('// Start coding here\n\nconst MyComponent = () => {\n  return (\n    <div>\n      <h1>Hello World</h1>\n    </div>\n  );\n};\n\nexport default MyComponent;')
 const currentLanguage = ref('react')
 const isStreaming = ref(false)
+const isCompiling = ref(false)
+const debouncedCode = ref('')
+const compilationTimer = ref<number | null>(null)
 const currentCodeIndex = ref<number | undefined>(undefined)
 const currentOriginalCode = ref('')
 const codeSnippets = ref<CodeSnippet[]>([])
@@ -543,6 +606,9 @@ const previewRef = ref<null | { getBundlerError: () => string }>(null)
 const previewErrors = ref('')
 const lastSavedCode = ref('')
 const hasEdits = ref(false)
+const showCaptureButton = ref(true)
+const isCapturing = ref(false)
+const compilationSuccess = ref(false)
 
 // File management
 const fileStructure = ref<FileItem[]>([])
@@ -568,7 +634,10 @@ const searchQuery = ref('')
 const sortBy = ref<'name' | 'date' | 'status'>('date')
 const newRelicDialog = ref<HTMLDialogElement | null>(null)
 const deleteConfirmDialog = ref<HTMLDialogElement | null>(null)
+const versionHistoryDialog = ref<HTMLDialogElement | null>(null)
 const itemToDelete = ref<FileItem | Relic | null>(null)
+const selectedRelicForHistory = ref<Relic | null>(null)
+const relicVersions = ref<RelicVersion[]>([])
 const newRelic = ref<NewRelicData>({
   name: '',
   description: '',
@@ -578,6 +647,13 @@ const newRelic = ref<NewRelicData>({
 
 // Initialize default file structure
 const initializeFileStructure = () => {
+  // Don't initialize if we're viewing a relic
+  const isRelic = currentFileId.value?.startsWith('relic-')
+  if (isRelic) {
+    console.log('Skipping file structure init for relic')
+    return
+  }
+  
   // Don't initialize if we already have a project
   const projectStore = useProjectStore()
   if (projectStore.currentProject) {
@@ -902,6 +978,14 @@ const handleRenameItem = (item: FileItem, newName: string) => {
 }
 
 const toggleExplorer = () => {
+  const isRelic = currentFileId.value?.startsWith('relic-')
+  
+  // Don't show file explorer for relics
+  if (isRelic) {
+    console.log('File explorer disabled for relics')
+    return
+  }
+  
   explorerCollapsed.value = !explorerCollapsed.value
 }
 
@@ -911,7 +995,7 @@ const closeDeleteConfirmDialog = () => {
   itemToDelete.value = null
 }
 
-const confirmDeleteItem = () => {
+const confirmDeleteItem = async () => {
   if (!itemToDelete.value) return
 
   if ('path' in itemToDelete.value) {
@@ -924,12 +1008,17 @@ const confirmDeleteItem = () => {
     // Remove from file structure
     removeFileFromStructure(fileItem.id)
   } else {
-    // It's a relic (existing logic)
+    // It's a relic
     const relicItem = itemToDelete.value as Relic
-    const index = relics.value.findIndex(r => r.id === relicItem.id)
-    if (index !== -1) {
-      relics.value.splice(index, 1)
-      saveRelicsToLocalStorage()
+    try {
+      await relicService.deleteRelic(relicItem.id)
+      const index = relics.value.findIndex(r => r.id === relicItem.id)
+      if (index !== -1) {
+        relics.value.splice(index, 1)
+      }
+    } catch (error) {
+      console.error('Error deleting relic:', error)
+      alert('Failed to delete relic: ' + error.message)
     }
   }
 
@@ -1001,6 +1090,72 @@ root.render(
   }
 
   return files
+})
+
+// Debounced sandpack files - only updates after streaming stops
+const debouncedSandpackFiles = computed(() => {
+  if (isStreaming.value || isCompiling.value) {
+    // Return last stable version during streaming
+    return debouncedCode.value ? 
+      { '/App.js': { code: debouncedCode.value } } : 
+      sandpackFiles.value
+  }
+  
+  // For relics, ensure we use the current code
+  const isRelic = currentFileId.value?.startsWith('relic-')
+  if (isRelic && currentCode.value) {
+    // Always use App.js for consistency with Sandpack rendering
+    const fileName = '/App.js'
+    
+    // Create a proper Sandpack files structure for the relic
+    const files = { [fileName]: { code: currentCode.value } }
+    
+    // Add necessary setup files
+    if (currentLanguage.value.includes('react')) {
+      files['/index.js'] = {
+        code: `import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+import './styles.css';
+
+const root = createRoot(document.getElementById("root"));
+root.render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);`
+      }
+      
+      files['/styles.css'] = {
+        code: `html, body, #root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--fallback-b1, oklch(var(--b1)));
+  color: var(--fallback-bc, oklch(var(--bc)));
+}
+
+.container {
+  background-color: inherit;
+  color: inherit;
+  padding: 2rem;
+  text-align: center;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}`
+      }
+    }
+    
+    return files
+  }
+  
+  return sandpackFiles.value
 })
 
 // Theme-based styling (keeping existing styles)
@@ -1393,11 +1548,75 @@ const handleClose = () => {
   emit('panel-closed')
 }
 
-const saveFile = () => {
-  if (!currentFileId.value || !hasEdits.value) return
+const saveFile = async () => {
+  if (!currentFileId.value) return
 
   const projectStore = useProjectStore()
-  if (projectStore.currentProject) {
+  
+  // Check if this is a relic
+  const isRelic = currentFileId.value.startsWith('relic-')
+  
+  if (isRelic) {
+    try {
+      // FIRST: Get the actual code from the Sandpack editor
+      let codeToSave = currentCode.value
+      
+      if (sandpackEditorRef.value && sandpackEditorRef.value.getCode) {
+        try {
+          const editorCode = await sandpackEditorRef.value.getCode('/App.js')
+          if (editorCode) {
+            codeToSave = editorCode
+            console.log('Got code from editor for saving:', editorCode.substring(0, 100))
+          }
+        } catch (err) {
+          try {
+            const fallbackCode = await sandpackEditorRef.value.getCode()
+            if (fallbackCode) {
+              codeToSave = fallbackCode
+              console.log('Got fallback code from editor:', fallbackCode.substring(0, 100))
+            }
+          } catch (err2) {
+            console.log('Could not get code from editor, using stored code')
+          }
+        }
+      }
+      
+      console.log('Saving relic with code:', codeToSave.substring(0, 100))
+      
+      // Save to relic service (creates new version)
+      const updatedRelic = await relicService.saveCode(currentFileId.value, codeToSave)
+      
+      console.log('Updated relic response:', updatedRelic)
+      
+      // Update local relic with the latest version data
+      const relicIndex = relics.value.findIndex(r => r.id === currentFileId.value)
+      if (relicIndex !== -1) {
+        relics.value[relicIndex] = {
+          ...relics.value[relicIndex],
+          ...updatedRelic,
+          code: updatedRelic.latest_version?.code || codeToSave,
+          lastModified: new Date(updatedRelic.updated_at).getTime(),
+          status: relics.value[relicIndex].status, // Preserve local status
+          latest_version: updatedRelic.latest_version // Ensure latest version is updated
+        }
+        
+        console.log('Updated local relic:', relics.value[relicIndex])
+      }
+      
+      // Update our stored code and reset edit state
+      currentCode.value = codeToSave
+      lastSavedCode.value = codeToSave
+      hasEdits.value = false
+      
+      // Also refresh the relics list to ensure we have the latest data
+      await loadRelics()
+      
+      console.log('Relic saved successfully with latest version')
+    } catch (error) {
+      console.error('Error saving relic:', error)
+      alert('Failed to save relic: ' + error.message)
+    }
+  } else if (projectStore.currentProject) {
     // Save to project store
     projectStore.updateProjectFile(projectStore.currentProject.id, currentFileId.value, currentCode.value)
     
@@ -1423,7 +1642,17 @@ const saveFile = () => {
 
 const handleCodeUpdate = (newCode: string) => {
   currentCode.value = newCode
-  hasEdits.value = currentCode.value !== lastSavedCode.value
+  
+  // Check if editing changes compared to last saved
+  const codeChanged = currentCode.value !== lastSavedCode.value
+  hasEdits.value = codeChanged
+  
+  console.log('Code update:', {
+    newCode: newCode.substring(0, 50) + '...',
+    lastSaved: lastSavedCode.value.substring(0, 50) + '...',
+    hasEdits: hasEdits.value,
+    isRelic: currentFileId.value?.startsWith('relic-')
+  })
 
   // Update the current file in memory immediately
   if (currentFileId.value) {
@@ -1438,14 +1667,38 @@ const handleCodeUpdate = (newCode: string) => {
     }
   }
 
-  if (autoSaveTimeout) {
-    clearTimeout(autoSaveTimeout)
+  // Handle debounced compilation
+  if (isStreaming.value) {
+    // Don't compile during streaming
+    if (compilationTimer.value) {
+      clearTimeout(compilationTimer.value)
+    }
+  } else {
+    // Debounce compilation for manual edits
+    if (compilationTimer.value) {
+      clearTimeout(compilationTimer.value)
+    }
+    
+    isCompiling.value = true
+    compilationTimer.value = window.setTimeout(() => {
+      debouncedCode.value = newCode
+      isCompiling.value = false
+      compilationTimer.value = null
+    }, 300)
   }
 
-  autoSaveTimeout = window.setTimeout(() => {
-    saveFile()
-    autoSaveTimeout = null
-  }, 1000)
+  // Only auto-save for non-relic files (relics should be manually saved)
+  const isRelic = currentFileId.value?.startsWith('relic-')
+  if (!isRelic) {
+    if (autoSaveTimeout) {
+      clearTimeout(autoSaveTimeout)
+    }
+
+    autoSaveTimeout = window.setTimeout(() => {
+      saveFile()
+      autoSaveTimeout = null
+    }, 1000)
+  }
 }
 
 const copyToClipboard = async () => {
@@ -1494,7 +1747,11 @@ const runCode = () => {
 }
 
 const handlePreviewMessage = (event: SandpackMessage | { type: 'error' | 'console', error?: string | Error, data?: string[] }) => {
+  console.log('Preview message received:', event)
+  
   if (event.type === 'error') {
+    compilationSuccess.value = false
+    showCaptureButton.value = false
     if (event.error) {
       if (typeof event.error === 'string') {
         previewErrors.value = event.error
@@ -1504,6 +1761,35 @@ const handlePreviewMessage = (event: SandpackMessage | { type: 'error' | 'consol
         previewErrors.value = "An unknown error occurred"
       }
     }
+  } else if (event.type === 'compile') {
+    // Handle successful compilation
+    if (event.status === 'success') {
+      compilationSuccess.value = true
+      previewErrors.value = ''
+      setTimeout(() => {
+        showCaptureButton.value = true
+      }, 500)
+    }
+  } else if (event.type === 'done' || event.type === 'success') {
+    // Alternative success message types
+    compilationSuccess.value = true
+    previewErrors.value = ''
+    setTimeout(() => {
+      showCaptureButton.value = true
+    }, 500)
+  } else if (event.type === 'action' && event.action === 'show-error') {
+    // Handle bundler errors
+    compilationSuccess.value = false
+    showCaptureButton.value = false
+    
+    if (previewRef.value && previewRef.value.getBundlerError) {
+      previewErrors.value = previewRef.value.getBundlerError()
+    }
+  } else if (event.type === 'start') {
+    // Compilation started
+    compilationSuccess.value = false
+    showCaptureButton.value = false
+    previewErrors.value = ''
   } else if (event.type === 'console') {
     if (Array.isArray(event.data) && event.data.length > 0) {
       const logMessages = event.data.map((item) => {
@@ -1534,6 +1820,16 @@ const handlePreviewMessage = (event: SandpackMessage | { type: 'error' | 'consol
       } else {
         if (previewErrors.value) previewErrors.value = ''
       }
+    }
+  } else {
+    // For any other event type, if there are no errors and it's not streaming/compiling,
+    // assume the component rendered successfully and show capture button
+    if (!isStreaming.value && !isCompiling.value && !previewErrors.value) {
+      setTimeout(() => {
+        if (!showCaptureButton.value) {
+          showCaptureButton.value = true
+        }
+      }, 1000) // Wait a bit longer for the render to complete
     }
   }
 }
@@ -1592,54 +1888,128 @@ const closeNewRelicDialog = () => {
   newRelicDialog.value?.close()
 }
 
-const confirmNewRelic = () => {
+const confirmNewRelic = async () => {
   if (!newRelic.value.name.trim()) {
     alert('Please enter a name for the relic')
     return
   }
 
-  const relicId = `relic-${Date.now()}`
-  const code = getTemplateCode(newRelic.value.template, newRelic.value.language)
-
-  const relic: Relic = {
-    id: relicId,
-    name: newRelic.value.name,
-    description: newRelic.value.description,
-    language: newRelic.value.language,
-    code,
-    dependencies: {},
-    status: 'passed',
-    lastModified: Date.now()
+  try {
+    const relicId = `relic-${Date.now()}`
+    const code = getTemplateCode(newRelic.value.template, newRelic.value.language)
+    
+    const relicData: CreateRelicData = {
+      id: relicId,
+      name: newRelic.value.name,
+      description: newRelic.value.description || '',
+      language: newRelic.value.language,
+      code,
+      dependencies: {},
+      workspace_id: effectiveNodeId.value
+    }
+    
+    const createdRelic = await relicService.createRelic(relicData)
+    
+    // Transform to local format
+    const relic: Relic = {
+      ...createdRelic,
+      status: 'passed',
+      lastModified: new Date(createdRelic.created_at).getTime(),
+      code: createdRelic.latest_version?.code || code
+    }
+    
+    relics.value.push(relic)
+    closeNewRelicDialog()
+    
+    console.log('Opening relic with template code:', code)
+    openRelic(relic)
+  } catch (error) {
+    console.error('Error creating relic:', error)
+    alert('Failed to create relic: ' + error.message)
   }
-
-  relics.value.push(relic)
-  saveRelicsToLocalStorage()
-  closeNewRelicDialog()
-  openRelic(relic)
 }
 
 const openRelic = async (relic: Relic) => {
   currentView.value = 'editor'
-  currentCode.value = relic.code
+  
+  // Use latest version code if available
+  const code = relic.latest_version?.code || relic.code || ''
+  
+  // Clear existing project state to load relic properly
+  fileStructure.value = []
+  openFiles.value = []
+  
+  // Create a simple file structure for the relic (always use App.js)
+  const fileName = 'App.js'
+  const relicFile: FileItem = {
+    id: relic.id,
+    name: fileName,
+    type: 'file',
+    path: `/${fileName}`,
+    language: relic.language,
+    code: code,
+    lastModified: relic.lastModified
+  }
+  
+  fileStructure.value = [relicFile]
+  
+  // Add to open files
+  const codeFile: CodeFile = {
+    id: relic.id,
+    name: fileName,
+    language: relic.language,
+    code: code,
+    lastModified: relic.lastModified,
+    path: `/${fileName}`
+  }
+  
+  openFiles.value = [codeFile]
+  
+  // Set current state
+  currentCode.value = code
   currentLanguage.value = relic.language
   currentFileId.value = relic.id
-  lastSavedCode.value = relic.code
+  lastSavedCode.value = code
   hasEdits.value = false
   previewErrors.value = ''
+  
+  console.log('Relic opened:', {
+    id: relic.id,
+    codeLength: code.length,
+    language: relic.language,
+    hasEdits: hasEdits.value
+  })
 
   await nextTick()
   runCode()
 }
 
-const duplicateRelic = (relic: Relic) => {
-  const newRelic: Relic = {
-    ...relic,
-    id: `relic-${Date.now()}`,
-    name: `${relic.name} (Copy)`,
-    lastModified: Date.now()
+const duplicateRelic = async (relic: Relic) => {
+  try {
+    const newRelicData: CreateRelicData = {
+      id: `relic-${Date.now()}`,
+      name: `${relic.name} (Copy)`,
+      description: relic.description,
+      language: relic.language,
+      code: relic.code || relic.latest_version?.code || '',
+      dependencies: relic.latest_version?.dependencies || {},
+      workspace_id: effectiveNodeId.value
+    }
+    
+    const createdRelic = await relicService.createRelic(newRelicData)
+    
+    const newRelic: Relic = {
+      ...createdRelic,
+      status: 'passed',
+      lastModified: new Date(createdRelic.created_at).getTime(),
+      code: createdRelic.latest_version?.code || newRelicData.code
+    }
+    
+    relics.value.push(newRelic)
+  } catch (error) {
+    console.error('Error duplicating relic:', error)
+    alert('Failed to duplicate relic: ' + error.message)
   }
-  relics.value.push(newRelic)
-  saveRelicsToLocalStorage()
 }
 
 const deleteRelic = (relic: Relic) => {
@@ -1651,17 +2021,263 @@ const saveRelicsToLocalStorage = () => {
   localStorage.setItem('webRelics', JSON.stringify(relics.value))
 }
 
-const loadRelics = () => {
-  const relicsRaw = localStorage.getItem('webRelics')
-  if (relicsRaw) {
+const showRelicVersionHistory = async (relic: Relic) => {
+  try {
+    selectedRelicForHistory.value = relic
+    relicVersions.value = await relicService.getRelicVersions(relic.id)
+    
+    console.log('Version history for relic:', relic.id)
+    console.log('Available versions:', relicVersions.value)
+    console.log('Relic latest version:', relic.latest_version)
+    
+    versionHistoryDialog.value?.showModal()
+  } catch (error) {
+    console.error('Error loading version history:', error)
+    alert('Failed to load version history: ' + error.message)
+  }
+}
+
+const closeVersionHistoryDialog = () => {
+  versionHistoryDialog.value?.close()
+  selectedRelicForHistory.value = null
+  relicVersions.value = []
+}
+
+const loadRelicVersion = async (version: number) => {
+  if (!selectedRelicForHistory.value) return
+  
+  try {
+    const relicWithVersion = await relicService.getRelic(selectedRelicForHistory.value.id, version)
+    
+    // Update the relic in our list
+    const index = relics.value.findIndex(r => r.id === selectedRelicForHistory.value!.id)
+    if (index !== -1) {
+      relics.value[index] = {
+        ...relics.value[index],
+        ...relicWithVersion,
+        code: relicWithVersion.latest_version?.code || '',
+        lastModified: new Date(relicWithVersion.updated_at).getTime(),
+        status: relics.value[index].status
+      }
+    }
+    
+    // Open the relic with the selected version
+    closeVersionHistoryDialog()
+    openRelic(relics.value[index])
+  } catch (error) {
+    console.error('Error loading relic version:', error)
+    alert('Failed to load relic version: ' + error.message)
+  }
+}
+
+const getVersionItemStyle = (isCurrent: boolean) => {
+  if (isCurrent) {
+    return {
+      backgroundColor: isDarkTheme.value 
+        ? adjustColorOpacity(themeColors.value.primary, 0.2) 
+        : adjustColorOpacity(themeColors.value.primary, 0.1),
+      borderColor: adjustColorOpacity(themeColors.value.primary, 0.3),
+      borderWidth: '1px',
+      borderStyle: 'solid'
+    }
+  }
+  return {
+    backgroundColor: isDarkTheme.value ? 'rgba(40, 40, 50, 0.4)' : 'rgba(245, 245, 250, 0.6)',
+    borderColor: 'transparent',
+    borderWidth: '1px',
+    borderStyle: 'solid'
+  }
+}
+
+// Debug functions
+const debugRelicState = () => {
+  console.log('=== RELIC DEBUG STATE ===')
+  console.log('currentFileId:', currentFileId.value)
+  console.log('currentCode length:', currentCode.value?.length || 0)
+  console.log('lastSavedCode length:', lastSavedCode.value?.length || 0)
+  console.log('hasEdits:', hasEdits.value)
+  console.log('currentCode preview:', currentCode.value?.substring(0, 100))
+  console.log('lastSavedCode preview:', lastSavedCode.value?.substring(0, 100))
+  console.log('codes are equal:', currentCode.value === lastSavedCode.value)
+  console.log('isStreaming:', isStreaming.value)
+  console.log('========================')
+}
+
+const forceEnableSave = () => {
+  console.log('Force enabling save button')
+  hasEdits.value = true
+}
+
+
+// Screenshot capture functionality
+const captureScreenshot = async () => {
+  if (isCapturing.value) return
+  
+  isCapturing.value = true
+  
+  try {
+    // Find the preview iframe - try multiple selectors
+    let previewIframe = document.querySelector('iframe[data-sandpack-preview]') as HTMLIFrameElement
+    
+    if (!previewIframe) {
+      // Try alternative selectors for Sandpack iframe
+      previewIframe = document.querySelector('.sp-preview iframe') as HTMLIFrameElement
+    }
+    
+    if (!previewIframe) {
+      // Try generic iframe in preview container
+      previewIframe = document.querySelector('.preview-container iframe') as HTMLIFrameElement
+    }
+    
+    if (!previewIframe) {
+      // Try any iframe in the sandpack container
+      previewIframe = document.querySelector('.sp-wrapper iframe') as HTMLIFrameElement
+    }
+    
+    if (!previewIframe) {
+      console.error('Preview iframe not found. Available iframes:', 
+        Array.from(document.querySelectorAll('iframe')).map(el => ({
+          src: el.src,
+          className: el.className,
+          id: el.id,
+          dataset: el.dataset
+        }))
+      )
+      return
+    }
+    
+    console.log('Found preview iframe:', previewIframe)
+    
+    // Get the current code content and language from the editor
+    const currentCodeContent = currentCode.value || debouncedCode.value || ''
+    const currentLanguage = currentFileId.value?.endsWith('.html') ? 'html' :
+                           currentFileId.value?.endsWith('.css') ? 'css' :
+                           currentFileId.value?.endsWith('.js') ? 'javascript' :
+                           currentFileId.value?.endsWith('.ts') ? 'typescript' :
+                           'javascript' // default
+    
+    // Capture the screenshot with code content and language
+    const screenshotDataUrl = await thumbnailService.captureIframeScreenshot(previewIframe, currentCodeContent, currentLanguage)
+    
+    console.log('Screenshot captured:', {
+      dataUrl: screenshotDataUrl ? screenshotDataUrl.substring(0, 100) : 'null',
+      hasData: !!screenshotDataUrl
+    })
+    
+    // Generate filename
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `screenshot-${timestamp}.jpg`
+    
+    // Upload the screenshot
+    const thumbnailUrl = await thumbnailService.uploadThumbnailImage(screenshotDataUrl, filename)
+    
+    // Determine what type of content we're capturing
+    if (currentFileId.value?.startsWith('relic-')) {
+      // Save thumbnail for relic
+      const relicId = currentFileId.value.replace('relic-', '')
+      await thumbnailService.saveThumbnail({
+        relic_id: relicId,
+        thumbnail_url: thumbnailUrl,
+        type: 'relic'
+      })
+      
+      // Update the relic in our local state
+      const relicIndex = relics.value.findIndex(r => r.id === relicId)
+      if (relicIndex !== -1) {
+        relics.value[relicIndex].thumbnailUrl = thumbnailUrl
+      }
+      
+      console.log('Thumbnail saved for relic:', relicId)
+    } else {
+      // Save thumbnail for code preview from a conversation branch
+      const codeIndex = currentCodeIndex.value ?? 0; // Default to 0 if undefined
+      await thumbnailService.saveThumbnail({
+        node_id: effectiveNodeId.value,
+        code_index: codeIndex,
+        thumbnail_url: thumbnailUrl,
+        type: 'code_preview'
+      })
+      
+      console.log('Thumbnail saved for code preview:', { 
+        nodeId: effectiveNodeId.value, 
+        codeIndex: codeIndex 
+      })
+      
+      console.log('Screenshot captured and saved:', thumbnailUrl)
+      
+      // Emit event to notify CodePreview components to reload thumbnails
+      emitter.emit('thumbnail-captured', {
+        nodeId: effectiveNodeId.value,
+        codeIndex: codeIndex
+      })
+    }
+    
+    // Hide the capture button after successful capture
+    showCaptureButton.value = false
+    
+  } catch (error) {
+    console.error('Error capturing screenshot:', error)
+    alert('Failed to capture screenshot: ' + error.message)
+  } finally {
+    isCapturing.value = false
+  }
+}
+
+// Manual code checker for relics
+const checkCodeChanges = async () => {
+  if (!currentFileId.value?.startsWith('relic-')) return
+  
+  if (sandpackEditorRef.value && sandpackEditorRef.value.getCode) {
     try {
-      relics.value = JSON.parse(relicsRaw)
-    } catch (e) {
-      console.error('Error parsing relics:', e)
+      // Get code from the App.js file specifically
+      const editorCode = await sandpackEditorRef.value.getCode('/App.js')
+      if (editorCode && editorCode !== currentCode.value) {
+        console.log('Manual code check detected change in /App.js')
+        console.log('Editor code preview:', editorCode.substring(0, 100))
+        console.log('Current code preview:', currentCode.value.substring(0, 100))
+        handleCodeUpdate(editorCode)
+      }
+    } catch (err) {
+      console.error('Error getting code from editor:', err)
+      // Fallback - try to get any code from editor
+      try {
+        const allCode = await sandpackEditorRef.value.getCode()
+        if (allCode && allCode !== currentCode.value) {
+          console.log('Fallback: detected change via getCode()')
+          handleCodeUpdate(allCode)
+        }
+      } catch (err2) {
+        console.error('Fallback also failed:', err2)
+      }
+    }
+  }
+}
+
+const loadRelics = async () => {
+  try {
+    const loadedRelics = await relicService.listRelics(effectiveNodeId.value)
+    
+    // Transform to local format
+    relics.value = loadedRelics.map(r => ({
+      ...r,
+      status: 'passed' as const,
+      lastModified: new Date(r.updated_at).getTime(),
+      code: r.latest_version?.code || r.code || ''
+    }))
+  } catch (error) {
+    console.error('Error loading relics:', error)
+    // Fallback to localStorage
+    const relicsRaw = localStorage.getItem('webRelics')
+    if (relicsRaw) {
+      try {
+        relics.value = JSON.parse(relicsRaw)
+      } catch (e) {
+        console.error('Error parsing relics:', e)
+        relics.value = []
+      }
+    } else {
       relics.value = []
     }
-  } else {
-    relics.value = []
   }
 }
 
@@ -1712,10 +2328,29 @@ const handleShowSandbox = (payload: {
   loadProjectIntoEditor(project)
   
   // Update streaming state
+  const wasStreaming = isStreaming.value
   isStreaming.value = payloadIsStreaming
   currentNodeId.value = nodeId
+  currentCodeIndex.value = codeIndex
 
-  if (!payloadIsStreaming) {
+  if (payloadIsStreaming) {
+    // Clear any pending compilation during streaming
+    if (compilationTimer.value) {
+      clearTimeout(compilationTimer.value)
+      compilationTimer.value = null
+    }
+    isCompiling.value = false
+  } else {
+    // Streaming just stopped, trigger debounced compilation
+    if (wasStreaming) {
+      isCompiling.value = true
+      compilationTimer.value = window.setTimeout(() => {
+        debouncedCode.value = code
+        isCompiling.value = false
+        compilationTimer.value = null
+      }, 300)
+    }
+    
     lastSavedCode.value = code
     // Auto-save after loading to persist the state
     setTimeout(() => {
@@ -1842,7 +2477,10 @@ onMounted(() => {
 
   updateThemeFromDOM()
   emitter.on('show-sandbox', handleShowSandbox)
-  loadRelics()
+  loadRelics() // async but we don't need to await
+  
+  // Start periodic code checker for relics
+  setInterval(checkCodeChanges, 1000)
 })
 
 onUnmounted(() => {
@@ -1859,6 +2497,11 @@ onUnmounted(() => {
   // Clear any pending auto-save timeout
   if (autoSaveTimeout) {
     clearTimeout(autoSaveTimeout)
+  }
+  
+  // Clear any pending compilation timeout
+  if (compilationTimer.value) {
+    clearTimeout(compilationTimer.value)
   }
 })
 
@@ -1961,7 +2604,7 @@ watch(() => [openFiles.value, currentFileId.value], () => {
 [data-theme="night"] .side-panel-container,
 [data-theme="coffee"] .side-panel-container,
 [data-theme="winter"] .side-panel-container {
-  box-shadow: 8px 0 40px rgba(255, 255, 255, 0.08), 2px 0 20px rgba(255, 255, 255, 0.04);
+  box-shadow: 8px 0 40px rgba(155, 179, 21, 0.08), 2px 0 20px rgba(255, 255, 255, 0.04);
 }
 
 .theme-dark .side-panel-container {

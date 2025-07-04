@@ -199,9 +199,10 @@
         <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
       </button>
       <button class="h-8 px-3 canvas-control-btn hover:bg-base-300/90 flex items-center gap-2"
-        :style="controlButtonStyle" @click="gestureMode = gestureMode === 'zoom' ? 'scroll' : 'zoom'">
+        :style="controlButtonStyle" @click="gestureMode = gestureMode === 'zoom' ? 'scroll' : 'zoom'"
+        :title="gestureMode === 'zoom' ? '2-finger: Zoom, CMD+2-finger: Pan' : '2-finger: Pan, CMD+2-finger: Zoom'">
         <component :is="gestureMode === 'zoom' ? ZoomIn : Move" class="w-4 h-4" />
-        <span class="text-sm">Two-finger {{ gestureMode === 'zoom' ? 'Zoom' : 'Pan' }}</span>
+        <span class="text-sm">{{ gestureMode === 'zoom' ? 'Zoom Mode' : 'Pan Mode' }}</span>
       </button>
       <div class="px-3 h-8 text-sm zoom-indicator flex items-center"
         :style="controlButtonStyle">
@@ -298,7 +299,7 @@ import emitter from '@/utils/eventBus'
 import type { Node } from '@/types/message';
 import type { ModelInfo } from '@/types/model';
 
-const gestureMode = ref<'scroll' | 'zoom'>('zoom');
+const gestureMode = ref<'scroll' | 'zoom'>('scroll');
 const anthropicApiKey = ref(localStorage.getItem('anthropicApiKey') || '');
 
 // Canvas and workspace state
@@ -1250,7 +1251,7 @@ onBeforeUnmount(() => {
 }
 
 .app-container.theme-acid {
-  background: #1b141d;
+  background: linear-gradient(147deg, #f702ff, #ff00ff, #ff02c687, #26ff0475);
 }
 
 /* Canvas wrapper positioning to avoid header overlap */
@@ -1453,9 +1454,124 @@ onBeforeUnmount(() => {
   /* Adjust base content color */
 }
 
-/* Override canvas background for cyberpunk theme */
+/* Override canvas background for all themes to match snapped backdrop when branch is snapped */
+
+/* Light themes */
+[data-theme="light"] .bg-background {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+[data-theme="cupcake"] .bg-background {
+  background: rgba(253, 242, 248, 0.8);
+}
+
+[data-theme="bumblebee"] .bg-background {
+  background: rgba(255, 251, 235, 0.8);
+}
+
+[data-theme="emerald"] .bg-background {
+  background: rgba(236, 253, 245, 0.8);
+}
+
+[data-theme="corporate"] .bg-background {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+[data-theme="retro"] .bg-background {
+  background: rgba(255, 248, 220, 0.8);
+}
+
+[data-theme="valentine"] .bg-background {
+  background: rgba(255, 240, 245, 0.8);
+}
+
+[data-theme="garden"] .bg-background {
+  background: rgba(240, 253, 244, 0.8);
+}
+
+[data-theme="lofi"] .bg-background {
+  background: rgba(250, 248, 246, 0.8);
+}
+
+[data-theme="pastel"] .bg-background {
+  background: rgba(252, 251, 255, 0.8);
+}
+
+[data-theme="fantasy"] .bg-background {
+  background: rgba(255, 240, 255, 0.8);
+}
+
+[data-theme="wireframe"] .bg-background {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="cmyk"] .bg-background {
+  background: rgba(245, 245, 255, 0.8);
+}
+
+[data-theme="autumn"] .bg-background {
+  background: rgba(255, 248, 235, 0.8);
+}
+
+[data-theme="lemonade"] .bg-background {
+  background: rgba(255, 255, 240, 0.8);
+}
+
+[data-theme="winter"] .bg-background {
+  background: rgba(240, 248, 255, 0.8);
+}
+
+/* Dark themes */
+[data-theme="dark"] .bg-background {
+  background: rgba(15, 23, 42, 0.8);
+}
+
+[data-theme="synthwave"] .bg-background {
+  background: rgba(20, 5, 40, 0.8);
+}
+
 [data-theme="cyberpunk"] .bg-background {
-  background-color: #1a1a2e !important;
+  background: rgba(20, 5, 30, 0.9);
+}
+
+[data-theme="halloween"] .bg-background {
+  background: rgba(15, 10, 25, 0.95);
+}
+
+[data-theme="forest"] .bg-background {
+  background: rgba(10, 25, 15, 0.8);
+}
+
+[data-theme="aqua"] .bg-background {
+  background: rgba(5, 25, 35, 0.8);
+}
+
+[data-theme="black"] .bg-background {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+[data-theme="luxury"] .bg-background {
+  background: rgba(15, 15, 15, 0.8);
+}
+
+[data-theme="dracula"] .bg-background {
+  background: rgba(40, 42, 54, 0.8);
+}
+
+[data-theme="business"] .bg-background {
+  background: rgba(25, 35, 45, 0.8);
+}
+
+[data-theme="acid"] .bg-background {
+  background: rgba(20, 20, 20, 0.9);
+}
+
+[data-theme="night"] .bg-background {
+  background: rgba(15, 20, 35, 0.8);
+}
+
+[data-theme="coffee"] .bg-background {
+  background: rgba(25, 15, 10, 0.8);
 }
 
 /* Slide Panel Transitions for Memory Optimization */

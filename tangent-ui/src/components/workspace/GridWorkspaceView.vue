@@ -1,238 +1,670 @@
 <template>
-  <div class="grid-workspace-view" ref="containerRef">
-    <!-- Virtual Scroll Container -->
-    <div class="virtual-scroll-container" 
-         :style="{ height: `${totalHeight}px` }">
-      
-      <!-- Visible Items -->
-      <div class="visible-items" 
-           :style="{ transform: `translateY(${offsetY}px)` }">
-        
-        <TransitionGroup name="grid-item" tag="div" class="grid-container">
-          <div v-for="workspace in visibleWorkspaces" 
-               :key="workspace.id" 
-               class="grid-item"
-               :data-index="workspace._index">
-            
-            <!-- Workspace Card -->
-            <div class="workspace-card" 
-                 :class="{ 
-                   'selected': selectedWorkspaceId === workspace.id,
-                   'favorite': workspace.isFavorite,
-                   'loading': workspace._loading
-                 }"
-                 @click="handleSelectWorkspace(workspace.id)"
-                 @mouseenter="preloadWorkspace(workspace.id)"
-                 :data-workspace-id="workspace.id">
-              
-              <!-- Card Background Effects -->
-              <div class="card-background">
-                <div class="gradient-overlay"></div>
-                <div class="noise-overlay"></div>
-                <div class="shimmer-effect" v-if="workspace._loading"></div>
-              </div>
-              
-              <!-- Card Content -->
-              <div class="card-content">
-                <!-- Header Section -->
-                <div class="card-header">
-                  <div class="title-section">
-                    <h3 class="workspace-title">
-                      {{ workspace.title || 'Untitled Workspace' }}
-                    </h3>
-                    <div class="workspace-subtitle" v-if="workspace.description">
-                      {{ truncateText(workspace.description, 60) }}
-                    </div>
-                  </div>
-                  
-                  <div class="actions-section">
-                    <button @click.stop="toggleFavorite(workspace.id)" 
-                            class="action-btn favorite-btn"
-                            :class="{ 'is-favorite': workspace.isFavorite }">
-                      <Star :size="18" :fill="workspace.isFavorite ? 'currentColor' : 'none'" />
-                    </button>
-                    <button @click.stop="showContextMenu(workspace, $event)" 
-                            class="action-btn menu-btn">
-                      <MoreVertical :size="18" />
-                    </button>
-                  </div>
-                </div>
-                
-                <!-- Stats Row -->
-                <div class="stats-row">
-                  <div class="stat-item">
-                    <GitBranch :size="12" class="stat-icon" />
-                    <span class="stat-value">{{ workspace.nodeCount || workspace.branches?.length || 0 }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <MessageSquare :size="12" class="stat-icon" />
-                    <span class="stat-value">{{ workspace.messageCount || workspace.messages?.length || 0 }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <Clock :size="12" class="stat-icon" />
-                    <span class="stat-value">{{ formatRelativeTime(workspace.lastUpdated || workspace.updatedAt || workspace.createdAt) }}</span>
-                  </div>
-                </div>
-                
-                <!-- Tags Section -->
-                <div v-if="workspace.tags?.length" class="tags-section">
-                  <TransitionGroup name="tag" tag="div" class="tags-container">
-                    <span v-for="tag in workspace.tags.slice(0, 3)" 
-                          :key="`${workspace.id}-${tag.id}`"
-                          class="tag-pill"
-                          :style="getTagStyle(tag)">
-                      {{ tag.name }}
-                    </span>
-                    <span v-if="workspace.tags.length > 3" 
-                          class="tag-pill more-tags">
-                      +{{ workspace.tags.length - 3 }}
-                    </span>
-                  </TransitionGroup>
-                </div>
-                
-              </div>
-              
-              <!-- Hover Effects -->
-              <div class="hover-layer"></div>
-            </div>
-          </div>
-        </TransitionGroup>
+  <div 
+    class="enhanced-grid-view" 
+    ref="containerRef"
+    :class="{ 'drag-over': isDragOver }"
+    @dragover="handleDragOver"
+    @dragenter="handleDragEnter"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
+    <!-- Advanced Controls Bar -->
+    <div class="controls-bar">
+      <div class="view-controls">
+        <!-- View Mode Selector -->
+        <div class="view-mode-selector">
+          <button 
+            v-for="mode in viewModes" 
+            :key="mode.id"
+            @click="currentViewMode = mode.id"
+            class="view-mode-btn"
+            :class="{ 'active': currentViewMode === mode.id }"
+          >
+            <component :is="mode.icon" :size="16" />
+            <span>{{ mode.label }}</span>
+          </button>
+        </div>
+
+        <!-- Sort & Filter -->
+        <div class="filter-controls">
+          <select v-model="sortBy" class="sort-select">
+            <option value="recent">Recently Updated</option>
+            <option value="created">Date Created</option>
+            <option value="name">Name A-Z</option>
+            <option value="size">Size (Nodes)</option>
+            <option value="activity">Most Active</option>
+          </select>
+
+          <button 
+            @click="showFilters = !showFilters" 
+            class="filter-btn"
+            :class="{ 'active': hasActiveFilters }"
+          >
+            <Filter :size="16" />
+            <span>Filters</span>
+            <span v-if="hasActiveFilters" class="filter-count">{{ activeFilterCount }}</span>
+          </button>
+
+          <button 
+            @click="toggleClustering" 
+            class="cluster-btn"
+            :class="{ 'active': clusteringEnabled }"
+          >
+            <FolderOpen :size="16" />
+            <span>{{ clusteringEnabled ? 'Uncluster' : 'Cluster' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Grid Size Slider -->
+      <div class="grid-controls">
+        <span class="control-label">Size</span>
+        <input 
+          v-model="cardSize" 
+          type="range" 
+          min="180" 
+          max="320" 
+          step="20"
+          class="size-slider"
+        >
       </div>
     </div>
-    
-    <!-- Loading Indicator -->
-    <Transition name="fade">
-      <div v-if="isLoading" class="loading-overlay">
-        <div class="loading-spinner"></div>
+
+    <!-- Advanced Filters Panel -->
+    <Transition name="slide-down">
+      <div v-if="showFilters" class="filters-panel">
+        <div class="filter-section">
+          <label class="filter-label">Tags</label>
+          <div class="tag-filters">
+            <button 
+              v-for="tag in availableTags" 
+              :key="tag.id"
+              @click="toggleTagFilter(tag.id)"
+              class="tag-filter"
+              :class="{ 'active': selectedTags.has(tag.id) }"
+              :style="{ '--tag-color': tag.color }"
+            >
+              {{ tag.name }}
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-section">
+          <label class="filter-label">Status</label>
+          <div class="status-filters">
+            <button 
+              v-for="status in statusOptions" 
+              :key="status"
+              @click="toggleStatusFilter(status)"
+              class="status-filter"
+              :class="{ 'active': selectedStatuses.has(status) }"
+            >
+              {{ status }}
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-section">
+          <label class="filter-label">Size</label>
+          <div class="range-filter">
+            <input v-model="sizeRange[0]" type="number" placeholder="Min nodes" class="range-input">
+            <span>to</span>
+            <input v-model="sizeRange[1]" type="number" placeholder="Max nodes" class="range-input">
+          </div>
+        </div>
       </div>
     </Transition>
-    
+
+    <!-- Loading State -->
+    <div v-if="isInitializing || isLoadingClusters" class="loading-container">
+      <div class="loading-content">
+        <!-- Lottie Animation Loader -->
+        <DotLottieVue 
+          :src="'/loading-animation-2.lottie'"
+          autoplay 
+          loop 
+          :style="{ width: '160px', height: '160px' }"
+          class="lottie-loader"
+        />
+        
+        <div class="loading-text">
+          <!-- Progress bar for clustering -->
+          <div v-if="isLoadingClusters && clusteringStatus.progress > 0" class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: clusteringStatus.progress + '%' }"></div>
+            </div>
+            <span class="progress-text">{{ Math.round(clusteringStatus.progress) }}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drag Over Overlay -->
+    <Transition name="drag-overlay">
+      <div v-if="isDragOver" class="drag-overlay">
+        <div class="drag-content">
+          <div class="drag-icon">
+            <Upload :size="48" />
+          </div>
+          <h3>Drop conversation files here</h3>
+          <p>Supports ChatGPT and Claude JSON exports</p>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Grid Container -->
+    <div v-if="!isInitializing && !isLoadingClusters" class="grid-wrapper" :style="{ '--card-size': cardSize + 'px' }">
+      <TransitionGroup name="card" tag="div" class="workspace-grid" :class="currentViewMode">
+        <!-- Cluster Folder Cards -->
+        <div 
+          v-for="cluster in displayedClusters" 
+          :key="'cluster-' + cluster.id"
+          class="cluster-folder"
+          :class="{ 'hidden-for-modal': openCluster && openCluster.id === cluster.id }"
+          @click="openClusterModal(cluster, $event)"
+        >
+          <div class="folder-icon">
+            <FolderOpen :size="32" />
+          </div>
+          <div class="folder-info">
+            <h3 class="folder-title">{{ cluster.title }}</h3>
+            <span class="folder-count">{{ cluster.workspaces.length }} items</span>
+          </div>
+        </div>
+
+        <!-- Individual Workspace Cards -->
+        <div 
+          v-for="workspace in displayedWorkspaces" 
+          :key="workspace.id" 
+          class="workspace-card group enhanced"
+          :class="{ 
+            'selected': selectedWorkspaceId === workspace.id,
+            'favorite': workspace.isFavorite,
+            'compact': currentViewMode === 'compact',
+            'detailed': currentViewMode === 'detailed',
+            'imported': workspace.isImported,
+            'chatgpt-import': workspace.format === 'chatgpt',
+            'claude-import': workspace.format === 'claude'
+          }"
+          @click="handleSelectWorkspace(workspace.id)"
+        >
+          <!-- Card Glow Effect -->
+          <div class="card-glow"></div>
+          
+          <!-- Card Background Pattern -->
+          <div class="card-pattern"></div>
+
+          <!-- Main Content -->
+          <div class="card-content">
+            <!-- Header Section -->
+            <div class="card-header">
+              <div class="workspace-meta">
+                <!-- Workspace Type Indicator -->
+                <div class="type-indicator" :class="getWorkspaceType(workspace)">
+                  <component :is="getWorkspaceIcon(workspace)" :size="12" />
+                </div>
+                
+                <div class="title-section">
+                  <h3 class="workspace-title">
+                    {{ workspace.title || 'Untitled' }}
+                  </h3>
+                  <p class="workspace-subtitle" v-if="workspace.description && currentViewMode !== 'compact'">
+                    {{ truncateText(workspace.description, 60) }}
+                  </p>
+                </div>
+              </div>
+              
+              <div class="card-actions">
+                <button 
+                  @click.stop="toggleFavorite(workspace.id)" 
+                  class="action-btn favorite-btn"
+                  :class="{ 'favorited': workspace.isFavorite }"
+                >
+                  <Star :size="14" :fill="workspace.isFavorite ? 'currentColor' : 'none'" />
+                </button>
+                <button 
+                  @click.stop="showContextMenu(workspace, $event)" 
+                  class="action-btn"
+                >
+                  <MoreHorizontal :size="14" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Stats Section -->
+            <div class="stats-section" v-if="currentViewMode !== 'compact'">
+              <div class="primary-stats">
+                <div class="stat-item">
+                  <MessageSquare :size="12" />
+                  <span>{{ workspace.nodeCount || 0 }}</span>
+                </div>
+                <div class="stat-item">
+                  <Clock :size="12" />
+                  <span>{{ formatTime(workspace.lastUpdated) }}</span>
+                </div>
+                <div class="stat-item" v-if="workspace.collaborators?.length">
+                  <Users :size="12" />
+                  <span>{{ workspace.collaborators.length }}</span>
+                </div>
+              </div>
+
+              <!-- Activity Graph -->
+              <div class="activity-graph" v-if="currentViewMode === 'detailed'">
+                <div 
+                  v-for="day in getActivityData(workspace)" 
+                  :key="day.date"
+                  class="activity-bar"
+                  :style="{ height: day.activity * 100 + '%' }"
+                ></div>
+              </div>
+            </div>
+
+            <!-- Tags Section -->
+            <div v-if="workspace.tags?.length && currentViewMode !== 'compact'" class="tags-section">
+              <div class="tags-list">
+                <span 
+                  v-for="tag in workspace.tags.slice(0, currentViewMode === 'detailed' ? 5 : 3)" 
+                  :key="tag.id"
+                  class="tag"
+                  :style="{ backgroundColor: tag.color }"
+                >
+                  {{ tag.name }}
+                </span>
+                <span v-if="workspace.tags.length > (currentViewMode === 'detailed' ? 5 : 3)" class="tag-overflow">
+                  +{{ workspace.tags.length - (currentViewMode === 'detailed' ? 5 : 3) }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Quick Actions (Detailed View) -->
+            <div v-if="currentViewMode === 'detailed'" class="quick-actions">
+              <button @click.stop="openWorkspace(workspace.id)" class="quick-btn primary">
+                <Play :size="12" />
+                <span>Open</span>
+              </button>
+              <button @click.stop="duplicateWorkspace(workspace.id)" class="quick-btn">
+                <Copy :size="12" />
+              </button>
+              <button @click.stop="shareWorkspace(workspace.id)" class="quick-btn">
+                <Share :size="12" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Status Indicator -->
+          <div class="status-indicator" :class="workspace.status || 'active'"></div>
+          
+          <!-- Import Source Badge -->
+          <div v-if="workspace.isImported" class="import-badge" :class="workspace.format">
+            <component :is="getImportIcon(workspace.format)" :size="12" />
+            <span class="import-text">{{ getImportLabel(workspace.format) }}</span>
+          </div>
+          
+          <!-- Progress Bar (if applicable) -->
+          <div v-if="workspace.progress" class="progress-bar">
+            <div class="progress-fill" :style="{ width: workspace.progress + '%' }"></div>
+          </div>
+        </div>
+      </TransitionGroup>
+    </div>
+
+    <!-- Empty State -->
+    <div v-if="displayedWorkspaces.length === 0 && displayedClusters.length === 0" class="empty-state">
+      <FolderOpen :size="48" class="empty-icon" />
+      <h3 class="empty-title">No workspaces found</h3>
+      <p class="empty-subtitle">Try adjusting your filters or create a new workspace</p>
+      <button @click="clearAllFilters" class="clear-filters-btn">
+        Clear All Filters
+      </button>
+    </div>
+
     <!-- Context Menu -->
     <Teleport to="body">
-      <Transition name="context-menu">
-        <ContextMenu 
+      <Transition name="context">
+        <div 
           v-if="contextMenu.visible" 
-          :position="contextMenu.position"
-          @close="closeContextMenu">
-          <button @click="handleAction('duplicate')" class="menu-item">
-            <Copy :size="16" /> Duplicate
+          class="context-menu"
+          :style="{ 
+            left: contextMenu.position.x + 'px', 
+            top: contextMenu.position.y + 'px' 
+          }"
+          @click.stop
+        >
+          <button @click="handleAction('open')" class="context-item primary">
+            <Play :size="16" />
+            <span>Open</span>
           </button>
-          <button @click="handleAction('archive')" class="menu-item">
-            <Archive :size="16" /> Archive
+          <button @click="handleAction('duplicate')" class="context-item">
+            <Copy :size="16" />
+            <span>Duplicate</span>
           </button>
-          <button @click="handleAction('export')" class="menu-item">
-            <Download :size="16" /> Export
+          <button @click="handleAction('share')" class="context-item">
+            <Share :size="16" />
+            <span>Share</span>
           </button>
-          <div class="menu-divider"></div>
-          <button @click="handleAction('delete')" class="menu-item danger">
-            <Trash2 :size="16" /> Delete
+          <div class="context-divider"></div>
+          <button @click="handleAction('archive')" class="context-item">
+            <Archive :size="16" />
+            <span>Archive</span>
           </button>
-        </ContextMenu>
+          <button @click="handleAction('export')" class="context-item">
+            <Download :size="16" />
+            <span>Export</span>
+          </button>
+          <div class="context-divider"></div>
+          <button @click="handleAction('delete')" class="context-item danger">
+            <Trash2 :size="16" />
+            <span>Delete</span>
+          </button>
+        </div>
       </Transition>
     </Teleport>
+
+    <!-- Click outside handler -->
+    <div 
+      v-if="contextMenu.visible" 
+      class="context-overlay" 
+      @click="closeContextMenu"
+    ></div>
+
+    <!-- iOS Folder Modal -->
+    <Teleport to="body">
+      <div v-if="openCluster" class="folder-modal-overlay" @click="closeClusterModal">
+        <div 
+          class="folder-modal"
+          :class="{ 'closing': isClosingCluster }"
+          :style="modalAnimStyle" 
+          @click.stop
+        >
+          <div class="modal-header">
+            <h2>{{ openCluster.title }}</h2>
+            <button @click="closeClusterModal" class="close-btn">
+              <X :size="20" />
+            </button>
+          </div>
+          
+          <div class="modal-workspace-grid">
+            <div 
+              v-for="workspace in openCluster.workspaces"
+              :key="workspace.id"
+              class="modal-workspace-card"
+              @click="selectWorkspaceFromModal(workspace.id)"
+            >
+              <div class="workspace-content">
+                <h3>{{ workspace.title }}</h3>
+                <p>{{ workspace.nodeCount || 0 }} nodes</p>
+                <span class="workspace-date">{{ formatDate(workspace.lastUpdated) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Import Progress Footer -->
+    <Transition name="slide-up">
+      <div v-if="isImporting || importStatus.is_running" class="import-progress-footer">
+        <div class="import-progress-content">
+          <div class="import-info">
+            <div class="import-status">
+              <div class="import-icon">
+                <Upload :size="16" />
+              </div>
+              <div class="import-text">
+                <span class="import-title">{{ importStatus.status_message || 'Importing conversations...' }}</span>
+                <span class="import-subtitle">
+                  {{ importStatus.imported_conversations || 0 }} imported, 
+                  {{ importStatus.skipped_conversations || 0 }} skipped
+                  <span v-if="importStatus.current_conversation">
+                    • {{ importStatus.current_conversation }}
+                  </span>
+                </span>
+              </div>
+            </div>
+            
+            <!-- Progress Bar -->
+            <div class="import-progress-bar">
+              <div 
+                class="import-progress-fill" 
+                :style="{ width: (importStatus.progress || 0) + '%' }"
+              ></div>
+            </div>
+            
+            <div class="import-stats">
+              <span>{{ Math.round(importStatus.progress || 0) }}%</span>
+              <span>{{ importStatus.processed_conversations || 0 }}/{{ importStatus.total_conversations || 0 }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, reactive } from 'vue';
+import { ref, computed, onMounted, watch, onBeforeUnmount, reactive } from 'vue';
 import { 
-  Star, MoreVertical, GitBranch, MessageSquare, Clock,
-  Copy, Archive, Download, Trash2 
+  Grid, List, LayoutGrid, Filter, FolderOpen, Expand, Star, MoreHorizontal, 
+  MessageSquare, Clock, Users, Play, Copy, Share, Archive, Download, Trash2,
+  FileText, Image, Video, Bot, Code, Database, X, Upload
 } from 'lucide-vue-next';
-import { useVirtualScroll } from '@/composables/useVirtualScroll';
-import { useThemeStore } from '@/stores/themeStore';
-import ContextMenu from '@/components/ui/ContextMenu.vue';
+import { clusteringService, type ClusteringStatus } from '@/services/clusteringService';
+import { conversationImportService, type ImportStatus } from '@/services/conversationImportService';
+import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
 
-// Props & Emits
+// Props
 const props = defineProps({
   workspaces: {
     type: Array,
     required: true
   },
   selectedWorkspaceId: String,
-  searchQuery: String,
-  itemsPerRow: {
-    type: Number,
-    default: 5
-  }
+  searchQuery: String
 });
 
+// Emits
 const emit = defineEmits([
   'select-workspace',
-  'favorite-workspace',
+  'favorite-workspace', 
   'duplicate-workspace',
   'archive-workspace',
   'export-workspace',
-  'delete-workspace'
+  'delete-workspace',
+  'import-completed'
 ]);
 
 // Refs
 const containerRef = ref<HTMLElement>();
-const isLoading = ref(false);
-const preloadedIds = new Set<string>();
-
-// Local state for favorites to handle optimistic updates
 const localFavorites = ref<Set<string>>(new Set());
 
-// Theme & Performance
-const themeStore = useThemeStore();
+// View Controls
+const currentViewMode = ref('grid'); // 'grid', 'compact', 'detailed'
+const cardSize = ref(240);
+const sortBy = ref('recent');
+const showFilters = ref(false);
+const clusteringEnabled = ref(false);
+const isInitializing = ref(true);
+const isLoadingClusters = ref(false);
+const loadingStartTime = ref(0);
+const MINIMUM_LOADING_TIME = 1000; // 1 second minimum
 
-// Context Menu State
+// Filters
+const selectedTags = ref<Set<string>>(new Set());
+const selectedStatuses = ref<Set<string>>(new Set());
+const sizeRange = ref([0, 1000]);
+
+// Clustering
+const clusters = ref([]);
+const expandedClusters = ref<Set<string>>(new Set());
+const clusteringStatus = reactive<ClusteringStatus>({
+  is_running: false,
+  progress: 0,
+  status_message: '',
+  total_workspaces: 0,
+  processed_workspaces: 0,
+  clusters: []
+});
+
+// Import status and drag-and-drop
+const importStatus = reactive<ImportStatus>({
+  is_running: false,
+  progress: 0,
+  status_message: '',
+  total_conversations: 0,
+  processed_conversations: 0,
+  imported_conversations: 0,
+  skipped_conversations: 0,
+  errors: [],
+  current_conversation: ''
+});
+
+const isDragOver = ref(false);
+const isImporting = ref(false);
+
+let statusUnsubscribe: (() => void) | null = null;
+let importStatusUnsubscribe: (() => void) | null = null;
+
+// Context Menu
 const contextMenu = ref({
   visible: false,
   position: { x: 0, y: 0 },
   workspace: null
 });
 
-// Virtual Scrolling Configuration
-const ITEM_HEIGHT = 160; // Height of each card
-const ITEM_GAP = 24; // Gap between items
-const BUFFER_ITEMS = 2; // Extra rows to render off-screen
-const SCROLL_DEBOUNCE = 16; // 60fps
+// View Modes
+const viewModes = [
+  { id: 'grid', label: 'Grid', icon: Grid },
+  { id: 'compact', label: 'Compact', icon: List },
+  { id: 'detailed', label: 'Detailed', icon: LayoutGrid }
+];
 
-// Initialize local favorites from props
-watch(() => props.workspaces, (newWorkspaces) => {
-  localFavorites.value = new Set(
-    newWorkspaces.filter(w => w.isFavorite).map(w => w.id)
-  );
-}, { immediate: true });
+// Mock data for demo
+const availableTags = ref([
+  { id: '1', name: 'AI/ML', color: '#6366f1' },
+  { id: '2', name: 'Research', color: '#8b5cf6' },
+  { id: '3', name: 'Development', color: '#06b6d4' },
+  { id: '4', name: 'Analysis', color: '#10b981' },
+  { id: '5', name: 'Creative', color: '#f59e0b' }
+]);
 
-// Computed Properties
+const statusOptions = ['Active', 'Archived', 'Shared', 'Private'];
+
+// Computed
+const hasActiveFilters = computed(() => 
+  selectedTags.value.size > 0 || 
+  selectedStatuses.value.size > 0 || 
+  sizeRange.value[0] > 0 || 
+  sizeRange.value[1] < 1000
+);
+
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (selectedTags.value.size > 0) count++;
+  if (selectedStatuses.value.size > 0) count++;
+  if (sizeRange.value[0] > 0 || sizeRange.value[1] < 1000) count++;
+  return count;
+});
+
 const filteredWorkspaces = computed(() => {
-  const workspaces = props.searchQuery 
-    ? props.workspaces.filter(workspace => {
-        const query = props.searchQuery.toLowerCase();
-        const title = (workspace.title || '').toLowerCase();
-        const description = (workspace.description || '').toLowerCase();
-        const tags = workspace.tags?.map(t => t.name.toLowerCase()) || [];
-        
-        return title.includes(query) || 
-               description.includes(query) || 
-               tags.some(tag => tag.includes(query));
-      })
-    : props.workspaces;
+  let workspaces = props.workspaces || [];
   
-  // Apply local favorite state
+  // Apply search query
+  if (props.searchQuery) {
+    const query = props.searchQuery.toLowerCase();
+    workspaces = workspaces.filter(w => {
+      const title = (w.title || '').toLowerCase();
+      const desc = (w.description || '').toLowerCase();
+      const tags = w.tags?.map(t => t.name.toLowerCase()) || [];
+      
+      return title.includes(query) || 
+             desc.includes(query) || 
+             tags.some(tag => tag.includes(query));
+    });
+  }
+
+  // Apply filters
+  if (selectedTags.value.size > 0) {
+    workspaces = workspaces.filter(w => 
+      w.tags?.some(tag => selectedTags.value.has(tag.id))
+    );
+  }
+
+  if (selectedStatuses.value.size > 0) {
+    workspaces = workspaces.filter(w => 
+      selectedStatuses.value.has(w.status || 'Active')
+    );
+  }
+
+  if (sizeRange.value[0] > 0 || sizeRange.value[1] < 1000) {
+    workspaces = workspaces.filter(w => {
+      const nodeCount = w.nodeCount || 0;
+      return nodeCount >= sizeRange.value[0] && nodeCount <= sizeRange.value[1];
+    });
+  }
+
+  // Apply sorting
+  workspaces = [...workspaces].sort((a, b) => {
+    switch (sortBy.value) {
+      case 'name':
+        return (a.title || '').localeCompare(b.title || '');
+      case 'size':
+        return (b.nodeCount || 0) - (a.nodeCount || 0);
+      case 'created':
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      case 'recent':
+      default:
+        return new Date(b.lastUpdated || 0) - new Date(a.lastUpdated || 0);
+    }
+  });
+
+  // Apply local favorites
   return workspaces.map(w => ({
     ...w,
-    isFavorite: localFavorites.value.has(w.id)
+    isFavorite: localFavorites.value.has(w.id) || w.isFavorite
   }));
 });
 
-// Virtual Scroll Setup
-const {
-  visibleItems: visibleWorkspaces,
-  totalHeight,
-  offsetY,
-  handleScroll
-} = useVirtualScroll({
-  items: filteredWorkspaces,
-  containerRef,
-  itemHeight: ITEM_HEIGHT,
-  itemsPerRow: props.itemsPerRow,
-  gap: ITEM_GAP,
-  buffer: BUFFER_ITEMS,
-  debounce: SCROLL_DEBOUNCE
+// Real clustering results  
+const clusterHoverStates = ref<Map<string, boolean>>(new Map());
+const clusterHoverTimeouts = ref<Map<string, number>>(new Map());
+const openCluster = ref<any>(null);
+const modalAnimStyle = ref({});
+const isClosingCluster = ref(false);
+
+const displayedClusters = computed(() => {
+  if (!clusteringEnabled.value) return [];
+  
+  // Filter clusters based on search query
+  let filtered = clusteringStatus.clusters;
+  if (props.searchQuery && props.searchQuery.trim()) {
+    const query = props.searchQuery.toLowerCase();
+    filtered = clusteringStatus.clusters.filter(cluster => {
+      // Search cluster title
+      if (cluster.title.toLowerCase().includes(query)) return true;
+      
+      // Search workspace titles within cluster
+      return cluster.workspaces.some(workspace => 
+        workspace.title.toLowerCase().includes(query)
+      );
+    });
+  }
+  
+  return filtered.map(cluster => ({
+    ...cluster,
+    isHovered: clusterHoverStates.value.get(cluster.id) || false
+  }));
+});
+
+const displayedWorkspaces = computed(() => {
+  if (!clusteringEnabled.value) return filteredWorkspaces.value;
+  
+  // Remove workspaces that are in clusters
+  const clusteredWorkspaceIds = new Set();
+  displayedClusters.value.forEach(cluster => {
+    cluster.workspaces.forEach(w => clusteredWorkspaceIds.add(w.id));
+  });
+  
+  return filteredWorkspaces.value.filter(w => !clusteredWorkspaceIds.has(w.id));
 });
 
 // Methods
@@ -241,17 +673,12 @@ const handleSelectWorkspace = (id: string) => {
 };
 
 const toggleFavorite = (id: string) => {
-  // Toggle local state for immediate feedback
   if (localFavorites.value.has(id)) {
     localFavorites.value.delete(id);
   } else {
     localFavorites.value.add(id);
   }
-  
-  // Force reactivity update
   localFavorites.value = new Set(localFavorites.value);
-  
-  // Emit event to parent
   emit('favorite-workspace', id);
 };
 
@@ -271,216 +698,965 @@ const handleAction = (action: string) => {
   const workspace = contextMenu.value.workspace;
   if (!workspace) return;
   
-  emit(`${action}-workspace`, workspace.id);
+  switch (action) {
+    case 'open':
+      handleSelectWorkspace(workspace.id);
+      break;
+    default:
+      emit(`${action}-workspace`, workspace.id);
+  }
   closeContextMenu();
 };
 
-const preloadWorkspace = async (id: string) => {
-  if (preloadedIds.has(id)) return;
-  preloadedIds.add(id);
+const toggleTagFilter = (tagId: string) => {
+  if (selectedTags.value.has(tagId)) {
+    selectedTags.value.delete(tagId);
+  } else {
+    selectedTags.value.add(tagId);
+  }
+  selectedTags.value = new Set(selectedTags.value);
+};
+
+const toggleStatusFilter = (status: string) => {
+  if (selectedStatuses.value.has(status)) {
+    selectedStatuses.value.delete(status);
+  } else {
+    selectedStatuses.value.add(status);
+  }
+  selectedStatuses.value = new Set(selectedStatuses.value);
+};
+
+const toggleClustering = async () => {
+  if (clusteringEnabled.value) {
+    // Disable clustering
+    clusteringEnabled.value = false;
+    // Clear clusters from display (but keep them cached in backend)
+    clusteringStatus.clusters = [];
+  } else {
+    // Check if we have cached results first
+    try {
+      setLoadingState(true);
+      const status = await clusteringService.getStatus();
+      if (status.clusters && status.clusters.length > 0) {
+        // Use cached results
+        Object.assign(clusteringStatus, status);
+        clusteringEnabled.value = true;
+        console.log('Using cached clustering results');
+        setLoadingState(false);
+      } else {
+        // Start new clustering
+        await clusteringService.startClustering({
+          method: 'kmeans',
+          n_clusters: 5
+        });
+        clusteringEnabled.value = true;
+        console.log('Starting new clustering process');
+        // Loading state will be cleared by status update handler
+      }
+    } catch (error) {
+      console.error('Failed to start clustering:', error);
+      clusteringEnabled.value = false;
+      setLoadingState(false);
+    }
+  }
+};
+
+const clearAllFilters = () => {
+  selectedTags.value.clear();
+  selectedStatuses.value.clear();
+  sizeRange.value = [0, 1000];
+  showFilters.value = false;
+};
+
+// Helper function to ensure minimum loading time
+const ensureMinimumLoadingTime = async () => {
+  const elapsed = Date.now() - loadingStartTime.value;
+  const remaining = MINIMUM_LOADING_TIME - elapsed;
+  if (remaining > 0) {
+    await new Promise(resolve => setTimeout(resolve, remaining));
+  }
+};
+
+// Set loading state with timestamp
+const setLoadingState = (loading: boolean) => {
+  if (loading) {
+    loadingStartTime.value = Date.now();
+    isLoadingClusters.value = true;
+  } else {
+    // Don't clear immediately, ensure minimum time
+    ensureMinimumLoadingTime().then(() => {
+      isLoadingClusters.value = false;
+    });
+  }
+};
+
+const previewCluster = (cluster: any) => {
+  // Clear any pending hide timeout
+  const timeoutId = clusterHoverTimeouts.value.get(cluster.id);
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    clusterHoverTimeouts.value.delete(cluster.id);
+  }
+  clusterHoverStates.value.set(cluster.id, true);
+};
+
+const hideClusterPreview = (cluster: any) => {
+  // Add small delay to prevent flickering when moving between cards
+  const timeoutId = setTimeout(() => {
+    clusterHoverStates.value.set(cluster.id, false);
+    clusterHoverTimeouts.value.delete(cluster.id);
+  }, 150); // 150ms delay
   
-  // Simulate preloading workspace data
-  // In real implementation, this would fetch additional data
-  await nextTick();
+  clusterHoverTimeouts.value.set(cluster.id, timeoutId);
+};
+
+const toggleCluster = (clusterId: string) => {
+  console.log('Toggle cluster clicked:', clusterId);
+  if (expandedClusters.value.has(clusterId)) {
+    expandedClusters.value.delete(clusterId);
+    console.log('Collapsed cluster:', clusterId);
+  } else {
+    expandedClusters.value.add(clusterId);
+    console.log('Expanded cluster:', clusterId);
+  }
+  expandedClusters.value = new Set(expandedClusters.value);
+};
+
+const expandCluster = (clusterId: string) => {
+  expandedClusters.value.add(clusterId);
+  expandedClusters.value = new Set(expandedClusters.value);
+};
+
+const showClusterMenu = (cluster: any, event: MouseEvent) => {
+  // Show context menu for cluster
+  contextMenu.value = {
+    visible: true,
+    position: { x: event.clientX, y: event.clientY },
+    target: cluster
+  };
+};
+
+const openClusterModal = (cluster: any, event: MouseEvent) => {
+  // Use currentTarget to ensure we get the element the event listener is on
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+
+  // The modal's final width (from your CSS class w-[600px])
+  const modalFinalWidth = 600; 
+
+  // --- Calculate initial transform values ---
+  
+  // 1. Center of the clicked folder (our starting point)
+  const startX = rect.left + rect.width / 2;
+  const startY = rect.top + rect.height / 2;
+
+  // 2. Center of the viewport (our ending point)
+  const finalX = window.innerWidth / 2;
+  const finalY = window.innerHeight / 2;
+  
+  // 3. The distance the modal needs to travel
+  const translateX = startX - finalX;
+  const translateY = startY - finalY;
+
+  // 4. The initial scale to match the folder's width
+  const scale = rect.width / modalFinalWidth;
+
+  // 5. Set the CSS variables for the animation
+  modalAnimStyle.value = {
+    '--start-translate-x': `${translateX}px`,
+    '--start-translate-y': `${translateY}px`,
+    '--start-scale': scale,
+  };
+  
+  openCluster.value = cluster;
+};
+
+const closeClusterModal = () => {
+  if (isClosingCluster.value) return; // Prevent double-close
+  
+  isClosingCluster.value = true;
+  
+  // Wait for reverse animation to complete, then clean up
+  setTimeout(() => {
+    openCluster.value = null;
+    isClosingCluster.value = false;
+    modalAnimStyle.value = {};
+  }, 300); // Match the animation duration
+};
+
+const selectWorkspaceFromModal = (workspaceId: string) => {
+  closeClusterModal();
+  handleSelectWorkspace(workspaceId);
+};
+
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric'
+  });
+};
+
+// Drag and drop handlers
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault();
+  event.dataTransfer!.dropEffect = 'copy';
+  isDragOver.value = true;
+};
+
+const handleDragEnter = (event: DragEvent) => {
+  event.preventDefault();
+  isDragOver.value = true;
+};
+
+const handleDragLeave = (event: DragEvent) => {
+  event.preventDefault();
+  // Only set to false if we're leaving the container entirely
+  if (!containerRef.value?.contains(event.relatedTarget as Node)) {
+    isDragOver.value = false;
+  }
+};
+
+const handleDrop = async (event: DragEvent) => {
+  event.preventDefault();
+  isDragOver.value = false;
+  
+  if (!event.dataTransfer?.files) return;
+  
+  const files = event.dataTransfer.files;
+  const jsonFiles = Array.from(files).filter(file => 
+    file.name.toLowerCase().endsWith('.json')
+  );
+  
+  if (jsonFiles.length === 0) {
+    console.warn('No JSON files found in dropped files');
+    return;
+  }
+  
+  try {
+    isImporting.value = true;
+    const results = await conversationImportService.handleDroppedFiles(files);
+    
+    // Log results
+    results.forEach(result => {
+      if (result.error) {
+        console.error('Import error:', result.error);
+      } else {
+        console.log('Import started:', result);
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error handling dropped files:', error);
+  } finally {
+    // isImporting will be set to false when import status updates
+  }
+};
+
+// Removed getStackedCardStyle - now using pure CSS classes for smoother animations
+
+const getWorkspaceType = (workspace: any) => {
+  // Determine workspace type based on content
+  if (workspace.tags?.some(t => t.name.toLowerCase().includes('ai'))) return 'ai';
+  if (workspace.tags?.some(t => t.name.toLowerCase().includes('code'))) return 'code';
+  if (workspace.nodeCount > 10) return 'large';
+  return 'default';
+};
+
+const getWorkspaceIcon = (workspace: any) => {
+  const type = getWorkspaceType(workspace);
+  switch (type) {
+    case 'ai': return Bot;
+    case 'code': return Code;
+    case 'large': return Database;
+    default: return FileText;
+  }
+};
+
+const getImportIcon = (format: string) => {
+  switch (format) {
+    case 'chatgpt': return Bot;
+    case 'claude': return MessageSquare;
+    default: return Download;
+  }
+};
+
+const getImportLabel = (format: string) => {
+  switch (format) {
+    case 'chatgpt': return 'ChatGPT';
+    case 'claude': return 'Claude';
+    default: return 'Imported';
+  }
+};
+
+const getActivityData = (workspace: any) => {
+  // Calculate real activity data for the past 7 days
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    return {
+      date: date.toISOString().split('T')[0],
+      activity: 0
+    };
+  }).reverse(); // Oldest to newest
+  
+  // If we have detailed workspace data with nodes and messages
+  if (workspace.nodes?.length) {
+    // Count messages per day across all nodes
+    workspace.nodes.forEach(node => {
+      if (node.messages?.length) {
+        node.messages.forEach(message => {
+          if (message.timestamp) {
+            const messageDate = new Date(message.timestamp).toISOString().split('T')[0];
+            const dayIndex = last7Days.findIndex(day => day.date === messageDate);
+            if (dayIndex !== -1) {
+              last7Days[dayIndex].activity++;
+            }
+          }
+        });
+      }
+    });
+  } else {
+    // Fallback: distribute activity based on updatedAt timestamp
+    if (workspace.lastUpdated || workspace.updatedAt) {
+      const updateDate = new Date(workspace.lastUpdated || workspace.updatedAt);
+      const updateDateStr = updateDate.toISOString().split('T')[0];
+      const dayIndex = last7Days.findIndex(day => day.date === updateDateStr);
+      if (dayIndex !== -1) {
+        last7Days[dayIndex].activity = workspace.nodeCount || 1;
+      }
+    }
+  }
+  
+  // Normalize activity to 0-1 scale
+  const maxActivity = Math.max(...last7Days.map(d => d.activity), 1);
+  return last7Days.map(day => ({
+    ...day,
+    activity: maxActivity > 0 ? day.activity / maxActivity : 0
+  }));
 };
 
 const truncateText = (text: string, maxLength: number) => {
-  if (text.length <= maxLength) return text;
+  if (!text || text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
 };
 
-const formatRelativeTime = (dateString: string) => {
+const formatTime = (dateString: string) => {
   if (!dateString) return 'Never';
   
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  const diffMins = Math.floor(diffSecs / 60);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffMins = Math.floor(diffMs / (1000 * 60));
   
-  if (diffDays > 7) {
-    return date.toLocaleDateString(undefined, { 
-      month: 'short', 
-      day: 'numeric' 
-    });
+  if (diffDays > 30) {
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   } else if (diffDays > 0) {
-    return `${diffDays}d ago`;
+    return `${diffDays}d`;
   } else if (diffHours > 0) {
-    return `${diffHours}h ago`;
+    return `${diffHours}h`;
   } else if (diffMins > 0) {
-    return `${diffMins}m ago`;
+    return `${diffMins}m`;
   } else {
-    return 'Just now';
+    return 'now';
   }
 };
 
-const getTagStyle = (tag: any) => {
-  const colors = {
-    primary: { bg: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' },
-    secondary: { bg: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' },
-    success: { bg: 'rgba(34, 197, 94, 0.1)', color: '#22c55e' },
-    warning: { bg: 'rgba(251, 146, 60, 0.1)', color: '#fb923c' },
-    error: { bg: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }
-  };
-  
-  const colorScheme = colors[tag.color] || colors.primary;
-  
-  return {
-    backgroundColor: colorScheme.bg,
-    color: colorScheme.color,
-    border: `1px solid ${colorScheme.color}20`
-  };
+// Initialize
+// ESC key handler for cluster modal
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && openCluster.value && !isClosingCluster.value) {
+    // Check if other components want to handle ESC first
+    if (contextMenu.value.visible) {
+      return; // Let context menu handle it
+    }
+    
+    event.preventDefault();
+    event.stopPropagation();
+    closeClusterModal();
+  }
 };
 
-// Lifecycle
-onMounted(() => {
-  if (containerRef.value) {
-    containerRef.value.addEventListener('scroll', handleScroll, { passive: true });
+onMounted(async () => {
+  // Start timing for minimum loading duration
+  loadingStartTime.value = Date.now();
+  
+  localFavorites.value = new Set(
+    (props.workspaces || []).filter(w => w.isFavorite).map(w => w.id)
+  );
+  
+  // Add ESC key listener
+  window.addEventListener('keydown', handleKeyDown);
+  
+  // Subscribe to clustering status updates
+  statusUnsubscribe = clusteringService.onStatusUpdate((status) => {
+    Object.assign(clusteringStatus, status);
     
-    // Handle responsive grid
-    const resizeObserver = new ResizeObserver(() => {
-      handleScroll();
-    });
-    resizeObserver.observe(containerRef.value);
+    // If clustering completed successfully and we have clusters, enable clustering view
+    if (!status.is_running && status.clusters && status.clusters.length > 0) {
+      clusteringEnabled.value = true;
+      setLoadingState(false);
+    }
+  });
+  
+  // Subscribe to import status updates
+  importStatusUnsubscribe = conversationImportService.onStatusUpdate((status) => {
+    Object.assign(importStatus, status);
     
-    onBeforeUnmount(() => {
-      containerRef.value?.removeEventListener('scroll', handleScroll);
-      resizeObserver.disconnect();
-    });
+    // Update loading state based on import status
+    if (status.is_running) {
+      isImporting.value = true;
+    } else {
+      isImporting.value = false;
+      // Emit import completed event so parent can refresh workspace list
+      if (status.imported_conversations > 0) {
+        emit('import-completed', {
+          imported: status.imported_conversations,
+          skipped: status.skipped_conversations
+        });
+      }
+    }
+  });
+  
+  // Check initial clustering status
+  try {
+    const status = await clusteringService.getStatus();
+    Object.assign(clusteringStatus, status);
+    
+    // If clustering is running, show loading state
+    if (status.is_running) {
+      isLoadingClusters.value = true;
+    }
+    
+    // If there are existing clusters, enable clustering view
+    if (!status.is_running && status.clusters && status.clusters.length > 0) {
+      clusteringEnabled.value = true;
+    }
+  } catch (error) {
+    console.error('Error getting initial clustering status:', error);
+  } finally {
+    // Ensure minimum loading time for initialization
+    await ensureMinimumLoadingTime();
+    isInitializing.value = false;
   }
 });
 
-// Watch for changes
-watch(() => props.searchQuery, () => {
-  // Reset scroll position on search
-  if (containerRef.value) {
-    containerRef.value.scrollTop = 0;
+onBeforeUnmount(() => {
+  if (statusUnsubscribe) {
+    statusUnsubscribe();
   }
+  
+  if (importStatusUnsubscribe) {
+    importStatusUnsubscribe();
+  }
+  
+  // Remove ESC key listener
+  window.removeEventListener('keydown', handleKeyDown);
 });
-
 </script>
 
 <style scoped>
-.grid-workspace-view {
-  @apply w-full h-full overflow-auto relative;
-  container-type: inline-size;
+/* Main Container - Theme Aware with Transparent Background */
+.enhanced-grid-view {
+  @apply h-full w-full overflow-hidden flex flex-col;
+  /* Transparent background to show InfiniteCanvas background */
+  background: transparent;
 }
 
-.virtual-scroll-container {
-  @apply relative w-full;
+/* Controls Bar - Theme Aware */
+.controls-bar {
+  @apply sticky top-0 z-20 px-6 py-4;
+  @apply backdrop-blur-xl flex items-center justify-between gap-6;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  border-bottom: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 4px 12px oklch(from oklch(var(--p)) l c h / 0.05);
 }
 
-.visible-items {
-  @apply absolute top-0 left-0 right-0;
-  will-change: transform;
+.view-controls {
+  @apply flex items-center gap-6;
 }
 
-.grid-container {
-  @apply grid gap-6 p-6;
-  grid-template-columns: repeat(5, 1fr);
+.view-mode-selector {
+  @apply flex rounded-xl p-1;
+  background: oklch(from oklch(var(--b2)) l c h / 0.6);
 }
 
-/* Responsive Grid */
-@container (max-width: 1400px) {
-  .grid-container {
-    grid-template-columns: repeat(4, 1fr);
+.view-mode-btn {
+  @apply flex items-center gap-2 px-3 py-2 rounded-lg;
+  @apply text-sm font-medium transition-all duration-200;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.view-mode-btn:hover {
+  color: oklch(var(--bc));
+}
+
+.view-mode-btn.active {
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  box-shadow: 0 2px 4px oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.filter-controls {
+  @apply flex items-center gap-3;
+}
+
+.sort-select {
+  @apply px-3 py-2 rounded-lg text-sm font-medium;
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
+}
+
+.sort-select:focus {
+  outline: none;
+  border-color: oklch(var(--p));
+  box-shadow: 0 0 0 2px oklch(from oklch(var(--p)) l c h / 0.2);
+}
+
+.filter-btn, .cluster-btn {
+  @apply flex items-center gap-2 px-3 py-2 rounded-lg;
+  @apply text-sm font-medium transition-all duration-200 relative;
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
+}
+
+.filter-btn:hover, .cluster-btn:hover {
+  background: oklch(from oklch(var(--b2)) l c h / 0.8);
+  border-color: oklch(from oklch(var(--bc)) l c h / 0.3);
+}
+
+.filter-btn.active, .cluster-btn.active {
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+  border-color: oklch(var(--p));
+}
+
+.filter-count {
+  @apply absolute -top-1 -right-1 w-5 h-5 rounded-full;
+  @apply text-xs flex items-center justify-center font-bold;
+  background: oklch(var(--wa));
+  color: oklch(var(--wac));
+}
+
+.grid-controls {
+  @apply flex items-center gap-3;
+}
+
+.control-label {
+  @apply text-sm font-medium;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.size-slider {
+  @apply w-24;
+  accent-color: oklch(var(--p));
+}
+
+/* Filters Panel - Theme Aware */
+.filters-panel {
+  @apply px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-4;
+  background: oklch(from oklch(var(--b2)) l c h / 0.5);
+  border-bottom: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.filter-section {
+  @apply space-y-2;
+}
+
+.filter-label {
+  @apply text-sm font-semibold;
+  color: oklch(from oklch(var(--bc)) l c h / 0.8);
+}
+
+.tag-filters, .status-filters {
+  @apply flex flex-wrap gap-2;
+}
+
+.tag-filter, .status-filter {
+  @apply px-2 py-1 rounded-lg text-xs font-medium;
+  @apply transition-all duration-200;
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
+}
+
+.tag-filter:hover, .status-filter:hover {
+  background: oklch(from oklch(var(--b2)) l c h / 0.8);
+}
+
+.tag-filter.active {
+  @apply text-white border-0;
+  background-color: var(--tag-color);
+}
+
+.status-filter.active {
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+  border-color: oklch(var(--p));
+}
+
+.range-filter {
+  @apply flex items-center gap-2;
+}
+
+.range-input {
+  @apply w-20 px-2 py-1 rounded text-xs;
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
+}
+
+/* Grid */
+.grid-wrapper {
+  @apply flex-1 overflow-auto p-6;
+}
+
+.workspace-grid {
+  @apply grid gap-6;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-size), 1fr));
+}
+
+.workspace-grid.compact {
+  @apply gap-3;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.workspace-grid.detailed {
+  @apply gap-8;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+/* Cluster Folder Cards - Theme Aware */
+.cluster-folder {
+  @apply flex flex-col items-center justify-center p-6 rounded-2xl;
+  @apply cursor-pointer transition-all duration-300;
+  min-height: var(--card-size);
+  
+  /* Dynamic background with theme colors */
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.08),
+    oklch(from oklch(var(--s)) l c h / 0.06),
+    oklch(from oklch(var(--a)) l c h / 0.04)
+  );
+  
+  /* Themed border */
+  border: 1px solid oklch(from oklch(var(--p)) l c h / 0.15);
+  
+  /* Subtle shadow with theme tint */
+  box-shadow: 0 4px 12px oklch(from oklch(var(--p)) l c h / 0.08);
+}
+
+.cluster-folder:hover {
+  /* Enhanced hover with theme colors */
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.12),
+    oklch(from oklch(var(--s)) l c h / 0.10),
+    oklch(from oklch(var(--a)) l c h / 0.08)
+  );
+  
+  border-color: oklch(from oklch(var(--p)) l c h / 0.3);
+  box-shadow: 
+    0 8px 24px oklch(from oklch(var(--p)) l c h / 0.15),
+    0 0 0 1px oklch(from oklch(var(--p)) l c h / 0.1);
+  
+  transform: translateY(-2px) scale(1.02);
+}
+
+.folder-icon {
+  /* Gradient icon with theme colors */
+  background: linear-gradient(135deg, 
+    oklch(var(--p)), 
+    oklch(var(--s))
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 2px 4px oklch(from oklch(var(--p)) l c h / 0.2));
+}
+
+.folder-info {
+  @apply text-center;
+}
+
+.folder-title {
+  @apply font-semibold mb-1;
+  color: oklch(var(--bc));
+  text-shadow: 0 1px 2px oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.folder-count {
+  @apply text-sm;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+  
+  /* Subtle accent background */
+  background: oklch(from oklch(var(--a)) l c h / 0.1);
+  @apply px-2 py-1 rounded-full;
+  border: 1px solid oklch(from oklch(var(--a)) l c h / 0.15);
+}
+
+.cluster-folder.hidden-for-modal {
+  @apply opacity-0 pointer-events-none;
+  transform: scale(0.95);
+}
+
+/* iOS Folder Modal */
+.folder-modal-overlay {
+  @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-50;
+  @apply flex items-center justify-center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.folder-modal {
+  @apply rounded-2xl w-[600px] max-w-[90vw] max-h-[80vh] overflow-hidden;
+  background: oklch(var(--b1));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 25px 50px oklch(from oklch(var(--p)) l c h / 0.25);
+  
+  /* Use the new animation. The cubic-bezier gives it a nice "overshoot" bounce effect. */
+  animation: modalExpandFromOrigin 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.folder-modal.closing {
+  /* Reverse animation back to origin */
+  animation: modalCollapseToOrigin 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+}
+
+.modal-header {
+  @apply flex items-center justify-between p-6;
+  border-bottom: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.modal-header h2 {
+  @apply text-xl font-bold;
+  color: oklch(var(--bc));
+}
+
+.close-btn {
+  @apply p-2 rounded-lg transition-colors;
+  color: oklch(var(--bc));
+}
+
+.close-btn:hover {
+  background: oklch(from oklch(var(--b2)) l c h / 0.6);
+}
+
+.modal-workspace-grid {
+  @apply grid grid-cols-2 gap-4 p-6 max-h-[60vh] overflow-y-auto;
+}
+
+.modal-workspace-card {
+  @apply rounded-lg p-4 cursor-pointer transition-all duration-200;
+  background: oklch(from oklch(var(--b2)) l c h / 0.5);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.modal-workspace-card:hover {
+  background: oklch(from oklch(var(--p)) l c h / 0.05);
+  border-color: oklch(from oklch(var(--p)) l c h / 0.3);
+  box-shadow: 0 4px 12px oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.workspace-content h3 {
+  @apply font-semibold mb-2 line-clamp-2;
+  color: oklch(var(--bc));
+}
+
+.workspace-content p {
+  @apply text-sm mb-1;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.workspace-date {
+  @apply text-xs;
+  color: oklch(from oklch(var(--bc)) l c h / 0.4);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalExpandFromOrigin {
+  from {
+    /* 
+      Start the transform from the calculated position and scale.
+      No opacity fade - just pure transform animation.
+    */
+    transform: translate(var(--start-translate-x, 0), var(--start-translate-y, 0)) scale(var(--start-scale, 0.1));
+  }
+  to {
+    /* 
+      Animate to the final state: no translation relative to the center, and full scale.
+    */
+    transform: translate(0, 0) scale(1);
   }
 }
 
-@container (max-width: 1100px) {
-  .grid-container {
-    grid-template-columns: repeat(3, 1fr);
+@keyframes modalCollapseToOrigin {
+  from {
+    /* Start from the expanded state */
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    /* Animate back to the original folder position and size */
+    transform: translate(var(--start-translate-x, 0), var(--start-translate-y, 0)) scale(var(--start-scale, 0.1));
   }
 }
 
-@container (max-width: 800px) {
-  .grid-container {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.mini-title {
+  @apply text-xs font-semibold truncate;
+  color: oklch(var(--bc));
 }
 
-@container (max-width: 500px) {
-  .grid-container {
-    grid-template-columns: 1fr;
-  }
+.mini-stats {
+  @apply text-xs;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
 }
 
-.grid-item {
-  @apply relative;
-  contain: layout style paint;
+.cluster-info {
+  @apply space-y-2;
 }
 
+.cluster-title {
+  @apply flex items-center gap-2 text-lg font-bold;
+  color: oklch(var(--wa));
+}
+
+.cluster-subtitle {
+  @apply text-sm;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.cluster-tags {
+  @apply flex flex-wrap gap-1;
+}
+
+.cluster-tag {
+  @apply px-2 py-0.5 rounded-full text-xs font-medium;
+  color: oklch(var(--pc));
+}
+
+.cluster-actions {
+  @apply absolute top-4 right-4 flex gap-2 opacity-0 transition-opacity duration-200;
+}
+
+.cluster-card:hover .cluster-actions {
+  @apply opacity-100;
+}
+
+/* Enhanced Workspace Cards - Theme Aware */
 .workspace-card {
-  @apply relative h-[160px] rounded-xl overflow-hidden cursor-pointer;
+  @apply relative cursor-pointer rounded-2xl overflow-hidden;
   @apply transition-all duration-300 ease-out;
-  @apply bg-base-100 border border-base-300;
-  transform: translateZ(0); /* Force GPU acceleration */
-  will-change: transform;
+  @apply hover:-translate-y-2;
+  min-height: var(--card-size);
+  
+  /* Theme-aware background and border */
+  background: linear-gradient(135deg, 
+    oklch(var(--b1)),
+    oklch(from oklch(var(--b2)) l c h / 0.3)
+  );
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  
+  /* Theme-aware shadow */
+  box-shadow: 0 4px 12px oklch(from oklch(var(--p)) l c h / 0.08);
 }
 
 .workspace-card:hover {
-  @apply shadow-2xl border-primary/50;
-  transform: translateY(-4px) scale(1.02);
+  /* Enhanced hover with theme colors */
+  border-color: oklch(from oklch(var(--p)) l c h / 0.3);
+  box-shadow: 
+    0 12px 32px oklch(from oklch(var(--p)) l c h / 0.15),
+    0 0 0 1px oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.workspace-card.enhanced {
+  background: linear-gradient(135deg, 
+    oklch(var(--b1)),
+    oklch(from oklch(var(--b2)) l c h / 0.4),
+    oklch(from oklch(var(--p)) l c h / 0.02)
+  );
+}
+
+.workspace-card.compact {
+  min-height: 120px;
+}
+
+.workspace-card.detailed {
+  min-height: 280px;
 }
 
 .workspace-card.selected {
-  @apply ring-2 ring-primary ring-offset-2 ring-offset-base-100;
-  transform: translateY(-2px) scale(1.01);
+  @apply -translate-y-1;
+  box-shadow: 
+    0 0 0 2px oklch(var(--p)),
+    0 0 0 4px oklch(var(--b1)),
+    0 16px 40px oklch(from oklch(var(--p)) l c h / 0.2);
 }
 
-/* Remove the corner indicator - we have the star button now */
-/* .workspace-card.favorite::before {
-  @apply absolute top-0 right-0 w-16 h-16;
-  content: '';
-  background: linear-gradient(135deg, #fbbf24 0%, transparent 50%);
-  clip-path: polygon(100% 0, 0 0, 100% 100%);
-} */
-
-.workspace-card.loading {
-  @apply animate-pulse;
-}
-
-/* Card Background Effects */
-.card-background {
-  @apply absolute inset-0 -z-10;
-}
-
-.gradient-overlay {
-  @apply absolute inset-0;
+.workspace-card.favorite {
+  border-color: oklch(from oklch(var(--wa)) l c h / 0.4);
   background: linear-gradient(135deg, 
-    rgba(var(--p), 0.05) 0%, 
-    transparent 50%,
-    rgba(var(--s), 0.05) 100%);
+    oklch(var(--b1)),
+    oklch(from oklch(var(--wa)) l c h / 0.05)
+  );
 }
 
-.noise-overlay {
-  @apply absolute inset-0 opacity-[0.02];
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.5'/%3E%3C/svg%3E");
+.card-glow {
+  @apply absolute -inset-1 rounded-2xl opacity-0 transition-opacity duration-300;
+  @apply blur-sm;
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.2),
+    oklch(from oklch(var(--s)) l c h / 0.2),
+    oklch(from oklch(var(--a)) l c h / 0.2)
+  );
 }
 
-.shimmer-effect {
-  @apply absolute inset-0;
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(255, 255, 255, 0.1) 50%, 
-    transparent 100%);
-  animation: shimmer 1.5s infinite;
+.workspace-card:hover .card-glow {
+  @apply opacity-100;
 }
 
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+.card-pattern {
+  @apply absolute inset-0 opacity-5;
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.15) 1px, transparent 0);
+  background-size: 20px 20px;
 }
 
-/* Card Content */
 .card-content {
-  @apply relative h-full p-4 flex flex-col gap-3;
+  @apply relative h-full p-4 flex flex-col;
 }
 
 .card-header {
-  @apply flex justify-between items-start gap-3;
+  @apply flex items-start justify-between gap-3 mb-3;
+}
+
+.workspace-meta {
+  @apply flex items-start gap-3 flex-1 min-w-0;
+}
+
+.type-indicator {
+  @apply w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0;
+  background: oklch(from oklch(var(--b2)) l c h / 0.6);
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+.type-indicator.ai {
+  background: oklch(from oklch(var(--p)) l c h / 0.15);
+  color: oklch(var(--p));
+}
+
+.type-indicator.code {
+  background: oklch(from oklch(var(--in)) l c h / 0.15);
+  color: oklch(var(--in));
+}
+
+.type-indicator.large {
+  background: oklch(from oklch(var(--su)) l c h / 0.15);
+  color: oklch(var(--su));
 }
 
 .title-section {
@@ -488,214 +1664,808 @@ watch(() => props.searchQuery, () => {
 }
 
 .workspace-title {
-  @apply text-base font-semibold truncate;
-  @apply text-base-content;
+  @apply text-base font-semibold truncate mb-1;
+  color: oklch(var(--bc));
 }
 
 .workspace-subtitle {
-  @apply text-xs text-base-content/60 mt-0.5;
-  @apply line-clamp-1;
+  @apply text-xs line-clamp-2 leading-relaxed;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
 }
 
-.actions-section {
-  @apply flex gap-2 flex-shrink-0;
+.card-actions {
+  @apply flex gap-2 opacity-0 transition-opacity duration-200;
+}
+
+.workspace-card:hover .card-actions {
+  @apply opacity-100;
 }
 
 .action-btn {
-  @apply w-8 h-8 rounded-lg flex items-center justify-center;
-  @apply bg-base-200 hover:bg-base-300;
-  @apply transition-all duration-200;
-  @apply text-base-content/70 hover:text-base-content;
+  @apply w-7 h-7 rounded-lg flex items-center justify-center;
+  @apply transition-colors duration-200;
+  background: oklch(from oklch(var(--b2)) l c h / 0.5);
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
 }
 
-.favorite-btn.is-favorite {
-  @apply text-warning bg-warning/20;
-  @apply border border-warning/30;
+.action-btn:hover {
+  background: oklch(from oklch(var(--b3)) l c h / 0.8);
+  color: oklch(var(--bc));
 }
 
-.favorite-btn:hover {
-  @apply bg-warning/10 text-warning;
+.action-btn.favorite-btn.favorited {
+  background: oklch(from oklch(var(--wa)) l c h / 0.2);
+  color: oklch(var(--wa));
 }
 
-/* Stats Row */
-.stats-row {
-  @apply flex justify-between items-center gap-2 mt-auto;
+.action-btn.favorite-btn.favorited:hover {
+  background: oklch(from oklch(var(--wa)) l c h / 0.3);
+}
+
+.stats-section {
+  @apply space-y-3 mb-3;
+}
+
+.primary-stats {
+  @apply flex justify-between items-center;
 }
 
 .stat-item {
   @apply flex items-center gap-1 text-xs;
-  @apply text-base-content/70;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
 }
 
-.stat-icon {
-  @apply text-primary/70;
+.activity-graph {
+  @apply flex items-end gap-1 h-8;
 }
 
-.stat-value {
-  @apply font-medium;
+.activity-bar {
+  @apply w-2 rounded-t transition-all duration-300;
+  background: oklch(from oklch(var(--p)) l c h / 0.3);
 }
 
-/* Tags Section */
 .tags-section {
-  @apply mt-2;
+  @apply mt-auto;
 }
 
-.tags-container {
+.tags-list {
   @apply flex flex-wrap gap-1;
 }
 
-.tag-pill {
+.tag {
+  @apply px-2 py-0.5 rounded-full text-xs font-medium shadow-sm opacity-90;
+  color: oklch(from oklch(var(--pc)) l c h / 0.9);
+}
+
+.tag-overflow {
   @apply px-2 py-0.5 rounded-full text-xs font-medium;
-  @apply transition-all duration-200;
+  background: oklch(from oklch(var(--b2)) l c h / 0.8);
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
 }
 
-.tag-pill:hover {
-  @apply scale-105 brightness-110;
+.quick-actions {
+  @apply flex gap-2 mt-3 pt-3 border-t border-base-300/50;
 }
 
-.more-tags {
-  @apply bg-base-200 text-base-content/60;
+.quick-btn {
+  @apply flex items-center gap-1 px-2 py-1 rounded text-xs;
+  @apply transition-colors duration-200;
+  background: oklch(from oklch(var(--b2)) l c h / 0.8);
+  color: oklch(var(--bc));
 }
 
-
-/* Hover Layer */
-.hover-layer {
-  @apply absolute inset-0 pointer-events-none;
-  @apply bg-gradient-to-t from-primary/5 to-transparent opacity-0;
-  @apply transition-opacity duration-300;
+.quick-btn:hover {
+  background: oklch(from oklch(var(--b3)) l c h / 0.9);
 }
 
-.workspace-card:hover .hover-layer {
-  @apply opacity-100;
+.quick-btn.primary {
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
 }
 
-/* Loading State */
-.loading-overlay {
-  @apply absolute inset-0 flex items-center justify-center;
-  @apply bg-base-100/80 backdrop-blur-sm;
+.quick-btn.primary:hover {
+  background: oklch(from oklch(var(--p)) l c h / 0.9);
 }
 
-.loading-spinner {
-  @apply w-12 h-12 border-primary/30 border-t-primary;
-  @apply rounded-full animate-spin;
+.status-indicator {
+  @apply absolute top-3 left-3 w-2 h-2 rounded-full;
+}
+
+.status-indicator.active {
+  background: oklch(var(--su));
+}
+
+.status-indicator.archived {
+  background: oklch(var(--wa));
+}
+
+.progress-bar {
+  @apply absolute bottom-0 left-0 right-0 h-1;
+  background: oklch(from oklch(var(--b3)) l c h / 0.5);
+}
+
+.progress-fill {
+  @apply h-full transition-all duration-300;
+  background: oklch(var(--p));
+}
+
+/* Empty State */
+.empty-state {
+  @apply flex flex-col items-center justify-center h-64;
+  @apply text-center space-y-4;
+}
+
+.empty-icon {
+  color: oklch(from oklch(var(--bc)) l c h / 0.3);
+}
+
+.empty-title {
+  @apply text-lg font-semibold;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.empty-subtitle {
+  @apply text-sm;
+  color: oklch(from oklch(var(--bc)) l c h / 0.5);
+}
+
+.clear-filters-btn {
+  @apply px-4 py-2 rounded-lg transition-colors duration-200;
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+}
+
+.clear-filters-btn:hover {
+  background: oklch(from oklch(var(--p)) l c h / 0.9);
 }
 
 /* Context Menu */
-.menu-item {
-  @apply flex items-center gap-3 w-full px-4 py-2.5;
-  @apply text-sm hover:bg-base-200;
-  @apply transition-colors duration-150;
+.context-overlay {
+  @apply fixed inset-0 z-40;
 }
 
-.menu-item.danger {
-  @apply text-error hover:bg-error/10;
+.context-menu {
+  @apply fixed z-50 min-w-48 py-2 backdrop-blur-xl rounded-xl;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 20px 40px oklch(from oklch(var(--p)) l c h / 0.15);
 }
 
-.menu-divider {
-  @apply h-px bg-base-200 my-1;
+.context-item {
+  @apply w-full flex items-center gap-3 px-4 py-2.5;
+  @apply text-sm transition-colors duration-150;
+  color: oklch(var(--bc));
+}
+
+.context-item:hover {
+  background: oklch(from oklch(var(--b2)) l c h / 0.6);
+}
+
+.context-item.primary {
+  color: oklch(var(--p));
+}
+
+.context-item.primary:hover {
+  background: oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.context-item.danger {
+  color: oklch(var(--er));
+}
+
+.context-item.danger:hover {
+  background: oklch(from oklch(var(--er)) l c h / 0.1);
+}
+
+.context-divider {
+  @apply h-px my-1 mx-2;
+  background: oklch(from oklch(var(--bc)) l c h / 0.1);
 }
 
 /* Animations */
-.grid-item-enter-active,
-.grid-item-leave-active {
-  transition: all 0.3s ease;
+.card-enter-active,
+.card-leave-active {
+  @apply transition-all duration-300 ease-out;
 }
 
-.grid-item-enter-from {
-  opacity: 0;
-  transform: scale(0.9) translateY(20px);
+.card-enter-from {
+  @apply opacity-0 scale-95 translate-y-4;
 }
 
-.grid-item-leave-to {
-  opacity: 0;
-  transform: scale(0.9);
+.card-leave-to {
+  @apply opacity-0 scale-95;
 }
 
-.tag-enter-active,
-.tag-leave-active {
-  transition: all 0.2s ease;
+.slide-down-enter-active,
+.slide-down-leave-active {
+  @apply transition-all duration-300 ease-out;
 }
 
-.tag-enter-from,
-.tag-leave-to {
-  opacity: 0;
-  transform: scale(0.8);
+.slide-down-enter-from,
+.slide-down-leave-to {
+  @apply opacity-0 -translate-y-4;
 }
 
-.context-menu-enter-active,
-.context-menu-leave-active {
-  transition: all 0.2s ease;
+.context-enter-active,
+.context-leave-active {
+  @apply transition-all duration-200 ease-out;
 }
 
-.context-menu-enter-from,
-.context-menu-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
+.context-enter-from,
+.context-leave-to {
+  @apply opacity-0 scale-95;
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* Performance Optimizations */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+/* Responsive */
+@media (max-width: 768px) {
+  .controls-bar {
+    @apply flex-col items-stretch gap-4;
+  }
+  
+  .view-controls {
+    @apply flex-wrap gap-3;
+  }
+  
+  .grid-wrapper {
+    @apply p-4;
+  }
+  
+  .workspace-grid {
+    grid-template-columns: 1fr;
+    @apply gap-4;
+  }
+  
+  .filters-panel {
+    @apply grid-cols-1;
   }
 }
 
-/* Performance Debug Panel */
-.performance-debug {
-  @apply fixed top-4 right-4 z-50;
-  pointer-events: none;
+/* Enhanced theme-aware styling for better contrast across all 29 themes */
+.enhanced-grid-view {
+  /* Additional theme-aware enhancements */
+  backdrop-filter: blur(8px);
 }
 
-.debug-panel {
-  @apply bg-base-100/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-base-300;
-  @apply text-xs font-mono;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 120px;
+/* Import Source Badge */
+.import-badge {
+  @apply absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium;
+  @apply backdrop-blur-sm transition-all duration-200;
+  background: oklch(from oklch(var(--b1)) l c h / 0.9);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 2px 8px oklch(from oklch(var(--bc)) l c h / 0.1);
 }
 
-.debug-metric {
-  @apply flex justify-between items-center;
+.import-badge.chatgpt {
+  background: oklch(from oklch(var(--in)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--in)) l c h / 0.3);
+  color: oklch(var(--in));
 }
 
-.metric-label {
-  @apply text-base-content/60 font-medium;
+.import-badge.claude {
+  background: oklch(from oklch(var(--wa)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--wa)) l c h / 0.3);
+  color: oklch(var(--wa));
 }
 
-.metric-value {
-  @apply text-base-content font-semibold;
+.import-text {
+  @apply hidden;
 }
 
-.metric-value.good {
-  @apply text-success;
+/* Show import text in detailed view */
+.workspace-card.detailed .import-text {
+  @apply inline;
 }
 
-.metric-value.bad {
-  @apply text-error;
+/* Imported Workspace Card Styling */
+.workspace-card.imported {
+  position: relative;
 }
 
-/* Dark Mode Enhancements */
-:root[data-theme="dark"] .workspace-card {
-  @apply bg-base-100/50 backdrop-blur-sm;
+.workspace-card.imported::before {
+  content: '';
+  @apply absolute inset-0 rounded-2xl pointer-events-none;
+  background: linear-gradient(135deg, transparent 0%, transparent 80%, oklch(from oklch(var(--p)) l c h / 0.05) 100%);
 }
 
-:root[data-theme="dark"] .gradient-overlay {
+.workspace-card.chatgpt-import {
+  border-color: oklch(from oklch(var(--in)) l c h / 0.2);
+}
+
+.workspace-card.chatgpt-import::before {
   background: linear-gradient(135deg, 
-    rgba(var(--p), 0.1) 0%, 
-    transparent 50%,
-    rgba(var(--s), 0.1) 100%);
+    transparent 0%, 
+    transparent 80%, 
+    oklch(from oklch(var(--in)) l c h / 0.08) 100%
+  );
+}
+
+.workspace-card.chatgpt-import:hover {
+  border-color: oklch(from oklch(var(--in)) l c h / 0.4);
+  box-shadow: 
+    0 12px 32px oklch(from oklch(var(--in)) l c h / 0.15),
+    0 0 0 1px oklch(from oklch(var(--in)) l c h / 0.1);
+}
+
+.workspace-card.claude-import {
+  border-color: oklch(from oklch(var(--wa)) l c h / 0.2);
+}
+
+.workspace-card.claude-import::before {
+  background: linear-gradient(135deg, 
+    transparent 0%, 
+    transparent 80%, 
+    oklch(from oklch(var(--wa)) l c h / 0.08) 100%
+  );
+}
+
+.workspace-card.claude-import:hover {
+  border-color: oklch(from oklch(var(--wa)) l c h / 0.4);
+  box-shadow: 
+    0 12px 32px oklch(from oklch(var(--wa)) l c h / 0.15),
+    0 0 0 1px oklch(from oklch(var(--wa)) l c h / 0.1);
+}
+
+/* Quick action borders */
+.quick-actions {
+  @apply flex gap-2 mt-3 pt-3;
+  border-top: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+/* Enhanced scrollbar theming */
+.modal-workspace-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-workspace-grid::-webkit-scrollbar-track {
+  background: oklch(from oklch(var(--b2)) l c h / 0.3);
+}
+
+.modal-workspace-grid::-webkit-scrollbar-thumb {
+  background: oklch(from oklch(var(--p)) l c h / 0.3);
+  border-radius: 3px;
+}
+
+.modal-workspace-grid::-webkit-scrollbar-thumb:hover {
+  background: oklch(from oklch(var(--p)) l c h / 0.5);
+}
+
+/* Lottie Loading Animation */
+.loading-container {
+  @apply h-full w-full flex items-center justify-center;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-content {
+  @apply flex flex-col items-center gap-8;
+  z-index: 2;
+}
+
+/* Lottie Loader Styling - Theme Adaptive */
+.lottie-loader {
+  filter: 
+    drop-shadow(0 0 20px oklch(from oklch(var(--p)) l c h / 0.3))
+    hue-rotate(var(--lottie-hue, 0deg))
+    saturate(var(--lottie-saturation, 1))
+    brightness(var(--lottie-brightness, 1));
+  animation: lottieGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes lottieGlow {
+  0% {
+    filter: 
+      drop-shadow(0 0 20px oklch(from oklch(var(--p)) l c h / 0.3))
+      hue-rotate(var(--lottie-hue, 0deg))
+      saturate(var(--lottie-saturation, 1))
+      brightness(var(--lottie-brightness, 1));
+  }
+  100% {
+    filter: 
+      drop-shadow(0 0 30px oklch(from oklch(var(--p)) l c h / 0.5))
+      hue-rotate(var(--lottie-hue, 0deg))
+      saturate(var(--lottie-saturation, 1))
+      brightness(var(--lottie-brightness, 1));
+  }
+}
+
+/* Theme-specific color adjustments */
+[data-theme="light"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 1.2;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="dark"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 1.1;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="cyberpunk"] .lottie-loader {
+  --lottie-hue: 180deg;
+  --lottie-saturation: 1.5;
+  --lottie-brightness: 1.2;
+}
+
+[data-theme="synthwave"] .lottie-loader {
+  --lottie-hue: 300deg;
+  --lottie-saturation: 1.4;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="aqua"] .lottie-loader {
+  --lottie-hue: 180deg;
+  --lottie-saturation: 1.3;
+  --lottie-brightness: 1.0;
+}
+
+[data-theme="forest"] .lottie-loader {
+  --lottie-hue: 120deg;
+  --lottie-saturation: 1.2;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="sunset"] .lottie-loader {
+  --lottie-hue: 30deg;
+  --lottie-saturation: 1.3;
+  --lottie-brightness: 1.0;
+}
+
+[data-theme="corporate"] .lottie-loader {
+  --lottie-hue: 210deg;
+  --lottie-saturation: 1.1;
+  --lottie-brightness: 0.95;
+}
+
+[data-theme="valentine"] .lottie-loader {
+  --lottie-hue: 350deg;
+  --lottie-saturation: 1.4;
+  --lottie-brightness: 1.0;
+}
+
+[data-theme="halloween"] .lottie-loader {
+  --lottie-hue: 30deg;
+  --lottie-saturation: 1.6;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="garden"] .lottie-loader {
+  --lottie-hue: 150deg;
+  --lottie-saturation: 1.3;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="lofi"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 0.8;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="pastel"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 0.7;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="fantasy"] .lottie-loader {
+  --lottie-hue: 270deg;
+  --lottie-saturation: 1.5;
+  --lottie-brightness: 1.2;
+}
+
+[data-theme="wireframe"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 0.1;
+  --lottie-brightness: 0.8;
+}
+
+[data-theme="black"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 1.0;
+  --lottie-brightness: 1.3;
+}
+
+[data-theme="luxury"] .lottie-loader {
+  --lottie-hue: 45deg;
+  --lottie-saturation: 1.4;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="dracula"] .lottie-loader {
+  --lottie-hue: 270deg;
+  --lottie-saturation: 1.3;
+  --lottie-brightness: 1.2;
+}
+
+[data-theme="cmyk"] .lottie-loader {
+  --lottie-hue: 180deg;
+  --lottie-saturation: 1.5;
+  --lottie-brightness: 1.0;
+}
+
+[data-theme="autumn"] .lottie-loader {
+  --lottie-hue: 20deg;
+  --lottie-saturation: 1.4;
+  --lottie-brightness: 0.95;
+}
+
+[data-theme="business"] .lottie-loader {
+  --lottie-hue: 200deg;
+  --lottie-saturation: 1.0;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="acid"] .lottie-loader {
+  --lottie-hue: 60deg;
+  --lottie-saturation: 1.8;
+  --lottie-brightness: 1.3;
+}
+
+[data-theme="lemonade"] .lottie-loader {
+  --lottie-hue: 50deg;
+  --lottie-saturation: 1.3;
+  --lottie-brightness: 1.0;
+}
+
+[data-theme="night"] .lottie-loader {
+  --lottie-hue: 240deg;
+  --lottie-saturation: 1.2;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="coffee"] .lottie-loader {
+  --lottie-hue: 25deg;
+  --lottie-saturation: 1.2;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="winter"] .lottie-loader {
+  --lottie-hue: 200deg;
+  --lottie-saturation: 1.1;
+  --lottie-brightness: 1.0;
+}
+
+[data-theme="dim"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 0.9;
+  --lottie-brightness: 0.8;
+}
+
+[data-theme="nord"] .lottie-loader {
+  --lottie-hue: 210deg;
+  --lottie-saturation: 1.1;
+  --lottie-brightness: 0.9;
+}
+
+/* Loading Text */
+.loading-text {
+  @apply text-center max-w-md;
+}
+
+.loading-text h3 {
+  @apply text-xl font-semibold mb-2;
+  color: oklch(var(--bc));
+  animation: textGlow 3s ease-in-out infinite alternate;
+}
+
+.loading-text p {
+  @apply text-base opacity-70;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+@keyframes textGlow {
+  0% {
+    text-shadow: 0 0 10px oklch(from oklch(var(--p)) l c h / 0.3);
+  }
+  100% {
+    text-shadow: 0 0 20px oklch(from oklch(var(--p)) l c h / 0.5);
+  }
+}
+
+/* Progress Bar */
+.progress-container {
+  @apply mt-4 w-full;
+}
+
+.progress-bar {
+  @apply w-full h-2 rounded-full overflow-hidden;
+  background: oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.progress-fill {
+  @apply h-full rounded-full transition-all duration-300 ease-out;
+  background: linear-gradient(
+    90deg,
+    oklch(var(--p)),
+    oklch(var(--s)),
+    oklch(var(--a))
+  );
+  background-size: 200% 100%;
+  animation: progressShine 2s ease-in-out infinite;
+}
+
+@keyframes progressShine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.progress-text {
+  @apply text-sm mt-2 font-medium;
+  color: oklch(from oklch(var(--bc)) l c h / 0.8);
+}
+
+/* Theme-specific enhancements */
+[data-theme="cyberpunk"] .neural-core,
+[data-theme="cyberpunk"] .neural-node {
+  box-shadow: 
+    0 0 20px #00FFFF,
+    0 0 40px #00FFFF50;
+}
+
+[data-theme="synthwave"] .neural-core,
+[data-theme="synthwave"] .neural-node {
+  box-shadow: 
+    0 0 20px #FF00FF,
+    0 0 40px #FF00FF50;
+}
+
+[data-theme="aqua"] .neural-loader {
+  filter: drop-shadow(0 0 10px #00CED1);
+}
+
+/* Drag and Drop Styles */
+.enhanced-grid-view.drag-over {
+  background: oklch(from oklch(var(--p)) l c h / 0.05);
+  border: 2px dashed oklch(var(--p));
+  border-radius: 12px;
+}
+
+.drag-overlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  backdrop-filter: blur(10px);
+}
+
+.drag-content {
+  @apply text-center;
+}
+
+.drag-icon {
+  @apply mb-4 text-center;
+  color: oklch(var(--p));
+  animation: dragPulse 2s ease-in-out infinite;
+}
+
+@keyframes dragPulse {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+.drag-content h3 {
+  @apply text-xl font-semibold mb-2;
+  color: oklch(var(--bc));
+}
+
+.drag-content p {
+  @apply text-base opacity-70;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+/* Import Progress Footer */
+.import-progress-footer {
+  @apply fixed bottom-0 left-0 right-0 z-40;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 -4px 20px oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.import-progress-content {
+  @apply max-w-7xl mx-auto px-6 py-4;
+}
+
+.import-info {
+  @apply flex items-center gap-4;
+}
+
+.import-status {
+  @apply flex items-center gap-3 flex-1;
+}
+
+.import-icon {
+  @apply flex items-center justify-center w-8 h-8 rounded-lg;
+  background: oklch(from oklch(var(--p)) l c h / 0.15);
+  color: oklch(var(--p));
+  animation: importSpin 2s linear infinite;
+}
+
+@keyframes importSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.import-text {
+  @apply flex flex-col gap-1;
+}
+
+.import-title {
+  @apply font-semibold text-sm;
+  color: oklch(var(--bc));
+}
+
+.import-subtitle {
+  @apply text-xs opacity-70;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+.import-progress-bar {
+  @apply flex-1 max-w-xs h-2 rounded-full overflow-hidden;
+  background: oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.import-progress-fill {
+  @apply h-full transition-all duration-300 ease-out;
+  background: linear-gradient(
+    90deg,
+    oklch(var(--p)),
+    oklch(var(--s)),
+    oklch(var(--a))
+  );
+  background-size: 200% 100%;
+  animation: importProgressShine 2s ease-in-out infinite;
+}
+
+@keyframes importProgressShine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.import-stats {
+  @apply flex gap-3 text-sm font-medium;
+  color: oklch(from oklch(var(--bc)) l c h / 0.8);
+}
+
+/* Transition Animations */
+.drag-overlay-enter-active,
+.drag-overlay-leave-active {
+  @apply transition-all duration-300 ease-out;
+}
+
+.drag-overlay-enter-from,
+.drag-overlay-leave-to {
+  @apply opacity-0;
+  backdrop-filter: blur(0px);
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  @apply transition-all duration-300 ease-out;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  @apply opacity-0;
+  transform: translateY(100%);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .import-progress-content {
+    @apply px-4 py-3;
+  }
+  
+  .import-info {
+    @apply flex-col gap-2;
+  }
+  
+  .import-progress-bar {
+    @apply max-w-full;
+  }
+  
+  .import-stats {
+    @apply self-end;
+  }
 }
 </style>

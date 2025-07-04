@@ -1,19 +1,20 @@
 import os
 import json
 import numpy as np
+import requests
 from typing import List, Dict, Any, Optional
-from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings
 import logging
 
 class EmbeddingService:
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2', persist_directory: str = './chroma_db'):
+    def __init__(self, model_name: str = 'all-minilm:latest', persist_directory: str = './chroma_db', ollama_base_url: str = 'http://localhost:11434'):
         """
-        Initialize the embedding service with a sentence transformer model and ChromaDB
+        Initialize the embedding service with Ollama and ChromaDB
         """
         self.logger = logging.getLogger(__name__)
-        self.model = SentenceTransformer(model_name)
+        self.model_name = model_name
+        self.ollama_base_url = ollama_base_url
         self.persist_directory = persist_directory
         
         # Initialize ChromaDB
@@ -25,11 +26,24 @@ class EmbeddingService:
         
     def generate_embeddings(self, texts: List[str]) -> np.ndarray:
         """
-        Generate embeddings for a list of texts
+        Generate embeddings for a list of texts using Ollama
         """
         try:
-            embeddings = self.model.encode(texts, show_progress_bar=True)
-            return embeddings
+            embeddings = []
+            for text in texts:
+                response = requests.post(
+                    f"{self.ollama_base_url}/api/embed",
+                    json={
+                        "model": self.model_name,
+                        "input": text
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+                result = response.json()
+                embeddings.append(result["embeddings"][0])
+            
+            return np.array(embeddings)
         except Exception as e:
             self.logger.error(f"Error generating embeddings: {e}")
             raise

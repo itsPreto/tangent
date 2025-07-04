@@ -2,42 +2,124 @@
   <div class="code-preview-container my-2">
     <!-- Default thumbnail preview mode -->
     <div v-if="!expanded" 
-         class="code-preview-thumbnail bg-base-200/90 backdrop-blur border border-base-300 
-                rounded-md overflow-hidden cursor-pointer transition-all duration-200 
-                hover:bg-base-300/90 hover:shadow-md group" 
+         class="code-preview-card group relative overflow-hidden cursor-pointer transition-all duration-300 
+                hover:shadow-xl hover:scale-[1.02] transform-gpu" 
          :class="`theme-${currentTheme}`"
          @click="toggleExpanded">
       
-      <!-- Header -->
-      <div class="flex items-center justify-between p-3 bg-base-200/80 backdrop-blur">
-        <div class="flex items-center gap-2">
-          <component :is="getContentIcon" class="w-4 h-4 text-base-content/60" />
-          <span class="font-medium text-sm text-base-content/80">{{ getContentLabel }}</span>
-          <span class="px-2 py-1 bg-base-100/90 border border-base-200 rounded text-xs text-base-content/70">
-            {{ lineCount }} lines
-          </span>
-          <span v-if="wordCount && !isCode" class="px-2 py-1 bg-base-100/90 border border-base-200 rounded text-xs text-base-content/70">
-            {{ wordCount }} words
-          </span>
-          <span v-if="isStreaming" class="ml-2 inline-flex items-center">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-ping mr-1"></span>
-            <span class="text-xs text-primary font-medium">streaming</span>
-          </span>
+      <!-- Background with gradient -->
+      <div class="absolute inset-0 bg-gradient-to-br from-base-100 via-base-200/50 to-base-300/30"></div>
+      
+      <!-- Main content -->
+      <div class="relative flex h-32">
+        <!-- Thumbnail Section -->
+        <div v-if="isCode" class="flex-shrink-0 w-40 p-3 flex items-center justify-center bg-gradient-to-br from-base-300/20 to-base-300/40">
+          <div class="w-32 h-24 rounded-lg overflow-hidden shadow-lg bg-white border-2 border-base-300/50 
+                      transition-all duration-300 group-hover:shadow-xl group-hover:border-primary/30 cursor-pointer"
+               @click.stop="openThumbnailModal">
+            <img v-if="thumbnailUrl" 
+                 :src="thumbnailUrl" 
+                 alt="Live preview" 
+                 class="w-full h-full object-cover"
+                 @error="thumbnailUrl = null" />
+            <div v-else class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-base-100 to-base-200 text-base-content/40">
+              <Code class="w-8 h-8 mb-1 opacity-60" />
+              <span class="text-xs font-medium">Live Preview</span>
+            </div>
+          </div>
+          
+          <!-- Loading indicator -->
+          <div v-if="thumbnailLoading" class="absolute inset-0 flex items-center justify-center bg-base-200/80 rounded-lg">
+            <div class="w-6 h-6 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
+          </div>
         </div>
-        <ChevronDown class="w-4 h-4 text-base-content/50 transition-transform duration-200 group-hover:text-base-content/70" />
+        
+        <!-- Content Section -->
+        <div class="flex-1 flex flex-col min-w-0">
+          <!-- Header -->
+          <div class="flex items-center justify-between p-4 border-b border-base-300/30">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <component :is="getContentIcon" class="w-4 h-4 text-primary" />
+                </div>
+                <div class="min-w-0">
+                  <h3 class="font-semibold text-sm text-base-content/90 truncate">{{ getContentLabel }}</h3>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
+                      {{ lineCount }} lines
+                    </span>
+                    <span v-if="wordCount && !isCode" class="px-2 py-0.5 bg-secondary/10 text-secondary rounded-full text-xs font-medium">
+                      {{ wordCount }} words
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="flex items-center gap-2">
+              <span v-if="isStreaming" class="flex items-center gap-1.5 px-2 py-1 bg-success/10 text-success rounded-full text-xs font-medium">
+                <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                streaming
+              </span>
+              <div class="w-6 h-6 rounded-full bg-base-300/30 flex items-center justify-center transition-all duration-200 group-hover:bg-primary/20">
+                <ChevronDown class="w-4 h-4 text-base-content/60 transition-all duration-200 group-hover:text-primary" />
+              </div>
+            </div>
+          </div>
+          
+          <!-- Code Preview -->
+          <div class="flex-1 p-4 relative overflow-hidden">
+            <div v-if="isCode" class="h-full">
+              <pre class="text-xs font-mono leading-relaxed text-base-content/70 overflow-hidden"><code ref="previewCodeRef" :class="`language-${detectedLanguage}`" v-html="highlightedPreview"></code></pre>
+            </div>
+            <div v-else class="text-sm text-base-content/80 leading-relaxed line-clamp-4">{{ previewContent }}</div>
+            
+            <!-- Fade overlay -->
+            <div class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-base-100 via-base-100/80 to-transparent pointer-events-none"></div>
+          </div>
+        </div>
       </div>
       
-      <!-- Preview content - horizontal thumbnail -->
-      <div class="relative p-3  backdrop-blur max-h-24 overflow-hidden">
-        <pre v-if="isCode" class="text-xs font-mono whitespace-pre-wrap leading-relaxed"><code ref="previewCodeRef" :class="`language-${detectedLanguage}`" v-html="highlightedPreview"></code></pre>
-        <div v-else class="text-xs text-base-content/80 leading-relaxed line-clamp-4">{{ previewContent }}</div>
-        <!-- Fade overlay for overflow indication -->
-        <div class="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-base-100/90 to-transparent pointer-events-none"></div>
-      </div>
+      <!-- Hover glow effect -->
+      <div class="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+           style="box-shadow: inset 0 0 0 1px rgba(var(--p) / 0.2), 0 0 20px rgba(var(--p) / 0.1);"></div>
     </div>
 
+    <!-- Thumbnail Modal -->
+    <Teleport to="body">
+      <div v-if="showThumbnailModal" 
+           class="thumbnail-modal-overlay"
+           @click="closeThumbnailModal">
+        <div class="thumbnail-modal"
+             :class="{ 'closing': isClosingModal }"
+             :style="modalAnimStyle"
+             @click.stop>
+          <div class="modal-header">
+            <h2 class="text-xl font-bold text-base-content">Live Preview</h2>
+            <button @click="closeThumbnailModal" 
+                    class="w-8 h-8 rounded-full bg-base-300/50 hover:bg-base-300 flex items-center justify-center transition-colors">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+          <div class="modal-content">
+            <img v-if="thumbnailUrl" 
+                 :src="thumbnailUrl" 
+                 alt="Live preview" 
+                 class="w-full h-auto rounded-lg shadow-lg" />
+            <div v-else class="w-full h-64 flex items-center justify-center bg-base-200 rounded-lg">
+              <div class="text-center text-base-content/60">
+                <Code class="w-16 h-16 mx-auto mb-4 opacity-60" />
+                <p>No preview available</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Expanded full view mode -->
-    <div v-else class="code-preview-card border border-base-300 
+    <div v-if="expanded" class="code-preview-card border border-base-300 
                        rounded-md overflow-hidden shadow-lg transition-all duration-300" 
          :class="`theme-${currentTheme}`">
       <div class="flex items-center justify-between p-3 backdrop-blur border-b border-base-300/50">
@@ -84,20 +166,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { 
   Code, 
   FileText, 
   Copy, 
   ExternalLink, 
   ChevronUp,
-  ChevronDown 
+  ChevronDown,
+  X
 } from 'lucide-vue-next';
 import Badge from '../ui/Badge.vue';
 import emitter from '@/utils/eventBus';
 import { useChatStore } from "@/stores/chatStore"
 import { useAppStore } from '@/stores/appStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { thumbnailService } from '@/services/thumbnailService';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';
@@ -146,6 +230,15 @@ const expanded = ref(props.forceExpanded);
 const isEdited = ref(false);
 const previewCodeRef = ref<HTMLElement>();
 const fullCodeRef = ref<HTMLElement>();
+
+// Thumbnail state
+const thumbnailUrl = ref<string | null>(null);
+const thumbnailLoading = ref(false);
+
+// Thumbnail modal state
+const showThumbnailModal = ref(false);
+const isClosingModal = ref(false);
+const modalAnimStyle = ref({});
 
 // Use theme store for consistent theming
 const currentTheme = computed(() => themeStore.currentTheme);
@@ -281,6 +374,43 @@ const highlightedPreview = computed(() => {
   return previewContent.value;
 });
 
+// Load thumbnail for this code preview
+const loadThumbnail = async () => {
+  if (!isCode.value) return; // Only load thumbnails for code content
+  
+  thumbnailLoading.value = true;
+  try {
+    // First try with the exact codeIndex
+    let thumbnail = await thumbnailService.getThumbnail(undefined, props.nodeId, props.codeIndex);
+    
+    // If not found and codeIndex is not 0, try with codeIndex=0 as fallback
+    if (!thumbnail && props.codeIndex !== 0) {
+      thumbnail = await thumbnailService.getThumbnail(undefined, props.nodeId, 0);
+    }
+    
+    if (thumbnail) {
+      // Convert relative URL to absolute URL
+      const baseUrl = 'http://127.0.0.1:5050';
+      thumbnailUrl.value = thumbnail.thumbnail_url.startsWith('http') 
+        ? thumbnail.thumbnail_url 
+        : `${baseUrl}${thumbnail.thumbnail_url}`;
+    }
+  } catch (error) {
+    console.error('Error loading thumbnail:', error);
+  } finally {
+    thumbnailLoading.value = false;
+  }
+};
+
+// Listen for thumbnail capture events
+const handleThumbnailCaptured = (event: { nodeId: string, codeIndex?: number }) => {
+  // Reload thumbnail if this is for our node
+  if (event.nodeId === props.nodeId) {
+    console.log('Thumbnail captured for this node, reloading...');
+    loadThumbnail();
+  }
+};
+
 // Check if content has been edited
 onMounted(() => {
   const editedVersionsJson = localStorage.getItem(`edited-code-${props.nodeId}-${props.codeIndex}`);
@@ -293,6 +423,20 @@ onMounted(() => {
     }
   }
 
+  // Load thumbnail
+  loadThumbnail();
+  
+  // Listen for thumbnail capture events
+  emitter.on('thumbnail-captured', handleThumbnailCaptured);
+});
+
+onUnmounted(() => {
+  emitter.off('thumbnail-captured', handleThumbnailCaptured);
+});
+
+// Watch for nodeId and codeIndex changes to reload thumbnail
+watch([() => props.nodeId, () => props.codeIndex], () => {
+  loadThumbnail();
 });
 
 const toggleExpanded = () => {
@@ -336,6 +480,50 @@ const openInSandbox = () => {
     messageIndex: props.messageIndex,
     complete: !props.isStreaming
   });
+};
+
+// Thumbnail modal functions
+const openThumbnailModal = (event: MouseEvent) => {
+  if (!thumbnailUrl.value) return;
+  
+  // Get the thumbnail element position
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  
+  // Modal final dimensions
+  const modalFinalWidth = 800;
+  const modalFinalHeight = 600;
+  
+  // Calculate transform values like in GridWorkspaceView
+  const startX = rect.left + rect.width / 2;
+  const startY = rect.top + rect.height / 2;
+  
+  const finalX = window.innerWidth / 2;
+  const finalY = window.innerHeight / 2;
+  
+  const translateX = startX - finalX;
+  const translateY = startY - finalY;
+  
+  const scale = Math.min(rect.width / modalFinalWidth, rect.height / modalFinalHeight);
+  
+  modalAnimStyle.value = {
+    '--start-translate-x': `${translateX}px`,
+    '--start-translate-y': `${translateY}px`,
+    '--start-scale': scale,
+  };
+  
+  showThumbnailModal.value = true;
+};
+
+const closeThumbnailModal = () => {
+  if (isClosingModal.value) return;
+  
+  isClosingModal.value = true;
+  
+  setTimeout(() => {
+    showThumbnailModal.value = false;
+    isClosingModal.value = false;
+    modalAnimStyle.value = {};
+  }, 300);
 };
 
 </script>
@@ -384,11 +572,112 @@ const openInSandbox = () => {
   overflow: hidden;
 }
 
+/* Enhanced card styling */
+.code-preview-card {
+  border-radius: 12px;
+  border: 1px solid rgb(var(--b3) / 0.3);
+  background: rgb(var(--b1));
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.code-preview-card:hover {
+  border-color: rgb(var(--p) / 0.3);
+  box-shadow: 
+    0 10px 25px rgba(0, 0, 0, 0.15),
+    0 4px 10px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgb(var(--p) / 0.1);
+}
+
+/* Thumbnail styling */
+.code-preview-card img {
+  transition: transform 0.3s ease;
+}
+
+.code-preview-card:hover img {
+  transform: scale(1.05);
+}
+
+/* Thumbnail Modal Styles */
+.thumbnail-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.thumbnail-modal {
+  width: 90vw;
+  max-width: 800px;
+  max-height: 90vh;
+  background: rgb(var(--b1));
+  border-radius: 16px;
+  border: 1px solid rgb(var(--b3) / 0.3);
+  box-shadow: 
+    0 25px 50px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgb(var(--p) / 0.1);
+  overflow: hidden;
+  animation: thumbnailModalExpandFromOrigin 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.thumbnail-modal.closing {
+  animation: thumbnailModalCollapseToOrigin 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgb(var(--b3) / 0.3);
+  background: rgb(var(--b1));
+}
+
+.modal-content {
+  padding: 1.5rem;
+  max-height: calc(90vh - 100px);
+  overflow-y: auto;
+}
+
+/* Modal Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes thumbnailModalExpandFromOrigin {
+  from {
+    transform: translate(var(--start-translate-x, 0), var(--start-translate-y, 0)) scale(var(--start-scale, 0.1));
+  }
+  to {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes thumbnailModalCollapseToOrigin {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(var(--start-translate-x, 0), var(--start-translate-y, 0)) scale(var(--start-scale, 0.1));
+  }
+}
+
 /* Theme-specific enhancements */
-.theme-cyberpunk .code-preview-thumbnail,
 .theme-cyberpunk .code-preview-card {
-  border-color: rgb(var(--p) / 0.6);
-  box-shadow: 0 0 12px rgb(var(--p) / 0.2);
+  border-color: rgb(var(--p) / 0.4);
+  box-shadow: 
+    0 0 12px rgb(var(--p) / 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .theme-cyberpunk .code-preview-thumbnail:hover,
@@ -448,7 +737,7 @@ const openInSandbox = () => {
 .theme-night .code-preview-thumbnail,
 .theme-night .code-preview-card {
   border-color: rgb(var(--p) / 0.4);
-  background: rgb(var(--b1) / 0.95);
+  background: rgb(24 100 134);
 }
 
 .theme-coffee .code-preview-thumbnail,

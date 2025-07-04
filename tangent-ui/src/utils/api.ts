@@ -1,25 +1,8 @@
-import { invoke } from '@tauri-apps/api/core'
 
 class ApiService {
-  private baseUrl: string = 'http://localhost:5050'
+  private baseUrl: string = 'http://127.0.0.1:5050'
   private isDesktop: boolean = false
 
-  constructor() {
-    this.detectEnvironment()
-  }
-
-  private async detectEnvironment() {
-    try {
-      // Check if we're running in Tauri
-      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-        this.isDesktop = true
-        // Get the backend URL from Tauri
-        this.baseUrl = await invoke('get_backend_url')
-      }
-    } catch (error) {
-      console.warn('Not running in Tauri environment, using default API URL')
-    }
-  }
 
   public getApiUrl(): string {
     return `${this.baseUrl}/api`
@@ -38,12 +21,16 @@ class ApiService {
     const url = `${this.getApiUrl()}${endpoint}`
     
     try {
+      // Don't set Content-Type for FormData - let browser set it with boundary
+      const headers: Record<string, string> = { ...options.headers as Record<string, string> }
+      
+      if (!(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json'
+      }
+      
       const response = await fetch(url, {
         ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
+        headers,
       })
 
       if (!response.ok) {

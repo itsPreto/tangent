@@ -93,6 +93,12 @@ export const useCanvasStore = defineStore('canvas', () => {
   const chatStore = useChatStore();
   const lastSavedWorkspaceId = ref<string | null>(null);
 
+  // Current chat metadata (including import information)
+  const currentChatMetadata = ref<{
+    format?: string;
+    isImported?: boolean;
+    originalId?: string;
+  }>({});
 
   // User preference for assistant mode (defaults to general assistant)
   const preferCodeMode = ref<boolean>(false);
@@ -1804,6 +1810,13 @@ export const useCanvasStore = defineStore('canvas', () => {
       const chatData = await chatStore.loadChat(chatId);
       if (!chatData) throw new Error('Failed to load chat');
 
+      // Store chat metadata for access by components
+      currentChatMetadata.value = {
+        format: chatData.format,
+        isImported: chatData.isImported,
+        originalId: chatData.originalId
+      };
+
       // Clear existing nodes
       nodes.value = [];
 
@@ -2117,6 +2130,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     isOverviewMode,
     snappedNodesStack,
     preferCodeMode,
+    currentChatMetadata,
 
     CARD_WIDTH,
     CARD_HEIGHT,

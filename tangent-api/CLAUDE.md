@@ -47,7 +47,7 @@ bun run typecheck  # Type checking
 ## Key Configuration
 
 ### API Endpoints
-- Backend runs on `http://localhost:5050`
+- Backend runs on `http://127.0.0.1:5050`
 - Frontend dev server on `http://localhost:5173` (Vite)
 - Supports CORS for development origins
 

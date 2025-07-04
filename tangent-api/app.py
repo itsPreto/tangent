@@ -18,6 +18,11 @@ import io
 import google.generativeai as genai
 from ChatgptChatProcessor import ChatGPTDataProcessor
 from ChatPersistenceService import ChatPersistenceService, Chat, db
+from EmbeddingService import EmbeddingService
+from ClusteringService import ClusteringService
+from ConversationImportService import ConversationImportService
+from RelicService import RelicService
+from ThumbnailService import ThumbnailService
 import tempfile
 import uuid
 import subprocess
@@ -1037,6 +1042,75 @@ def delete_chat(chat_id):
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error deleting chat: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/system/fresh-start', methods=['POST'])
+def fresh_start():
+    """
+    Nuclear option: Clear ALL data and reset to fresh state
+    Requires confirmation token to prevent accidental deletion
+    """
+    try:
+        data = request.get_json()
+        confirmation = data.get('confirmation', '')
+        
+        # Require specific confirmation phrase
+        if confirmation != 'DELETE_EVERYTHING_I_AM_SURE':
+            return jsonify({'error': 'Invalid confirmation. Required: DELETE_EVERYTHING_I_AM_SURE'}), 400
+        
+        logger.warning("🚨 FRESH START INITIATED - DELETING ALL DATA")
+        
+        # Clear all database data
+        success = chat_service.clear_all_data()
+        
+        if not success:
+            return jsonify({'error': 'Failed to clear database'}), 500
+        
+        # Clear clustering data
+        try:
+            clustering_service.clear_all_data()
+        except Exception as e:
+            logger.warning(f"Error clearing clustering data: {e}")
+        
+        # Clear any cached files (audio, uploads, etc.)
+        try:
+            import shutil
+            import os
+            
+            # Clear audio temp files
+            if os.path.exists(AUDIO_FOLDER):
+                shutil.rmtree(AUDIO_FOLDER)
+                os.makedirs(AUDIO_FOLDER)
+            
+            # Clear upload files
+            if os.path.exists(UPLOAD_FOLDER):
+                shutil.rmtree(UPLOAD_FOLDER)
+                os.makedirs(UPLOAD_FOLDER)
+            
+            # Clear dependency cache
+            cache_file = '.tangent_deps_cache.json'
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+                
+        except Exception as e:
+            logger.warning(f"Error clearing cache files: {e}")
+        
+        logger.warning("✅ FRESH START COMPLETED - ALL DATA CLEARED")
+        
+        return jsonify({
+            'message': 'Fresh start completed successfully',
+            'cleared': {
+                'chats': True,
+                'nodes': True,
+                'clustering_data': True,
+                'audio_cache': True,
+                'upload_cache': True,
+                'dependency_cache': True
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error during fresh start: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/chats/<chat_id>/cleanup-orphaned-nodes', methods=['POST'])
@@ -2294,8 +2368,647 @@ def ollama_proxy_metadata(model_name):
         return jsonify({'error': 'Failed to access model metadata from Ollama Manager', 'details': str(e)}), 503
 
 
-# Initialize the service
+# Initialize the services
 chat_service = ChatPersistenceService(app)
+embedding_service = EmbeddingService()
+clustering_service = ClusteringService(embedding_service, chat_service)
+import_service = ConversationImportService(chat_service)
+
+# Clustering endpoints
+@api_routes.route('/clustering/start', methods=['POST'])
+def start_clustering():
+    """
+    Start workspace clustering in the background
+    """
+    try:
+        data = request.get_json() or {}
+        method = data.get('method', 'kmeans')
+        
+        # Validate clustering method
+        if method not in ['kmeans', 'dbscan']:
+            return jsonify({'error': 'Invalid clustering method. Use "kmeans" or "dbscan"'}), 400
+        
+        # Check if clustering is already running
+        status = clustering_service.get_clustering_status()
+        if status['is_running']:
+            return jsonify({'error': 'Clustering is already in progress'}), 409
+        
+        # Start clustering
+        kwargs = {}
+        if method == 'kmeans':
+            if 'n_clusters' in data:
+                kwargs['n_clusters'] = data['n_clusters']
+        elif method == 'dbscan':
+            if 'eps' in data:
+                kwargs['eps'] = data['eps']
+            if 'min_samples' in data:
+                kwargs['min_samples'] = data['min_samples']
+        
+        clustering_service.start_clustering_background(method=method, **kwargs)
+        
+        return jsonify({
+            'message': 'Clustering started successfully',
+            'method': method,
+            'parameters': kwargs
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting clustering: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/status', methods=['GET'])
+def get_clustering_status():
+    """
+    Get the current clustering status and progress
+    """
+    try:
+        status = clustering_service.get_clustering_status()
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error getting clustering status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/results', methods=['GET'])
+def get_clustering_results():
+    """
+    Get the latest clustering results
+    """
+    try:
+        status = clustering_service.get_clustering_status()
+        return jsonify({
+            'clusters': status['clusters'],
+            'is_complete': not status['is_running'] and status['progress'] >= 1.0,
+            'message': status['status_message']
+        })
+    except Exception as e:
+        logger.error(f"Error getting clustering results: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/stop', methods=['POST'])
+def stop_clustering():
+    """
+    Stop the clustering process
+    """
+    try:
+        clustering_service.stop_clustering()
+        return jsonify({'message': 'Clustering stop requested'})
+    except Exception as e:
+        logger.error(f"Error stopping clustering: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Conversation Import endpoints
+@api_routes.route('/import/conversations', methods=['POST'])
+def import_conversations():
+    """
+    Import conversations from uploaded JSON file
+    """
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Validate file type
+        if not file.filename.lower().endswith('.json'):
+            return jsonify({'error': 'Only JSON files are supported'}), 400
+        
+        # Read file data
+        file_data = file.read()
+        if not file_data:
+            return jsonify({'error': 'Empty file'}), 400
+        
+        # Start import process
+        result = import_service.start_import(file_data, file.filename)
+        
+        if 'error' in result:
+            return jsonify(result), 400
+        
+        return jsonify({
+            'message': 'Import started successfully',
+            'filename': file.filename,
+            'format': result.get('format'),
+            'status': 'started'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting conversation import: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/import/status', methods=['GET'])
+def get_import_status():
+    """
+    Get the current import status and progress
+    """
+    try:
+        status = import_service.get_import_status()
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error getting import status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/import/stop', methods=['POST'])
+def stop_import():
+    """
+    Stop the import process
+    """
+    try:
+        result = import_service.stop_import()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error stopping import: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ========== RELIC ENDPOINTS ==========
+
+# Initialize services
+relic_service = RelicService()
+thumbnail_service = ThumbnailService()
+
+@api_routes.route('/relics', methods=['GET', 'OPTIONS'])
+def list_relics():
+    """Get list of all relics, optionally filtered by workspace"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        workspace_id = request.args.get('workspace_id')
+        relics = relic_service.list_relics(workspace_id)
+        return jsonify({'relics': relics})
+    except Exception as e:
+        logger.error(f"Error listing relics: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/relics', methods=['POST', 'OPTIONS'])
+def create_relic():
+    """Create a new relic with initial version"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        data = request.json
+        if not data.get('id') or not data.get('name') or not data.get('language') or not data.get('code'):
+            return jsonify({'error': 'Missing required fields: id, name, language, code'}), 400
+        
+        relic = relic_service.create_relic(data)
+        return jsonify(relic), 201
+    except Exception as e:
+        logger.error(f"Error creating relic: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/relics/<relic_id>', methods=['GET', 'OPTIONS'])
+def get_relic(relic_id):
+    """Get a specific relic with optional version"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        version = request.args.get('version', type=int)
+        relic = relic_service.get_relic(relic_id, version)
+        
+        if not relic:
+            return jsonify({'error': 'Relic not found'}), 404
+        
+        return jsonify(relic)
+    except Exception as e:
+        logger.error(f"Error getting relic: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/relics/<relic_id>', methods=['PUT', 'OPTIONS'])
+def update_relic(relic_id):
+    """Update relic (creates new version if code changed)"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        data = request.json
+        commit_message = data.pop('commit_message', None)
+        
+        relic = relic_service.update_relic(relic_id, data, commit_message)
+        return jsonify(relic)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        logger.error(f"Error updating relic: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/relics/<relic_id>', methods=['DELETE', 'OPTIONS'])
+def delete_relic(relic_id):
+    """Delete a relic and all its versions"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        success = relic_service.delete_relic(relic_id)
+        if not success:
+            return jsonify({'error': 'Relic not found'}), 404
+        
+        return jsonify({'message': 'Relic deleted successfully'}), 200
+    except Exception as e:
+        logger.error(f"Error deleting relic: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/relics/<relic_id>/versions', methods=['GET', 'OPTIONS'])
+def get_relic_versions(relic_id):
+    """Get all versions of a relic"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        versions = relic_service.get_relic_versions(relic_id)
+        return jsonify({'versions': versions})
+    except Exception as e:
+        logger.error(f"Error getting relic versions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ========== THUMBNAIL ENDPOINTS ==========
+
+@api_routes.route('/thumbnails', methods=['POST', 'OPTIONS'])
+def save_thumbnail():
+    """Save thumbnail metadata"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        data = request.json
+        logger.info(f"Thumbnail save request data: {data}")
+        
+        if not data.get('thumbnail_url') or not data.get('type'):
+            logger.error(f"Missing required fields. Data: {data}")
+            return jsonify({'error': 'Missing required fields: thumbnail_url, type'}), 400
+        
+        thumbnail = thumbnail_service.save_thumbnail(data)
+        return jsonify(thumbnail), 201
+    except Exception as e:
+        logger.error(f"Error saving thumbnail: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/thumbnails', methods=['GET', 'OPTIONS'])
+def get_thumbnail():
+    """Get thumbnail by relic_id or node_id + code_index"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        relic_id = request.args.get('relicId')
+        node_id = request.args.get('nodeId')
+        code_index = request.args.get('codeIndex', type=int)
+        
+        thumbnail = thumbnail_service.get_thumbnail(relic_id, node_id, code_index)
+        
+        if not thumbnail:
+            return jsonify({'error': 'Thumbnail not found'}), 404
+        
+        return jsonify(thumbnail)
+    except Exception as e:
+        logger.error(f"Error getting thumbnail: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/thumbnails/<thumbnail_id>', methods=['DELETE', 'OPTIONS'])
+def delete_thumbnail(thumbnail_id):
+    """Delete a thumbnail"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        success = thumbnail_service.delete_thumbnail(thumbnail_id)
+        if not success:
+            return jsonify({'error': 'Thumbnail not found'}), 404
+        
+        return jsonify({'message': 'Thumbnail deleted successfully'}), 200
+    except Exception as e:
+        logger.error(f"Error deleting thumbnail: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/preview/<preview_id>', methods=['GET'])
+def serve_preview(preview_id):
+    """Serve a live code preview"""
+    try:
+        # Get the preview data from temporary storage
+        preview_data = preview_storage.get(preview_id)
+        if not preview_data:
+            return "Preview not found", 404
+        
+        code = preview_data.get('code', '')
+        language = preview_data.get('language', 'javascript')
+        
+        # Generate HTML based on language
+        if language in ['javascript', 'js']:
+            html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Preview</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        .output {{
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 4px;
+            background: #fff;
+        }}
+        .error {{
+            color: #d73a49;
+            background: #ffeef0;
+            border-color: #d73a49;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>JavaScript Preview</h2>
+        <div id="output" class="output">
+            <p>Running code...</p>
+        </div>
+    </div>
+    
+    <script>
+        const output = document.getElementById('output');
+        
+        // Override console.log to capture output
+        const originalLog = console.log;
+        const originalError = console.error;
+        const logs = [];
+        
+        console.log = function(...args) {{
+            logs.push({{type: 'log', args: args}});
+            originalLog.apply(console, args);
+            updateOutput();
+        }};
+        
+        console.error = function(...args) {{
+            logs.push({{type: 'error', args: args}});
+            originalError.apply(console, args);
+            updateOutput();
+        }};
+        
+        function updateOutput() {{
+            output.innerHTML = logs.map(log => {{
+                const content = log.args.map(arg => 
+                    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+                ).join(' ');
+                
+                if (log.type === 'error') {{
+                    return `<div class="error">Error: ${{content}}</div>`;
+                }} else {{
+                    return `<div>${{content}}</div>`;
+                }}
+            }}).join('') || '<p>No output</p>';
+        }}
+        
+        // Execute the user code
+        try {{
+            {code}
+        }} catch (error) {{
+            console.error(error.message);
+        }}
+        
+        // If no output after 1 second, show code executed message
+        setTimeout(() => {{
+            if (logs.length === 0) {{
+                output.innerHTML = '<p style="color: #28a745;">Code executed successfully (no console output)</p>';
+            }}
+        }}, 1000);
+    </script>
+</body>
+</html>
+"""
+        
+        elif language in ['html', 'markup']:
+            html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Preview</title>
+    <style>
+        body {{
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }}
+    </style>
+</head>
+<body>
+    {code}
+</body>
+</html>
+"""
+        
+        elif language in ['css']:
+            html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS Preview</title>
+    <style>
+        {code}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CSS Preview</h1>
+        <p>This is a sample paragraph to demonstrate CSS styling.</p>
+        <div class="box">Sample box element</div>
+        <button>Sample button</button>
+    </div>
+</body>
+</html>
+"""
+        
+        else:
+            html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Preview</title>
+    <style>
+        body {{
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .code-block {{
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }}
+    </style>
+</head>
+<body>
+    <h2>{language.title()} Code</h2>
+    <div class="code-block">{code}</div>
+</body>
+</html>
+"""
+        
+        return html, 200, {'Content-Type': 'text/html'}
+    
+    except Exception as e:
+        logger.error(f"Error serving preview: {e}")
+        return f"Error: {e}", 500
+
+# Simple in-memory storage for previews
+preview_storage = {}
+
+@api_routes.route('/create-preview', methods=['POST', 'OPTIONS'])
+def create_preview():
+    """Create a preview and return its ID"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.json
+        code = data.get('code', '')
+        language = data.get('language', 'javascript')
+        
+        # Generate a unique preview ID
+        import uuid
+        preview_id = str(uuid.uuid4())
+        
+        # Store the preview data
+        preview_storage[preview_id] = {
+            'code': code,
+            'language': language,
+            'created_at': time.time()
+        }
+        
+        # Clean up old previews (older than 1 hour)
+        current_time = time.time()
+        preview_storage.clear()  # Simple cleanup - remove all old previews
+        preview_storage[preview_id] = {
+            'code': code,
+            'language': language,
+            'created_at': current_time
+        }
+        
+        preview_url = f"http://127.0.0.1:5050/api/preview/{preview_id}"
+        
+        return jsonify({
+            'preview_id': preview_id,
+            'preview_url': preview_url
+        })
+    
+    except Exception as e:
+        logger.error(f"Error creating preview: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/capture-url', methods=['POST', 'OPTIONS'])
+def capture_url_screenshot():
+    """Capture screenshot of a URL using Playwright"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        from playwright.sync_api import sync_playwright
+        import base64
+        
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Set viewport size
+            page.set_viewport_size({"width": 1280, "height": 720})
+            
+            # Navigate to URL
+            logger.info(f"Navigating to URL: {url}")
+            page.goto(url, wait_until='networkidle')
+            
+            # Get page title and content for debugging
+            title = page.title()
+            content = page.content()
+            logger.info(f"Page title: {title}")
+            logger.info(f"Page content length: {len(content)}")
+            
+            # Wait extra time for SandPack to load
+            page.wait_for_timeout(3000)  # 3 seconds
+            
+            # Check if there's any content
+            try:
+                # Look for any div with content
+                page.wait_for_selector('div', timeout=5000)
+                logger.info("Found div elements")
+            except Exception as e:
+                logger.warning(f"No div elements found: {e}")
+            
+            # Take screenshot
+            screenshot = page.screenshot(type='jpeg', quality=80)
+            browser.close()
+            
+            # Convert to base64
+            screenshot_base64 = base64.b64encode(screenshot).decode('utf-8')
+            return jsonify({
+                'screenshot': f'data:image/jpeg;base64,{screenshot_base64}'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error capturing screenshot: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/upload/thumbnail', methods=['POST', 'OPTIONS'])
+def upload_thumbnail():
+    """Upload thumbnail image file"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        logger.info(f"Upload request - files: {list(request.files.keys())}, form: {list(request.form.keys())}")
+        logger.info(f"Content-Type: {request.content_type}")
+        
+        if 'thumbnail' not in request.files:
+            logger.error(f"No 'thumbnail' field in request.files. Available fields: {list(request.files.keys())}")
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['thumbnail']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Read file data
+        file_data = file.read()
+        filename = file.filename
+        
+        # Log file details for debugging
+        logger.info(f"Received file upload: filename={filename}, size={len(file_data)} bytes")
+        
+        if len(file_data) == 0:
+            return jsonify({'error': 'Uploaded file is empty'}), 400
+        
+        # Save file and get URL
+        thumbnail_url = thumbnail_service.save_uploaded_file(file_data, filename)
+        
+        return jsonify({'url': thumbnail_url}), 201
+    except Exception as e:
+        logger.error(f"Error uploading thumbnail: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Serve static thumbnail files
+@app.route('/static/thumbnails/<filename>')
+def serve_thumbnail(filename):
+    """Serve thumbnail files"""
+    from flask import send_from_directory
+    return send_from_directory(thumbnail_service.upload_path, filename)
 
 # Register the blueprint AFTER all routes are defined
 app.register_blueprint(api_routes, url_prefix='/api')

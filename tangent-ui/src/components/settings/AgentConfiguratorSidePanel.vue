@@ -5510,7 +5510,7 @@ onBeforeUnmount(() => {
 }
 
 .theme-night .panel-container {
-  background: linear-gradient(171deg, rgb(109 60 244), rgb(14 13 25 / 47%));
+  background: linear-gradient(171deg, rgb(129 140 248), rgb(14 13 25 / 47%));
   box-shadow: -8px 0 40px rgba(75, 107, 251, 0.15), inset 0px 1px 15px 2px rgba(75, 107, 251, 0.05);
   border-color: rgba(75, 107, 251, 0.2);
 }

@@ -52,6 +52,10 @@ export type Events = {
   'request-node-position-update': {
     nodeId: string;
   };
+  'thumbnail-captured': {
+    nodeId: string;
+    codeIndex?: number;
+  };
 };
 
 const emitter = mitt<Events>();

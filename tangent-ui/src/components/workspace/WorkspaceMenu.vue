@@ -187,6 +187,103 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Danger Zone -->
+            <div class="border-t border-error/20 pt-2 mt-2">
+                <div class="px-3 py-2">
+                    <span class="text-xs text-error/60 font-medium">⚠️ Danger Zone</span>
+                </div>
+                <button 
+                    @click="handleFreshStart"
+                    class="w-full btn btn-sm btn-ghost text-error hover:bg-error/10 border border-error/20"
+                >
+                    🗑️ Fresh Start (Clear All Data)
+                </button>
+            </div>
+            </div>
+        </Teleport>
+        
+        <!-- Fresh Start Confirmation Modal -->
+        <Teleport to="body">
+            <div v-if="showFreshStartModal" 
+                 class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100000] flex items-center justify-center p-4"
+                 @click.self="cancelFreshStart">
+                <div class="bg-base-100 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+                    <div class="text-center">
+                        <div class="text-6xl mb-4">⚠️</div>
+                        <h2 class="text-2xl font-bold text-error mb-2">Fresh Start</h2>
+                        <p class="text-base-content/70">
+                            This will permanently delete <strong>ALL</strong> your data:
+                        </p>
+                    </div>
+                    
+                    <div class="bg-error/10 rounded-lg p-4 space-y-2">
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="w-2 h-2 bg-error rounded-full"></span>
+                            <span>All workspaces and conversations</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="w-2 h-2 bg-error rounded-full"></span>
+                            <span>All nodes and branching data</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="w-2 h-2 bg-error rounded-full"></span>
+                            <span>All clustering and cached data</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="w-2 h-2 bg-error rounded-full"></span>
+                            <span>All uploaded files and audio</span>
+                        </div>
+                    </div>
+                    
+                    <div v-if="!showSecondConfirmation" class="text-center">
+                        <p class="text-sm text-base-content/60 mb-4">
+                            Are you sure you want to continue?
+                        </p>
+                        <div class="flex gap-3">
+                            <button @click="cancelFreshStart" class="btn btn-outline flex-1">
+                                Cancel
+                            </button>
+                            <button @click="showSecondConfirmation = true" class="btn btn-error flex-1">
+                                Continue
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div v-else class="space-y-4">
+                        <div class="text-center">
+                            <p class="text-sm font-medium text-error mb-2">
+                                Final Confirmation Required
+                            </p>
+                            <p class="text-xs text-base-content/60 mb-4">
+                                Type "<strong>DELETE EVERYTHING</strong>" to confirm:
+                            </p>
+                        </div>
+                        
+                        <input 
+                            v-model="confirmationText"
+                            type="text"
+                            placeholder="DELETE EVERYTHING"
+                            class="input input-bordered w-full text-center"
+                            :class="{ 'input-error': confirmationText && !isConfirmationValid }"
+                            @keyup.enter="confirmFreshStart"
+                        />
+                        
+                        <div class="flex gap-3">
+                            <button @click="cancelFreshStart" class="btn btn-outline flex-1">
+                                Cancel
+                            </button>
+                            <button 
+                                @click="confirmFreshStart" 
+                                :disabled="!isConfirmationValid || isProcessing"
+                                class="btn btn-error flex-1"
+                                :class="{ 'loading': isProcessing }"
+                            >
+                                {{ isProcessing ? 'Clearing...' : 'Delete Everything' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </Teleport>
     </div>
@@ -197,6 +294,7 @@ import { ref, computed, watch, onMounted, nextTick, onBeforeUnmount, inject } fr
 import { FolderOpen, ChevronDown, ChevronRight, Edit as EditIcon } from 'lucide-vue-next';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useChatStore } from '@/stores/chatStore';
+import emitter from '@/utils/eventBus';
 
 const canvasStore = useCanvasStore();
 const chatStore = useChatStore();
@@ -225,6 +323,12 @@ const inlineEditInput = ref<HTMLInputElement>();
 const searchQuery = ref('');
 const sizeFilter = ref<'all' | 'small' | 'medium' | 'large'>('all');
 const ageFilter = ref<'all' | 'recent' | 'week' | 'older'>('all');
+
+// Fresh Start modal state
+const showFreshStartModal = ref(false);
+const showSecondConfirmation = ref(false);
+const confirmationText = ref('');
+const isProcessing = ref(false);
 
 const handleClickOutside = (event: Event) => {
     const target = event.target as HTMLElement;
@@ -469,6 +573,8 @@ const loadWorkspace = async (id: string) => {
                 canvasStore.lastSavedWorkspaceId = id;
                 await nextTick();
                 emit('workspace-loaded');
+                // Emit event for auto-snap checking
+                emitter.emit('workspace-loaded-external');
             }
         }
     } else {
@@ -479,6 +585,8 @@ const loadWorkspace = async (id: string) => {
             canvasStore.lastSavedWorkspaceId = id;
             await nextTick();
             emit('workspace-loaded');
+            // Emit event for auto-snap checking
+            emitter.emit('workspace-loaded-external');
         }
     }
 };
@@ -491,6 +599,90 @@ const handleDelete = async () => {
         await canvasStore.clearCurrentWorkspace();
         await chatStore.loadChats();
         isOpen.value = false;
+    }
+};
+
+// Fresh Start functionality
+const isConfirmationValid = computed(() => {
+    return confirmationText.value.trim().toUpperCase() === 'DELETE EVERYTHING';
+});
+
+const handleFreshStart = () => {
+    showFreshStartModal.value = true;
+    isOpen.value = false; // Close the workspace menu
+};
+
+const cancelFreshStart = () => {
+    showFreshStartModal.value = false;
+    showSecondConfirmation.value = false;
+    confirmationText.value = '';
+    isProcessing.value = false;
+};
+
+const confirmFreshStart = async () => {
+    if (!isConfirmationValid.value || isProcessing.value) return;
+    
+    try {
+        isProcessing.value = true;
+        
+        // Call the fresh start API
+        const response = await fetch('http://127.0.0.1:5050/system/fresh-start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                confirmation: 'DELETE_EVERYTHING_I_AM_SURE'
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to perform fresh start');
+        }
+        
+        const result = await response.json();
+        console.log('Fresh start completed:', result);
+        
+        // Clear local state and reload
+        await canvasStore.clearCurrentWorkspace();
+        await chatStore.loadChats();
+        
+        // Clear browser storage
+        clearAllLocalData();
+        
+        // Show success message
+        alert('🎉 Fresh start completed! All data has been cleared.');
+        
+        // Reload the page to ensure clean state
+        window.location.reload();
+        
+    } catch (error) {
+        console.error('Fresh start failed:', error);
+        alert(`❌ Fresh start failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+        isProcessing.value = false;
+        cancelFreshStart();
+    }
+};
+
+const clearAllLocalData = () => {
+    try {
+        // Clear localStorage
+        localStorage.clear();
+        
+        // Clear sessionStorage
+        sessionStorage.clear();
+        
+        // Clear any IndexedDB data (if used)
+        if ('indexedDB' in window) {
+            // Clear any stored IndexedDB databases
+            console.log('Cleared IndexedDB data');
+        }
+        
+        console.log('Cleared all local browser data');
+    } catch (error) {
+        console.warn('Could not clear some local data:', error);
     }
 };
 

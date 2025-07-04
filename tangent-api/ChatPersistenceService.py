@@ -15,6 +15,9 @@ class Chat(db.Model):
     nodes = db.relationship('Node', backref='chat', cascade='all, delete-orphan')
     x = db.Column(db.Float, nullable=True)
     y = db.Column(db.Float, nullable=True)
+    # Import metadata - sticky labels for imported conversations
+    import_format = db.Column(db.String(50), nullable=True)  # 'chatgpt', 'claude', etc.
+    original_id = db.Column(db.String(255), nullable=True)  # Original conversation ID from source
 
 class Node(db.Model):
     __tablename__ = 'nodes'
@@ -33,18 +36,28 @@ class Node(db.Model):
 
 class ChatPersistenceService:
     def __init__(self, app):
+        self.app = app  # Store reference to Flask app
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chats.db'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         db.init_app(app)
         with app.app_context():
             db.create_all()
+            # Note: Import columns will be added in future database migrations
+            # For now, we use backward-compatible getattr() to handle missing columns
 
-    def create_chat(self, title: str, initial_node_data: Dict) -> str:
+    def create_chat(self, title: str, initial_node_data: Dict, import_metadata: Dict = None) -> str:
         """Create a new chat with initial main node"""
-        chat = Chat(
-            id=str(uuid.uuid4()),
-            title=title
-        )
+        chat_data = {
+            'id': str(uuid.uuid4()),
+            'title': title
+        }
+        
+        # Add import metadata if provided
+        if import_metadata:
+            chat_data['import_format'] = import_metadata.get('format')
+            chat_data['original_id'] = import_metadata.get('original_id')
+        
+        chat = Chat(**chat_data)
 
         main_node = Node(
             id=str(uuid.uuid4()),
@@ -90,20 +103,31 @@ class ChatPersistenceService:
             'title': chat.title,
             'createdAt': chat.created_at.isoformat(),
             'updatedAt': chat.updated_at.isoformat(),
-            'nodes': node_to_dict(main_node)
+            'nodes': node_to_dict(main_node),
+            'format': chat.import_format,  # Include sticky import format
+            'isImported': chat.import_format is not None,
+            'originalId': chat.original_id
         }
 
     def list_chats(self) -> List[Dict]:
             """Get list of all chats with basic info"""
             chats = Chat.query.order_by(Chat.updated_at.desc()).all()
             print(f"Chats from DB: {chats}")  # ADD THIS LINE for debugging
-            return [{
-                'id': chat.id,
-                'title': chat.title,
-                'createdAt': chat.created_at.isoformat(),
-                'updatedAt': chat.updated_at.isoformat(),
-                'nodeCount': len(chat.nodes)
-            } for chat in chats]
+            
+            result = []
+            for chat in chats:
+                result.append({
+                    'id': chat.id,
+                    'title': chat.title,
+                    'createdAt': chat.created_at.isoformat(),
+                    'updatedAt': chat.updated_at.isoformat(),
+                    'nodeCount': len(chat.nodes),
+                    'format': chat.import_format,  # Use sticky import format from chat table
+                    'isImported': chat.import_format is not None,  # Flag for imported conversations
+                    'originalId': chat.original_id  # Original ID from source platform
+                })
+            
+            return result
 
     def delete_chat(self, chat_id: str) -> bool:
         """Delete a chat and all its nodes"""
@@ -238,3 +262,27 @@ class ChatPersistenceService:
         except Exception as e:
             print(f"[ChatPersistenceService] Error in integrity check: {e}")
             return {'error': str(e)}
+    
+    def clear_all_data(self) -> bool:
+        """Nuclear option: Clear ALL chats, nodes, and reset database to fresh state"""
+        try:
+            print("[ChatPersistenceService] 🚨 CLEARING ALL DATA - This will delete everything!")
+            
+            # Delete all nodes first (due to foreign key constraints)
+            deleted_nodes = db.session.query(Node).delete()
+            print(f"[ChatPersistenceService] Deleted {deleted_nodes} nodes")
+            
+            # Delete all chats
+            deleted_chats = db.session.query(Chat).delete()
+            print(f"[ChatPersistenceService] Deleted {deleted_chats} chats")
+            
+            # Commit the deletions
+            db.session.commit()
+            
+            print("[ChatPersistenceService] ✅ All data cleared successfully")
+            return True
+            
+        except Exception as e:
+            print(f"[ChatPersistenceService] ❌ Error clearing all data: {e}")
+            db.session.rollback()
+            return False

@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed overflow-hidden bg-background transition-all duration-300" :style="{
+  <div class="fixed overflow-hidden canvas-background transition-all duration-300" :style="{
     left: sidePanelOpen ? '40vw' : '0px', // Leave space for sidebar trigger
     right: rightPanelOpen ? '40vw' : '0',
     top: '0',
@@ -8,110 +8,86 @@
   }" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
     @drop.prevent="handleDrop">
 
-    <!-- Grass Layer (behind search bar) -->
-    <div v-if="isWorkspaceOverview" class="grass-layer">
-      <div class="grass-container">
-        <div 
-          v-for="blade in grassBlades" 
-          :key="blade.id" 
-          class="grass-blade"
-          :style="blade.style"
-        ></div>
-      </div>
-    </div>
 
     <!-- Workspace Search Bar -->
     <WorkspaceSearchBar v-if="isWorkspaceOverview" v-model="searchQuery" :view-mode="viewMode"
       @toggle-view="handleViewModeToggle" class="workspace-search-bar" />
 
-    <!-- Empty State Welcome -->
-    <div v-if="workspaces.length === 0" class="absolute inset-0 flex items-center justify-center p-8">
-      <div class="max-w-2xl text-center space-y-8">
-        <transition name="waterfall" appear>
-          <div class="flex flex-col items-center justify-center">
-            <h1 class="text-4xl font-bold mb-6">
-              Welcome to
-            </h1>
-            <TangentLogo />
-          </div>
-        </transition>
-        <div class="space-y-6 text-base-content/80">
-          <transition name="waterfall" appear :style="{ 'transition-delay': `0.1s` }">
-            <p class="text-xl">
-              - a digitial garden for your AI chats -
-            </p>
-          </transition>
-          <transition name="waterfall" appear>
-            <div class="grid gap-6 text-center">
-              <transition-group name="waterfall" tag="div" appear>
-                <div v-for="(feature, index) in features" :key="index" class="p-6 bg-base-200/50 rounded-xl border border-base-300 hover:shadow-md hover:translate-y-[-4px]
-                  transition duration-200" :style="{ 'transition-delay': `${0.02}s` }">
-                  <h3 class="text-lg font-semibold mb-3" v-html="feature.title"></h3>
-                  <p v-html="feature.description"></p>
-                </div>
-              </transition-group>
-            </div>
-          </transition>
-
-          <transition name="waterfall" appear :style="{ 'transition-delay': `0.6s` }">
-            <div class="pt-6">
-              <button @click="handleNewWorkspace" class="btn btn-primary btn-lg gap-2">
-                <Plus class="w-5 h-5" />
-                Create Your First Workspace
-              </button>
-              <p class="mt-4 text-base-content/60">
-                To get started, simply create a new workspace or configure your
-                AI model settings
+    <!-- Clean Onboarding -->
+    <div v-if="workspaces.length === 0" class="absolute inset-0 flex items-center justify-center p-8"
+         :class="{ 'onboarding-drag-active': isDragOver }"
+         @dragenter.prevent="handleDragEnter"
+         @dragover.prevent="handleDragOver" 
+         @dragleave.prevent="handleDragLeave"
+         @drop.prevent="handleDrop">
+      
+      <div class="max-w-5xl w-full">
+        <!-- Header -->
+        <div class="text-center mb-16">
+          <h1 class="text-6xl font-light mb-4 text-base-content">
+            Welcome to Tangent
+          </h1>
+          <p class="text-xl text-base-content/60">
+            Your visual AI workspace
+          </p>
+        </div>
+        
+        <!-- Options -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+          <!-- Import Option -->
+          <div class="drop-zone group" 
+               :class="{ 'drop-zone-active': isDragOver }">
+            <div class="drop-zone-inner">
+              <div class="text-4xl mb-6 text-base-content/40 group-hover:text-base-content/60 transition-colors">
+                📥
+              </div>
+              <h2 class="text-2xl font-medium mb-4">Import Existing Chats</h2>
+              <p class="text-base-content/60 mb-6">
+                Drop your ChatGPT or Claude export files here to convert them into Tangent workspaces
               </p>
+              <div class="text-sm text-base-content/40">
+                Supports .zip archives
+              </div>
             </div>
-          </transition>
+          </div>
+          
+          <!-- Create New Option -->
+          <button @click="handleNewWorkspace" class="create-new-button group">
+            <div class="create-new-inner">
+              <div class="text-4xl mb-6 text-base-content/40 group-hover:text-primary transition-colors">
+                ✨
+              </div>
+              <h2 class="text-2xl font-medium mb-4">Start Fresh</h2>
+              <p class="text-base-content/60 mb-6">
+                Create a new workspace and begin your AI conversations from scratch
+              </p>
+              <div class="text-sm text-primary/60 group-hover:text-primary transition-colors">
+                Click to create
+              </div>
+            </div>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Main Canvas with RTS Perspective -->
-    <div v-else class="workspace-container rts-perspective">
+    <!-- Main Canvas -->
+    <div v-else class="workspace-container">
       <Transition name="fade">
         <div v-if="notification.visible"
-          class="fixed top-16 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-primary/80 text-primary-content rounded-lg shadow-lg z-50">
+          class="fixed top-16 left-1/2 transform -translate-x-1/2 px-4 py-2 notification-toast rounded-lg shadow-lg z-50">
           {{ notification.message }}
         </div>
       </Transition>
 
-      <!-- RTS Ground Plane -->
-      <div v-if="viewMode === 'bubble' && isWorkspaceOverview" class="rts-ground-plane"></div>
 
-      <!-- Bubble View with RTS -->
-      <div v-if="viewMode === 'bubble' && isWorkspaceOverview" ref="canvasRef"
-        class="bubble-view rts-canvas absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
-        @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
-        @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
-        @keydown="handleKeyDown" @wheel="handleWheel">
-
-        <!-- Canvas Transform Container with RTS adjustments -->
-        <div class="absolute transform-gpu rts-transform" :style="transformStyle" :class="{
-          'transition-transform-overview': isWorkspaceOverview,
-          'overflow-visible': true,
-        }">
-          <!-- Bubble Layout -->
-          <div class="absolute rts-nodes-layer" :style="nodesLayerStyle">
-            <FlowerWorkspaceNode v-for="workspace in filteredWorkspaces" :key="workspace.id" :workspace="workspace"
-              :is-selected="selectedWorkspaceId === workspace.id" :max-node-count="maxNodeCount"
-              :window-height="windowSize.value ? windowSize.value.height : 1080" :always-show-petals="alwaysShowPetals || isCommandPressed"
-              @select="handleWorkspaceSelect(workspace.id)" @favorite="handleWorkspaceFavorite(workspace.id)"
-              @duplicate="handleWorkspaceDuplicate(workspace.id)" @archive="handleWorkspaceArchive(workspace.id)"
-              @export="handleWorkspaceExport(workspace.id)" @delete="handleWorkspaceDelete(workspace.id)" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Grid View (unchanged) -->
+      <!-- Grid View -->
       <transition name="fade" mode="out-in">
-        <GridWorkspaceView v-if="viewMode === 'grid' && isWorkspaceOverview" :workspaces="filteredWorkspaces"
+        <GridWorkspaceView v-if="isWorkspaceOverview" :workspaces="filteredWorkspaces"
           :selected-workspace-id="selectedWorkspaceId" :search-query="searchQuery"
           @select-workspace="handleWorkspaceSelect" @favorite-workspace="handleWorkspaceFavorite"
           @duplicate-workspace="handleWorkspaceDuplicate" @archive-workspace="handleWorkspaceArchive"
           @export-workspace="handleWorkspaceExport" @delete-workspace="handleWorkspaceDelete"
+          @import-completed="handleImportCompleted"
           class="grid-view absolute inset-0" />
       </transition>
 
@@ -121,11 +97,19 @@
         @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
         @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
         @keydown="handleKeyDown" @wheel="handleWheel">
+        
+        <!-- Import Badge for Detailed Workspace View -->
+        <div v-if="store.currentChatMetadata?.isImported" 
+             class="workspace-import-badge" 
+             :class="`import-${store.currentChatMetadata.format}`">
+          <component :is="getImportIcon(store.currentChatMetadata.format)" :size="16" />
+          <span>{{ getImportLabel(store.currentChatMetadata.format) }}</span>
+        </div>
 
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle">
           <!-- SVG Layer for Connections -->
-          <svg class="absolute pointer-events-none overflow-visible" style="z-index: 1" :style="svgStyle"
+          <svg class="absolute overflow-visible" style="z-index: 1; pointer-events: none;" :style="svgStyle"
             viewBox="0 0 100000 100000" preserveAspectRatio="none">
             <defs>
               <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -134,7 +118,12 @@
             </defs>
             <template v-for="connection in store.connections" :key="`${connection.parent.id}-${connection.child.id}`">
               <SplineConnector :start-node="connection.parent" :end-node="connection.child"
-                :card-width="store.CARD_WIDTH" :card-height="store.CARD_HEIGHT"
+                :card-width="getEffectiveCardDimensions(connection.child).width"
+                :card-height="getEffectiveCardDimensions(connection.child).height"
+                :start-card-width="getEffectiveCardDimensions(connection.parent).width"
+                :start-card-height="getEffectiveCardDimensions(connection.parent).height"
+                :end-lod-level="getEffectiveCardDimensions(connection.child).lodLevel"
+                :start-lod-level="getEffectiveCardDimensions(connection.parent).lodLevel"
                 :is-active="isConnectionActive(connection)" :zoom-level="zoom"
                 :is-source-node-expanded="expandedNodes.value?.has(connection.parent.id) || false" />
             </template>
@@ -144,12 +133,15 @@
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
             <template v-for="node in store.nodes" :key="node.id">
               <!-- Branch Node (handles text and media) -->
-              <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node" :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"
-                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen" :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected" @select="handleNodeSelect(node.id)" @drag-start="handleDragStart"
-                @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
+              <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
+                :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
+                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
+                :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
+                @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+                @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
-                " @delete="() => store.removeNode(node.id)" :style="{
+                " @delete="() => handleNodeDelete(node.id)" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning
                     ? 'transform 0.3s ease-out'
@@ -159,11 +151,11 @@
               <!-- Web Node -->
               <WebBranchNode v-else-if="node.type === 'web'" :node="node" :is-selected="isNodeFocused(node.id)"
                 :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :modelType="modelType"
-                :zoom="zoom" :model-registry="modelRegistry" @select="handleNodeSelect(node.id)"
-                @drag-start="handleDragStart" @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
-                @resend="(userMessageIndex) =>
+                :zoom="zoom" :lod-level="getLODLevel(node.id)" :model-registry="modelRegistry"
+                @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+                @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
-                " @delete="() => store.removeNode(node.id)" :style="{
+                " @delete="() => handleNodeDelete(node.id)" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning
                     ? 'transform 0.3s ease-out'
@@ -173,11 +165,13 @@
               <!-- Branch Node -->
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"
-                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen" :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected" @select="handleNodeSelect(node.id)"
-                @drag-start="handleDragStart" @create-branch="handleCreateBranch" @update-title="store.updateNodeTitle"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
+                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
+                :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
+                @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
+                @update-title="store.updateNodeTitle"
                 @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
-                @delete="() => store.removeNode(node.id)" @update-position="handleNodePositionUpdate"
+                @delete="() => handleNodeDelete(node.id)" @update-position="handleNodePositionUpdate"
                 @snap="handleNodeSnap" @unsnap="handleNodeUnsnap" @focus-input="handleFocusInput"
                 @expansion-change="handleNodeExpansionChange" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
@@ -185,6 +179,21 @@
                 }" />
             </template>
           </div>
+
+          <!-- Interaction Layer for Splines - On Top of Everything -->
+          <svg class="absolute overflow-visible" style="z-index: 10; pointer-events: none;" :style="svgStyle"
+            viewBox="0 0 100000 100000" preserveAspectRatio="none">
+            <template v-for="connection in store.connections"
+              :key="`interaction-${connection.parent.id}-${connection.child.id}`">
+              <!-- Clickable paths - show hitbox on hover -->
+              <path :d="getSplinePath(connection.parent, connection.child, expandedNodes.has(connection.parent.id))"
+                stroke="rgba(255, 255, 255, 0.2)" stroke-opacity="0" fill="none" :stroke-width="40"
+                style="cursor: pointer; pointer-events: stroke; transition: stroke-opacity 0.2s ease;"
+                class="spline-hitbox" @dblclick="handleSplineDoubleClick(connection)"
+                @click="console.log('Interaction layer clicked!', connection)"
+                @mouseenter="handleSplineHover(connection, true)" @mouseleave="handleSplineHover(connection, false)" />
+            </template>
+          </svg>
         </div>
       </div>
 
@@ -193,8 +202,8 @@
 
     <!-- File Drop Overlay -->
     <div v-show="isDraggingFile"
-      class="absolute inset-0 bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none z-50">
-      <div class="text-2xl font-semibold text-primary">
+      class="absolute inset-0 file-drop-overlay backdrop-blur-sm flex items-center justify-center pointer-events-none z-50">
+      <div class="text-2xl font-semibold file-drop-text">
         Drop media to create a new node
       </div>
     </div>
@@ -215,7 +224,6 @@ import {
 import BranchNode from "./node/BranchNode.vue";
 import TangentLogo from '../logo/TangentLogo.vue';
 import emitter from '@/utils/eventBus'
-import FlowerWorkspaceNode from "./node/FlowerWorkspaceNode.vue";
 import GridWorkspaceView from "../workspace/GridWorkspaceView.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
 import WebBranchNode from "./node/WebBranchNode.vue";
@@ -226,7 +234,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useModelStore } from "@/stores/modelStore";
 import type { ModelInfo } from '@/types/model';
 import PerformanceTestPanel from './PerformanceTestPanel.vue';
-import { Plus, Circle, LayoutGrid } from "lucide-vue-next";
+import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download } from "lucide-vue-next";
 
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
@@ -240,7 +248,7 @@ const appStore = useAppStore();
 // Populate model registry with all available models
 const updateModelRegistry = () => {
   modelRegistry.value.clear();
-  
+
   // Add all available models from each provider to the registry
   const allModels = [
     ...modelStore.ollamaModels,
@@ -249,7 +257,7 @@ const updateModelRegistry = () => {
     ...modelStore.anthropicModels,
     ...modelStore.openaiModels
   ];
-  
+
   allModels.forEach(model => {
     if (model && model.id) {
       modelRegistry.value.set(model.id, model);
@@ -258,21 +266,12 @@ const updateModelRegistry = () => {
 };
 
 // View modes and search
-const viewMode = ref('bubble'); // 'bubble' or 'grid'
+const viewMode = ref('grid'); // Only 'grid' mode now
 const searchQuery = ref('');
+
+// RTS perspective constants
+const RTS_SCALE_Y = 0.6; // Vertical compression factor for RTS perspective
 const perfTestPanel = ref(null);
-const alwaysShowPetals = ref(localStorage.getItem('alwaysShowPetals') === 'true' || false);
-
-// CMD/CTRL key state for flower bloom effect
-const isCommandPressed = ref(false);
-
-const STEM_LENGTH_MIN = 400; // Minimum stem length
-const STEM_LENGTH_MAX = 650; // Maximum stem length
-
-// RTS Perspective constants
-const RTS_ANGLE = 35; // degrees for ground plane
-const RTS_SCALE_Y = 0.6; // vertical compression
-const DEPTH_FACTOR = 0.8; // how much depth affects positioning
 
 // Props
 const props = defineProps({
@@ -310,7 +309,7 @@ const props = defineProps({
   gestureMode: {
     type: String as PropType<"scroll" | "zoom">,
     required: true,
-    default: "zoom",
+    default: "scroll",
   },
   isHeightLocked: {
     type: Boolean,
@@ -324,7 +323,9 @@ const emit = defineEmits([
   "update:zoom",
   "update:autoZoomEnabled",
   "update:isHeightLocked",
-  "workspace-opened"
+  "workspace-opened",
+  "snap",
+  "unsnap"
 ]);
 
 // Modify zoom ref to be computed
@@ -332,6 +333,8 @@ const zoom = computed({
   get: () => props.zoom,
   set: (value) => emit("update:zoom", value),
 });
+
+const targetZoom = 1.5;
 
 // Watch for autoZoom changes
 watch(
@@ -343,6 +346,24 @@ watch(
   }
 );
 
+// Watch for zoom changes to clear focused LOD node
+watch(
+  () => props.zoom,
+  (newZoom, oldZoom) => {
+    // Clear focused LOD node when user manually zooms
+    // but only if the zoom change is significant (not from clicking on the node)
+    if (focusedLODNodeId.value && Math.abs(newZoom - oldZoom) > 0.01) {
+      // Check if we're still above the full detail threshold
+      if (newZoom <= LOD_THRESHOLDS.FULL_DETAIL) {
+        // Don't clear if the focused LOD node is the current navigation focus
+        if (focusedLODNodeId.value !== focusedNodeId.value) {
+          focusedLODNodeId.value = null;
+        }
+      }
+    }
+  }
+);
+
 // State
 const panX = ref(0);
 const panY = ref(0);
@@ -350,6 +371,21 @@ const expandedNodes = ref(new Set());
 const isPanning = ref(false);
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
+// Node that's been clicked on for LOD focus
+const focusedLODNodeId = ref<string | null>(null);
+
+// Watch for focused node changes to update LOD focus
+watch(
+  () => focusedNodeId.value,
+  (newNodeId, oldNodeId) => {
+    if (newNodeId !== oldNodeId) {
+      // Always update LOD focus to the new node (or null)
+      // This ensures only one node is highlighted at a time
+      focusedLODNodeId.value = newNodeId;
+    }
+  },
+  { immediate: true }
+);
 const focusedTopicId = ref<string | null>(null);
 const isDraggingFile = ref(false);
 
@@ -376,65 +412,65 @@ const workspaceDragState = ref({
 
 const notification = ref({ visible: false, message: '' });
 
-// Calculate max node count for bubble size normalization
+// Portal animation state
+const isPortalHovered = ref(false);
+const isPortalClicked = ref(false);
+const isDragOver = ref(false);
+
+// Generate cyclone lines
+const cycloneLines = ref([]);
+const sparkles = ref([]);
+
+// Initialize portal animations
+const initializePortalAnimations = () => {
+  // Generate cyclone lines
+  cycloneLines.value = Array.from({ length: 12 }, (_, i) => ({
+    length: 40 + Math.random() * 20,
+    x: 50 + Math.cos((i / 12) * Math.PI * 2) * 30,
+    y: 50 + Math.sin((i / 12) * Math.PI * 2) * 30,
+    rotation: (i / 12) * 360 + Math.random() * 30,
+    delay: i * 100,
+    duration: 2000 + Math.random() * 1000
+  }));
+  
+  // Generate sparkles
+  sparkles.value = Array.from({ length: 8 }, (_, i) => ({
+    x: 20 + Math.random() * 60,
+    y: 20 + Math.random() * 60,
+    delay: Math.random() * 2000,
+    duration: 1500 + Math.random() * 1000
+  }));
+};
+
+// Zoom constants
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 2;
+const ZOOM_SENSITIVITY = 0.005;
+const PAN_SENSITIVITY = 1.0;
+
+// Simple Undo/Redo system for deletions and moves
+const undoStack = ref([]);
+const redoStack = ref([]);
+const maxUndoStackSize = 20;
+const dragStartPosition = ref(null);
+
+// Multi-select system
+const selectedNodeIds = ref(new Set());
+const isMultiDragging = ref(false);
+const multiDragStartPositions = ref(new Map());
+
+// Calculate max node count 
 const maxNodeCount = computed(() => {
   if (!workspaces.value.length) return 1;
   return Math.max(...workspaces.value.map(w => w.nodeCount || 0), 1);
 });
 
-// Generate procedural grass blades for ambient background
-const grassBlades = computed(() => {
-  if (!isWorkspaceOverview.value) return [];
-  
-  const canvasWidth = windowSize.value?.width || 1920;
-  const bladeCount = Math.floor(canvasWidth / 8); // One blade every 8px
-  const blades = [];
-  
-  // Seeded random function for consistent placement
-  const seededRandom = (seed) => {
-    const x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
-  };
-  
-  for (let i = 0; i < bladeCount; i++) {
-    const seed = i * 123.456;
-    const x = (i / bladeCount) * 100;
-    
-    // Varied blade properties
-    const height = 30 + seededRandom(seed) * 40; // 30-70px range
-    const width = 2 + seededRandom(seed + 1) * 3; // 2-5px range
-    const rotation = (seededRandom(seed + 2) - 0.5) * 30; // More natural sway
-    const delay = seededRandom(seed + 3) * 4; // Animation delay
-    
-    // Natural grass colors with variation
-    const hue = 115 + seededRandom(seed + 4) * 10; // Green with slight variation
-    const saturation = 40 + seededRandom(seed + 5) * 30; // 40-70%
-    const lightness = 30 + seededRandom(seed + 6) * 25; // 30-55%
-    
-    blades.push({
-      id: i,
-      style: {
-        position: 'absolute',
-        left: `${x}%`,
-        bottom: '0px',
-        width: `${width}px`,
-        height: `${height}px`,
-        backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
-        transform: `rotate(${rotation}deg)`,
-        transformOrigin: 'bottom center',
-        borderRadius: `${width}px ${width}px 0 0`,
-        animationDelay: `${delay}s`,
-        opacity: 0.7,
-        boxShadow: `0 0 2px rgba(0, 100, 0, 0.2)`
-      }
-    });
-  }
-  
-  return blades;
-});
 
 const isWorkspaceOverview = ref(true);
 const expandingWorkspaceId = ref<string | null>(null);
+
+// Initialize portal animations on component load
+initializePortalAnimations();
 
 const features = [
   {
@@ -459,9 +495,9 @@ const features = [
   },
 ];
 
-// Enhanced workspace positioning with RTS perspective
+// Workspace data for grid view
 const workspaces = computed(() => {
-  const workspaceData = chatStore.chats.map((chat) => ({
+  return chatStore.chats.map((chat) => ({
     id: chat.id,
     title: chat.title,
     nodeCount: chat.nodeCount,
@@ -472,14 +508,10 @@ const workspaces = computed(() => {
     tags: chat.tags || [],
     color: chat.color,
     isFavorite: chat.isFavorite || false,
-    status: chat.status || 'active'
+    status: chat.status || 'active',
+    format: chat.format,  // Format of imported conversation (chatgpt, claude, etc)
+    isImported: chat.isImported || false  // Flag for imported conversations
   }));
-
-  if (viewMode.value === 'bubble' && workspaceData.length > 0) {
-    return simulateRTSFlowerLayout(workspaceData);
-  }
-
-  return workspaceData;
 });
 
 // Filtered workspaces based on search query
@@ -525,11 +557,11 @@ const generateTitleFromDescription = async (description: string): Promise<string
       message: `Based on this image description, generate a concise title in 3-5 words: "${description}". Respond with only the title, no additional text.`,
       hasImages: false
     });
-    
+
     if (!routingResult.model) {
       throw new Error('No text model available for title generation');
     }
-    
+
     const response = await fetch('http://localhost:5050/api/ollama-proxy/generate', {
       method: 'POST',
       headers: {
@@ -545,20 +577,20 @@ const generateTitleFromDescription = async (description: string): Promise<string
         }
       })
     });
-    
+
     if (!response.ok) {
       throw new Error(`Failed to generate title: ${response.status}`);
     }
-    
+
     const result = await response.json();
     const title = result.response?.trim() || '';
-    
+
     // Clean up the title - remove quotes and extra punctuation
     const cleanTitle = title.replace(/["']/g, '').replace(/\.$/, '').trim();
-    
+
     console.log(`[InfiniteCanvas] Generated title: "${cleanTitle}"`);
     return cleanTitle || 'Untitled Image';
-    
+
   } catch (error) {
     console.error('[InfiniteCanvas] Title generation error:', error);
     return 'Untitled Image'; // Fallback
@@ -584,7 +616,7 @@ const processMediaForNode = async (node, file) => {
     // FIRST: Create thumbnail immediately for instant UI feedback
     const mediaId = `media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const previewUrl = URL.createObjectURL(file);
-    
+
     // Set media content immediately so thumbnail shows
     await store.updateNode(node.id, {
       mediaContent: {
@@ -597,24 +629,24 @@ const processMediaForNode = async (node, file) => {
       },
       isProcessingMedia: true
     });
-    
+
     console.log('[InfiniteCanvas] Media content saved to database');
-    
+
     // Force a small delay to ensure UI updates
     await new Promise(resolve => setTimeout(resolve, 50));
-    
+
     // Import auto-caption service, agent service, and router service
     const { autoCaptionService } = await import('@/services/autoCaptionService');
     const { agentService } = await import('@/services/agentService');
     const { routerService } = await import('@/services/routerService');
-    
+
     // Check if we should use auto-captioning for images
     const settings = await autoCaptionService.getSettings();
-    const shouldAutoCaption = settings.enabled && 
-                              file.type.startsWith('image/') && 
-                              settings.model &&
-                              settings.model.trim() !== '';
-    
+    const shouldAutoCaption = settings.enabled &&
+      file.type.startsWith('image/') &&
+      settings.model &&
+      settings.model.trim() !== '';
+
     console.log('[InfiniteCanvas] Processing options:', {
       autoCaptionEnabled: settings.enabled,
       selectedModel: settings.model,
@@ -624,19 +656,19 @@ const processMediaForNode = async (node, file) => {
     // Use router service to determine the best approach for image handling
     if (file.type.startsWith('image/')) {
       console.log('[InfiniteCanvas] Using router service for image handling');
-      
+
       const routingResult = await routerService.routeRequest({
         message: 'Analyze this uploaded image',
         hasImages: true
       });
-      
+
       console.log('[InfiniteCanvas] Router result:', routingResult);
-      
+
       // If no vision model configured, show agent configurator
       if (!routingResult.model) {
         console.log('[InfiniteCanvas] No vision agent configured, showing configurator');
         await agentService.showAgentConfigurator('agents');
-        
+
         // Update node with message about configuration needed
         await store.updateNode(node.id, {
           mediaContent: {
@@ -656,7 +688,7 @@ const processMediaForNode = async (node, file) => {
         });
         return;
       }
-      
+
       // Update settings to use the router-selected model
       const currentSettings = await autoCaptionService.getSettings();
       const updatedSettings = {
@@ -664,26 +696,26 @@ const processMediaForNode = async (node, file) => {
         enabled: true,
         model: routingResult.model.name || routingResult.model.id
       };
-      
+
       console.log('[InfiniteCanvas] Using router-selected vision model:', routingResult.model.name);
     }
-    
+
     if (shouldAutoCaption) {
       console.log('[InfiniteCanvas] Using auto-captioning service');
-      
+
       // Update status
       node.mediaContent.analysis = 'Generating caption...';
-      
+
       // Generate caption
       const result = await autoCaptionService.captionFile(file);
-      
+
       if (result.success && result.caption) {
         // Update with successful caption
         const updatedMediaContent = {
           ...node.mediaContent,
           analysis: result.caption
         };
-        
+
         const updatedMessages = [
           ...(node.messages || []),
           {
@@ -692,10 +724,10 @@ const processMediaForNode = async (node, file) => {
             timestamp: new Date().toISOString()
           }
         ];
-        
+
         console.log(`[InfiniteCanvas] Auto-caption generated in ${result.responseTime}ms`);
         console.log('[InfiniteCanvas] Updating node with caption:', result.caption.substring(0, 100) + '...');
-        
+
         // Generate a concise title from the image description
         let conciseTitle = node.title;
         if (node.isGeneratingTitle) {
@@ -706,9 +738,9 @@ const processMediaForNode = async (node, file) => {
             console.warn('[InfiniteCanvas] Title generation from description failed:', error);
           }
         }
-        
+
         // Save updated content to database
-        await store.updateNode(node.id, { 
+        await store.updateNode(node.id, {
           mediaContent: updatedMediaContent,
           messages: updatedMessages,
           isProcessingMedia: false,
@@ -722,12 +754,12 @@ const processMediaForNode = async (node, file) => {
       } else {
         // Handle caption failure
         console.error(`[InfiniteCanvas] Auto-caption failed:`, result.error);
-        
+
         const updatedMediaContent = {
           ...node.mediaContent,
           analysis: 'Caption generation failed'
         };
-        
+
         const updatedMessages = [
           ...(node.messages || []),
           {
@@ -736,9 +768,9 @@ const processMediaForNode = async (node, file) => {
             timestamp: new Date().toISOString()
           }
         ];
-        
+
         // Save updated content to database
-        await store.updateNode(node.id, { 
+        await store.updateNode(node.id, {
           mediaContent: updatedMediaContent,
           messages: updatedMessages,
           isProcessingMedia: false,
@@ -749,7 +781,7 @@ const processMediaForNode = async (node, file) => {
           }
         });
       }
-      
+
       console.log('[InfiniteCanvas] Auto-caption complete, saved to database');
     } else {
       // No auto-captioning, just mark as ready
@@ -765,7 +797,7 @@ const processMediaForNode = async (node, file) => {
 
   } catch (error) {
     console.error('[InfiniteCanvas] Media processing error:', error);
-    
+
     await store.updateNode(node.id, {
       mediaContent: {
         ...node.mediaContent,
@@ -824,87 +856,334 @@ const nodesLayerStyle = computed(() => ({
   height: "100000px",
   left: 0,
   top: 0,
-  pointerEvents: isWorkspaceOverview ? 'auto' : 'none', // Only capture events in overview mode
+  pointerEvents: 'auto', // Allow pointer events for nodes always
 }));
 
-provide('alwaysShowPetals', alwaysShowPetals);
 
+// Coordinate conversion helpers
+const screenToWorld = (screenX, screenY) => {
+  if (!canvasRef.value) return { x: 0, y: 0 };
+  const rect = canvasRef.value.getBoundingClientRect();
+  const worldX = (screenX - rect.left - panX.value) / zoom.value;
+  const worldY = (screenY - rect.top - panY.value) / zoom.value;
+  return { x: worldX, y: worldY };
+};
 
-const simulateRTSFlowerLayout = (workspaceNodes) => {
-  const nodes = JSON.parse(JSON.stringify(workspaceNodes));
-
-  // Adjust canvas dimensions
-  const leftPanelWidth = props.sidePanelOpen ? windowSize.value.width * 0.4 : 0;
-  const rightPanelWidth = props.rightPanelOpen ? windowSize.value.width * 0.4 : 0;
-  const canvasW = windowSize.value.width - leftPanelWidth - rightPanelWidth;
-  const canvasH = windowSize.value.height + 800;
-
-  const FLOOR = canvasH - 90;
-  const maxCount = Math.max(...nodes.map(n => n.nodeCount || 1), 1);
-
-  // Calculate flower sizes
-  nodes.forEach(n => {
-    const baseR = 50 + ((n.nodeCount || 1) / maxCount) * 70;
-    n.radius = baseR + 30;
-  });
-
-  const centerX = canvasW / 2;
-  const centerY = canvasH / 2;
-
-  // Seeded random function for consistent positioning
-  const seededRandom = (seed) => {
-    const x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
+const worldToScreen = (worldX, worldY) => {
+  return {
+    x: (worldX * zoom.value) + panX.value,
+    y: (worldY * zoom.value) + panY.value
   };
+};
 
-  if (nodes.length === 1) {
-    // Single flower - random stem length between 200-400
-    const seed = nodes[0].id.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
-    const stemLength = 350 + seededRandom(seed) * 500; // Random between 200-400
-    nodes[0].x = centerX;
-    nodes[0].y = centerY - stemLength;
-  } else {
-    // Multiple flowers - each gets individual random stem length
-    const itemsPerRow = Math.ceil(Math.sqrt(nodes.length));
-    const spacing = Math.min(200, canvasW / (itemsPerRow + 1));
+// Multi-select helper functions
+const findNodeAt = (screenX, screenY) => {
+  if (!canvasRef.value) return null;
 
-    nodes.forEach((node, index) => {
-      // Create unique seed based on workspace ID
-      let seed = 0;
-      for (let i = 0; i < node.id.length; i++) {
-        seed += node.id.charCodeAt(i) * (i + 1);
-      }
-      
-      // Generate random stem length for this flower (200-400px)
-      const stemLength = 400 + seededRandom(seed * 1.5) * 250; // Multiply seed for different randomness
-      const groundY = centerY - stemLength;
-      
-      if (nodes.length <= 6) {
-        // For small numbers, scatter around center at different stem heights
-        const baseAngle = (2 * Math.PI * index) / nodes.length;
-        const radius = Math.min(150, canvasW * 0.15);
-        const scatterRadius = radius + (seededRandom(seed) - 0.5) * 80;
-        node.x = centerX + Math.cos(baseAngle) * scatterRadius;
-        node.y = groundY; // Individual stem length
-      } else {
-        // For larger numbers, scatter horizontally at different stem heights
-        const baseX = centerX + (index - (nodes.length - 1) / 2) * spacing;
-        const scatterX = (seededRandom(seed) - 0.5) * spacing * 0.6;
-        node.x = baseX + scatterX;
-        node.y = groundY; // Individual stem length
-      }
+  // Get canvas bounds
+  const canvasRect = canvasRef.value.getBoundingClientRect();
 
-      // Ensure flowers don't go too far out of bounds
-      node.x = Math.max(node.radius, Math.min(canvasW - node.radius, node.x));
-      node.y = Math.max(node.radius + 50, Math.min(FLOOR - node.radius - 100, node.y));
-    });
+  // Convert to canvas coordinates accounting for pan and zoom
+  const canvasX = screenX - canvasRect.left;
+  const canvasY = screenY - canvasRect.top;
+
+  // Check each node to see if click is within its bounds
+  return store.nodes.find(node => {
+    const nodeScreenX = (node.x * zoom.value) + panX.value;
+    const nodeScreenY = (node.y * zoom.value) + panY.value;
+    const nodeScreenWidth = store.CARD_WIDTH * zoom.value;
+    const nodeScreenHeight = store.CARD_HEIGHT * zoom.value;
+
+    return canvasX >= nodeScreenX &&
+      canvasX <= nodeScreenX + nodeScreenWidth &&
+      canvasY >= nodeScreenY &&
+      canvasY <= nodeScreenY + nodeScreenHeight;
+  });
+};
+
+
+// LOD System
+const LOD_THRESHOLDS = {
+  FULL_DETAIL: 0.75,
+  SUMMARY: 0.3,
+  BLOCK: 0.1
+};
+
+// LOD transition state
+const lodTransitionState = ref({
+  isTransitioning: false,
+  previousLevel: 'full',
+  currentLevel: 'full',
+  transitionStartTime: 0
+});
+
+const getLODLevel = (nodeId?: string) => {
+  // If this node is the focused LOD node, always return full detail
+  if (nodeId && nodeId === focusedLODNodeId.value) {
+    return 'full';
+  }
+  
+  let level;
+  if (zoom.value > LOD_THRESHOLDS.FULL_DETAIL) level = 'full';
+  else if (zoom.value > LOD_THRESHOLDS.SUMMARY) level = 'summary';
+  else if (zoom.value > LOD_THRESHOLDS.BLOCK) level = 'block';
+  else level = 'hidden';
+  
+  // Handle smooth transitions
+  if (level !== lodTransitionState.value.currentLevel) {
+    lodTransitionState.value.previousLevel = lodTransitionState.value.currentLevel;
+    lodTransitionState.value.currentLevel = level;
+    lodTransitionState.value.isTransitioning = true;
+    lodTransitionState.value.transitionStartTime = Date.now();
+    
+    // Clear transition state after animation completes
+    setTimeout(() => {
+      lodTransitionState.value.isTransitioning = false;
+    }, 300); // Match CSS transition duration
+  }
+  
+  return level;
+};
+
+// Calculate effective card dimensions based on LOD level
+const getEffectiveCardDimensions = (node) => {
+  const lodLevel = getLODLevel(node?.id);
+  let dimensions;
+
+  switch (lodLevel) {
+    case 'block':
+      // Block LOD: w-64 h-16 (256px x 64px) - smallest size
+      dimensions = { width: 256, height: 64, lodLevel: 'block' };
+      break;
+    case 'summary':
+      // Summary LOD: title and message preview - medium size between block and full
+      dimensions = { width: 480, height: 100, lodLevel: 'summary' };
+      break;
+    case 'full':
+    case 'hidden':
+    default:
+      // Full size or hidden - above 0.5 zoom
+      dimensions = { width: store.CARD_WIDTH, height: store.CARD_HEIGHT, lodLevel: 'full' };
+      break;
   }
 
-  return nodes;
+  return dimensions;
 };
+
+// Undo/Redo Functions
+const addToUndoStack = (action) => {
+  undoStack.value.push(action);
+
+  // Limit stack size
+  if (undoStack.value.length > maxUndoStackSize) {
+    undoStack.value.shift();
+  }
+
+  // Clear redo stack when new action is performed
+  redoStack.value = [];
+};
+
+const undo = () => {
+  if (undoStack.value.length === 0) {
+    showNotification('Nothing to undo');
+    return;
+  }
+
+  const lastAction = undoStack.value.pop();
+
+  if (lastAction.type === 'delete_nodes') {
+    // Restore the deleted nodes
+    lastAction.deletedNodes.forEach(nodeData => {
+      store.nodes.push(nodeData);
+    });
+
+    // Add to redo stack
+    redoStack.value.push(lastAction);
+
+    showNotification(`Restored ${lastAction.deletedNodes.length} deleted node(s)`);
+  } else if (lastAction.type === 'move_node') {
+    // Restore the node's previous position
+    const node = store.nodes.find(n => n.id === lastAction.nodeId);
+    if (node) {
+      // Save current position for redo
+      const currentPosition = { x: node.x, y: node.y };
+
+      // Restore previous position
+      store.updateNodePosition(lastAction.nodeId, lastAction.previousPosition);
+
+      // Add to redo stack
+      redoStack.value.push({
+        type: 'move_node',
+        nodeId: lastAction.nodeId,
+        previousPosition: currentPosition,
+        newPosition: lastAction.previousPosition,
+        timestamp: Date.now()
+      });
+
+      showNotification('Undid node move');
+    }
+  } else if (lastAction.type === 'move_multiple_nodes') {
+    // Restore multiple nodes' previous positions
+    const currentPositions = [];
+
+    lastAction.moves.forEach(move => {
+      const node = store.nodes.find(n => n.id === move.nodeId);
+      if (node) {
+        // Save current position for redo
+        currentPositions.push({
+          nodeId: move.nodeId,
+          previousPosition: { x: node.x, y: node.y },
+          newPosition: move.previousPosition
+        });
+
+        // Restore previous position
+        store.updateNodePosition(move.nodeId, move.previousPosition);
+      }
+    });
+
+    // Add to redo stack
+    redoStack.value.push({
+      type: 'move_multiple_nodes',
+      moves: currentPositions,
+      timestamp: Date.now()
+    });
+
+    showNotification(`Undid move of ${lastAction.moves.length} nodes`);
+  }
+};
+
+const redo = () => {
+  if (redoStack.value.length === 0) {
+    showNotification('Nothing to redo');
+    return;
+  }
+
+  const actionToRedo = redoStack.value.pop();
+
+  if (actionToRedo.type === 'delete_nodes') {
+    // Re-delete the nodes
+    actionToRedo.deletedNodes.forEach(nodeData => {
+      const index = store.nodes.findIndex(n => n.id === nodeData.id);
+      if (index !== -1) {
+        store.nodes.splice(index, 1);
+      }
+    });
+
+    // Add back to undo stack
+    undoStack.value.push(actionToRedo);
+
+    showNotification(`Re-deleted ${actionToRedo.deletedNodes.length} node(s)`);
+  } else if (actionToRedo.type === 'move_node') {
+    // Redo the node move
+    const node = store.nodes.find(n => n.id === actionToRedo.nodeId);
+    if (node) {
+      // Save current position for undo
+      const currentPosition = { x: node.x, y: node.y };
+
+      // Move to the redo position
+      store.updateNodePosition(actionToRedo.nodeId, actionToRedo.previousPosition);
+
+      // Add back to undo stack
+      undoStack.value.push({
+        type: 'move_node',
+        nodeId: actionToRedo.nodeId,
+        previousPosition: currentPosition,
+        newPosition: actionToRedo.previousPosition,
+        timestamp: Date.now()
+      });
+
+      showNotification('Redid node move');
+    }
+  } else if (actionToRedo.type === 'move_multiple_nodes') {
+    // Redo multiple node moves
+    const currentPositions = [];
+
+    actionToRedo.moves.forEach(move => {
+      const node = store.nodes.find(n => n.id === move.nodeId);
+      if (node) {
+        // Save current position for undo
+        currentPositions.push({
+          nodeId: move.nodeId,
+          previousPosition: { x: node.x, y: node.y },
+          newPosition: move.previousPosition
+        });
+
+        // Move to redo position
+        store.updateNodePosition(move.nodeId, move.previousPosition);
+      }
+    });
+
+    // Add back to undo stack
+    undoStack.value.push({
+      type: 'move_multiple_nodes',
+      moves: currentPositions,
+      timestamp: Date.now()
+    });
+
+    showNotification(`Redid move of ${actionToRedo.moves.length} nodes`);
+  }
+};
+
+// Node Deletion with Confirmation
+const handleNodeDelete = async (nodeId: string) => {
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  // Find all descendant nodes that will be deleted
+  const getDescendants = (parentId: string): string[] => {
+    const children = store.nodes.filter(n => n.parentId === parentId);
+    let descendants = children.map(c => c.id);
+
+    for (const child of children) {
+      descendants = descendants.concat(getDescendants(child.id));
+    }
+
+    return descendants;
+  };
+
+  const descendants = getDescendants(nodeId);
+  const totalNodesToDelete = descendants.length + 1; // +1 for the node itself
+
+  // Create confirmation message
+  let confirmMessage = `Are you sure you want to delete this ${node.type === 'main' ? 'main' : 'branch'} node?`;
+  if (descendants.length > 0) {
+    confirmMessage += `\n\nThis will also permanently delete ${descendants.length} child branch${descendants.length === 1 ? '' : 'es'}.`;
+  }
+  confirmMessage += '\n\nThis action cannot be undone.';
+
+  // Show confirmation dialog
+  if (!confirm(confirmMessage)) {
+    return;
+  }
+
+  // Save the nodes that will be deleted for undo
+  const nodesToDelete = [node, ...descendants.map(id => store.nodes.find(n => n.id === id))].filter(Boolean);
+  const deletedNodesData = nodesToDelete.map(n => JSON.parse(JSON.stringify(n)));
+
+  // Add to undo stack before deleting
+  addToUndoStack({
+    type: 'delete_nodes',
+    deletedNodes: deletedNodesData,
+    timestamp: Date.now()
+  });
+
+  // Delete the node and all its descendants
+  store.removeNode(nodeId);
+
+  showNotification(`Deleted ${totalNodesToDelete} node${totalNodesToDelete === 1 ? '' : 's'} (Ctrl/Cmd+Z to undo)`);
+};
+
 
 // Create new workspace
 const handleNewWorkspace = async () => {
+  // Trigger portal animation
+  isPortalClicked.value = true;
+  
+  // Reset after animation
+  setTimeout(() => {
+    isPortalClicked.value = false;
+  }, 1000);
+  
   if (store.snappedNodeId) {
     store.popSnappedNode()
   }
@@ -924,105 +1203,20 @@ const handleNewWorkspace = async () => {
   }
 };
 
-// Handle view mode toggle
+// Handle view mode toggle (simplified for grid-only)
 const handleViewModeToggle = (mode) => {
-  viewMode.value = mode;
-
-  if (mode === 'bubble') {
-    nextTick(() => {
-      autoFitNodes();
-    });
-  }
-};
-
-const resetWorkspacePhysics = () => {
-  const leftPanelWidth = props.sidePanelOpen ? windowSize.value.width * 0.4 : 0;
-  const rightPanelWidth = props.rightPanelOpen ? windowSize.value.width * 0.4 : 0;
-  const canvasWidth = windowSize.value.width - leftPanelWidth - rightPanelWidth;
-  const canvasHeight = windowSize.value.height + 800;
-
-  window.resetWorkspacePhysics = resetWorkspacePhysics;
-
-  const centerX = canvasWidth / 2;
-  const centerY = canvasHeight / 2;
-
-  // Seeded random function for consistent positioning
-  const seededRandom = (seed) => {
-    const x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
-  };
-
-  chatStore.chats.forEach((chat, index) => {
-    const nodeCount = chat.nodeCount || 1;
-    const maxCount = Math.max(...chatStore.chats.map(c => c.nodeCount || 1), 1);
-    const minSize = 80;
-    const maxSize = 160;
-    chat.radius = minSize + (nodeCount / maxCount) * (maxSize - minSize);
-
-    let x, y;
-
-    // Create unique seed based on workspace ID
-    let seed = 0;
-    for (let i = 0; i < chat.id.length; i++) {
-      seed += chat.id.charCodeAt(i) * (i + 1);
-    }
-    
-    // Generate random stem length for this flower (200-400px)
-    const stemLength = 350 + seededRandom(seed * 1.5) * 500;
-    const groundY = centerY - stemLength;
-
-    if (chatStore.chats.length === 1) {
-      // Single workspace - random stem length
-      x = centerX;
-      y = groundY;
-    } else {
-      // Multiple flowers - each gets individual random stem length
-      const itemsPerRow = Math.ceil(Math.sqrt(chatStore.chats.length));
-      const spacing = Math.min(200, canvasWidth / (itemsPerRow + 1));
-
-      if (chatStore.chats.length <= 6) {
-        // Small number - scatter around center at different stem heights
-        const baseAngle = (2 * Math.PI * index) / chatStore.chats.length;
-        const radius = Math.min(150, canvasWidth * 0.15);
-        const scatterRadius = radius + (seededRandom(seed) - 0.5) * 80;
-        x = centerX + Math.cos(baseAngle) * scatterRadius;
-        y = groundY; // Individual stem length
-      } else {
-        // Larger number - scatter horizontally at different stem heights
-        const baseX = centerX + (index - (chatStore.chats.length - 1) / 2) * spacing;
-        const scatterX = (seededRandom(seed) - 0.5) * spacing * 0.6;
-        x = baseX + scatterX;
-        y = groundY; // Individual stem length
-      }
-    }
-
-    // Ensure flowers stay within bounds
-    x = Math.max(chat.radius, Math.min(canvasWidth - chat.radius, x));
-    y = Math.max(chat.radius + 50, Math.min(canvasHeight - chat.radius - 100, y));
-
-    chatStore.updateChatMetadata(chat.id, { x, y, radius: chat.radius });
-  });
-
-  // Force re-simulation with deterministic layout
-  setTimeout(() => {
-    if (viewMode.value === 'bubble') {
-      const chatCopy = [...chatStore.chats];
-      chatStore.chats = [];
-
-      nextTick(() => {
-        chatStore.chats = chatCopy;
-        nextTick(() => {
-          autoFitNodes();
-        });
-      });
-    }
-  }, 50);
+  // Only grid mode supported now
+  viewMode.value = 'grid';
 };
 
 // Center and snap to a node
 const centerAndSnapNode = (nodeId: string) => {
+  console.log('[InfiniteCanvas] centerAndSnapNode called for:', nodeId);
   const node = store.nodes.find((n) => n.id === nodeId);
-  if (!node) return;
+  if (!node) {
+    console.log('[InfiniteCanvas] Node not found:', nodeId);
+    return;
+  }
 
   store.isTransitioning = true;
 
@@ -1042,6 +1236,7 @@ const centerAndSnapNode = (nodeId: string) => {
   focusedNodeId.value = nodeId;
 
   nextTick(() => {
+    // Emit snap for all nodes that support snapping (including main nodes for auto-snap)
     emit('snap', { nodeId: node.id, originalPosition: { x: node.x, y: node.y } });
 
     setTimeout(() => {
@@ -1117,14 +1312,14 @@ const handleNodeSnap = async ({ nodeId, originalPosition }) => {
   // Don't trigger any auto-centering
   const prevAutoZoom = autoZoomEnabled.value;
   autoZoomEnabled.value = false;
-  
+
   store.isTransitioning = true;
   store.snapNode(nodeId);
   nodePositions.value.set(nodeId, originalPosition);
 
   // Wait for the BranchNode component to handle its own snap animation
   await new Promise((resolve) => setTimeout(resolve, 50));
-  
+
   // Re-enable auto zoom after snapping is complete
   setTimeout(() => {
     store.isTransitioning = false;
@@ -1176,7 +1371,6 @@ const handleFocusInput = ({ nodeId }) => {
   const inputRect = inputEl.getBoundingClientRect();
   const canvasRect = canvasRef.value.getBoundingClientRect();
 
-  const targetZoom = 1.5;
 
   const inputCenterX = inputRect.left + inputRect.width / 2;
   const inputCenterY = inputRect.top + inputRect.height / 2;
@@ -1208,7 +1402,7 @@ const calculateRequiredZoom = (bounds, containerRect) => {
   const zoomX = (containerRect.width * 0.85) / contentWidth;
   const zoomY = (containerRect.height * 0.8) / contentHeight;
 
-  return Math.min(Math.max(Math.min(zoomX, zoomY), 0.1), 2);
+  return Math.min(Math.max(Math.min(zoomX, zoomY), ZOOM_MIN), ZOOM_MAX);
 };
 
 // Handle node selection
@@ -1224,22 +1418,48 @@ const handleNodeSelect = async (nodeId: string) => {
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
-  store.isTransitioning = true;
-  focusedNodeId.value = nodeId;
+  // Check if clicking on a LOD node that's not at full detail
+  const currentLOD = getLODLevel(nodeId);
+  if (currentLOD !== 'full') {
+    // Set this as the focused LOD node
+    focusedLODNodeId.value = nodeId;
+    
+    // Zoom to at least the full detail threshold
+    const targetZoom = Math.max(LOD_THRESHOLDS.FULL_DETAIL + 0.1, zoom.value);
+    
+    store.isTransitioning = true;
+    focusedNodeId.value = nodeId;
+    
+    await nextTick();
+    
+    const bounds = calculateNodeBounds(node);
+    const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
+    const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
+    
+    const verticalOffset = Math.min(rect.height * 0.05, 30);
+    panX.value = rect.width / 2 - nodeCenterX * targetZoom;
+    panY.value = rect.height / 2 - nodeCenterY * targetZoom + verticalOffset;
+    
+    zoom.value = targetZoom;
+  } else {
+    // Normal selection for nodes already at full detail
+    store.isTransitioning = true;
+    focusedNodeId.value = nodeId;
 
-  await nextTick();
+    await nextTick();
 
-  const bounds = calculateNodeBounds(node);
-  const newZoom = calculateRequiredZoom(bounds, rect);
+    const bounds = calculateNodeBounds(node);
+    const newZoom = calculateRequiredZoom(bounds, rect);
 
-  const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
-  const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
+    const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
+    const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
 
-  const verticalOffset = Math.min(rect.height * 0.05, 30);
-  panX.value = rect.width / 2 - nodeCenterX * newZoom;
-  panY.value = rect.height / 2 - nodeCenterY * newZoom + verticalOffset;
+    const verticalOffset = Math.min(rect.height * 0.05, 30);
+    panX.value = rect.width / 2 - nodeCenterX * newZoom;
+    panY.value = rect.height / 2 - nodeCenterY * newZoom + verticalOffset;
 
-  zoom.value = newZoom;
+    zoom.value = newZoom;
+  }
 
   setTimeout(() => {
     store.isTransitioning = false;
@@ -1316,11 +1536,10 @@ const handleWheel = (e: WheelEvent) => {
     return;
   }
 
+  e.preventDefault();
   resetInactivityTimer();
 
-  const ZOOM_SENSITIVITY = 0.005;
-  const ZOOM_MIN = 0.05;
-  const ZOOM_MAX = 2;
+  // Using global constants
 
   const rect = canvasRef.value.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
@@ -1329,30 +1548,41 @@ const handleWheel = (e: WheelEvent) => {
   const contentX = (mouseX - panX.value) / zoom.value;
   const contentY = (mouseY - panY.value) / zoom.value;
 
-  const delta = props.gestureMode === "zoom" ? -e.deltaY : e.deltaX;
-  const zoomDelta = props.gestureMode === "zoom" ? delta * ZOOM_SENSITIVITY : 0;
-  const newZoom = Math.min(
-    Math.max(zoom.value * (1 + zoomDelta), ZOOM_MIN),
-    ZOOM_MAX
-  );
+  // Detect trackpad gesture type based on gestureMode setting and CMD key
+  const cmdPressed = e.metaKey || e.ctrlKey; // CMD on Mac, Ctrl on PC
 
-  if (props.gestureMode === "zoom") {
+  // When gestureMode is 'zoom': 2-finger = zoom, CMD+2-finger = pan
+  // When gestureMode is 'scroll': 2-finger = pan, CMD+2-finger = zoom  
+  const shouldZoom = props.gestureMode === 'zoom' ? !cmdPressed : cmdPressed;
+  const shouldPan = !shouldZoom && (Math.abs(e.deltaX) > 0 || Math.abs(e.deltaY) > 0);
+
+  if (shouldZoom) {
+    // Handle zoom
+    const zoomDelta = -e.deltaY * ZOOM_SENSITIVITY;
+    const newZoom = Math.min(
+      Math.max(zoom.value * (1 + zoomDelta), ZOOM_MIN),
+      ZOOM_MAX
+    );
+
+    // Zoom towards mouse cursor
     panX.value = mouseX - contentX * newZoom;
     panY.value = mouseY - contentY * newZoom;
-  } else {
-    panX.value -= e.deltaX;
-    panY.value -= e.deltaY;
+    zoom.value = newZoom;
+  } else if (shouldPan) {
+    // Handle pan with 2-finger trackpad gesture
+    panX.value -= e.deltaX * PAN_SENSITIVITY;
+    panY.value -= e.deltaY * PAN_SENSITIVITY;
   }
-
-  zoom.value = newZoom;
 };
 
 // Center canvas
 const centerCanvas = () => {
-  zoom.value = 1;
-  targetZoom.value = 1;
-  panX.value = 0;
-  panY.value = 0;
+  if (!isWorkspaceOverview) {
+    zoom.value = 1;
+    targetZoom.value = 1;
+    panX.value = 0;
+    panY.value = 0;
+  }
 };
 
 const isInitializing = ref(false);
@@ -1459,11 +1689,11 @@ const handleDrop = async (e: DragEvent) => {
   }
 
   isDraggingFile.value = false;
-  
+
   // Check if the drop target is a node element (not empty canvas)
   const dropTarget = e.target as HTMLElement;
   const isDropOnNode = dropTarget?.closest('.branch-node') !== null;
-  
+
   if (isDropOnNode) {
     console.log('Drop on node detected, letting BranchNode handle it');
     return;
@@ -1479,7 +1709,7 @@ const handleDrop = async (e: DragEvent) => {
 
   // Create a new node when dropping on empty canvas
   console.log('Media file dropped on empty canvas - creating new node');
-  
+
   await nextTick(async () => {
     try {
       const rect = canvasRef.value?.getBoundingClientRect();
@@ -1550,7 +1780,7 @@ const returnToOverview = async () => {
     await chatStore.loadChats();
     await nextTick();
 
-    const workspaceElements = document.querySelectorAll('.bubble-workspace-node, .grid-workspace-card');
+    const workspaceElements = document.querySelectorAll('.grid-workspace-card');
     workspaceElements.forEach((el, i) => {
       el.style.opacity = '0';
       el.style.transform = 'scale(0.8) translateY(20px)';
@@ -1586,7 +1816,9 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
     await store.loadChatState(workspaceId);
     expandedNodes.value = new Set(store.nodes.map(node => node.id));
     await nextTick();
-    autoFitNodes();
+
+    // Check for auto-snapping after workspace loads
+    checkAndAutoSnapSingleBranch();
     return;
   }
 
@@ -1617,7 +1849,13 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
 
   await nextTick();
 
-  autoFitNodes();
+  // Check for auto-snapping before autoFitNodes
+  const autoSnapped = checkAndAutoSnapSingleBranch();
+
+  // Only call autoFitNodes if we didn't auto-snap
+  if (!autoSnapped) {
+    autoFitNodes();
+  }
 
   emitter.emit('workspace-opened');
 
@@ -1662,6 +1900,36 @@ const handleWorkspaceDelete = async (workspaceId: string) => {
   }
 };
 
+const handleImportCompleted = async (importResult: { imported: number; skipped: number }) => {
+  console.log(`Import completed: ${importResult.imported} imported, ${importResult.skipped} skipped`);
+  
+  // Refresh the chat list to show newly imported workspaces
+  await chatStore.loadChats();
+  
+  // Show notification
+  showNotification(`Successfully imported ${importResult.imported} conversation${importResult.imported !== 1 ? 's' : ''}!`);
+  
+  // Auto-fit to show all workspaces including new ones
+  await nextTick();
+  autoFitNodes();
+};
+
+const getImportIcon = (format: string) => {
+  switch (format) {
+    case 'chatgpt': return Bot;
+    case 'claude': return MessageSquare;
+    default: return Download;
+  }
+};
+
+const getImportLabel = (format: string) => {
+  switch (format) {
+    case 'chatgpt': return 'ChatGPT Import';
+    case 'claude': return 'Claude Import';
+    default: return 'Imported';
+  }
+};
+
 // Center on a specific node
 const centerOnNode = (nodeId) => {
   const node = store.nodes.find((n) => n.id === nodeId);
@@ -1672,16 +1940,73 @@ const centerOnNode = (nodeId) => {
 
   const rect = canvasRef.value.getBoundingClientRect();
 
-  panX.value = rect.width / 2 - center.x * zoom.value;
-
-  const verticalOffset = Math.min(rect.height * 0.05, 30);
-  panY.value = rect.height / 2 - center.y * zoom.value + verticalOffset;
+  // If zoom is too low for full detail, zoom in to spotlight the node
+  if (zoom.value < LOD_THRESHOLDS.FULL_DETAIL) {
+    // Zoom to just above the full detail threshold
+    const targetZoom = LOD_THRESHOLDS.FULL_DETAIL + 0.1;
+    panX.value = rect.width / 2 - center.x * targetZoom;
+    const verticalOffset = Math.min(rect.height * 0.05, 30);
+    panY.value = rect.height / 2 - center.y * targetZoom + verticalOffset;
+    zoom.value = targetZoom;
+  } else {
+    panX.value = rect.width / 2 - center.x * zoom.value;
+    const verticalOffset = Math.min(rect.height * 0.05, 30);
+    panY.value = rect.height / 2 - center.y * zoom.value + verticalOffset;
+  }
 
   focusedNodeId.value = nodeId;
+  // Set LOD focus to ensure node shows at full detail
+  focusedLODNodeId.value = nodeId;
 
   setTimeout(() => {
     store.isTransitioning = false;
   }, 300);
+};
+
+// Check if workspace has only one branch node and auto-snap it
+const checkAndAutoSnapSingleBranch = () => {
+  console.log('[InfiniteCanvas] Checking for auto-snap condition');
+
+  if (!store.nodes || store.nodes.length === 0) {
+    console.log('[InfiniteCanvas] No nodes found, skipping auto-snap');
+    return false;
+  }
+
+  // Don't auto-snap if something is already snapped
+  if (store.snappedNodeId) {
+    console.log('[InfiniteCanvas] Node already snapped, skipping auto-snap:', store.snappedNodeId);
+    return false;
+  }
+
+  // Don't auto-snap if we're in overview mode
+  if (isWorkspaceOverview.value) {
+    console.log('[InfiniteCanvas] In overview mode, skipping auto-snap');
+    return false;
+  }
+
+  console.log('[InfiniteCanvas] Found nodes:', {
+    total: store.nodes.length,
+    nodeTypes: store.nodes.map(n => ({ id: n.id, type: n.type, parentId: n.parentId }))
+  });
+
+  // Auto-snap if there's exactly one node total (only the main node)
+  if (store.nodes.length === 1 && store.nodes[0].type === 'main') {
+    const mainNode = store.nodes[0];
+    console.log('[InfiniteCanvas] Auto-snapping single main node:', mainNode.id);
+
+    // Use nextTick to ensure DOM is ready before snapping
+    nextTick(() => {
+      setTimeout(() => {
+        // Tell the BranchNode to toggle snap using event bus
+        emitter.emit('auto-snap-node', { nodeId: mainNode.id });
+      }, 500); // Small delay to ensure workspace transition is complete
+    });
+
+    return true;
+  }
+
+  console.log('[InfiniteCanvas] Auto-snap condition not met - found', store.nodes.length, 'total nodes');
+  return false;
 };
 
 // Handle branch creation
@@ -1692,6 +2017,17 @@ const handleCreateBranch = async (
   initialData: any
 ) => {
   isFocusedMode.value = false;
+
+  // Step 1: Check if any node is currently snapped and unsnap it first
+  if (store.snappedNodeId) {
+    console.log('[InfiniteCanvas] Unsnapping current node before creating branch:', store.snappedNodeId);
+
+    // Unsnap the current node using event bus
+    emitter.emit('auto-snap-node', { nodeId: store.snappedNodeId });
+
+    // Wait for unsnap animation to complete
+    await new Promise(resolve => setTimeout(resolve, 450));
+  }
 
   const parentNode = store.nodes.find((n) => n.id === parentId);
   if (!parentNode) return;
@@ -1707,7 +2043,7 @@ const handleCreateBranch = async (
   // Extract the first user message for title generation
   // This could be from the initial data or the most recent message
   let firstUserMessage = '';
-  
+
   if (initialData?.userMessage) {
     firstUserMessage = initialData.userMessage;
   } else if (parentNode.messages && parentNode.messages.length > 0) {
@@ -1727,7 +2063,7 @@ const handleCreateBranch = async (
     }
   }
 
-  // Create the branch node with title generation enabled
+  // Step 2: Create the branch node with title generation enabled
   const newNode = await store.addNode(parentId, messageIndex, adjustedPosition, {
     ...initialData,
     y: adjustedPosition.y,
@@ -1736,9 +2072,13 @@ const handleCreateBranch = async (
     firstUserMessage: firstUserMessage
   });
 
+  // Step 3: Center on the new node
   centerOnNode(newNode.id);
+
+  // Step 4: Snap the new branch node
   setTimeout(() => {
-    autoFitNodes();
+    console.log('[InfiniteCanvas] Auto-snapping new branch node:', newNode.id);
+    emitter.emit('auto-snap-node', { nodeId: newNode.id });
   }, 400);
 };
 
@@ -1767,6 +2107,93 @@ const handleResend = async (nodeId: string, userMessageIndex: number) => {
   );
 };
 
+// Calculate spline path for interaction layer - EXACTLY match SplineConnector
+const getSplinePath = (startNode: any, endNode: any, isExpanded: boolean) => {
+  // Use LOD-aware dimensions to match SplineConnector
+  const endDimensions = getEffectiveCardDimensions(endNode);
+  const startDimensions = getEffectiveCardDimensions(startNode);
+  const endCardWidth = endDimensions.width;
+  const endCardHeight = endDimensions.height;
+  const startCardWidth = startDimensions.width;
+  const startCardHeight = startDimensions.height;
+  const isLeftBranch = endNode.type === 'left-branch';
+
+  // Use the passed expansion state directly (same as SplineConnector receives)
+  const isSourceNodeExpanded = isExpanded;
+
+  // EXACT same calculation as SplineConnector calculateConnectionPoints()
+  const startLodLevel = startDimensions.lodLevel;
+  const endLodLevel = endDimensions.lodLevel;
+
+  const idx = endNode.branchMessageIndex ?? 0;
+
+  // Calculate yOff based on specific LOD level to match SplineConnector
+  let yOff;
+  switch (startLodLevel) {
+    case 'block':
+      // Very small spacing for block LOD
+      yOff = isSourceNodeExpanded ? Math.min(idx * 15 + 8, startCardHeight / 2) : startCardHeight / 2;
+      break;
+    case 'summary':
+      // Medium spacing for summary LOD
+      yOff = isSourceNodeExpanded ? Math.min(idx * 30 + 15, startCardHeight / 2) : startCardHeight / 2;
+      break;
+    case 'full':
+    default:
+      // Full spacing for full LOD
+      yOff = isSourceNodeExpanded ? idx * 120 + 40 : 40;
+      break;
+  }
+
+  const startPoint = {
+    x: isLeftBranch ? startNode.x - 1 : startNode.x + startCardWidth + 1,
+    y: startNode.y + Math.min(yOff, startCardHeight - 10)
+  };
+
+  const endPoint = {
+    x: endNode.x + (isLeftBranch ? endCardWidth : 0),
+    y: endNode.y + endCardHeight / 2
+  };
+
+  // EXACT same pathAndControlPoints calculation
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const dist = Math.hypot(dx, dy);
+  const cpDist = Math.min(dist * 0.8, 200);
+  const vert = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+
+  const controlPoint1 = {
+    x: startPoint.x + (isLeftBranch ? -cpDist : cpDist),
+    y: startPoint.y + vert
+  };
+  const controlPoint2 = {
+    x: endPoint.x + (isLeftBranch ? cpDist : -cpDist),
+    y: endPoint.y - vert
+  };
+
+  return `M ${startPoint.x} ${startPoint.y} C ${controlPoint1.x} ${controlPoint1.y}, ${controlPoint2.x} ${controlPoint2.y}, ${endPoint.x} ${endPoint.y}`;
+};
+
+// Handle spline double-click from interaction layer
+const handleSplineDoubleClick = (connection: any) => {
+  console.log('Spline double-clicked from interaction layer!', connection);
+  // Emit an event that the SplineConnector can listen to
+  emitter.emit('spline-double-click', {
+    parentId: connection.parent.id,
+    childId: connection.child.id
+  });
+};
+
+// Handle spline hover from interaction layer
+const handleSplineHover = (connection: any, isHovering: boolean) => {
+  // Emit hover event that SplineConnector can listen to
+  emitter.emit('spline-hover', {
+    parentId: connection.parent.id,
+    childId: connection.child.id,
+    isHovering: isHovering
+  });
+};
+
 // Mouse event handlers
 const handleMouseUp = () => {
   if (workspaceDragState.value.isDragging) {
@@ -1788,6 +2215,64 @@ const handleMouseUp = () => {
     offset: { x: 0, y: 0 },
   };
 
+
+  // Handle multi-drag completion
+  if (isMultiDragging.value) {
+    isMultiDragging.value = false;
+
+    // Save multi-node move to undo stack
+    const moveActions = [];
+    selectedNodeIds.value.forEach(nodeId => {
+      const node = store.nodes.find(n => n.id === nodeId);
+      const startPos = multiDragStartPositions.value.get(nodeId);
+      if (node && startPos) {
+        const finalPosition = { x: node.x, y: node.y };
+
+        // Only save if node actually moved
+        if (startPos.x !== finalPosition.x || startPos.y !== finalPosition.y) {
+          moveActions.push({
+            nodeId,
+            previousPosition: startPos,
+            newPosition: finalPosition
+          });
+        }
+      }
+    });
+
+    if (moveActions.length > 0) {
+      addToUndoStack({
+        type: 'move_multiple_nodes',
+        moves: moveActions,
+        timestamp: Date.now()
+      });
+    }
+
+    multiDragStartPositions.value.clear();
+  }
+
+  // Check if a single node was being dragged and save to undo stack
+  if (store.isDragging && store.activeNode && dragStartPosition.value) {
+    const draggedNode = store.nodes.find(n => n.id === store.activeNode);
+    if (draggedNode) {
+      const finalPosition = { x: draggedNode.x, y: draggedNode.y };
+      const startPosition = { x: dragStartPosition.value.x, y: dragStartPosition.value.y };
+
+      // Only add to undo stack if the node actually moved
+      if (startPosition.x !== finalPosition.x || startPosition.y !== finalPosition.y) {
+        addToUndoStack({
+          type: 'move_node',
+          nodeId: store.activeNode,
+          previousPosition: startPosition,
+          newPosition: finalPosition,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    // Clear drag start position
+    dragStartPosition.value = null;
+  }
+
   store.isDragging = false;
   store.activeNode = null;
   isPanning.value = false;
@@ -1799,14 +2284,42 @@ const handleCanvasMouseDown = (e) => {
   // Disable panning in overview mode
   if (isWorkspaceOverview.value) return;
 
-  if (e.button === 0 && !store.isDragging && !workspaceDragState.value.isDragging) {
-    isPanning.value = true;
-    lastPanPosition.value = {
-      x: e.clientX - panX.value,
-      y: e.clientY - panY.value,
-    };
+  const clickedNode = findNodeAt(e.clientX, e.clientY);
+
+  if (clickedNode) {
+    // Clicked on a node - handle selection
+    if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      // Clear selection if not holding modifier keys
+      selectedNodeIds.value.clear();
+    }
+
+    // Toggle node selection
+    if (selectedNodeIds.value.has(clickedNode.id)) {
+      selectedNodeIds.value.delete(clickedNode.id);
+    } else {
+      selectedNodeIds.value.add(clickedNode.id);
+    }
+
+    // Start multi-drag if node is selected
+    if (selectedNodeIds.value.has(clickedNode.id)) {
+      isMultiDragging.value = true;
+      multiDragStartPositions.value.clear();
+
+      // Save start positions for all selected nodes
+      selectedNodeIds.value.forEach(nodeId => {
+        const node = store.nodes.find(n => n.id === nodeId);
+        if (node) {
+          multiDragStartPositions.value.set(nodeId, { x: node.x, y: node.y });
+        }
+      });
+
+      dragStartPosition.value = screenToWorld(e.clientX, e.clientY);
+    }
   }
+
+  // No fallback panning - use 2-finger trackpad for panning instead
 };
+
 
 // Touch event handlers
 const handleTouchMove = (e: TouchEvent) => {
@@ -1838,8 +2351,8 @@ const handleTouchMove = (e: TouchEvent) => {
     const deltaDistance = distance - lastPanPosition.value.lastDistance;
 
     const newZoom = Math.min(
-      Math.max(zoom.value + deltaDistance * 0.01, 0.1),
-      2
+      Math.max(zoom.value + deltaDistance * 0.01, ZOOM_MIN),
+      ZOOM_MAX
     );
     zoom.value = newZoom;
 
@@ -1930,10 +2443,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
     activeTag === 'textarea' ||
     document.activeElement?.hasAttribute('contenteditable');
 
-  // Track CMD/CTRL key for flower bloom effect
-  if ((e.metaKey || e.ctrlKey) && isWorkspaceOverview.value && viewMode.value === 'bubble') {
-    isCommandPressed.value = true;
-  }
 
   if (!isEditing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
     e.preventDefault();
@@ -1941,6 +2450,33 @@ const handleKeyDown = (e: KeyboardEvent) => {
     localStorage.setItem('alwaysShowPetals', alwaysShowPetals.value.toString());
 
     showNotification(alwaysShowPetals.value ? 'Petals: Always Visible' : 'Petals: Visible on Hover');
+  }
+
+  // Undo/Redo keyboard shortcuts
+  if (!isEditing) {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const cmdKey = isMac ? e.metaKey : e.ctrlKey;
+
+    // Undo: Ctrl/Cmd + Z (without Shift)
+    if (cmdKey && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+
+    // Redo: Ctrl/Cmd + Shift + Z
+    if (cmdKey && e.key === 'z' && e.shiftKey) {
+      e.preventDefault();
+      redo();
+      return;
+    }
+
+    // Redo alternative: Ctrl/Cmd + Y
+    if (cmdKey && e.key === 'y') {
+      e.preventDefault();
+      redo();
+      return;
+    }
   }
 
   if (store.isTransitioning) return;
@@ -2021,16 +2557,15 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
   if (targetNodeId) {
     focusedNodeId.value = targetNodeId;
+    // Set LOD focus to spotlight the navigated node
+    focusedLODNodeId.value = targetNodeId;
     centerOnNode(targetNodeId);
   }
 };
 
-// Handle key release to stop flower bloom effect
+// Handle key release
 const handleKeyUp = (e: KeyboardEvent) => {
-  // Stop flower bloom effect when CMD/CTRL is released
-  if ((e.key === 'Meta' || e.key === 'Control') && isWorkspaceOverview.value && viewMode.value === 'bubble') {
-    isCommandPressed.value = false;
-  }
+  // No special handling needed for grid-only mode
 };
 
 // Unfocus cluster visualization
@@ -2092,6 +2627,13 @@ const autoFitNodes = () => {
   window.autoFitNodes = autoFitNodes;
 };
 
+// Reset workspace physics (placeholder function)
+const resetWorkspacePhysics = () => {
+  // Reset any physics-related state for workspaces
+  // This can be expanded later if needed
+  console.log('Workspace physics reset');
+};
+
 // Enhanced bounds calculation for RTS
 const calculateWorkspacesBounds = () => {
   if (!chatStore.chats.length) return null;
@@ -2126,6 +2668,7 @@ defineExpose({
   handleHeightUnlock,
   centerAndSnapNode,
   handleWorkspaceSelect,
+  checkAndAutoSnapSingleBranch,
   runPerformanceTest: () => perfTestPanel.value?.generateMockFlowers(),
   clearPerformanceTest: () => perfTestPanel.value?.clearMockFlowers()
 });
@@ -2151,7 +2694,25 @@ const handleMouseMove = (e) => {
   if (isClusterVizFocused.value) return;
   resetInactivityTimer();
 
-  if (workspaceDragState.value.isDragging) {
+  const worldMousePos = screenToWorld(e.clientX, e.clientY);
+
+  if (isMultiDragging.value && dragStartPosition.value) {
+    // Handle multi-node dragging
+    const deltaX = worldMousePos.x - dragStartPosition.value.x;
+    const deltaY = worldMousePos.y - dragStartPosition.value.y;
+
+    // Apply delta to all selected nodes
+    selectedNodeIds.value.forEach(nodeId => {
+      const node = store.nodes.find(n => n.id === nodeId);
+      const startPos = multiDragStartPositions.value.get(nodeId);
+      if (node && startPos) {
+        store.updateNodePosition(nodeId, {
+          x: startPos.x + deltaX,
+          y: startPos.y + deltaY
+        });
+      }
+    });
+  } else if (workspaceDragState.value.isDragging) {
     const { activeId, offset } = workspaceDragState.value;
     if (!activeId) return;
 
@@ -2176,12 +2737,8 @@ const handleMouseMove = (e) => {
       x: canvasX - store.dragOffset.x,
       y: canvasY - store.dragOffset.y,
     });
-  } else if (isPanning.value) {
-    const dx = e.clientX - lastPanPosition.value.x;
-    const dy = e.clientY - lastPanPosition.value.y;
-    panX.value = dx;
-    panY.value = dy;
   }
+  // Removed panning logic - now handled by 2-finger trackpad gestures
 };
 
 const handleNodeExpansionChange = ({ nodeId, isExpanded }) => {
@@ -2196,6 +2753,13 @@ const handleNodeExpansionChange = ({ nodeId, isExpanded }) => {
 const handleDragStart = (e, node) => {
   store.isDragging = true;
   store.activeNode = node.id;
+
+  // Save the initial position for undo
+  dragStartPosition.value = {
+    nodeId: node.id,
+    x: node.x,
+    y: node.y
+  };
 
   const canvasRect = canvasRef.value.getBoundingClientRect();
 
@@ -2224,6 +2788,16 @@ const isConnectionActive = (connection) => {
     connection.child.id === focusedNodeId.value
   );
 };
+
+// Listen for external workspace loads (from WorkspaceMenu, etc.)
+emitter.on('workspace-loaded-external', () => {
+  console.log('[InfiniteCanvas] External workspace load detected, checking auto-snap');
+  nextTick(() => {
+    setTimeout(() => {
+      checkAndAutoSnapSingleBranch();
+    }, 100); // Small delay to ensure nodes are loaded
+  });
+});
 
 // Component lifecycle
 onMounted(async () => {
@@ -2263,15 +2837,7 @@ onMounted(async () => {
           centerCanvas();
         } else {
           if (isWorkspaceOverview.value) {
-            resetWorkspacePhysics();
-            
-            // Show tip about CMD/CTRL bloom effect once
-            if (!localStorage.getItem('cmdBloomTipShown') && chatStore.chats.length > 1) {
-              setTimeout(() => {
-                showNotification('💡 Hold CMD/CTRL to make all flowers bloom!');
-                localStorage.setItem('cmdBloomTipShown', 'true');
-              }, 2000);
-            }
+            // Grid view setup complete
           }
         }
 
@@ -2286,66 +2852,84 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeyDown);
   window.removeEventListener("keyup", handleKeyUp);
+  // Clean up event listeners
+  emitter.off('workspace-loaded-external');
 });
 </script>
 
 <style scoped>
-/* RTS Perspective Base Styles */
-.rts-perspective {
-  perspective: 2000px;
-  perspective-origin: center 20%;
+/* Workspace Import Badge for Detail View */
+.workspace-import-badge {
+  @apply fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg;
+  @apply backdrop-blur-sm transition-all duration-200 font-medium text-sm;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 4px 12px oklch(from oklch(var(--bc)) l c h / 0.1);
 }
 
-.rts-canvas {
-  transform-style: preserve-3d;
+.workspace-import-badge.import-chatgpt {
+  background: oklch(from oklch(var(--in)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--in)) l c h / 0.3);
+  color: oklch(var(--in));
 }
 
-.rts-transform {
-  transform-style: preserve-3d;
+.workspace-import-badge.import-claude {
+  background: oklch(from oklch(var(--wa)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--wa)) l c h / 0.3);
+  color: oklch(var(--wa));
 }
 
-.rts-nodes-layer {
-  transform-style: preserve-3d;
+/* Container Styles - Theme Aware Background */
+.canvas-background {
+  /* Default seamless gradient background matching GridWorkspaceView */
+  background: linear-gradient(135deg,
+      oklch(var(--b1)),
+      oklch(var(--b1)),
+      oklch(from oklch(var(--b2)) l c h / 0.3));
 }
 
-/* RTS Ground Plane */
-.rts-ground-plane {
+/* Cyberpunk theme specific gradient */
+[data-theme="cyberpunk"] .canvas-background {
+  background: linear-gradient(32deg, oklch(0.9 0.18 176.5), oklch(0.81 0.16 172.13), oklch(0.71 0.19 3.12));
+}
+
+/* Synthwave theme specific gradient */
+[data-theme="synthwave"] .canvas-background {
+  background: linear-gradient(41deg, oklch(0.78 0.12 226.65), oklch(0.72 0.18 339.2 / 0.62), oklch(0.76 0.19 111.62 / 0));
+}
+
+.workspace-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Ensure container is transparent to show parent background */
+  background: transparent;
+}
+
+.grid-view {
+  overflow-y: auto;
+  padding-top: 4rem;
+  /* Remove any background to allow seamless transition */
+  background: transparent;
+}
+
+.workspace-search-bar {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 40%;
-  background: linear-gradient(to bottom,
-      transparent 0%,
-      rgba(var(--color-base-300), 0.1) 30%,
-      rgba(var(--color-base-300), 0.3) 70%,
-      rgba(var(--color-base-300), 0.5) 100%);
-  transform: rotateX(75deg) translateZ(-200px);
-  transform-origin: bottom center;
-  pointer-events: none;
-  z-index: 0;
+  z-index: 50;
 }
 
-/* Enhanced GPU Acceleration for RTS */
+/* Enhanced GPU Acceleration */
 .transform-gpu {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
-  perspective: 2000px;
-  overflow: hidden;
   will-change: transform;
 }
 
-/* Layout & Positioning with RTS adjustments */
-.fixed {
-  overflow: hidden;
-  z-index: 40;
-}
-
-.absolute {
-  overflow: visible;
-}
-
-/* Enhanced transitions for RTS */
+/* Enhanced transitions */
 .transition-transform {
   transition-property: transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -2358,151 +2942,13 @@ onBeforeUnmount(() => {
   transition-duration: 300ms;
 }
 
-/* Focus States with depth */
-div:focus {
-  outline: none;
+.transition-transform-overview {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 500ms;
 }
 
-div:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.1);
-}
-
-/* Canvas Controls with RTS positioning */
-.canvas-control {
-  position: fixed;
-  padding: 0.375rem 0.75rem;
-  background-color: rgb(var(--color-base-200) / 0.9);
-  backdrop-filter: blur(4px);
-  border-radius: 9999px;
-  border: 1px solid rgb(var(--color-base-300));
-  box-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.15), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  transform: translateZ(50px);
-  /* Bring controls forward in 3D space */
-}
-
-.canvas-control:hover {
-  background-color: rgb(var(--color-base-300) / 0.9);
-  transform: translateZ(60px) scale(1.05);
-}
-
-/* Transform Utilities for RTS */
-.will-change-transform {
-  will-change: transform;
-}
-
-.transform-smooth {
-  transition: transform 0.3s ease-out;
-}
-
-/* Container Styles with RTS */
-.workspace-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  transform-style: preserve-3d;
-}
-
-.bubble-view {
-  overflow: hidden;
-  touch-action: none;
-  user-select: none;
-  transform-style: preserve-3d;
-}
-
-.grid-view {
-  overflow-y: auto;
-  padding-top: 4rem;
-}
-
-/* Grass Layer - positioned behind search bar, extends full viewport width */
-.grass-layer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  width: 100vw;
-  height: 100px; /* Height to cover search bar area */
-  z-index: 45; /* Behind search bar (z-index: 50) but above canvas elements */
-  pointer-events: none;
-  overflow: visible;
-  transform: translateZ(90px);
-}
-
-.grass-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(to top, 
-    rgba(34, 139, 34, 0.1) 0%,
-    rgba(34, 139, 34, 0.05) 50%,
-    transparent 100%);
-}
-
-.grass-blade {
-  transition: transform 0.3s ease;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-  animation: grassSway 4s ease-in-out infinite;
-  animation-delay: calc(var(--delay, 0) * 0.1s);
-}
-
-.grass-blade:nth-child(odd) {
-  animation-direction: alternate;
-}
-
-.grass-blade:nth-child(even) {
-  animation-direction: alternate-reverse;
-}
-
-.grass-blade:hover {
-  transform: scale(1.1) rotate(calc(var(--rotation, 0deg) + 5deg));
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-}
-
-/* Gentle swaying animation */
-@keyframes grassSway {
-  0%, 100% {
-    transform: rotate(var(--rotation, 0deg)) translateX(0);
-  }
-  25% {
-    transform: rotate(calc(var(--rotation, 0deg) + 2deg)) translateX(1px);
-  }
-  75% {
-    transform: rotate(calc(var(--rotation, 0deg) - 2deg)) translateX(-1px);
-  }
-}
-
-.workspace-search-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  transform: translateZ(100px);
-  /* Behind configurator panel (z-index: 40) */
-}
-
-/* SVG Layer with depth */
-.svg-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 1;
-  transform-style: preserve-3d;
-}
-
-/* Node Layer with 3D positioning */
-.node-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  transform-style: preserve-3d;
-}
-
-/* Animation States with depth */
+/* Animation States */
 .enter-active,
 .leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -2511,50 +2957,21 @@ div:focus-visible {
 .enter-from,
 .leave-to {
   opacity: 0;
-  transform: scale(0.95) translateZ(-20px);
+  transform: scale(0.95);
 }
 
-/* Fade transition with depth */
+/* Fade transitions */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.3s ease;
 }
 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translateZ(-10px);
 }
 
-/* Performance Optimizations for RTS */
-.hardware-accelerated {
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.media-drop-overlay {
-  pointer-events: none;
-  z-index: 100;
-  transform: translateZ(200px);
-}
-
-/* RTS-specific drag behaviors */
-.fixed {
-  touch-action: none;
-}
-
-[draggable="true"] {
-  cursor: move;
-}
-
-/* Transition for Overview and Detailed Views with RTS */
-.transition-transform-overview {
-  transition-property: transform;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 500ms;
-}
-
-/* Waterfall Transition with depth */
+/* Waterfall transitions */
 .waterfall-enter-active,
 .waterfall-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -2563,7 +2980,7 @@ div:focus-visible {
 .waterfall-enter-from,
 .waterfall-leave-to {
   opacity: 0;
-  transform: translateY(20px) translateZ(-30px);
+  transform: translateY(20px);
 }
 
 .waterfall-move {
@@ -2574,135 +2991,101 @@ div:focus-visible {
   transition-delay: 0.3s;
 }
 
-.p-6:hover {
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
-  transform: translateY(-6px) translateZ(10px);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+/* Welcome Screen Theme-Aware Styling */
+.welcome-content {
+  color: oklch(from oklch(var(--bc)) l c h / 0.8);
 }
 
-/* Enhanced overview transition overlay with depth */
-.overview-transition-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(var(--color-base-200), 0.4);
-  backdrop-filter: blur(4px);
-  z-index: 50;
-  opacity: 0;
-  animation: fadeIn 0.3s forwards;
-  transform: translateZ(150px);
+.welcome-subtitle {
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
 }
 
-.transition-blur {
-  animation: blurEffect 0.5s forwards;
+.welcome-feature-card {
+  background: linear-gradient(135deg,
+      oklch(from oklch(var(--b1)) l c h / 0.8),
+      oklch(from oklch(var(--b2)) l c h / 0.5));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  backdrop-filter: blur(8px);
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateZ(150px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateZ(150px) scale(1);
-  }
+/* Spline hitbox hover effect */
+.spline-hitbox:hover {
+  stroke-opacity: 1 !important;
 }
 
-@keyframes blurEffect {
-  0% {
-    backdrop-filter: blur(0px);
-    transform: scale(1);
-  }
-
-  50% {
-    backdrop-filter: blur(6px);
-    transform: scale(1.02);
-  }
-
-  100% {
-    backdrop-filter: blur(0px);
-    transform: scale(1);
-  }
+.welcome-feature-card:hover {
+  background: linear-gradient(135deg,
+      oklch(from oklch(var(--p)) l c h / 0.05),
+      oklch(from oklch(var(--b1)) l c h / 0.9),
+      oklch(from oklch(var(--b2)) l c h / 0.6));
+  border-color: oklch(from oklch(var(--p)) l c h / 0.2);
+  box-shadow:
+    0 12px 32px oklch(from oklch(var(--p)) l c h / 0.15),
+    0 0 0 1px oklch(from oklch(var(--p)) l c h / 0.1);
+  transform: translateY(-4px);
+  transition: all 0.2s ease;
 }
 
-/* Enhanced bubble animation with 3D */
-@keyframes bubblePulse {
-  0% {
-    transform: scale(1) translateZ(0px);
-    box-shadow: 0 0 0 0 rgba(var(--color-primary), 0.7);
-  }
-
-  70% {
-    transform: scale(1.05) translateZ(5px);
-    box-shadow: 0 0 0 10px rgba(var(--color-primary), 0);
-  }
-
-  100% {
-    transform: scale(1) translateZ(0px);
-    box-shadow: 0 0 0 0 rgba(var(--color-primary), 0);
-  }
+.notification-toast {
+  background: oklch(from oklch(var(--p)) l c h / 0.9);
+  color: oklch(var(--pc));
+  backdrop-filter: blur(8px);
 }
 
-.bubble-highlight {
-  animation: bubblePulse 2s infinite;
+.file-drop-overlay {
+  background: oklch(from oklch(var(--p)) l c h / 0.2);
 }
 
-/* Enhanced fade transitions with 3D */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+.file-drop-text {
+  color: oklch(var(--p));
+  text-shadow: 0 2px 4px oklch(from oklch(var(--p)) l c h / 0.3);
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translate(-50%, -20px) translateZ(-20px);
-}
-
-/* Depth-based layering for better RTS effect */
-.workspace-container>* {
-  transform-style: preserve-3d;
-}
-
-/* Lighting effects for RTS atmosphere */
-.rts-canvas::before {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  right: 2px;
-  bottom: 2px;
-  background: radial-gradient(ellipse 80% 60% at 50% 20%,
-      rgba(255, 255, 255, 0.02) 0%,
-      transparent 50%);
+/* Media drop overlay */
+.media-drop-overlay {
   pointer-events: none;
-  z-index: 1000;
-  transform: translateZ(300px);
-  border-radius: 4px;
+  z-index: 100;
 }
 
-/* Reduce motion for accessibility */
+/* Clean Onboarding Styles */
+.drop-zone {
+  @apply p-8 rounded-2xl border-2 border-dashed border-base-content/10 transition-all duration-300 cursor-pointer;
+}
+
+.drop-zone:hover {
+  @apply border-base-content/20 bg-base-200/30;
+}
+
+.drop-zone-active {
+  @apply border-primary bg-primary/5 scale-[1.02];
+}
+
+.drop-zone-inner {
+  @apply text-center;
+}
+
+.create-new-button {
+  @apply p-8 rounded-2xl border-2 border-transparent transition-all duration-300 text-left w-full;
+  @apply hover:border-primary/20 hover:bg-primary/5 hover:scale-[1.02];
+}
+
+.create-new-inner {
+  @apply text-center;
+}
+
+.onboarding-drag-active {
+  @apply bg-base-200/20;
+}
+
+/* Accessibility - Reduce motion */
 @media (prefers-reduced-motion: reduce) {
-  .rts-perspective {
-    perspective: none !important;
-  }
-
-  .rts-transform,
-  .rts-nodes-layer,
-  .rts-canvas {
-    transform-style: flat !important;
-  }
-
-  .rts-ground-plane {
-    transform: none !important;
-    opacity: 0.3 !important;
-  }
-
   .transform-gpu {
     transform: none !important;
+  }
+
+  * {
+    transition: none !important;
+    animation: none !important;
   }
 }
 </style>

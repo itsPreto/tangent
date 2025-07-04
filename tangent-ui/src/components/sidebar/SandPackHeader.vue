@@ -31,6 +31,17 @@
       </div>
       
       <div class="flex items-center gap-2">
+        <!-- Capture button with animation -->
+        <button v-if="showCaptureButton" 
+                @click="$emit('capture')" 
+                :disabled="isCapturing"
+                class="p-1 rounded-full transition-colors tooltip"
+                :class="isCapturing ? 'bg-base-300/30 cursor-not-allowed' : 'hover:bg-primary/20 animate-bounce'"
+                data-tip="Capture Screenshot">
+          <Camera v-if="!isCapturing" class="w-4 h-4" :style="{ color: primaryColor }" />
+          <div v-else class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+        </button>
+        
         <button @click="$emit('refresh')" 
                 class="p-1 rounded-full hover:bg-base-300/30 transition-colors tooltip"
                 data-tip="Refresh">
@@ -49,7 +60,7 @@
   
   <script setup lang="ts">
   import { computed, ref } from 'vue';
-  import { ChevronLeft, ChevronRight, RefreshCw, Maximize2, Minimize2 } from 'lucide-vue-next';
+  import { ChevronLeft, ChevronRight, RefreshCw, Maximize2, Minimize2, Camera } from 'lucide-vue-next';
   import { useThemeStore } from '@/stores/themeStore';
   
   const props = defineProps({
@@ -68,10 +79,18 @@
     fpsCounter: {
       type: String,
       default: ''
+    },
+    showCaptureButton: {
+      type: Boolean,
+      default: false
+    },
+    isCapturing: {
+      type: Boolean,
+      default: false
     }
   });
   
-  const emit = defineEmits(['previous', 'next', 'refresh', 'fullscreen']);
+  const emit = defineEmits(['previous', 'next', 'refresh', 'fullscreen', 'capture']);
   
   const themeStore = useThemeStore();
   const currentTheme = computed(() => document.documentElement.getAttribute('data-theme') || 'light');

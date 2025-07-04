@@ -2,8 +2,9 @@
     <div class="relative w-full h-full" :class="{ 'fullscreen-preview': isFullscreen }">
         <!-- Preview Header -->
         <PreviewHeader :current-index="currentIndex" :total-relics="totalRelics" :show-navigation="showNavigation"
-            :fps-counter="fpsCounter" @previous="$emit('previous')" @next="$emit('next')" @refresh="$emit('refresh')"
-            @fullscreen="toggleFullscreen" />
+            :fps-counter="fpsCounter" :show-capture-button="showCaptureButton" :is-capturing="isCapturing"
+            @previous="$emit('previous')" @next="$emit('next')" @refresh="$emit('refresh')"
+            @capture="$emit('capture')" @fullscreen="toggleFullscreen" />
 
         <!-- Preview Content -->
         <div class="preview-content-wrapper" ref="previewWrapper">
@@ -18,8 +19,9 @@
             <div class="absolute-fullscreen-preview">
                 <!-- Duplicate the header for the fullscreen view -->
                 <PreviewHeader :current-index="currentIndex" :total-relics="totalRelics" :show-navigation="showNavigation"
-                    :fps-counter="fpsCounter" @previous="$emit('previous')" @next="$emit('next')" @refresh="$emit('refresh')"
-                    @fullscreen="toggleFullscreen" />
+                    :fps-counter="fpsCounter" :show-capture-button="showCaptureButton" :is-capturing="isCapturing"
+                    @previous="$emit('previous')" @next="$emit('next')" @refresh="$emit('refresh')"
+                    @capture="$emit('capture')" @fullscreen="toggleFullscreen" />
                 
                 <!-- Clone the content for fullscreen view -->
                 <div class="preview-content-wrapper fullscreen-content">
@@ -46,10 +48,18 @@ const props = defineProps({
     showNavigation: {
         type: Boolean,
         default: false
+    },
+    showCaptureButton: {
+        type: Boolean,
+        default: false
+    },
+    isCapturing: {
+        type: Boolean,
+        default: false
     }
 });
 
-const emit = defineEmits(['previous', 'next', 'refresh']);
+const emit = defineEmits(['previous', 'next', 'refresh', 'capture']);
 
 const isFullscreen = ref(false);
 const previewWrapper = ref(null);
