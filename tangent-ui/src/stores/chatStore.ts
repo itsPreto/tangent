@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, shallowRef, triggerRef } from 'vue';
 import type { ChatSummary } from '@/types/chat';
 
 export const useChatStore = defineStore('chat', () => {
     const currentChatId = ref<string | null>(null);
-    const chats = ref<ChatSummary[]>([]);
+    // Use shallowRef for large arrays to avoid deep reactivity overhead
+    const chats = shallowRef<ChatSummary[]>([]);
     const isLoading = ref(false);
     const error = ref<string | null>(null);
 
@@ -19,6 +20,14 @@ export const useChatStore = defineStore('chat', () => {
             }
             const data = await response.json();
             chats.value = data.chats;
+            triggerRef(chats); // Manually trigger reactivity for shallowRef
+            
+            // Log memory usage info for debugging
+            console.log(`[ChatStore] Loaded ${data.chats.length} chats`);
+            if (typeof performance !== 'undefined' && performance.memory) {
+                const memMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
+                console.log(`[ChatStore] Memory usage: ${memMB}MB`);
+            }
         } catch (e: any) { // using any to avoid TS type issues with generic errors
             error.value = e.message || 'Failed to load chats';  // Store a user-friendly error
             console.error(e);
@@ -82,6 +91,7 @@ export const useChatStore = defineStore('chat', () => {
                     ...metadata,
                     isFavorite: metadata.isFavorite ?? chats.value[chatIndex].isFavorite
                 };
+                triggerRef(chats); // Manually trigger reactivity for shallowRef
             }
 
             // Reload chats to ensure consistency

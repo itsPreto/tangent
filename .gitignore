@@ -87,3 +87,4 @@ three-js-*.jsx
 /package.json
 /preppend.sh
 /ttft-results-*.json
+tangent-api/chats.db

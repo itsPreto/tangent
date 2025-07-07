@@ -8,17 +8,18 @@
     @dragleave="handleDragLeave"
     @drop="handleDrop"
   >
-    <!-- Advanced Controls Bar -->
-    <div class="controls-bar">
-      <div class="view-controls">
+    <!-- Advanced Controls Bar (hidden when external controls are used) -->
+    <div v-if="!externalControls" class="controls-bar animate-slide-down">
+      <div class="view-controls animate-fade-in" style="--animation-delay: 0.1s">
         <!-- View Mode Selector -->
         <div class="view-mode-selector">
           <button 
-            v-for="mode in viewModes" 
+            v-for="(mode, index) in viewModes" 
             :key="mode.id"
-            @click="currentViewMode = mode.id"
-            class="view-mode-btn"
+            @click="internalViewMode = mode.id"
+            class="view-mode-btn animate-scale-in"
             :class="{ 'active': currentViewMode === mode.id }"
+            :style="{ '--animation-delay': (0.2 + index * 0.02) + 's' }"
           >
             <component :is="mode.icon" :size="16" />
             <span>{{ mode.label }}</span>
@@ -26,8 +27,8 @@
         </div>
 
         <!-- Sort & Filter -->
-        <div class="filter-controls">
-          <select v-model="sortBy" class="sort-select">
+        <div class="filter-controls animate-fade-in" style="--animation-delay: 0.4s">
+          <select v-model="internalSortBy" class="sort-select">
             <option value="recent">Recently Updated</option>
             <option value="created">Date Created</option>
             <option value="name">Name A-Z</option>
@@ -45,22 +46,19 @@
             <span v-if="hasActiveFilters" class="filter-count">{{ activeFilterCount }}</span>
           </button>
 
-          <button 
-            @click="toggleClustering" 
-            class="cluster-btn"
-            :class="{ 'active': clusteringEnabled }"
-          >
-            <FolderOpen :size="16" />
-            <span>{{ clusteringEnabled ? 'Uncluster' : 'Cluster' }}</span>
-          </button>
+          <!-- Auto-clustering hint when in graph mode -->
+          <div v-if="currentViewMode === 'graph'" class="graph-info">
+            <Network :size="16" />
+            <span>Graph view with topic clustering</span>
+          </div>
         </div>
       </div>
 
       <!-- Grid Size Slider -->
-      <div class="grid-controls">
+      <div class="grid-controls animate-fade-in" style="--animation-delay: 0.5s">
         <span class="control-label">Size</span>
         <input 
-          v-model="cardSize" 
+          v-model="internalCardSize" 
           type="range" 
           min="180" 
           max="320" 
@@ -131,9 +129,12 @@
           <!-- Progress bar for clustering -->
           <div v-if="isLoadingClusters && clusteringStatus.progress > 0" class="progress-container">
             <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: clusteringStatus.progress + '%' }"></div>
+              <div class="progress-fill" :style="{ width: clusteringStatus.progress * 100 + '%' }"></div>
             </div>
-            <span class="progress-text">{{ Math.round(clusteringStatus.progress) }}%</span>
+            <span class="progress-text">{{ Math.round(clusteringStatus.progress * 100) }}%</span>
+            <span v-if="clusteringStatus.total_workspaces > 0" class="workspace-counter">
+              {{ clusteringStatus.processed_workspaces }}/{{ clusteringStatus.total_workspaces }} workspaces
+            </span>
           </div>
         </div>
       </div>
@@ -152,42 +153,120 @@
       </div>
     </Transition>
 
-    <!-- Grid Container -->
-    <div v-if="!isInitializing && !isLoadingClusters" class="grid-wrapper" :style="{ '--card-size': cardSize + 'px' }">
-      <TransitionGroup name="card" tag="div" class="workspace-grid" :class="currentViewMode">
-        <!-- Cluster Folder Cards -->
-        <div 
-          v-for="cluster in displayedClusters" 
-          :key="'cluster-' + cluster.id"
-          class="cluster-folder"
-          :class="{ 'hidden-for-modal': openCluster && openCluster.id === cluster.id }"
-          @click="openClusterModal(cluster, $event)"
-        >
-          <div class="folder-icon">
-            <FolderOpen :size="32" />
-          </div>
-          <div class="folder-info">
-            <h3 class="folder-title">{{ cluster.title }}</h3>
-            <span class="folder-count">{{ cluster.workspaces.length }} items</span>
+    <!-- Graph Mode Loading State -->
+    <div v-if="currentViewMode === 'graph' && (!clusteringEnabled || isLoadingClusters)" class="graph-loading-container">
+      <div class="graph-loading-content">
+        <div class="loading-spinner"></div>
+        <h3>Cluster(ing) ya chats</h3>
+        <p v-if="!clusteringEnabled">Starting topic clustering analysis...</p>
+        <p v-else-if="isLoadingClusters">Analyzing workspace relationships...</p>
+        <div class="loading-progress">
+          <div class="progress-bar" :style="{ width: clusteringStatus.progress * 100 + '%' }"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grid Container or D3 Visualization -->
+    <div v-if="!isInitializing && !isLoadingClusters" class="content-container">
+      <!-- D3 Visualization with Topics Sidebar -->
+      <div v-if="currentViewMode === 'graph' && clusteringEnabled" class="d3-layout">
+        <TopicsPanel
+          :clustering-status="clusteringStatus"
+          :selected-cluster="selectedTopicCluster"
+          @select-topic="handleTopicSelect"
+          @select-workspace="handleSelectWorkspace"
+          class="topics-sidebar"
+        />
+        <D3ForceGraph 
+          v-if="clusteringStatus.clusters && clusteringStatus.clusters.length > 0"
+          ref="d3GraphRef"
+          :clustering-status="clusteringStatus"
+          :external-controls="externalControls"
+          @select-workspace="handleSelectWorkspace"
+          @update-stats="handleGraphStatsUpdate"
+          @update3-d-support="handle3DSupportUpdate"
+          @update-fullscreen="handleFullscreenUpdate"
+          class="d3-main"
+        />
+        <div v-else class="d3-placeholder">
+          <div class="placeholder-content">
+            <h3>No Graph Data Available</h3>
+            <p>Clustering analysis is needed to generate the graph visualization.</p>
+            <button @click="toggleClustering" class="retry-btn">
+              Start Clustering Analysis
+            </button>
           </div>
         </div>
-
-        <!-- Individual Workspace Cards -->
-        <div 
-          v-for="workspace in displayedWorkspaces" 
-          :key="workspace.id" 
-          class="workspace-card group enhanced"
-          :class="{ 
-            'selected': selectedWorkspaceId === workspace.id,
-            'favorite': workspace.isFavorite,
-            'compact': currentViewMode === 'compact',
-            'detailed': currentViewMode === 'detailed',
-            'imported': workspace.isImported,
-            'chatgpt-import': workspace.format === 'chatgpt',
-            'claude-import': workspace.format === 'claude'
-          }"
-          @click="handleSelectWorkspace(workspace.id)"
+      </div>
+      
+      <!-- Regular Grid View -->
+      <div v-else class="grid-wrapper" :style="{ '--card-size': cardSize + 'px' }">
+        <VueDraggable
+          v-model="workspaceItems"
+          :animation="300"
+          :force-fallback="true"
+          :fallback-class="'workspace-card-fallback'"
+          :ghost-class="'workspace-card-ghost'"
+          :chosen-class="'workspace-card-chosen'"
+          :drag-class="'workspace-card-drag'"
+          :group="{ name: 'workspaces', pull: false, put: false }"
+          :sort="true"
+          :disabled="currentViewMode === 'graph'"
+          @start="onDragStart"
+          @end="onDragEnd"
+          @change="onDragChange"
+          tag="div" 
+          class="workspace-grid modern-grid" 
+          :class="currentViewMode"
         >
+          <!-- Cluster Folder Cards -->
+          <div 
+            v-for="(cluster, index) in displayedClusters" 
+            :key="'cluster-' + cluster.id"
+            class="cluster-folder"
+            :class="{ 
+              'hidden-for-modal': openCluster && openCluster.id === cluster.id,
+              'deconstructing': deconstructAnimation.get(cluster.id)
+            }"
+            :style="{ '--card-index': index }"
+            @click="openClusterModal(cluster, $event)"
+          >
+            <div class="folder-icon">
+              <FolderOpen :size="32" />
+            </div>
+            <div class="folder-info">
+              <h3 class="folder-title">{{ cluster.title }}</h3>
+              <span class="folder-count">{{ cluster.workspaces.length }} items</span>
+            </div>
+            <div class="cluster-actions">
+              <button 
+                @click="deconstructCluster(cluster, $event)" 
+                class="cluster-action-btn deconstruct-btn"
+                :title="'Explode ' + cluster.title"
+              >
+                <FolderMinus :size="16" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Individual Workspace Cards -->
+          <div 
+            v-for="(workspace, index) in displayedWorkspaces" 
+            :key="workspace.id" 
+            class="workspace-card group enhanced"
+            :class="{ 
+              'selected': selectedWorkspaceId === workspace.id,
+              'favorite': workspace.isFavorite,
+              'compact': currentViewMode === 'compact',
+              'detailed': currentViewMode === 'detailed',
+              'imported': workspace.isImported,
+              'chatgpt-import': workspace.format === 'chatgpt',
+              'claude-import': workspace.format === 'claude',
+              'deconstructed': workspace.clusterId
+            }"
+            :style="{ '--card-index': displayedClusters.length + index }"
+            @click="handleSelectWorkspace(workspace.id)"
+          >
           <!-- Card Glow Effect -->
           <div class="card-glow"></div>
           
@@ -215,6 +294,22 @@
               </div>
               
               <div class="card-actions">
+                <!-- Reconstruct button for deconstructed workspaces -->
+                <button 
+                  v-if="workspace.clusterId"
+                  @click.stop="reconstructCluster(workspace.clusterId, $event)" 
+                  class="action-btn reconstruct-btn"
+                  :title="'Rebuild cluster: ' + workspace.clusterTitle"
+                >
+                  <Layers :size="14" />
+                </button>
+                <button 
+                  @click.stop="openPreviewModal(workspace, $event)" 
+                  class="action-btn preview-btn"
+                  :title="'Preview ' + workspace.title"
+                >
+                  <Eye :size="14" />
+                </button>
                 <button 
                   @click.stop="toggleFavorite(workspace.id)" 
                   class="action-btn favorite-btn"
@@ -305,17 +400,36 @@
             <div class="progress-fill" :style="{ width: workspace.progress + '%' }"></div>
           </div>
         </div>
-      </TransitionGroup>
-    </div>
-
-    <!-- Empty State -->
-    <div v-if="displayedWorkspaces.length === 0 && displayedClusters.length === 0" class="empty-state">
-      <FolderOpen :size="48" class="empty-icon" />
-      <h3 class="empty-title">No workspaces found</h3>
-      <p class="empty-subtitle">Try adjusting your filters or create a new workspace</p>
-      <button @click="clearAllFilters" class="clear-filters-btn">
-        Clear All Filters
-      </button>
+        </VueDraggable>
+      
+      <!-- Load More Button -->
+      <div v-if="displayedWorkspaces.length > 0" class="load-more-section">
+        <div v-if="isLoadingMore" class="loading-more">
+          <div class="loading-spinner"></div>
+          <span>Loading more workspaces...</span>
+        </div>
+        <button 
+          v-else-if="hasMoreWorkspaces" 
+          @click="loadMoreWorkspaces" 
+          class="load-more-btn"
+        >
+          Load {{ Math.min(itemsPerPage, remainingWorkspaceCount) }} more workspaces
+        </button>
+        <div v-else-if="displayedWorkspaces.length >= itemsPerPage" class="all-loaded">
+          <span>All workspaces loaded</span>
+        </div>
+      </div>
+      
+      <!-- Empty State (only show in grid view) -->
+      <div v-if="displayedWorkspaces.length === 0 && displayedClusters.length === 0" class="empty-state">
+        <FolderOpen :size="48" class="empty-icon" />
+        <h3 class="empty-title">No workspaces found</h3>
+        <p class="empty-subtitle">Try adjusting your filters or create a new workspace</p>
+        <button @click="clearAllFilters" class="clear-filters-btn">
+          Clear All Filters
+        </button>
+      </div>
+      </div>
     </div>
 
     <!-- Context Menu -->
@@ -401,6 +515,86 @@
       </div>
     </Teleport>
 
+    <!-- Preview Modal -->
+    <Teleport to="body">
+      <div v-if="previewWorkspace" class="preview-modal-overlay" @click="closePreviewModal">
+        <div 
+          class="preview-modal"
+          :class="{ 'closing': isClosingPreview }"
+          :style="previewModalAnimStyle" 
+          @click.stop
+        >
+          <div class="modal-header">
+            <h2>{{ previewWorkspace.title || 'Untitled Workspace' }}</h2>
+            <button @click="closePreviewModal" class="close-btn">
+              <X :size="20" />
+            </button>
+          </div>
+          
+          <div class="preview-content">
+            <!-- Workspace Details -->
+            <div class="preview-details">
+              <div class="detail-section">
+                <h3>Overview</h3>
+                <div class="detail-grid">
+                  <div class="detail-item">
+                    <MessageSquare :size="16" />
+                    <span>{{ previewWorkspace.nodeCount || 0 }} nodes</span>
+                  </div>
+                  <div class="detail-item">
+                    <Clock :size="16" />
+                    <span>{{ formatTime(previewWorkspace.lastUpdated) }}</span>
+                  </div>
+                  <div class="detail-item" v-if="previewWorkspace.collaborators?.length">
+                    <Users :size="16" />
+                    <span>{{ previewWorkspace.collaborators.length }} collaborators</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Description -->
+              <div class="detail-section" v-if="previewWorkspace.description">
+                <h3>Description</h3>
+                <p>{{ previewWorkspace.description }}</p>
+              </div>
+              
+              <!-- Tags -->
+              <div class="detail-section" v-if="previewWorkspace.tags?.length">
+                <h3>Tags</h3>
+                <div class="preview-tags">
+                  <span 
+                    v-for="tag in previewWorkspace.tags"
+                    :key="tag.id"
+                    class="preview-tag"
+                    :style="{ backgroundColor: tag.color }"
+                  >
+                    {{ tag.name }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Preview Canvas -->
+            <div class="preview-canvas">
+              <CanvasPreview :workspace-id="previewWorkspace.id" />
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <button @click="closePreviewModal" class="btn btn-ghost">
+              Close Preview
+            </button>
+            <button 
+              @click="closePreviewModal(); handleSelectWorkspace(previewWorkspace.id)" 
+              class="btn btn-primary"
+            >
+              Open Workspace
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Import Progress Footer -->
     <Transition name="slide-up">
       <div v-if="isImporting || importStatus.is_running" class="import-progress-footer">
@@ -442,15 +636,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onBeforeUnmount, reactive } from 'vue';
+import { ref, computed, onMounted, watch, onBeforeUnmount, reactive, nextTick } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
 import { 
   Grid, List, LayoutGrid, Filter, FolderOpen, Expand, Star, MoreHorizontal, 
   MessageSquare, Clock, Users, Play, Copy, Share, Archive, Download, Trash2,
-  FileText, Image, Video, Bot, Code, Database, X, Upload
+  FileText, Image, Video, Bot, Code, Database, X, Upload, Network, Eye,
+  Layers, FolderMinus
 } from 'lucide-vue-next';
 import { clusteringService, type ClusteringStatus } from '@/services/clusteringService';
 import { conversationImportService, type ImportStatus } from '@/services/conversationImportService';
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
+import D3ForceGraph from './D3ForceGraph.vue';
+import TopicsPanel from './TopicsPanel.vue';
+import CanvasPreview from './CanvasPreview.vue';
 
 // Props
 const props = defineProps({
@@ -459,7 +658,23 @@ const props = defineProps({
     required: true
   },
   selectedWorkspaceId: String,
-  searchQuery: String
+  searchQuery: String,
+  externalControls: {
+    type: Boolean,
+    default: false
+  },
+  currentViewMode: {
+    type: String,
+    default: 'grid'
+  },
+  sortBy: {
+    type: String,
+    default: 'recent'
+  },
+  cardSize: {
+    type: Number,
+    default: 240
+  }
 });
 
 // Emits
@@ -470,19 +685,32 @@ const emit = defineEmits([
   'archive-workspace',
   'export-workspace',
   'delete-workspace',
-  'import-completed'
+  'import-completed',
+  'update-filter-state',
+  'update-graph-stats',
+  'update-3d-support',
+  'update-fullscreen',
+  'workspace-reorder'
 ]);
 
 // Refs
 const containerRef = ref<HTMLElement>();
 const localFavorites = ref<Set<string>>(new Set());
+const d3GraphRef = ref<any>();
 
-// View Controls
-const currentViewMode = ref('grid'); // 'grid', 'compact', 'detailed'
-const cardSize = ref(240);
-const sortBy = ref('recent');
+// View Controls (use props when external controls are enabled)
+const currentViewMode = computed(() => props.externalControls ? props.currentViewMode : internalViewMode.value);
+const cardSize = computed(() => props.externalControls ? props.cardSize : internalCardSize.value);
+const sortBy = computed(() => props.externalControls ? props.sortBy : internalSortBy.value);
+
+// Internal controls (used when external controls are disabled)
+const internalViewMode = ref('grid');
+const internalCardSize = ref(240);
+const internalSortBy = ref('recent');
 const showFilters = ref(false);
 const clusteringEnabled = ref(false);
+const visualizationMode = ref('folder'); // 'folder' or 'd3'
+const selectedTopicCluster = ref<number | null>(null);
 const isInitializing = ref(true);
 const isLoadingClusters = ref(false);
 const loadingStartTime = ref(0);
@@ -492,6 +720,12 @@ const MINIMUM_LOADING_TIME = 1000; // 1 second minimum
 const selectedTags = ref<Set<string>>(new Set());
 const selectedStatuses = ref<Set<string>>(new Set());
 const sizeRange = ref([0, 1000]);
+const dateRange = ref<{ start: string | null; end: string | null }>({ start: null, end: null });
+
+// Pagination for performance
+const currentPage = ref(0);
+const itemsPerPage = 24; // Show 24 workspaces initially
+const isLoadingMore = ref(false);
 
 // Clustering
 const clusters = ref([]);
@@ -519,10 +753,19 @@ const importStatus = reactive<ImportStatus>({
 });
 
 const isDragOver = ref(false);
+const isDragActive = ref(false);
 const isImporting = ref(false);
+const draggingId = ref<string | null>(null);
 
 let statusUnsubscribe: (() => void) | null = null;
 let importStatusUnsubscribe: (() => void) | null = null;
+
+// Enhanced drag state
+const dragOverlay = reactive({
+  visible: false,
+  workspace: null as any,
+  style: {} as Record<string, string>
+});
 
 // Context Menu
 const contextMenu = ref({
@@ -535,7 +778,8 @@ const contextMenu = ref({
 const viewModes = [
   { id: 'grid', label: 'Grid', icon: Grid },
   { id: 'compact', label: 'Compact', icon: List },
-  { id: 'detailed', label: 'Detailed', icon: LayoutGrid }
+  { id: 'detailed', label: 'Detailed', icon: LayoutGrid },
+  { id: 'graph', label: 'Graph', icon: Network }
 ];
 
 // Mock data for demo
@@ -564,6 +808,51 @@ const activeFilterCount = computed(() => {
   if (sizeRange.value[0] > 0 || sizeRange.value[1] < 1000) count++;
   return count;
 });
+
+// Expose methods for external control
+const toggleFilters = () => {
+  showFilters.value = !showFilters.value;
+};
+
+// Graph control methods for external controls
+const updateGraphLayout = (layout: string) => {
+  if (d3GraphRef.value) {
+    d3GraphRef.value.updateLayout(layout);
+  }
+};
+
+const toggleGraphControls = () => {
+  if (d3GraphRef.value) {
+    d3GraphRef.value.updateShowControls(!d3GraphRef.value.showControls);
+  }
+};
+
+const resetGraph = () => {
+  if (d3GraphRef.value) {
+    d3GraphRef.value.resetGraph();
+  }
+};
+
+const toggleFullscreen = () => {
+  if (d3GraphRef.value) {
+    d3GraphRef.value.toggleFullscreen();
+  }
+};
+
+defineExpose({
+  toggleFilters,
+  updateGraphLayout,
+  toggleGraphControls,
+  resetGraph,
+  toggleFullscreen
+});
+
+// Watch filter state and emit to parent when using external controls
+watch([hasActiveFilters, activeFilterCount], ([hasFilters, count]) => {
+  if (props.externalControls) {
+    emit('update-filter-state', hasFilters, count);
+  }
+}, { immediate: true });
 
 const filteredWorkspaces = computed(() => {
   let workspaces = props.workspaces || [];
@@ -624,12 +913,105 @@ const filteredWorkspaces = computed(() => {
   }));
 });
 
+// Enhanced workspace items with draggable functionality
+const workspaceItems = computed({
+  get: () => filteredWorkspaces.value,
+  set: (value) => {
+    // Handle reordering
+    const oldOrder = filteredWorkspaces.value;
+    if (JSON.stringify(oldOrder.map(w => w.id)) !== JSON.stringify(value.map(w => w.id))) {
+      // Find the moved item
+      for (let i = 0; i < value.length; i++) {
+        const newIndex = i;
+        const oldIndex = oldOrder.findIndex(w => w.id === value[i].id);
+        if (oldIndex !== newIndex && oldIndex !== -1) {
+          emit('workspace-reorder', oldIndex, newIndex);
+          break;
+        }
+      }
+    }
+  }
+});
+
 // Real clustering results  
 const clusterHoverStates = ref<Map<string, boolean>>(new Map());
 const clusterHoverTimeouts = ref<Map<string, number>>(new Map());
 const openCluster = ref<any>(null);
 const modalAnimStyle = ref({});
 const isClosingCluster = ref(false);
+
+// Preview modal state
+const previewWorkspace = ref<any>(null);
+const previewModalAnimStyle = ref({});
+const isClosingPreview = ref(false);
+
+// Deconstructed clusters state
+const deconstructedClusters = ref<Set<string>>(new Set());
+const deconstructAnimation = ref<Map<string, boolean>>(new Map());
+
+// Get workspaces from deconstructed clusters with filtering and pagination
+const deconstructedWorkspaces = computed(() => {
+  if (!clusteringEnabled.value) return [];
+  
+  let workspaces: any[] = [];
+  clusteringStatus.clusters.forEach(cluster => {
+    if (deconstructedClusters.value.has(cluster.id)) {
+      // Add cluster info to each workspace for reconstruction
+      cluster.workspaces.forEach(workspace => {
+        workspaces.push({
+          ...workspace,
+          clusterId: cluster.id,
+          clusterTitle: cluster.title
+        });
+      });
+    }
+  });
+  
+  // Apply search filtering to deconstructed workspaces
+  if (props.searchQuery && props.searchQuery.trim()) {
+    const query = props.searchQuery.toLowerCase();
+    workspaces = workspaces.filter(w => {
+      const title = (w.title || '').toLowerCase();
+      const desc = (w.description || '').toLowerCase();
+      const tags = w.tags?.map(t => t.name.toLowerCase()) || [];
+      
+      return title.includes(query) || 
+             desc.includes(query) || 
+             tags.some(tag => tag.includes(query));
+    });
+  }
+  
+  // Apply tag filtering
+  if (selectedTags.value.size > 0) {
+    workspaces = workspaces.filter(w => 
+      w.tags?.some(tag => selectedTags.value.has(tag.id))
+    );
+  }
+  
+  // Apply status filtering
+  if (selectedStatuses.value.size > 0) {
+    workspaces = workspaces.filter(w => 
+      selectedStatuses.value.has(w.status || 'active')
+    );
+  }
+  
+  // Apply date range filtering
+  if (dateRange.value.start || dateRange.value.end) {
+    workspaces = workspaces.filter(w => {
+      const createdAt = new Date(w.createdAt || w.created_at);
+      const startDate = dateRange.value.start ? new Date(dateRange.value.start) : null;
+      const endDate = dateRange.value.end ? new Date(dateRange.value.end) : null;
+      
+      if (startDate && createdAt < startDate) return false;
+      if (endDate && createdAt > endDate) return false;
+      return true;
+    });
+  }
+  
+  // Apply pagination to deconstructed workspaces
+  const endIndex = (currentPage.value + 1) * itemsPerPage;
+  return workspaces.slice(0, endIndex);
+});
 
 const displayedClusters = computed(() => {
   if (!clusteringEnabled.value) return [];
@@ -649,27 +1031,158 @@ const displayedClusters = computed(() => {
     });
   }
   
-  return filtered.map(cluster => ({
-    ...cluster,
-    isHovered: clusterHoverStates.value.get(cluster.id) || false
-  }));
+  // Filter out deconstructed clusters
+  return filtered
+    .filter(cluster => !deconstructedClusters.value.has(cluster.id))
+    .map(cluster => ({
+      ...cluster,
+      isHovered: clusterHoverStates.value.get(cluster.id) || false
+    }));
 });
 
-const displayedWorkspaces = computed(() => {
-  if (!clusteringEnabled.value) return filteredWorkspaces.value;
+// Paginated workspaces for performance
+const paginatedWorkspaces = computed(() => {
+  let baseWorkspaces = filteredWorkspaces.value;
   
-  // Remove workspaces that are in clusters
-  const clusteredWorkspaceIds = new Set();
-  displayedClusters.value.forEach(cluster => {
-    cluster.workspaces.forEach(w => clusteredWorkspaceIds.add(w.id));
+  // Remove workspaces that are in clusters when clustering is enabled
+  if (clusteringEnabled.value) {
+    const clusteredWorkspaceIds = new Set();
+    
+    // Exclude workspaces from ALL clusters (both displayed and deconstructed)
+    clusteringStatus.clusters.forEach(cluster => {
+      cluster.workspaces.forEach(w => clusteredWorkspaceIds.add(w.id));
+    });
+    
+    baseWorkspaces = baseWorkspaces.filter(w => !clusteredWorkspaceIds.has(w.id));
+  }
+  
+  // Apply pagination
+  const endIndex = (currentPage.value + 1) * itemsPerPage;
+  return baseWorkspaces.slice(0, endIndex);
+});
+
+// Helper to get total filtered deconstructed workspaces count
+const totalFilteredDeconstructedWorkspaces = computed(() => {
+  if (!clusteringEnabled.value) return 0;
+  
+  let workspaces: any[] = [];
+  clusteringStatus.clusters.forEach(cluster => {
+    if (deconstructedClusters.value.has(cluster.id)) {
+      cluster.workspaces.forEach(workspace => {
+        workspaces.push({
+          ...workspace,
+          clusterId: cluster.id,
+          clusterTitle: cluster.title
+        });
+      });
+    }
   });
   
-  return filteredWorkspaces.value.filter(w => !clusteredWorkspaceIds.has(w.id));
+  // Apply same filtering logic as deconstructedWorkspaces
+  if (props.searchQuery && props.searchQuery.trim()) {
+    const query = props.searchQuery.toLowerCase();
+    workspaces = workspaces.filter(w => {
+      const title = (w.title || '').toLowerCase();
+      const desc = (w.description || '').toLowerCase();
+      const tags = w.tags?.map(t => t.name.toLowerCase()) || [];
+      
+      return title.includes(query) || 
+             desc.includes(query) || 
+             tags.some(tag => tag.includes(query));
+    });
+  }
+  
+  if (selectedTags.value.size > 0) {
+    workspaces = workspaces.filter(w => 
+      w.tags?.some(tag => selectedTags.value.has(tag.id))
+    );
+  }
+  
+  if (selectedStatuses.value.size > 0) {
+    workspaces = workspaces.filter(w => 
+      selectedStatuses.value.has(w.status || 'active')
+    );
+  }
+  
+  if (dateRange.value.start || dateRange.value.end) {
+    workspaces = workspaces.filter(w => {
+      const createdAt = new Date(w.createdAt || w.created_at);
+      const startDate = dateRange.value.start ? new Date(dateRange.value.start) : null;
+      const endDate = dateRange.value.end ? new Date(dateRange.value.end) : null;
+      
+      if (startDate && createdAt < startDate) return false;
+      if (endDate && createdAt > endDate) return false;
+      return true;
+    });
+  }
+  
+  return workspaces.length;
+});
+
+// Computed properties for pagination controls
+const hasMoreWorkspaces = computed(() => {
+  let totalWorkspaces = filteredWorkspaces.value.length;
+  
+  if (clusteringEnabled.value) {
+    // Subtract ALL clustered workspaces (since we exclude all of them from paginatedWorkspaces)
+    let clusteredCount = 0;
+    clusteringStatus.clusters.forEach(cluster => {
+      clusteredCount += cluster.workspaces.length;
+    });
+    totalWorkspaces -= clusteredCount;
+  }
+  
+  const totalDeconstructed = totalFilteredDeconstructedWorkspaces.value;
+  const currentlyShownWorkspaces = paginatedWorkspaces.value.length + deconstructedWorkspaces.value.length;
+  const totalAvailableWorkspaces = totalWorkspaces + totalDeconstructed;
+  
+  return currentlyShownWorkspaces < totalAvailableWorkspaces;
+});
+
+const remainingWorkspaceCount = computed(() => {
+  let totalWorkspaces = filteredWorkspaces.value.length;
+  
+  if (clusteringEnabled.value) {
+    // Subtract ALL clustered workspaces (since we exclude all of them from paginatedWorkspaces)
+    let clusteredCount = 0;
+    clusteringStatus.clusters.forEach(cluster => {
+      clusteredCount += cluster.workspaces.length;
+    });
+    totalWorkspaces -= clusteredCount;
+  }
+  
+  const totalDeconstructed = totalFilteredDeconstructedWorkspaces.value;
+  const currentlyShownWorkspaces = paginatedWorkspaces.value.length + deconstructedWorkspaces.value.length;
+  const totalAvailableWorkspaces = totalWorkspaces + totalDeconstructed;
+  
+  return totalAvailableWorkspaces - currentlyShownWorkspaces;
+});
+
+// Backward compatibility alias
+const displayedWorkspaces = computed(() => {
+  // Combine regular workspaces with deconstructed workspaces
+  return [...paginatedWorkspaces.value, ...deconstructedWorkspaces.value];
 });
 
 // Methods
 const handleSelectWorkspace = (id: string) => {
   emit('select-workspace', id);
+};
+
+const handleTopicSelect = (clusterId: number) => {
+  selectedTopicCluster.value = clusterId;
+};
+
+const handleGraphStatsUpdate = (stats: { topics: number; workspaces: number }) => {
+  emit('update-graph-stats', stats);
+};
+
+const handle3DSupportUpdate = (supported: boolean) => {
+  emit('update-3d-support', supported);
+};
+
+const handleFullscreenUpdate = (fullscreen: boolean) => {
+  emit('update-fullscreen', fullscreen);
 };
 
 const toggleFavorite = (id: string) => {
@@ -694,6 +1207,22 @@ const closeContextMenu = () => {
   contextMenu.value.visible = false;
 };
 
+// Pagination methods
+const loadMoreWorkspaces = async () => {
+  if (isLoadingMore.value || !hasMoreWorkspaces.value) return;
+  
+  isLoadingMore.value = true;
+  // Simulate a brief loading delay for better UX
+  await new Promise(resolve => setTimeout(resolve, 200));
+  currentPage.value++;
+  isLoadingMore.value = false;
+};
+
+// Reset pagination when filters change
+const resetPagination = () => {
+  currentPage.value = 0;
+};
+
 const handleAction = (action: string) => {
   const workspace = contextMenu.value.workspace;
   if (!workspace) return;
@@ -715,6 +1244,7 @@ const toggleTagFilter = (tagId: string) => {
     selectedTags.value.add(tagId);
   }
   selectedTags.value = new Set(selectedTags.value);
+  resetPagination(); // Reset pagination when filters change
 };
 
 const toggleStatusFilter = (status: string) => {
@@ -723,6 +1253,7 @@ const toggleStatusFilter = (status: string) => {
   } else {
     selectedStatuses.value.add(status);
   }
+  resetPagination(); // Reset pagination when filters change
   selectedStatuses.value = new Set(selectedStatuses.value);
 };
 
@@ -787,6 +1318,21 @@ const setLoadingState = (loading: boolean) => {
     ensureMinimumLoadingTime().then(() => {
       isLoadingClusters.value = false;
     });
+  }
+};
+
+const refreshClusteringStatus = async () => {
+  try {
+    const status = await clusteringService.getStatus();
+    Object.assign(clusteringStatus, status);
+    
+    // If there are new clusters, enable clustering view
+    if (status.clusters && status.clusters.length > 0) {
+      clusteringEnabled.value = true;
+      setLoadingState(false);
+    }
+  } catch (error) {
+    console.error('Error refreshing clustering status:', error);
   }
 };
 
@@ -883,9 +1429,78 @@ const closeClusterModal = () => {
   }, 300); // Match the animation duration
 };
 
+// Preview modal functions
+const openPreviewModal = (workspace: any, event: MouseEvent) => {
+  // Use currentTarget to ensure we get the element the event listener is on
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+
+  // The modal's final width (similar to cluster modal)
+  const modalFinalWidth = 800; 
+
+  // --- Calculate initial transform values ---
+  
+  // 1. Center of the clicked button (our starting point)
+  const startX = rect.left + rect.width / 2;
+  const startY = rect.top + rect.height / 2;
+
+  // 2. Center of the viewport (our ending point)
+  const finalX = window.innerWidth / 2;
+  const finalY = window.innerHeight / 2;
+  
+  // 3. The distance the modal needs to travel
+  const translateX = startX - finalX;
+  const translateY = startY - finalY;
+
+  // 4. The initial scale to match the button's size
+  const scale = rect.width / modalFinalWidth;
+
+  // 5. Set the CSS variables for the animation
+  previewModalAnimStyle.value = {
+    '--start-translate-x': `${translateX}px`,
+    '--start-translate-y': `${translateY}px`,
+    '--start-scale': scale,
+  };
+  
+  previewWorkspace.value = workspace;
+};
+
+const closePreviewModal = () => {
+  if (isClosingPreview.value) return; // Prevent double-close
+  
+  isClosingPreview.value = true;
+  
+  // Wait for reverse animation to complete, then clean up
+  setTimeout(() => {
+    previewWorkspace.value = null;
+    isClosingPreview.value = false;
+    previewModalAnimStyle.value = {};
+  }, 300); // Match the animation duration
+};
+
 const selectWorkspaceFromModal = (workspaceId: string) => {
   closeClusterModal();
   handleSelectWorkspace(workspaceId);
+};
+
+// Deconstruct/Reconstruct functions
+const deconstructCluster = (cluster: any, event: MouseEvent) => {
+  event.stopPropagation();
+  
+  // Add animation state
+  deconstructAnimation.value.set(cluster.id, true);
+  
+  // Add to deconstructed set after brief delay for animation
+  setTimeout(() => {
+    deconstructedClusters.value.add(cluster.id);
+    deconstructAnimation.value.delete(cluster.id);
+  }, 300);
+};
+
+const reconstructCluster = (clusterId: string, event: MouseEvent) => {
+  event.stopPropagation();
+  
+  // Remove from deconstructed set
+  deconstructedClusters.value.delete(clusterId);
 };
 
 const formatDate = (dateString: string) => {
@@ -950,6 +1565,52 @@ const handleDrop = async (event: DragEvent) => {
     console.error('Error handling dropped files:', error);
   } finally {
     // isImporting will be set to false when import status updates
+  }
+};
+
+// Enhanced Vue Draggable Plus handlers
+const onDragStart = (evt: any) => {
+  isDragActive.value = true;
+  draggingId.value = evt.item.dataset.id || evt.item.getAttribute('data-id');
+  
+  // Create enhanced drag overlay
+  const workspaceId = draggingId.value;
+  const workspace = workspaceItems.value.find(w => w.id === workspaceId);
+  if (workspace) {
+    dragOverlay.workspace = workspace;
+    dragOverlay.visible = true;
+    
+    // Position the overlay
+    const rect = evt.item.getBoundingClientRect();
+    dragOverlay.style = {
+      position: 'fixed',
+      top: `${rect.top}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      pointerEvents: 'none',
+      zIndex: '9999',
+      transition: 'transform 0.2s ease-out'
+    };
+  }
+};
+
+const onDragEnd = (evt: any) => {
+  isDragActive.value = false;
+  draggingId.value = null;
+  dragOverlay.visible = false;
+  
+  // Smooth animation back to position
+  setTimeout(() => {
+    dragOverlay.workspace = null;
+  }, 300);
+};
+
+const onDragChange = (evt: any) => {
+  // Handle the actual reordering logic
+  if (evt.moved) {
+    const { oldIndex, newIndex } = evt.moved;
+    emit('workspace-reorder', oldIndex, newIndex);
   }
 };
 
@@ -1064,19 +1725,44 @@ const formatTime = (dateString: string) => {
 };
 
 // Initialize
-// ESC key handler for cluster modal
+// ESC key handler for modals
 const handleKeyDown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && openCluster.value && !isClosingCluster.value) {
+  if (event.key === 'Escape') {
     // Check if other components want to handle ESC first
     if (contextMenu.value.visible) {
       return; // Let context menu handle it
     }
     
-    event.preventDefault();
-    event.stopPropagation();
-    closeClusterModal();
+    // Handle preview modal
+    if (previewWorkspace.value && !isClosingPreview.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      closePreviewModal();
+      return;
+    }
+    
+    // Handle cluster modal
+    if (openCluster.value && !isClosingCluster.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeClusterModal();
+      return;
+    }
   }
 };
+
+// Watch for view mode changes to auto-enable clustering for graph mode
+watch(currentViewMode, (newMode) => {
+  if (newMode === 'graph' && !clusteringEnabled.value) {
+    // Auto-enable clustering when switching to graph mode
+    toggleClustering();
+  }
+});
+
+// Reset pagination when sort or search changes
+watch([sortBy, () => props.searchQuery], () => {
+  resetPagination();
+});
 
 onMounted(async () => {
   // Start timing for minimum loading duration
@@ -1091,6 +1777,20 @@ onMounted(async () => {
   
   // Subscribe to clustering status updates
   statusUnsubscribe = clusteringService.onStatusUpdate((status) => {
+    // Fix backend issue where processed_workspaces might be set incorrectly
+    // The progress (0-1) should match processed_workspaces/total_workspaces ratio
+    if (status.total_workspaces > 0 && status.progress >= 0 && status.progress <= 1) {
+      // Calculate what processed_workspaces should be based on progress
+      const expectedProcessed = Math.floor(status.progress * status.total_workspaces);
+      
+      // If the backend sent an incorrect processed count (like total-1 at the start),
+      // use the calculated value instead
+      if (status.progress < 0.95 && status.processed_workspaces > expectedProcessed + 10) {
+        console.log(`Correcting processed_workspaces from ${status.processed_workspaces} to ${expectedProcessed} based on progress ${status.progress}`);
+        status.processed_workspaces = expectedProcessed;
+      }
+    }
+    
     Object.assign(clusteringStatus, status);
     
     // If clustering completed successfully and we have clusters, enable clustering view
@@ -1107,6 +1807,20 @@ onMounted(async () => {
     // Update loading state based on import status
     if (status.is_running) {
       isImporting.value = true;
+      
+      // Auto-switch to graph view and enable clustering when incremental processing starts
+      if (status.phase === 'embedding' || status.phase === 'clustering') {
+        // Switch to graph view to show real-time clustering
+        if (currentViewMode.value !== 'graph') {
+          internalViewMode.value = 'graph';
+        }
+        
+        clusteringEnabled.value = true;
+        isLoadingClusters.value = true;
+        
+        // Refresh clustering status to get latest incremental results
+        refreshClusteringStatus();
+      }
     } else {
       isImporting.value = false;
       // Emit import completed event so parent can refresh workspace list
@@ -1159,7 +1873,9 @@ onBeforeUnmount(() => {
 <style scoped>
 /* Main Container - Theme Aware with Transparent Background */
 .enhanced-grid-view {
-  @apply h-full w-full overflow-hidden flex flex-col;
+  @apply h-full w-full flex flex-col;
+  overflow: hidden;
+  position: relative;
   /* Transparent background to show InfiniteCanvas background */
   background: transparent;
 }
@@ -1241,6 +1957,116 @@ onBeforeUnmount(() => {
   color: oklch(var(--wac));
 }
 
+/* Visualization Mode Selector */
+.viz-mode-selector {
+  @apply flex rounded-lg p-1 ml-3;
+  background: oklch(from oklch(var(--b2)) l c h / 0.6);
+}
+
+.viz-mode-btn {
+  @apply flex items-center gap-2 px-3 py-2 rounded-md;
+  @apply text-sm font-medium transition-all duration-200;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.viz-mode-btn:hover {
+  color: oklch(var(--bc));
+}
+
+.viz-mode-btn.active {
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  box-shadow: 0 2px 4px oklch(from oklch(var(--p)) l c h / 0.1);
+}
+
+.graph-info {
+  @apply flex items-center gap-2 px-3 py-2 rounded-md;
+  @apply text-sm font-medium;
+  background: oklch(from oklch(var(--a)) l c h / 0.15);
+  color: oklch(var(--a));
+  border: 1px solid oklch(from oklch(var(--a)) l c h / 0.3);
+}
+
+/* Content Container */
+.content-container {
+  @apply flex-1;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+/* D3 Layout */
+.d3-layout {
+  @apply flex h-full;
+}
+
+.topics-sidebar {
+  @apply w-80 flex-shrink-0;
+}
+
+.d3-main {
+  @apply flex-1;
+}
+
+.d3-placeholder {
+  @apply flex-1 flex items-center justify-center;
+  background: oklch(from oklch(var(--b1)) l c h / 0.5);
+  border: 2px dashed oklch(from oklch(var(--bc)) l c h / 0.3);
+  border-radius: 12px;
+  margin: 16px;
+}
+
+.placeholder-content {
+  @apply text-center p-8;
+}
+
+.placeholder-content h3 {
+  @apply text-xl font-semibold mb-2;
+  color: oklch(var(--bc));
+}
+
+.placeholder-content p {
+  @apply mb-4;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+.retry-btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+}
+
+.retry-btn:hover {
+  background: oklch(from oklch(var(--p)) calc(l - 0.1) c h);
+}
+
+/* Graph Loading State */
+.graph-loading-container {
+  @apply flex-1 flex items-center justify-center p-8;
+}
+
+.graph-loading-content {
+  @apply text-center max-w-md;
+}
+
+.graph-loading-content h3 {
+  @apply text-xl font-semibold mb-2;
+  color: oklch(var(--bc));
+}
+
+.graph-loading-content p {
+  @apply mb-4;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+.loading-progress {
+  @apply w-full bg-base-300 rounded-full h-2 mt-4;
+}
+
+.progress-bar {
+  @apply bg-primary h-2 rounded-full transition-all duration-300;
+}
+
 .grid-controls {
   @apply flex items-center gap-3;
 }
@@ -1311,16 +2137,21 @@ onBeforeUnmount(() => {
 
 /* Grid */
 .grid-wrapper {
-  @apply flex-1 overflow-auto p-6;
+  @apply flex-1 p-6;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
 
 .workspace-grid {
   @apply grid gap-6;
+  margin-top: 40px; 
   grid-template-columns: repeat(auto-fill, minmax(var(--card-size), 1fr));
 }
 
 .workspace-grid.compact {
   @apply gap-3;
+  margin-top: 40px; 
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
 
@@ -1401,6 +2232,52 @@ onBeforeUnmount(() => {
 .cluster-folder.hidden-for-modal {
   @apply opacity-0 pointer-events-none;
   transform: scale(0.95);
+}
+
+.cluster-folder.deconstructing {
+  animation: clusterExplode 0.3s ease-out forwards;
+}
+
+.cluster-actions {
+  @apply absolute top-2 right-2 opacity-0 transition-opacity duration-200;
+}
+
+.cluster-folder:hover .cluster-actions {
+  @apply opacity-100;
+}
+
+.cluster-action-btn {
+  @apply w-6 h-6 rounded-lg flex items-center justify-center;
+  @apply transition-colors duration-200;
+  background: oklch(from oklch(var(--b1)) l c h / 0.9);
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  backdrop-filter: blur(4px);
+}
+
+.cluster-action-btn:hover {
+  background: oklch(from oklch(var(--er)) l c h / 0.1);
+  color: oklch(var(--er));
+  border-color: oklch(from oklch(var(--er)) l c h / 0.3);
+}
+
+.cluster-folder {
+  position: relative;
+}
+
+@keyframes clusterExplode {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
 }
 
 /* iOS Folder Modal */
@@ -1505,6 +2382,97 @@ onBeforeUnmount(() => {
     /* Animate back to the original folder position and size */
     transform: translate(var(--start-translate-x, 0), var(--start-translate-y, 0)) scale(var(--start-scale, 0.1));
   }
+}
+
+/* Preview Modal Styles */
+.preview-modal-overlay {
+  @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-50;
+  @apply flex items-center justify-center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.preview-modal {
+  @apply rounded-2xl w-[800px] max-w-[95vw] max-h-[90vh] overflow-hidden;
+  background: oklch(var(--b1));
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 0 25px 50px oklch(from oklch(var(--p)) l c h / 0.25);
+  
+  /* Use the same animation as folder modal */
+  animation: modalExpandFromOrigin 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.preview-modal.closing {
+  /* Reverse animation back to origin */
+  animation: modalCollapseToOrigin 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+}
+
+.preview-content {
+  @apply flex gap-6 p-6 overflow-hidden;
+  max-height: calc(90vh - 140px); /* Account for header and footer */
+}
+
+.preview-details {
+  @apply flex-1 space-y-6 overflow-y-auto;
+  max-width: 300px;
+}
+
+.detail-section {
+  @apply space-y-3;
+}
+
+.detail-section h3 {
+  @apply text-sm font-semibold uppercase tracking-wide;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+}
+
+.detail-grid {
+  @apply space-y-2;
+}
+
+.detail-item {
+  @apply flex items-center gap-2 text-sm;
+  color: oklch(var(--bc));
+}
+
+.detail-item svg {
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
+.detail-section p {
+  @apply text-sm leading-relaxed;
+  color: oklch(from oklch(var(--bc)) l c h / 0.8);
+}
+
+.preview-tags {
+  @apply flex flex-wrap gap-2;
+}
+
+.preview-tag {
+  @apply px-2 py-1 rounded-full text-xs font-medium text-white;
+}
+
+.preview-canvas {
+  @apply flex-1 rounded-lg overflow-hidden;
+  background: oklch(from oklch(var(--b2)) l c h / 0.5);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  min-height: 300px;
+}
+
+.modal-footer {
+  @apply flex items-center justify-end gap-3 p-6;
+  border-top: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.modal-footer .btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-colors;
+}
+
+.modal-footer .btn-ghost {
+  @apply text-gray-600 hover:bg-gray-100;
+}
+
+.modal-footer .btn-primary {
+  @apply bg-blue-500 text-white hover:bg-blue-600;
 }
 
 .mini-title {
@@ -1702,6 +2670,16 @@ onBeforeUnmount(() => {
   background: oklch(from oklch(var(--wa)) l c h / 0.3);
 }
 
+.action-btn.preview-btn:hover {
+  background: oklch(from oklch(var(--in)) l c h / 0.2);
+  color: oklch(var(--in));
+}
+
+.action-btn.reconstruct-btn:hover {
+  background: oklch(from oklch(var(--su)) l c h / 0.2);
+  color: oklch(var(--su));
+}
+
 .stats-section {
   @apply space-y-3 mb-3;
 }
@@ -1862,18 +2840,165 @@ onBeforeUnmount(() => {
   background: oklch(from oklch(var(--bc)) l c h / 0.1);
 }
 
-/* Animations */
-.card-enter-active,
-.card-leave-active {
-  @apply transition-all duration-300 ease-out;
+/* Enhanced Modern Card Animations - @dnd-kit Style */
+.modern-grid {
+  animation: gridFadeIn 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
 }
 
-.card-enter-from {
-  @apply opacity-0 scale-95 translate-y-4;
+.workspace-card {
+  @apply transition-all duration-500 ease-out;
+  animation: cardSlideIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: calc(var(--card-index, 0) * 0.05s);
+  opacity: 0;
+  transform: translateY(30px) scale(0.95);
 }
 
-.card-leave-to {
-  @apply opacity-0 scale-95;
+.workspace-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 
+    0 20px 40px oklch(from oklch(var(--b3)) l c h / 0.3),
+    0 0 0 1px oklch(from oklch(var(--p)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--p)) l c h / 0.2);
+}
+
+/* Drag and Drop States */
+.workspace-card-ghost {
+  opacity: 0.3;
+  background: oklch(from oklch(var(--p)) l c h / 0.1) !important;
+  border: 2px dashed oklch(var(--p)) !important;
+  transform: scale(0.95);
+}
+
+.workspace-card-chosen {
+  transform: scale(1.05) rotate(2deg);
+  box-shadow: 0 15px 35px oklch(from oklch(var(--p)) l c h / 0.3);
+  z-index: 1000;
+}
+
+.workspace-card-drag {
+  opacity: 0.8;
+  transform: rotate(5deg) scale(1.1);
+  box-shadow: 0 25px 50px oklch(from oklch(var(--p)) l c h / 0.4);
+}
+
+.workspace-card-fallback {
+  @apply rounded-2xl;
+  background: oklch(from oklch(var(--p)) l c h / 0.2) !important;
+  border: 2px dashed oklch(var(--p)) !important;
+  backdrop-filter: blur(16px);
+}
+
+/* Enhanced Container States */
+.modern-drag-container {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modern-drag-container.drag-over {
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.05) 0%, 
+    oklch(from oklch(var(--s)) l c h / 0.03) 100%);
+  transform: scale(1.01);
+}
+
+.modern-drag-container.drag-active {
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.08) 0%, 
+    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
+}
+
+.card-move {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Grid container entrance animation */
+.grid-wrapper {
+  animation: gridFadeIn 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes gridFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardSlideIn {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cardFloat {
+  0%, 100% { transform: translateY(0) rotateX(0deg); }
+  50% { transform: translateY(-5px) rotateX(2deg); }
+}
+
+@keyframes dragPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* Enhanced hover effects during transitions */
+.workspace-card:hover,
+.cluster-folder:hover {
+  transform: translateY(-4px) scale(1.02);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* UI Element Entrance Animations */
+.animate-slide-down {
+  animation: slideDown 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+.animate-fade-in {
+  animation: fadeInUp 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  animation-delay: var(--animation-delay, 0s);
+  opacity: 0;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: var(--animation-delay, 0s);
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .slide-down-enter-active,
@@ -1928,7 +3053,7 @@ onBeforeUnmount(() => {
 
 /* Import Source Badge */
 .import-badge {
-  @apply absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium;
+  @apply absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium;
   @apply backdrop-blur-sm transition-all duration-200;
   background: oklch(from oklch(var(--b1)) l c h / 0.9);
   border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
@@ -2003,6 +3128,31 @@ onBeforeUnmount(() => {
   box-shadow: 
     0 12px 32px oklch(from oklch(var(--wa)) l c h / 0.15),
     0 0 0 1px oklch(from oklch(var(--wa)) l c h / 0.1);
+}
+
+.workspace-card.deconstructed {
+  border-left: 3px solid oklch(var(--su));
+  background: oklch(from oklch(var(--su)) l c h / 0.02);
+}
+
+.workspace-card.deconstructed::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(45deg, transparent 48%, oklch(from oklch(var(--su)) l c h / 0.05) 50%, transparent 52%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.workspace-card.deconstructed:hover {
+  background: oklch(from oklch(var(--su)) l c h / 0.05);
+  border-color: oklch(from oklch(var(--su)) l c h / 0.3);
+  box-shadow: 
+    0 8px 32px oklch(from oklch(var(--su)) l c h / 0.15),
+    0 0 0 1px oklch(from oklch(var(--su)) l c h / 0.1);
 }
 
 /* Quick action borders */
@@ -2296,6 +3446,11 @@ onBeforeUnmount(() => {
   color: oklch(from oklch(var(--bc)) l c h / 0.8);
 }
 
+.workspace-counter {
+  @apply text-xs mt-1 opacity-70;
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
+}
+
 /* Theme-specific enhancements */
 [data-theme="cyberpunk"] .neural-core,
 [data-theme="cyberpunk"] .neural-node {
@@ -2448,6 +3603,30 @@ onBeforeUnmount(() => {
 .slide-up-leave-to {
   @apply opacity-0;
   transform: translateY(100%);
+}
+
+/* Load More Section */
+.load-more-section {
+  @apply flex justify-center items-center py-8 px-4;
+}
+
+.load-more-btn {
+  @apply bg-primary text-primary-content px-6 py-3 rounded-lg font-medium transition-all duration-200;
+  @apply hover:bg-primary/90 hover:scale-105 active:scale-95;
+  @apply shadow-lg hover:shadow-xl;
+  min-height: 44px;
+}
+
+.loading-more {
+  @apply flex items-center gap-3 text-base-content/70;
+}
+
+.loading-spinner {
+  @apply w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin;
+}
+
+.all-loaded {
+  @apply text-base-content/60 text-sm font-medium py-2;
 }
 
 /* Responsive adjustments */

@@ -49,7 +49,7 @@ export const useThemeStore = defineStore('theme', {
       retro: { primary: '#D2691E', secondary: '#CD853F', accent: '#F4A460' },
       cyberpunk: { primary: '#00FFFF', secondary: '#FF1493', accent: '#ADFF2F' },
       valentine: { primary: '#FF69B4', secondary: '#DC143C', accent: '#FFB6C1' },
-      halloween: { primary: '#FF8C00', secondary: '#8B008B', accent: '#32CD32' },
+      halloween: { primary: '#7C3AED', secondary: '#581C87', accent: '#3B82F6' },
       forest: { primary: '#1EB854', secondary: '#1DB88E', accent: '#1EA885' },
       aqua: { primary: '#09ECF3', secondary: '#0771DE', accent: '#07ABE3' },
       black: { primary: '#333333', secondary: '#666666', accent: '#999999' },

@@ -134,21 +134,19 @@
           </span>
         </div>
         <div class="flex items-center gap-2">
-          <button @click.stop="copyContent" 
+          <button ref="copyButtonRef" @click.stop="copyContent" 
                   class="p-2 rounded-full hover:bg-base-300/80 transition-colors duration-200 
-                         text-base-content/60 hover:text-base-content/80 group/btn">
+                         text-base-content/60 hover:text-base-content/80"
+                  @mouseenter="showCopyTooltip = true"
+                  @mouseleave="showCopyTooltip = false">
             <Copy class="w-4 h-4" />
-            <span class="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-base-300/90 
-                         backdrop-blur rounded text-xs whitespace-nowrap transition-opacity duration-200 
-                         opacity-0 group-hover/btn:opacity-100 pointer-events-none">Copy</span>
           </button>
-          <button v-if="isCode" @click.stop="openInSandbox" 
+          <button v-if="isCode" ref="openButtonRef" @click.stop="openInSandbox" 
                   class="p-2 rounded-full bg-primary/20 hover:bg-primary/30 text-primary 
-                         transition-colors duration-200 group/btn">
+                         transition-colors duration-200"
+                  @mouseenter="showOpenTooltip = true"
+                  @mouseleave="showOpenTooltip = false">
             <ExternalLink class="w-4 h-4" />
-            <span class="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-base-300/90 
-                         backdrop-blur rounded text-xs whitespace-nowrap transition-opacity duration-200 
-                         opacity-0 group-hover/btn:opacity-100 pointer-events-none">Open</span>
           </button>
           <button @click.stop="toggleExpanded" 
                   class="p-2 rounded-full hover:bg-base-300/80 transition-colors duration-200 
@@ -162,6 +160,23 @@
         <div v-else class="text-sm text-base-content/90 whitespace-pre-wrap">{{ content }}</div>
       </div>
     </div>
+
+    <!-- Teleported Tooltips -->
+    <Teleport to="body">
+      <div v-if="showCopyTooltip && copyButtonRef" 
+           class="fixed px-2 py-1 bg-base-300/90 backdrop-blur rounded text-xs whitespace-nowrap pointer-events-none z-[9999] transition-opacity duration-200"
+           :style="copyTooltipStyle">
+        Copy
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showOpenTooltip && openButtonRef" 
+           class="fixed px-2 py-1 bg-base-300/90 backdrop-blur rounded text-xs whitespace-nowrap pointer-events-none z-[9999] transition-opacity duration-200"
+           :style="openTooltipStyle">
+        Open
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -230,6 +245,12 @@ const expanded = ref(props.forceExpanded);
 const isEdited = ref(false);
 const previewCodeRef = ref<HTMLElement>();
 const fullCodeRef = ref<HTMLElement>();
+
+// Tooltip refs and state
+const copyButtonRef = ref<HTMLElement>();
+const openButtonRef = ref<HTMLElement>();
+const showCopyTooltip = ref(false);
+const showOpenTooltip = ref(false);
 
 // Thumbnail state
 const thumbnailUrl = ref<string | null>(null);
@@ -372,6 +393,27 @@ const highlightedPreview = computed(() => {
   
   // Fallback to plain text
   return previewContent.value;
+});
+
+// Tooltip positioning
+const copyTooltipStyle = computed(() => {
+  if (!copyButtonRef.value) return {};
+  const rect = copyButtonRef.value.getBoundingClientRect();
+  return {
+    top: `${rect.top - 40}px`,
+    left: `${rect.left + rect.width / 2}px`,
+    transform: 'translateX(-50%)'
+  };
+});
+
+const openTooltipStyle = computed(() => {
+  if (!openButtonRef.value) return {};
+  const rect = openButtonRef.value.getBoundingClientRect();
+  return {
+    top: `${rect.top - 40}px`,
+    left: `${rect.left + rect.width / 2}px`,
+    transform: 'translateX(-50%)'
+  };
 });
 
 // Load thumbnail for this code preview

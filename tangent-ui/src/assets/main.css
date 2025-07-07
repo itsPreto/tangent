@@ -7,12 +7,71 @@
     --primary: theme('colors.indigo.600');
     --muted: theme('colors.gray.100');
     --border: theme('colors.gray.200');
+    
+    /* Semantic color mappings for components */
+    /* Panel backgrounds */
+    --panel-bg: oklch(from oklch(var(--b1)) l c h / 0.95);
+    --panel-header-bg: oklch(from oklch(var(--b1)) l c h / 0.98);
+    --panel-border: oklch(from oklch(var(--bc)) l c h / 0.1);
+    
+    /* Node/Card colors */
+    --node-bg: oklch(from oklch(var(--b1)) l c h / 0.9);
+    --node-border: oklch(from oklch(var(--bc)) l c h / 0.2);
+    --node-shadow: 0 4px 12px oklch(from oklch(var(--bc)) l c h / 0.1);
+    --node-glow: 0 0 20px oklch(from oklch(var(--p)) l c h / 0.4);
+    
+    /* Button styles */
+    --btn-control-bg: oklch(from oklch(var(--b2)) l c h / 0.6);
+    --btn-control-hover: oklch(from oklch(var(--b2)) l c h / 0.8);
+    --btn-control-text: oklch(var(--bc));
+    --btn-control-border: oklch(from oklch(var(--bc)) l c h / 0.2);
+    
+    --btn-action-bg: oklch(from oklch(var(--p)) l c h / 0.1);
+    --btn-action-hover: oklch(from oklch(var(--p)) l c h / 0.2);
+    --btn-action-text: oklch(var(--p));
+    --btn-action-border: oklch(from oklch(var(--p)) l c h / 0.3);
+    
+    /* Input styles */
+    --input-bg: oklch(var(--b1));
+    --input-border: oklch(from oklch(var(--bc)) l c h / 0.2);
+    --input-focus-border: oklch(var(--p));
+    --input-text: oklch(var(--bc));
+    
+    /* Message/Content backgrounds */
+    --msg-user-bg: oklch(from oklch(var(--p)) l c h / 0.1);
+    --msg-assistant-bg: oklch(from oklch(var(--s)) l c h / 0.1);
+    --msg-system-bg: oklch(from oklch(var(--a)) l c h / 0.05);
+    
+    /* Status colors */
+    --status-loading: oklch(var(--in));
+    --status-success: oklch(var(--su));
+    --status-error: oklch(var(--er));
+    --status-warning: oklch(var(--wa));
+    
+    /* Transition timings */
+    --transition-fast: 150ms;
+    --transition-normal: 200ms;
+    --transition-slow: 300ms;
+    --transition-slower: 500ms;
   }
 
   [data-theme="dark"] {
     --primary: theme('colors.indigo.500');
     --muted: theme('colors.gray.800');
     --border: theme('colors.gray.700');
+    
+    /* Dark theme specific overrides */
+    --panel-bg: oklch(from oklch(var(--b1)) l c h / 0.98);
+    --node-shadow: 0 8px 24px oklch(from oklch(var(--bc)) l c h / 0.3);
+  }
+  
+  /* Theme-specific gradient overrides */
+  [data-theme="cyberpunk"] {
+    --gradient-bg: linear-gradient(32deg, oklch(0.9 0.18 176.5), oklch(0.81 0.16 172.13), oklch(0.71 0.19 3.12));
+  }
+  
+  [data-theme="synthwave"] {
+    --gradient-bg: linear-gradient(41deg, oklch(0.78 0.12 226.65), oklch(0.72 0.18 339.2 / 0.62), oklch(0.76 0.19 111.62 / 0));
   }
 
   /* Prevent body scroll when canvas is active */
@@ -25,6 +84,82 @@
 }
 
 @layer components {
+  /* Reusable Panel Styles */
+  .theme-panel {
+    background: var(--panel-bg);
+    border-color: var(--panel-border);
+    @apply backdrop-blur-xl;
+  }
+  
+  .theme-panel-header {
+    background: var(--panel-header-bg);
+    border-color: var(--panel-border);
+    @apply border-b px-4 py-3;
+  }
+  
+  /* Reusable Button Styles */
+  .theme-btn-control {
+    background: var(--btn-control-bg);
+    color: var(--btn-control-text);
+    border: 1px solid var(--btn-control-border);
+    @apply px-3 py-2 rounded-lg transition-all duration-[var(--transition-normal)];
+  }
+  
+  .theme-btn-control:hover {
+    background: var(--btn-control-hover);
+  }
+  
+  .theme-btn-action {
+    background: var(--btn-action-bg);
+    color: var(--btn-action-text);
+    border: 1px solid var(--btn-action-border);
+    @apply px-3 py-2 rounded-lg transition-all duration-[var(--transition-normal)];
+  }
+  
+  .theme-btn-action:hover {
+    background: var(--btn-action-hover);
+  }
+  
+  /* Node/Card Styles */
+  .theme-node-card {
+    background: var(--node-bg);
+    border: 1px solid var(--node-border);
+    box-shadow: var(--node-shadow);
+    @apply rounded-lg backdrop-blur-sm transition-all duration-[var(--transition-normal)];
+  }
+  
+  .theme-node-card.selected {
+    box-shadow: var(--node-glow), var(--node-shadow);
+  }
+  
+  /* Input Styles */
+  .theme-input {
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--input-text);
+    @apply px-3 py-2 rounded-lg transition-all duration-[var(--transition-fast)];
+  }
+  
+  .theme-input:focus {
+    border-color: var(--input-focus-border);
+    outline: none;
+    box-shadow: 0 0 0 2px oklch(from var(--input-focus-border) l c h / 0.2);
+  }
+  
+  /* Message Backgrounds */
+  .theme-msg-user {
+    background: var(--msg-user-bg);
+  }
+  
+  .theme-msg-assistant {
+    background: var(--msg-assistant-bg);
+  }
+  
+  .theme-msg-system {
+    background: var(--msg-system-bg);
+  }
+  
+  /* Legacy styles (kept for compatibility) */
   .chat-node {
     @apply bg-white dark:bg-gray-800 border border-border shadow-lg rounded-lg p-4;
   }

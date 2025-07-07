@@ -18,6 +18,10 @@
               <span class="tab-icon">🧪</span>
               <span class="tab-label">Testing</span>
             </button>
+            <button @click="activeTab = 'mock-data'" class="tab-btn" :class="{ active: activeTab === 'mock-data' }">
+              <span class="tab-icon">🎭</span>
+              <span class="tab-label">Mock Data</span>
+            </button>
           </div>
         </div>
 
@@ -1340,6 +1344,98 @@
             </div>
           </div>
         </div>
+
+        <!-- Mock Data Tab Content -->
+        <div v-if="activeTab === 'mock-data'" class="tab-content">
+          <div class="mock-data-content">
+            <div class="section-title">Mock Archive Generator</div>
+            <p class="section-description">
+              Generate mock conversation archives for testing your upload and processing flow.
+            </p>
+
+            <!-- Configuration Form -->
+            <div class="mock-config-grid">
+              <div class="config-group">
+                <label class="config-label">Platform</label>
+                <select v-model="mockConfig.platform" class="config-select">
+                  <option value="chatgpt">ChatGPT</option>
+                  <option value="claude">Claude</option>
+                </select>
+              </div>
+
+              <div class="config-group">
+                <label class="config-label">Conversation Count</label>
+                <input 
+                  v-model.number="mockConfig.conversation_count" 
+                  type="number" 
+                  min="1" 
+                  max="50" 
+                  class="config-input"
+                />
+              </div>
+
+              <div class="config-group">
+                <label class="config-label">Max Messages per Conversation</label>
+                <input 
+                  v-model.number="mockConfig.max_messages_per_conversation" 
+                  type="number" 
+                  min="2" 
+                  max="30" 
+                  class="config-input"
+                />
+              </div>
+
+              <div class="config-group">
+                <label class="config-label">Content Theme</label>
+                <select v-model="mockConfig.content_source" class="config-select">
+                  <option value="general">General</option>
+                  <option value="tech_support">Tech Support</option>
+                  <option value="creative">Creative</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mock-actions">
+              <button 
+                @click="generateMockData" 
+                :disabled="isGenerating"
+                class="btn-primary mock-generate-btn"
+              >
+                <span v-if="isGenerating">⏳ Generating...</span>
+                <span v-else>🎭 Generate & Download</span>
+              </button>
+            </div>
+
+            <!-- Status Messages -->
+            <div v-if="mockError" class="error-message">
+              {{ mockError }}
+            </div>
+
+            <div v-if="mockSuccess" class="success-message">
+              {{ mockSuccess }}
+            </div>
+
+            <!-- Preview Section -->
+            <div v-if="mockConfig.platform" class="mock-preview">
+              <div class="preview-title">Preview Configuration</div>
+              <div class="preview-details">
+                <div class="preview-item">
+                  <strong>Platform:</strong> {{ mockConfig.platform.toUpperCase() }}
+                </div>
+                <div class="preview-item">
+                  <strong>Conversations:</strong> {{ mockConfig.conversation_count }}
+                </div>
+                <div class="preview-item">
+                  <strong>Max Messages:</strong> {{ mockConfig.max_messages_per_conversation }}
+                </div>
+                <div class="preview-item">
+                  <strong>Theme:</strong> {{ mockConfig.content_source.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1384,6 +1480,7 @@ import { useModelStore } from '@/stores/modelStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAgentStore } from '@/stores/agentStore';
 import ttsService from '@/services/ttsService';
+import { mockDataService, type MockDataConfig } from '@/services/mockDataService';
 
 // Assets
 import ollamaIcon from '@/assets/ollama.jpeg';
@@ -1467,6 +1564,18 @@ const quickTestConfig = reactive({
   temperature: 0.7,
   category: 'prompt-adherence'
 });
+
+// Mock Data state
+const mockConfig = reactive<MockDataConfig>({
+  platform: 'chatgpt',
+  conversation_count: 5,
+  max_messages_per_conversation: 10,
+  content_source: 'general'
+});
+
+const isGenerating = ref(false);
+const mockError = ref('');
+const mockSuccess = ref('');
 
 const testTemplate = reactive({
   name: '',
@@ -2822,6 +2931,32 @@ const runQuickTest = async () => {
     isPaused.value = false;
     testProgress.value = { current: 0, total: 0, currentModel: '', currentQuestion: '' };
     testState.value = { currentModelIndex: 0, currentQuestionIndex: 0, currentRunIndex: 0, resumeData: null };
+  }
+};
+
+// Mock Data Generation
+const generateMockData = async () => {
+  if (isGenerating.value) return;
+  
+  isGenerating.value = true;
+  mockError.value = '';
+  mockSuccess.value = '';
+
+  try {
+    const data = await mockDataService.generateMockArchive(mockConfig);
+    mockDataService.downloadAsFile(data, mockConfig.platform);
+    mockSuccess.value = `Successfully generated and downloaded ${mockConfig.conversation_count} ${mockConfig.platform.toUpperCase()} conversations!`;
+    
+    // Clear success message after 3 seconds
+    setTimeout(() => {
+      mockSuccess.value = '';
+    }, 3000);
+    
+  } catch (error) {
+    console.error('Failed to generate mock data:', error);
+    mockError.value = `Failed to generate mock data: ${error.message}`;
+  } finally {
+    isGenerating.value = false;
   }
 };
 
@@ -6381,5 +6516,164 @@ onBeforeUnmount(() => {
     font-size: 11px;
     padding: 12px;
   }
+}
+
+/* Mock Data Generator Styles */
+.mock-data-content {
+  padding: 1rem;
+  space-y: 1.5rem;
+}
+
+.section-description {
+  color: rgb(107 114 128);
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+}
+
+.mock-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.config-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(75 85 99);
+}
+
+.config-input,
+.config-select {
+  padding: 0.5rem;
+  border: 1px solid rgb(209 213 219);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background-color: white;
+  transition: border-color 0.2s ease;
+}
+
+.config-input:focus,
+.config-select:focus {
+  outline: none;
+  border-color: rgb(59 130 246);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.mock-actions {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.mock-generate-btn {
+  padding: 0.75rem 1.5rem;
+  background-color: rgb(59 130 246);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mock-generate-btn:hover:not(:disabled) {
+  background-color: rgb(37 99 235);
+}
+
+.mock-generate-btn:disabled {
+  background-color: rgb(156 163 175);
+  cursor: not-allowed;
+}
+
+.error-message {
+  padding: 0.75rem;
+  background-color: rgb(254 226 226);
+  color: rgb(185 28 28);
+  border: 1px solid rgb(252 165 165);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.success-message {
+  padding: 0.75rem;
+  background-color: rgb(220 252 231);
+  color: rgb(21 128 61);
+  border: 1px solid rgb(134 239 172);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.mock-preview {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: rgb(249 250 251);
+  border: 1px solid rgb(229 231 235);
+  border-radius: 0.5rem;
+}
+
+.preview-title {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: rgb(55 65 81);
+}
+
+.preview-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.preview-item {
+  font-size: 0.875rem;
+  color: rgb(75 85 99);
+}
+
+.preview-item strong {
+  color: rgb(55 65 81);
+}
+
+/* Dark theme support for mock data */
+[data-theme="dark"] .config-input,
+[data-theme="dark"] .config-select {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
+  color: white;
+}
+
+[data-theme="dark"] .config-label {
+  color: rgb(209 213 219);
+}
+
+[data-theme="dark"] .section-description {
+  color: rgb(156 163 175);
+}
+
+[data-theme="dark"] .mock-preview {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
+}
+
+[data-theme="dark"] .preview-title {
+  color: rgb(209 213 219);
+}
+
+[data-theme="dark"] .preview-item {
+  color: rgb(156 163 175);
+}
+
+[data-theme="dark"] .preview-item strong {
+  color: rgb(209 213 219);
 }
 </style>

@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from EmbeddingService import EmbeddingService
-from ChatPersistenceService import ChatPersistenceService
+from ChatPersistenceService import ChatPersistenceService, ClusteringResult, NodeEmbedding
 import logging
 import threading
 import time
@@ -532,3 +532,175 @@ Generate only the name, nothing else:"""
             
         except Exception as e:
             self.logger.error(f"❌ Error clearing clustering data: {e}")
+    
+    def cluster_incrementally(self, chat_ids: List[str]):
+        """
+        Perform fast incremental clustering using existing embeddings from database
+        """
+        try:
+            self.logger.info(f"Starting incremental clustering for {len(chat_ids)} chats")
+            
+            # Get embeddings from database instead of regenerating
+            embeddings_data = self._get_embeddings_from_database(chat_ids)
+            
+            if len(embeddings_data) < 1:
+                self.logger.info("No embeddings available for clustering")
+                return []
+            
+            # Extract embeddings and metadata
+            embeddings = np.array([item['embedding'] for item in embeddings_data])
+            workspace_data = [item['workspace'] for item in embeddings_data]
+            
+            # Perform clustering with adaptive parameters based on data size
+            n_conversations = len(embeddings_data)
+            
+            if n_conversations == 1:
+                # Single conversation - create one cluster
+                clusters = np.array([0])
+                n_clusters = 1
+            elif n_conversations <= 3:
+                # Few conversations - put each in its own cluster
+                clusters = np.arange(n_conversations)
+                n_clusters = n_conversations
+            else:
+                # Multiple conversations - use clustering algorithm
+                # Adaptive number of clusters
+                max_clusters = min(n_conversations // 2, 8)
+                min_clusters = 2
+                
+                try:
+                    # Try K-means clustering
+                    n_clusters_to_try = min(max_clusters, max(min_clusters, n_conversations // 3))
+                    kmeans = KMeans(n_clusters=n_clusters_to_try, random_state=42, n_init=10)
+                    clusters = kmeans.fit_predict(embeddings)
+                    n_clusters = n_clusters_to_try
+                except Exception as e:
+                    self.logger.warning(f"K-means failed, using simple clustering: {e}")
+                    # Fallback: each conversation is its own cluster
+                    clusters = np.arange(n_conversations)
+                    n_clusters = n_conversations
+            
+            # Generate cluster results
+            formatted_clusters = []
+            
+            for cluster_id in range(n_clusters):
+                cluster_workspaces = []
+                cluster_indices = np.where(clusters == cluster_id)[0]
+                
+                for idx in cluster_indices:
+                    workspace = workspace_data[idx].copy()
+                    # Clean up the workspace data for frontend
+                    if 'content_sample' in workspace:
+                        del workspace['content_sample']
+                    cluster_workspaces.append(workspace)
+                
+                if cluster_workspaces:
+                    # Generate cluster title
+                    cluster_title = self._generate_simple_cluster_title(cluster_workspaces)
+                    
+                    formatted_clusters.append({
+                        'id': f'cluster_{cluster_id}',
+                        'title': cluster_title,
+                        'workspaces': cluster_workspaces,
+                        'commonTags': [],  # Skip complex tag extraction for speed
+                        'size': len(cluster_workspaces)
+                    })
+            
+            # Update status with new results
+            self.cached_clusters = formatted_clusters
+            self.cache_timestamp = datetime.now()
+            self.clustering_status['clusters'] = formatted_clusters
+            self.clustering_status['status_message'] = f'Incremental clustering: {len(formatted_clusters)} clusters'
+            self.clustering_status['progress'] = 1.0
+            
+            self.logger.info(f"Incremental clustering completed: {len(formatted_clusters)} clusters")
+            return formatted_clusters
+            
+        except Exception as e:
+            self.logger.error(f"Error in incremental clustering: {e}")
+            return []
+    
+    def _get_embeddings_from_database(self, chat_ids: List[str]) -> List[Dict]:
+        """
+        Retrieve embeddings from database for the given chat IDs
+        """
+        try:
+            from ChatPersistenceService import db, Chat, Node
+            
+            embeddings_data = []
+            
+            # Get all chats with their nodes and embeddings
+            chats = db.session.query(Chat).filter(Chat.id.in_(chat_ids)).all()
+            
+            for chat in chats:
+                for node in chat.nodes:
+                    if node.embeddings:  # Check if node has embeddings
+                        embedding_record = node.embeddings[0]  # Get the first embedding
+                        
+                        # Create workspace data structure
+                        workspace_data = {
+                            'id': chat.id,
+                            'title': chat.title,
+                            'updatedAt': chat.updated_at.isoformat() if chat.updated_at else datetime.now().isoformat(),
+                            'nodeCount': len(chat.nodes),
+                            'x': chat.x or 0,
+                            'y': chat.y or 0,
+                            'content_sample': self._extract_content_sample(node)
+                        }
+                        
+                        embeddings_data.append({
+                            'embedding': embedding_record.embedding,
+                            'workspace': workspace_data
+                        })
+                        break  # Only use the first node with embeddings per chat
+            
+            return embeddings_data
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving embeddings from database: {e}")
+            return []
+    
+    def _extract_content_sample(self, node) -> str:
+        """
+        Extract a small content sample from a node for clustering
+        """
+        if not node.messages:
+            return node.title or "No content"
+        
+        # Get first few messages
+        content_parts = []
+        for message in node.messages[:3]:  # First 3 messages
+            if isinstance(message, dict) and message.get('content'):
+                content_parts.append(message['content'][:100])  # First 100 chars
+        
+        return " ".join(content_parts)
+    
+    def _generate_simple_cluster_title(self, workspaces: List[Dict]) -> str:
+        """
+        Generate a simple cluster title without LLM calls for speed
+        """
+        if len(workspaces) == 1:
+            return workspaces[0].get('title', 'Single Topic')
+        
+        # Extract common words from titles
+        titles = [ws.get('title', '') for ws in workspaces]
+        all_words = []
+        
+        for title in titles:
+            words = title.lower().split()
+            # Filter out common words
+            filtered_words = [w for w in words if len(w) > 3 and w not in ['chat', 'conversation', 'untitled']]
+            all_words.extend(filtered_words)
+        
+        if all_words:
+            # Find most common word
+            word_counts = {}
+            for word in all_words:
+                word_counts[word] = word_counts.get(word, 0) + 1
+            
+            most_common = max(word_counts.items(), key=lambda x: x[1])
+            if most_common[1] > 1:  # Word appears in multiple titles
+                return f"{most_common[0].title()} Topics"
+        
+        # Fallback
+        return f"Topic Group ({len(workspaces)} items)"

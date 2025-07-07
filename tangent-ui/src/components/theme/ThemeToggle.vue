@@ -68,6 +68,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { ChevronDown, Check, Search } from 'lucide-vue-next';
+import { useThemeStore } from '@/stores/themeStore';
 
 type ThemeColors = {
   primary: string;
@@ -136,14 +137,13 @@ const darkThemes = [
   'autumn', 'business', 'acid', 'night', 'coffee'
 ];
 
+const themeStore = useThemeStore();
+
 const isOpen = ref(false);
 const search = ref('');
-const currentTheme = ref<ThemeName>(
-  (localStorage.getItem('theme') as ThemeName) || 'light'
-);
 
-// Theme observer for real-time updates
-let themeObserver: MutationObserver | null = null;
+// Use theme store instead of local state
+const currentTheme = computed(() => themeStore.currentTheme);
 
 // Check if current theme is dark
 const isDarkTheme = computed(() => {
@@ -323,19 +323,11 @@ const filteredThemes = computed(() => {
 });
 
 const selectTheme = (theme: ThemeName) => {
-  currentTheme.value = theme;
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('theme', theme);
+  themeStore.setTheme(theme as any);
   isOpen.value = false;
 };
 
-// Update theme from DOM for reactivity
-const updateThemeFromDOM = () => {
-  const newTheme = document.documentElement.getAttribute('data-theme') as ThemeName || 'light';
-  if (newTheme !== currentTheme.value) {
-    currentTheme.value = newTheme;
-  }
-};
+// Theme is now managed by the theme store
 
 // Close dropdown when clicking outside
 const handleClickOutside = (event: MouseEvent) => {
@@ -345,32 +337,12 @@ const handleClickOutside = (event: MouseEvent) => {
 };
 
 onMounted(() => {
-  const savedTheme = localStorage.getItem('theme') as ThemeName || 'light';
-  currentTheme.value = savedTheme;
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  
-  // Setup theme observer for real-time updates
-  themeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'data-theme') {
-        updateThemeFromDOM();
-      }
-    });
-  });
-
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme']
-  });
-  
+  // Theme is initialized by the theme store in main.ts
   // Add click outside listener
   document.addEventListener('click', handleClickOutside);
 });
 
 onBeforeUnmount(() => {
-  if (themeObserver) {
-    themeObserver.disconnect();
-  }
   document.removeEventListener('click', handleClickOutside);
 });
 </script>

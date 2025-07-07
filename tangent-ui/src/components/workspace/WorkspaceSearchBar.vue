@@ -1,5 +1,12 @@
 <template>
-  <div class="search-bar-container">
+  <div class="search-bar-container" :class="{
+    'left-panel-open': sidePanelOpen,
+    'right-panel-open': rightPanelOpen, 
+    'both-panels-open': sidePanelOpen && rightPanelOpen,
+    'rag-panel-open': ragPanelOpen
+  }" :style="{
+    marginBottom: ragPanelOpen ? '20vh' : '0'
+  }">
     <div class="search-input-wrapper">
       <Search class="search-icon" />
       <input
@@ -54,6 +61,18 @@ const props = defineProps({
   modelValue: {
     type: String,
     default: ''
+  },
+  sidePanelOpen: {
+    type: Boolean,
+    default: false
+  },
+  rightPanelOpen: {
+    type: Boolean,
+    default: false
+  },
+  ragPanelOpen: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -118,12 +137,36 @@ onMounted(async () => {
   
   // Subscribe to clustering status updates
   statusUnsubscribe = clusteringService.onStatusUpdate((status) => {
+    // Fix backend issue where processed_workspaces might be set incorrectly
+    // The progress (0-1) should match processed_workspaces/total_workspaces ratio
+    if (status.total_workspaces > 0 && status.progress >= 0 && status.progress <= 1) {
+      // Calculate what processed_workspaces should be based on progress
+      const expectedProcessed = Math.floor(status.progress * status.total_workspaces);
+      
+      // If the backend sent an incorrect processed count (like total-1 at the start),
+      // use the calculated value instead
+      if (status.progress < 0.95 && status.processed_workspaces > expectedProcessed + 10) {
+        console.log(`[WorkspaceSearchBar] Correcting processed_workspaces from ${status.processed_workspaces} to ${expectedProcessed} based on progress ${status.progress}`);
+        status.processed_workspaces = expectedProcessed;
+      }
+    }
+    
     Object.assign(clusteringStatus, status);
   });
   
   // Check initial clustering status
   try {
     const status = await clusteringService.getStatus();
+    
+    // Apply the same fix to initial status
+    if (status.total_workspaces > 0 && status.progress >= 0 && status.progress <= 1) {
+      const expectedProcessed = Math.floor(status.progress * status.total_workspaces);
+      if (status.progress < 0.95 && status.processed_workspaces > expectedProcessed + 10) {
+        console.log(`[WorkspaceSearchBar] Initial status correcting processed_workspaces from ${status.processed_workspaces} to ${expectedProcessed}`);
+        status.processed_workspaces = expectedProcessed;
+      }
+    }
+    
     Object.assign(clusteringStatus, status);
   } catch (error) {
     console.error('Error getting initial clustering status:', error);
@@ -157,7 +200,7 @@ defineExpose({
   background-color: transparent;
   position: sticky;
   bottom: 0;
-  z-index: 50;
+  z-index: 55;
   position: relative;
 }
 
@@ -379,6 +422,39 @@ defineExpose({
     width: 20rem;
     max-width: 90vw;
   }
-  
+}
+
+/* Panel-aware responsive positioning */
+.both-panels-open .search-input-wrapper {
+  width: 18rem;
+  max-width: 90%;
+}
+
+.both-panels-open .search-bar-container {
+  padding: 0.75rem;
+}
+
+.rag-panel-open .search-bar-container {
+  transition: margin-bottom 0.3s ease;
+}
+
+/* Prevent overlap when RAG panel is open */
+.rag-panel-open.both-panels-open .search-input-wrapper {
+  width: 16rem;
+  max-width: 85%;
+}
+
+/* Smaller clustering progress indicator when space is constrained */
+.both-panels-open .clustering-progress {
+  padding: 0.5rem 0.75rem;
+  max-width: 16rem;
+}
+
+.both-panels-open .progress-text {
+  font-size: 0.8rem;
+}
+
+.both-panels-open .progress-details {
+  font-size: 0.7rem;
 }
 </style>

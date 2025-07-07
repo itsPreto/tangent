@@ -10,6 +10,9 @@ interface ImportStatus {
   current_conversation: string;
   format?: string;
   filename?: string;
+  embedding_progress?: number;
+  clustering_progress?: number;
+  phase?: string; // 'import', 'embedding', 'clustering', 'complete'
 }
 
 interface ImportResult {

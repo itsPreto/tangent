@@ -23,14 +23,29 @@
 
     <!-- Block LOD: Simple colored rectangle -->
     <div v-if="shouldShowBlock" class="w-64 h-16 rounded-lg border-2 transition-all duration-300" :style="{
-      backgroundColor: baseColorSet.transparent,
-      borderColor: baseColorSet.base
+      backgroundColor: baseColorSet.value.transparent,
+      borderColor: baseColorSet.value.base
     }"></div>
+    
+    <!-- Compact LOD: Minimal card with title only -->
+    <div v-else-if="shouldShowCompact" class="w-[320px] h-[60px] rounded-lg border backdrop-blur-sm p-3 transition-all duration-300" :style="{
+      backgroundColor: baseColorSet.value.transparent,
+      borderColor: baseColorSet.value.base
+    }">
+      <div class="flex items-center justify-between h-full">
+        <span class="text-sm font-medium truncate text-base-content flex-1">
+          {{ node.title || "Untitled Thread" }}
+        </span>
+        <span class="text-xs text-base-content/60 ml-2 flex-shrink-0">
+          ({{ node.messages?.length || 0 }})
+        </span>
+      </div>
+    </div>
     
     <!-- Summary LOD: Compact title card with last message preview -->
     <div v-else-if="shouldShowSummary" class="w-[480px] h-[100px] rounded-lg border backdrop-blur-sm p-4 transition-all duration-300" :style="{
-      backgroundColor: baseColorSet.transparent,
-      borderColor: baseColorSet.base
+      backgroundColor: baseColorSet.value.transparent,
+      borderColor: baseColorSet.value.base
     }">
       <div class="flex flex-col h-full">
         <!-- Title and message count -->
@@ -55,12 +70,57 @@
       </div>
     </div>
     
+    <!-- Preview LOD: Shows first and last few messages with simplified controls -->
+    <div v-else-if="shouldShowPreview" class="w-[580px] h-[300px] rounded-lg border backdrop-blur-sm transition-all duration-300" :style="{
+      backgroundColor: baseColorSet.value.transparent,
+      borderColor: baseColorSet.value.base
+    }">
+      <div class="p-4 h-full flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-lg font-medium truncate text-base-content flex-1">
+            {{ node.title || "Untitled Thread" }}
+          </span>
+          <span class="text-sm text-base-content/60 ml-2 flex-shrink-0">
+            {{ node.messages?.length || 0 }} messages
+          </span>
+        </div>
+        
+        <!-- Preview messages (first 2 and last 2) -->
+        <div class="flex-1 overflow-hidden space-y-2">
+          <template v-if="node.messages && node.messages.length > 0">
+            <!-- First few messages -->
+            <div v-for="(msg, i) in node.messages.slice(0, Math.min(2, node.messages.length))" 
+                 :key="i" class="text-xs text-base-content/70 truncate">
+              <span class="font-medium">{{ msg.role === 'user' ? 'You' : 'AI' }}:</span>
+              {{ msg.content }}
+            </div>
+            
+            <!-- Separator if there are more messages -->
+            <div v-if="node.messages.length > 4" class="text-center py-1">
+              <span class="text-xs text-base-content/50">⋯ {{ node.messages.length - 4 }} more messages ⋯</span>
+            </div>
+            
+            <!-- Last few messages -->
+            <div v-for="(msg, i) in node.messages.slice(-Math.min(2, Math.max(0, node.messages.length - 2)))" 
+                 :key="'last-' + i" class="text-xs text-base-content/70 truncate">
+              <span class="font-medium">{{ msg.role === 'user' ? 'You' : 'AI' }}:</span>
+              {{ msg.content }}
+            </div>
+          </template>
+          <div v-else class="text-xs text-base-content/50 italic text-center py-4">
+            No messages yet
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <!-- Full LOD: Normal card -->
     <Card v-else :class="[
       'node-card overflow-x-hidden',
       'backdrop-blur transition-all duration-300',
-      isSnapped ? 'snapped-card' : 'max-w-2xl w-[42rem]'
-    ]" :style="computedCardStyle">
+      isSnapped ? 'snapped-card snapped' : 'max-w-2xl w-[42rem]'
+    ]">
       <div class="relative group w-full h-9 flex items-center justify-center" ref="avatarRef">
         <!-- Subtle glow effect when params editor is open -->
         <div v-if="showParamsEditor" class="absolute inset-0 bg-primary/10 blur-xl rounded-full pointer-events-none" />
@@ -287,151 +347,62 @@
             />
           </div>
 
-          <!-- Expanded Messages View -->
-          <div v-if="isExpanded && node.messages"
-            class="space-y-4 h-full overflow-y-auto overflow-x-hidden px-2 messages-scroll-container" ref="messagesContainerRef"
-            tabindex="0" @wheel="handleMessagesWheel">
-            <div v-for="(msg, i) in displayMessages" :key="i" class="relative group message-container overflow-x-hidden"
-              :class="{ 'user-message': msg.role === 'user', 'ai-message': msg.role === 'assistant' }"
-              :data-message-index="i" :data-message-id="`${node.id}-message-${i}`" :data-code-bubble-parent="true"
-              :style="getMessageStyles(i)">
-              <MessageTimestamp :timestamp="msg.timestamp" :side="msg.role === 'user' ? 'right' : 'left'" />
-
-              <!-- Message Content Container -->
-              <div class="relative z-10">
-                <!-- Message Content with Hanging Indent -->
-                <div class="relative">
-                  <div class="flex items-start gap-3">
-                    <!-- Action Buttons -->
-                    <div class="flex items-center gap-2 flex-shrink-0 ml-auto" v-if="!msg.isStreaming">
-                      <button @click.stop="expandMessage(i)" class="p-1.5 rounded-full hover:bg-white/10">
-                        <component :is="expandedMessages.has(i) ? Maximize2 : Minimize2"
-                          class="w-4 h-4 text-base-content/60" />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <!-- Message layout - different for snapped vs standard mode -->
-                  <div v-if="isSnapped" class="message-with-label text-sm break-words overflow-hidden overflow-x-hidden" :style="{ color: textContentColor }"
-                    :class="{
-                      'line-clamp-2': expandedMessages.has(i),
-                      'whitespace-pre-wrap': !msg.isStreaming,
-                      'whitespace-normal': msg.isStreaming
-                    }">
-                    <span v-if="msg.role === 'assistant'" class="message-label text-xs font-medium">
-                      {{ msg.isStreaming ? 'AI Typing...' : getModelDisplayName(msg) }}:
-                    </span>
-                    <span class="message-content-inline">
-                      <MessageContent 
-                        :content="msg.content" 
-                        :is-streaming="msg.isStreaming" 
-                        :node-id="node.id"
-                        :content-parts="msg.contentParts" 
-                        :message-index="i" 
-                        :data-message-idx="i"
-                      />
-                    </span>
-                  </div>
-                  
-                  <!-- Standard mode - stacked layout -->
-                  <div v-else class="message-stacked">
-                    <!-- Only show label for AI messages -->
-                    <div v-if="msg.role === 'assistant'" class="ai-model-label text-xs font-medium mb-1">
-                      {{ msg.isStreaming ? 'AI Typing...' : getModelDisplayName(msg) }}:
-                    </div>
-                    <div class="message-content-block text-sm break-words overflow-hidden overflow-x-hidden" :style="{ color: textContentColor }"
-                      :class="{
-                        'line-clamp-2': expandedMessages.has(i),
-                        'whitespace-pre-wrap': !msg.isStreaming,
-                        'whitespace-normal': msg.isStreaming
-                      }">
-                      <MessageContent 
-                        :content="msg.content" 
-                        :is-streaming="msg.isStreaming" 
-                        :node-id="node.id"
-                        :content-parts="msg.contentParts" 
-                        :message-index="i" 
-                        :data-message-idx="i"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Message Actions -->
-                <div class="mt-3 flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <button v-if="msg.isStreaming" @click.stop="stopStreaming" class="flex items-center gap-2 text-sm text-red-500 hover:underline opacity-0 
-                   group-hover:opacity-100 transition-opacity">
-                      <XCircle class="w-4 h-4" />
-                      Stop
-                    </button>
-
-                    <template v-else-if="msg.role === 'assistant'">
-                      <button @click.stop="$emit('resend', i - 1)" class="flex items-center gap-2 text-sm hover:underline opacity-0 
-                     group-hover:opacity-100 transition-opacity message-action-btn" :style="{ color: threadColor }">
-                        <RotateCw class="w-4 h-4" />
-                      </button>
-
-                      <button @click.stop="copyToMarkdown(msg)" class="flex items-center gap-2 text-sm hover:underline opacity-0 
-                     group-hover:opacity-100 transition-opacity message-action-btn" :style="{ color: threadColor }">
-                        <ClipboardCopy class="w-4 h-4" />
-                      </button>
-
-                      <!-- TTS Controls -->
-                      <div class="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <TTSControls :text="msg.content"
-                          :auto-trigger="autoTTSEnabled && i === node.messages.length - 1 && !msg.isStreaming"
-                          :streaming-trigger="autoTTSEnabled && msg.isStreaming && i === node.messages.length - 1"
-                          :streaming-text="msg.isStreaming && i === node.messages.length - 1 ? node.streamingContent : null"
-                          compact />
-                      </div>
-                    </template>
-                  </div>
-
-                  <!-- Model Badge -->
-                  <div v-if="msg.role === 'assistant'" class="model-badge opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 
-              px-3 py-1 rounded-full text-xs bg-base-100/90 border border-base-200">
-                    <img :src="getAvatarUrl(getModelInfo(msg.modelId))" alt="Model Avatar"
-                      class="w-4 h-4 rounded-full object-cover" />
-                    <span class="text-base-content">
-                      {{ getModelInfo(msg.modelId)?.name || 'Unknown Model' }}
-                    </span>
-                  </div>
-                </div>
+          <!-- Progressive Loading Controls -->
+          <div v-if="isExpanded && isProgressiveLoadingEnabled && loadingState.hasMore" 
+               class="px-4 py-2 border-b border-base-300/50">
+            <div class="flex items-center justify-between">
+              <div class="text-sm text-base-content/60">
+                Showing {{ loadingState.loadedCount }} of {{ loadingState.totalCount }} messages
               </div>
-
-              <!-- Branch Buttons (Now positioned appropriately based on message type) -->
-              <div v-if="msg.role === 'user'" class="absolute inset-y-0 -left-12 flex items-center opacity-0 group-hover:opacity-100 
-                transition-all duration-200 ease-in-out z-20">
-                <button @click.stop="createBranch(i, 'left')"
-                  class="p-2 rounded-full hover:bg-white/10 transition-colors group/btn branch-btn"
-                  :style="{ color: threadColor }" title="Branch left">
-                  <div class="relative">
-                    <GitBranch class="w-5 h-5 transform -scale-x-100" />
-                    <div class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 
-                      group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 
-                      backdrop-blur px-2 py-1 rounded">
-                      Branch left
-                    </div>
-                  </div>
+              <div class="flex gap-2">
+                <button 
+                  @click="loadMoreMessages" 
+                  :disabled="loadingState.isLoading"
+                  class="btn btn-xs btn-ghost"
+                  :class="{ 'loading': loadingState.isLoading }"
+                >
+                  <span v-if="!loadingState.isLoading">Load More</span>
+                  <span v-else>Loading...</span>
                 </button>
-              </div>
-              <div v-if="msg.role === 'assistant'" class="absolute inset-y-0 -right-12 flex items-center opacity-0 group-hover:opacity-100 
-                transition-all duration-200 ease-in-out z-20">
-                <button @click.stop="createBranch(i, 'right')"
-                  class="p-2 rounded-full hover:bg-white/10 transition-colors group/btn branch-btn"
-                  :style="{ color: threadColor }" title="Branch right">
-                  <div class="relative">
-                    <GitBranch class="w-5 h-5" />
-                    <div class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 
-                      group-hover/btn:opacity-100 transition-opacity duration-200 text-xs bg-base-300/90 
-                      backdrop-blur px-2 py-1 rounded">
-                      Branch right
-                    </div>
-                  </div>
+                <button 
+                  @click="loadAllMessages"
+                  :disabled="loadingState.isLoading"
+                  class="btn btn-xs btn-ghost"
+                >
+                  Load All
                 </button>
               </div>
             </div>
+          </div>
+
+          <!-- Expanded Messages View with Virtualization -->
+          <VirtualizedMessageList
+            v-if="isExpanded && node.messages"
+            ref="messagesContainerRef"
+            :messages="displayMessages"
+            :node-id="node.id"
+            :is-snapped="isSnapped"
+            :expanded-messages="expandedMessages"
+            :text-content-color="textContentColor"
+            :thread-color="threadColor"
+            :auto-tts-enabled="autoTTSEnabled"
+            :streaming-content="node.streamingContent"
+            :get-message-styles="getMessageStyles"
+            :get-model-display-name="getModelDisplayName"
+            :get-avatar-url="getAvatarUrl"
+            :get-model-info="getModelInfo"
+            :copy-to-markdown="copyToMarkdown"
+            @expand-message="expandMessage"
+            @stop-streaming="stopStreaming"
+            @resend="(index) => $emit('resend', index)"
+            @create-branch="(index, direction) => createBranch(index, direction)"
+            @wheel="handleMessagesWheel"
+          />
+
+          <!-- Loading Indicator for Progressive Loading -->
+          <div v-if="loadingState.isLoading" class="flex items-center justify-center py-4">
+            <div class="loading loading-spinner loading-sm"></div>
+            <span class="ml-2 text-sm text-base-content/60">Loading messages...</span>
           </div>
 
           <!-- Scroll Buttons -->
@@ -486,8 +457,8 @@ import {
 
 import MessageInput from '../../messages/MessageInput.vue';
 import CollapsedMessagesView from '../../messages/CollapsedMessagesView.vue';
+import VirtualizedMessageList from '../../messages/VirtualizedMessageList.vue';
 import { useCanvasStore } from '../../../stores/canvasStore';
-import { useThemeStore } from '@/stores/themeStore';
 import { Card } from '@/components/ui/card';
 import Badge from '../../ui/Badge.vue';
 import MessageContent from '../../messages/MessageContent.vue';
@@ -498,6 +469,7 @@ import TitleGenerationLoader from '@/components/ui/TitleGenerationLoader.vue';
 import ImageAnalysisLoader from '@/components/ui/ImageAnalysisLoader.vue';
 import TTSControls from '../../messages/TTSControls.vue';
 import { tokenTrackingService, type CompactedSection, type TokenUsage } from '@/services/tokenTrackingService';
+import { useProgressiveMessageLoading } from '@/composables/useProgressiveMessageLoading';
 import type { ModelParameters } from '@/types/model';
 import type { ModelInfo } from '@/types/model';
 import { useModelStore } from '@/stores/modelStore';
@@ -510,6 +482,8 @@ import mistral from '@/assets/mistral.jpeg';
 import unknownAvatar from '@/assets/unknown.jpeg';
 import ollama from '@/assets/ollama.jpeg';
 import { autoCaptionService, type CaptionResult } from '@/services/autoCaptionService';
+import { useThemeColors } from '@/composables/useThemeColors';
+import { hexToRgb } from '@/utils/themeUtils';
 
 interface ExtendedMessage extends ModelParameters {
   // Extend as needed
@@ -579,68 +553,53 @@ const currentTokenCount = ref(0);
 const canvasStore = useCanvasStore();
 const modelStore = useModelStore();
 
-const themeStore = useThemeStore();
-const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
+// Use centralized theme composable
+const { 
+  currentTheme, 
+  themeColors, 
+  isDarkTheme, 
+  isLightTheme,
+  getIndexedColorSet,
+  backgroundColors,
+  adjustColorOpacity,
+  adjustColorLightness
+} = useThemeColors();
 
+// DEBUGGING: Add explicit theme watching like MessageInput does
+const activeTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
 let themeObserver;
-
-// Get theme colors
-const themeColors = computed(() => {
-  return themeStore.getThemeColors(currentTheme.value);
+onMounted(() => {
+  themeObserver = new MutationObserver(() => {
+    const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    console.log('BranchNode: DOM theme changed to', newTheme);
+    activeTheme.value = newTheme;
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 });
+onBeforeUnmount(() => themeObserver?.disconnect());
 
-const isLightTheme = computed(() => {
-  const darkThemes = [
-    'dark', 'synthwave', 'retro', 'cyberpunk', 'halloween',
-    'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk',
-    'autumn', 'business', 'acid', 'night', 'coffee'
-  ];
-  return !darkThemes.includes(currentTheme.value);
-});
 
 const snappedBackgroundStyle = computed(() => {
-  // Use theme colors for background instead of plain white/black
-  const colors = themeColors.value;
-  
-  if (isLightTheme.value) {
-    // For light themes, use a very light tint of the primary color
-    const rgb = hexToRgb(colors.primary);
-    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`;
-  } else {
-    // For dark themes, use a dark tint of the primary color
-    const rgb = hexToRgb(colors.primary);
-    return `rgba(${Math.min(rgb.r, 60)}, ${Math.min(rgb.g, 60)}, ${Math.min(rgb.b, 60)}, 0.8)`;
-  }
+  // Use the CSS custom property set by nodeThemeStyle
+  return `var(--node-color-transparent)`;
 });
-// Calculate theme-based colors
-const baseColorSet = computed(() => {
-  const colorIndex = Math.abs(Number(props.node.id)) % 3;
+// Calculate theme-based colors using the centralized composable
+// Create a hash from the node ID to get a consistent color index
+let hash = 0;
+for (let i = 0; i < props.node.id.length; i++) {
+  const char = props.node.id.charCodeAt(i);
+  hash = ((hash << 5) - hash) + char;
+  hash = hash & hash; // Convert to 32-bit integer
+}
 
-  // Get base color from theme
-  let baseColor;
-  switch (colorIndex) {
-    case 0:
-      baseColor = themeColors.value.primary;
-      break;
-    case 1:
-      baseColor = themeColors.value.secondary;
-      break;
-    case 2:
-      baseColor = themeColors.value.accent;
-      break;
-    default:
-      baseColor = themeColors.value.primary;
-  }
+// Get the reactive color set based on the hash
+const baseColorSet = getIndexedColorSet(Math.abs(hash));
 
-  // Create color variants
-  return {
-    base: baseColor,
-    light: adjustColorLightness(baseColor, 30), // Lighter variant
-    dark: adjustColorLightness(baseColor, -20), // Darker variant
-    transparent: adjustColorOpacity(baseColor, 0.15),
-    contrastText: getContrastTextColor(baseColor)
-  };
-});
+// DEBUGGING: Watch for changes
+watch(baseColorSet, (newColorSet) => {
+  console.log('BranchNode: baseColorSet recomputing for theme', activeTheme.value);
+  console.log('New color set:', newColorSet);
+}, { immediate: true });
 
 const showParamsEditor = ref(false);
 const avatarRef = ref<HTMLElement | null>(null);
@@ -689,8 +648,16 @@ const shouldShowFullDetail = computed(() => {
   const result = props.lodLevel === 'full';
   return result;
 });
+const shouldShowPreview = computed(() => {
+  const result = props.lodLevel === 'preview';
+  return result;
+});
 const shouldShowSummary = computed(() => {
   const result = props.lodLevel === 'summary';
+  return result;
+});
+const shouldShowCompact = computed(() => {
+  const result = props.lodLevel === 'compact';
   return result;
 });
 const shouldShowBlock = computed(() => {
@@ -846,16 +813,28 @@ const contextStatusMessage = computed(() => {
   return 'Context usage normal';
 });
 
-const displayMessages = computed((): ExtendedMessage[] => {
-  let baseMessages: ExtendedMessage[] = [];
-  
-  // If we're showing an expanded section, show those messages instead
+// Progressive message loading setup
+const getBaseMessages = () => {
   if (expandedSectionId.value) {
     const section = compactedSections.value.find(s => s.id === expandedSectionId.value);
-    baseMessages = section ? section.originalMessages : props.node.messages || [];
-  } else {
-    baseMessages = props.node.messages || [];
+    return section ? section.originalMessages : props.node.messages || [];
   }
+  return props.node.messages || [];
+};
+
+const { 
+  displayMessages: progressiveMessages, 
+  loadingState, 
+  isProgressiveLoadingEnabled,
+  loadMoreMessages, 
+  loadAllMessages 
+} = useProgressiveMessageLoading(getBaseMessages, {
+  initialLoadCount: 15,
+  incrementLoadCount: 10
+});
+
+const displayMessages = computed((): ExtendedMessage[] => {
+  const baseMessages = progressiveMessages.value;
   
   // Add streaming content if present
   return props.node.streamingContent
@@ -1098,175 +1077,39 @@ const regenerateCaption = async () => {
   }
 };
 
-// Theme-aware card styling
-const computedCardStyle = computed(() => {
-  const isDark = themeStore.isDarkTheme(currentTheme.value);
-
-  if (isSnapped.value) {
-    return {
-      background: `linear-gradient(to bottom, var(--node-color-transparent), ${adjustColorOpacity(baseColorSet.value.base, 0.25)})`,
-      boxShadow: `0 8px 32px ${adjustColorOpacity(baseColorSet.value.dark, 0.4)}`,
-      borderColor: `var(--node-border-color)`,
-    };
-  }
-
-  return {
-    background: isDark
-      ? `linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0.8))`
-      : `linear-gradient(to bottom, rgba(255,255,255,0.8), rgba(255,255,255,0.95))`,
-    borderColor: `var(--node-border-color)`,
-  };
-});
+// Removed computedCardStyle - now using CSS classes with custom properties
 
 // Color conversion functions
-function hexToRgb(hex) {
-  const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
-  const formattedHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(formattedHex);
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : { r: 0, g: 0, b: 0 };
-}
-
-// Convert RGB to HSL
-function rgbToHsl(r, g, b) {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h, s, l = (max + min) / 2;
-
-  if (max === min) {
-    h = s = 0; // achromatic
-  } else {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-    switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      case b: h = (r - g) / d + 4; break;
-    }
-    h /= 6;
-  }
-
-  return [h * 360, s * 100, l * 100];
-}
-
-// Convert HSL to RGB
-function hslToRgb(h, s, l) {
-  h /= 360;
-  s /= 100;
-  l /= 100;
-
-  let r, g, b;
-
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p, q, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-
-    r = hue2rgb(p, q, h + 1 / 3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1 / 3);
-  }
-
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-}
-
-// RGB to hex
-function rgbToHex(r, g, b) {
-  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-}
-
-// Adjust color lightness
-function adjustColorLightness(hexColor, amount) {
-  // Convert to RGB
-  const rgb = hexToRgb(hexColor);
-  // Convert to HSL
-  const [h, s, l] = rgbToHsl(rgb.r, rgb.g, rgb.b);
-  // Adjust lightness
-  const newL = Math.max(0, Math.min(100, l + amount));
-  // Convert back to RGB
-  const [r, g, b] = hslToRgb(h, s, newL);
-  // Convert back to hex
-  return rgbToHex(r, g, b);
-}
-
-// Adjust color opacity
-function adjustColorOpacity(hexColor, opacity) {
-  const rgb = hexToRgb(hexColor);
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
-}
-
-// Get contrast text color (white or black)
-function getContrastTextColor(hexColor) {
-  const rgb = hexToRgb(hexColor);
-  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-  return brightness < 128 ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.85)';
-}
+// Color utility functions are now imported from the centralized theme utilities
 
 // Generate theme-specific styles for the node
 const nodeThemeStyle = computed(() => {
-  const isDark = themeStore.isDarkTheme(currentTheme.value);
-
-  // Force light text for specific dark themes regardless of contrast calculation
-  const forceLightTextThemes = [
-    'dark', 'synthwave', 'retro', 'cyberpunk', 'halloween',
-    'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk',
-    'autumn', 'business', 'acid', 'night', 'coffee'
-  ];
-
-  const forceLightText = forceLightTextThemes.includes(currentTheme.value);
-
-  // Override the contrast text color for problematic themes
-  const textColor = forceLightText
-    ? 'rgba(255, 255, 255, 0.95)'
-    : baseColorSet.value.contrastText;
-
-  // Use theme-appropriate background colors instead of generic black/white
-  const colors = themeColors.value;
-  const primaryRgb = hexToRgb(colors.primary);
-  const secondaryRgb = hexToRgb(colors.secondary);
+  // DEBUGGING: Log when this recomputes
+  console.log('BranchNode: nodeThemeStyle recomputing for theme', activeTheme.value);
   
-  let baseBgColor, messageBgColor;
-  
-  if (!isLightTheme.value) {
-    // Dark themes: use very dark tints of theme colors
-    baseBgColor = `rgba(${Math.min(primaryRgb.r * 0.3, 40)}, ${Math.min(primaryRgb.g * 0.3, 40)}, ${Math.min(primaryRgb.b * 0.3, 40)}, 0.85)`;
-    messageBgColor = `rgba(${Math.min(secondaryRgb.r * 0.2, 30)}, ${Math.min(secondaryRgb.g * 0.2, 30)}, ${Math.min(secondaryRgb.b * 0.2, 30)}, 0.7)`;
-  } else {
-    // Light themes: use very light tints of theme colors
-    baseBgColor = `rgba(${Math.max(255 - (255 - primaryRgb.r) * 0.1, 240)}, ${Math.max(255 - (255 - primaryRgb.g) * 0.1, 240)}, ${Math.max(255 - (255 - primaryRgb.b) * 0.1, 240)}, 0.9)`;
-    messageBgColor = `rgba(${Math.max(255 - (255 - secondaryRgb.r) * 0.05, 245)}, ${Math.max(255 - (255 - secondaryRgb.g) * 0.05, 245)}, ${Math.max(255 - (255 - secondaryRgb.b) * 0.05, 245)}, 0.8)`;
-  }
+  // Use the composable's theme colors
+  const textColor = baseColorSet.value.contrastText;
+  const bgColors = backgroundColors.value;
 
-  return {
+  const styles = {
     '--node-color': baseColorSet.value.base,
     '--node-color-light': baseColorSet.value.light,
     '--node-color-dark': baseColorSet.value.dark,
     '--node-color-transparent': baseColorSet.value.transparent,
     '--node-text-color': textColor,
-    '--node-glow-color': `${adjustColorOpacity(baseColorSet.value.base, 0.4)}`,
-    '--node-border-color': `${adjustColorOpacity(baseColorSet.value.light, 0.6)}`,
-    '--node-shadow-color': `${adjustColorOpacity(baseColorSet.value.dark, 0.5)}`,
-    '--base-bg-color': baseBgColor,
-    '--message-bg-color': messageBgColor
+    '--node-glow-color': adjustColorOpacity(baseColorSet.value.base, 0.4),
+    '--node-border-color': adjustColorOpacity(baseColorSet.value.light, 0.6),
+    '--node-shadow-color': adjustColorOpacity(baseColorSet.value.dark, 0.5),
+    '--base-bg-color': bgColors.base,
+    '--message-bg-color': bgColors.message,
+    '--user-glass-primary': baseColorSet.value.transparent,
+    '--user-glass-secondary': adjustColorOpacity(baseColorSet.value.light, 0.3),
+    '--ai-glass-primary': adjustColorOpacity(baseColorSet.value.dark, 0.15),
+    '--ai-glass-secondary': adjustColorOpacity(baseColorSet.value.base, 0.1)
   };
+  
+  console.log('BranchNode: CSS custom properties:', styles);
+  return styles;
 });
 
 // Thread color based on theme
@@ -1405,13 +1248,7 @@ const nodePositionStyle = computed(() => {
   };
 });
 
-const updateThemeFromDOM = () => {
-  const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
-  if (newTheme !== currentTheme.value) {
-    currentTheme.value = newTheme;
-    console.log('Theme changed to', currentTheme.value);
-  }
-};
+// Theme updates are now handled by the useThemeColors composable
 
 const toggleSnap = async () => {
   try {
@@ -1708,18 +1545,28 @@ const updateModelParams = (params: ModelParameters) => {
 
 const scrollToBottom = () => {
   if (messagesContainerRef.value) {
-    const container = messagesContainerRef.value;
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: 'smooth'
-    });
+    // Use the exposed scrollToBottom method from VirtualizedMessageList
+    if (typeof messagesContainerRef.value.scrollToBottom === 'function') {
+      messagesContainerRef.value.scrollToBottom();
+    } else {
+      // Fallback for direct DOM element access
+      const container = messagesContainerRef.value;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   }
 };
 
 const updateScrollButtonsVisibility = () => {
   if (!messagesContainerRef.value) return;
-  const container = messagesContainerRef.value;
-  const { scrollTop, scrollHeight, clientHeight } = container;
+  
+  // Get scroll properties - handle both component and DOM element
+  const scrollTop = messagesContainerRef.value.scrollTop || 0;
+  const scrollHeight = messagesContainerRef.value.scrollHeight || 0;
+  const clientHeight = messagesContainerRef.value.clientHeight || 0;
+  
   showScrollButtons.value = scrollHeight > clientHeight;
   isAtTop.value = scrollTop <= 10;
   isAtBottom.value = Math.ceil(scrollTop + clientHeight) >= scrollHeight - 10;
@@ -1802,7 +1649,7 @@ const createBranch = (messageIndex: number, direction: 'left' | 'right') => {
 const getMessageVerticalOffset = (messageIndex: number): number => {
   if (!messagesContainerRef.value) return 40; // Default fallback
   
-  // Find the message container element
+  // Find the message container element using exposed querySelector method
   const messageElement = messagesContainerRef.value.querySelector(
     `[data-message-index="${messageIndex}"]`
   ) as HTMLElement;
@@ -2049,7 +1896,8 @@ const scrollToCodeBubble = (data: {
 
   // Find the message containing the code bubble
   if (messagesContainerRef.value) {
-    const messages = messagesContainerRef.value.querySelectorAll('.message-container');
+    const container = messagesContainerRef.value.$el?.value || messagesContainerRef.value;
+    const messages = container.querySelectorAll('.message-container');
 
     // Loop through messages to find one with the code bubble
     for (const message of messages) {
@@ -2081,7 +1929,8 @@ const scrollToMessage = (messageIndex: number) => {
   if (!messagesContainerRef.value) return;
 
   nextTick(() => {
-    const messages = messagesContainerRef.value.querySelectorAll('.message-container');
+    const container = messagesContainerRef.value.$el?.value || messagesContainerRef.value;
+    const messages = container.querySelectorAll('.message-container');
     if (messageIndex >= 0 && messageIndex < messages.length) {
       const message = messages[messageIndex];
       message.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2168,18 +2017,8 @@ const expandMessage = (index: number) => {
 
 
 const textContentColor = computed(() => {
-  // List of dark themes that need light text
-  const darkThemes = [
-    'dark', 'synthwave', 'retro', 'cyberpunk', 'halloween',
-    'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk',
-    'autumn', 'business', 'acid', 'night', 'coffee'
-  ];
-
-  // Get current theme from document or store
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-
-  // Return light text color for dark themes
-  return darkThemes.includes(currentTheme) ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)';
+  // Use the reactive theme store instead of DOM querying
+  return isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)';
 });
 
 function getMessageStyles(index: number) {
@@ -2244,8 +2083,13 @@ const handleMessagesWheel = (e: WheelEvent) => {
     return; // Let canvas handle it
   }
   
-  // Stop propagation only for actual message scrolling
+  // Stop propagation for actual message scrolling
   e.stopPropagation();
+  // Prevent default to ensure smooth scrolling within messages
+  e.preventDefault();
+  
+  // Manually apply the scroll
+  container.scrollTop += e.deltaY;
 };
 
 watch(() => displayMessages.value, () => {
@@ -2468,23 +2312,7 @@ onMounted(() => {
     }
   });
 
-  // Setup direct observation of theme attribute changes
-  themeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'data-theme') {
-        updateThemeFromDOM();
-      }
-    });
-  });
-
-  // Start observing theme changes on document element
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme']
-  });
-
-  // Initial theme check
-  updateThemeFromDOM();
+  // Theme observation is now handled by the useThemeColors composable
 
   emitter.on('scroll-to-code-bubble', scrollToCodeBubble);
 
@@ -2533,9 +2361,12 @@ onMounted(() => {
     }
   }
   if (messagesContainerRef.value) {
-    messagesContainerRef.value.addEventListener('scroll', () => {
-      requestAnimationFrame(updateScrollButtonsVisibility);
-    });
+    // Use the exposed addEventListener method from VirtualizedMessageList
+    if (typeof messagesContainerRef.value.addEventListener === 'function') {
+      messagesContainerRef.value.addEventListener('scroll', () => {
+        requestAnimationFrame(updateScrollButtonsVisibility);
+      });
+    }
     calculateAndUpdateSnappedPosition();
     
     // Emit initial message positions
@@ -2560,9 +2391,6 @@ watch(isExpanded, () => {
 });
 
 onBeforeUnmount(() => {
-  if (themeObserver) {
-    themeObserver.disconnect();
-  }
   document.body.classList.remove('has-snapped-node');
   emitter.off('debug-sandbox');
   emitter.off('streaming-complete');
@@ -2574,7 +2402,10 @@ onBeforeUnmount(() => {
   emitter.off('request-node-position-update');
   window.removeEventListener("keydown", onKeyDown);
   if (messagesContainerRef.value) {
-    messagesContainerRef.value.removeEventListener('scroll', updateScrollButtonsVisibility);
+    // Use the exposed removeEventListener method from VirtualizedMessageList
+    if (typeof messagesContainerRef.value.removeEventListener === 'function') {
+      messagesContainerRef.value.removeEventListener('scroll', updateScrollButtonsVisibility);
+    }
   }
   isSnapped.value = false;
   isTransitioningSnap.value = false;
@@ -3545,71 +3376,26 @@ onBeforeUnmount(() => {
     0 0 10px rgba(218, 165, 32, 0.2) !important;
 }
 
-.theme-cyberpunk .node-card {
-  border-width: 2px;
-  border-style: solid;
-  box-shadow: 
-    0 0 15px var(--node-glow-color), 
-    inset 0 0 8px rgba(117, 209, 240, 0.2),
-    0 0 25px rgba(255, 117, 152, 0.3);
-  background: var(--base-bg-color) !important;
-}
+/* Removed hardcoded cyberpunk styles - now uses CSS custom properties */
 
-.theme-synthwave .node-card {
-  background: linear-gradient(to bottom right, rgba(20, 10, 30, 0.8), rgba(80, 30, 110, 0.7)) !important;
-  border-width: 1px;
-  box-shadow: 0 0 20px var(--node-glow-color);
-}
+/* Removed hardcoded synthwave styles - now uses CSS custom properties */
 
-.theme-retro .node-card {
-  border-width: 3px;
-  border-style: double;
-  background: rgba(245, 240, 220, 0.9) !important;
-}
+/* Removed hardcoded retro styles - now uses CSS custom properties */
 
-.theme-valentine .node-card,
-.theme-cupcake .node-card {
-  border-radius: 1.25rem;
-  background: linear-gradient(to bottom, rgba(255, 240, 245, 0.9), rgba(255, 220, 230, 0.8)) !important;
-}
+/* Removed hardcoded valentine/cupcake styles - now uses CSS custom properties */
 
-.theme-aqua .node-card {
-  background: linear-gradient(135deg, rgba(0, 30, 60, 0.8), rgba(0, 180, 220, 0.3)) !important;
-  backdrop-filter: blur(20px);
-  border-radius: 1rem;
-  box-shadow: 0 8px 32px rgba(0, 180, 220, 0.4);
-}
+/* Removed hardcoded aqua styles - now uses CSS custom properties */
 
-.theme-forest .node-card,
-.theme-garden .node-card {
-  background: linear-gradient(to bottom, rgba(20, 40, 20, 0.7), rgba(40, 80, 40, 0.5)) !important;
-}
+/* Removed hardcoded forest/garden styles - now uses CSS custom properties */
 
-.theme-night .node-card {
-  background: linear-gradient(to bottom, rgba(10, 10, 30, 0.8), rgba(20, 30, 60, 0.6)) !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 30, 0.6);
-}
+/* Removed hardcoded night styles - now uses CSS custom properties */
 
-.theme-coffee .node-card {
-  background: linear-gradient(to bottom, rgba(50, 30, 20, 0.8), rgba(80, 50, 40, 0.6)) !important;
-}
+/* Removed hardcoded coffee styles - now uses CSS custom properties */
 
-.theme-luxury .node-card {
-  background: linear-gradient(to bottom, rgba(20, 20, 20, 0.9), rgba(40, 40, 40, 0.8)) !important;
-  border: 1px solid rgba(218, 165, 32, 0.6);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 15px rgba(218, 165, 32, 0.3);
-}
+/* Removed hardcoded luxury styles - now uses CSS custom properties */
 
 /* Enhanced cyberpunk snapped state styling */
-.theme-cyberpunk .node-card.snapped {
-  background: var(--snapped-backdrop) !important;
-  border-color: rgba(117, 209, 240, 0.8) !important;
-  box-shadow: 
-    0 0 20px var(--node-glow-color), 
-    inset 0 0 12px rgba(117, 209, 240, 0.3),
-    0 0 35px rgba(255, 117, 152, 0.4),
-    0 0 50px rgba(247, 213, 29, 0.2) !important;
-}
+/* Removed hardcoded cyberpunk snapped styles - now uses CSS custom properties */
 
 .theme-cyberpunk .snapped .user-message {
   background: linear-gradient(135deg,
@@ -3636,35 +3422,35 @@ onBeforeUnmount(() => {
 /* Halloween theme styling with purple and blue */
 .theme-halloween .user-message {
   background: linear-gradient(135deg,
-      rgba(88, 28, 135, 0.4),
-      rgba(25, 25, 50, 0.3)) !important;
-  border-color: rgba(124, 58, 237, 0.6) !important;
+      var(--node-color-transparent),
+      var(--node-shadow-color)) !important;
+  border-color: var(--node-border-color) !important;
   box-shadow:
-    0 4px 16px rgba(88, 28, 135, 0.5),
-    inset 0 1px 0 rgba(59, 130, 246, 0.2),
-    0 0 20px rgba(88, 28, 135, 0.4) !important;
+    0 4px 16px var(--node-glow-color),
+    inset 0 1px 0 var(--node-color-light),
+    0 0 20px var(--node-glow-color) !important;
 }
 
 .theme-halloween .ai-message {
   background: linear-gradient(135deg,
-      rgba(25, 25, 50, 0.4),
-      rgba(59, 130, 246, 0.2)) !important;
-  border-color: rgba(59, 130, 246, 0.6) !important;
+      var(--node-shadow-color),
+      var(--node-color-light)) !important;
+  border-color: var(--node-color) !important;
   box-shadow:
-    0 4px 16px rgba(25, 25, 50, 0.6),
-    inset 0 1px 0 rgba(124, 58, 237, 0.2),
-    0 0 20px rgba(59, 130, 246, 0.3) !important;
+    0 4px 16px var(--node-shadow-color),
+    inset 0 1px 0 var(--node-border-color),
+    0 0 20px var(--node-color-light) !important;
 }
 
 .theme-halloween .node-card {
   position: relative;
   border-width: 2px;
   border-style: solid;
-  border-color: rgba(88, 28, 135, 0.6) !important;
+  border-color: var(--node-border-color) !important;
   box-shadow: 
-    0 0 20px rgba(88, 28, 135, 0.4), 
-    inset 0 0 10px rgba(25, 25, 50, 0.5),
-    0 0 30px rgba(59, 130, 246, 0.2);
+    0 0 20px var(--node-glow-color), 
+    inset 0 0 10px var(--node-shadow-color),
+    0 0 30px var(--node-color-light);
 }
 
 /* Add bat decorations with CSS */
@@ -3700,34 +3486,34 @@ onBeforeUnmount(() => {
 
 .theme-halloween .node-card.snapped {
   background: var(--snapped-backdrop) !important;
-  border-color: rgba(124, 58, 237, 0.8) !important;
+  border-color: var(--node-color) !important;
   box-shadow: 
-    0 0 25px rgba(88, 28, 135, 0.6), 
-    inset 0 0 15px rgba(25, 25, 50, 0.6),
-    0 0 40px rgba(59, 130, 246, 0.3),
-    0 0 60px rgba(88, 28, 135, 0.3) !important;
+    0 0 25px var(--node-glow-color), 
+    inset 0 0 15px var(--node-shadow-color),
+    0 0 40px var(--node-color-light),
+    0 0 60px var(--node-glow-color) !important;
 }
 
 .theme-halloween .snapped .user-message {
   background: linear-gradient(135deg,
-      rgba(88, 28, 135, 0.5),
-      rgba(25, 25, 50, 0.35)) !important;
-  border-color: rgba(124, 58, 237, 0.8) !important;
+      var(--node-color-transparent),
+      var(--node-shadow-color)) !important;
+  border-color: var(--node-color) !important;
   box-shadow:
-    0 4px 20px rgba(88, 28, 135, 0.6),
-    inset 0 1px 0 rgba(59, 130, 246, 0.3),
-    0 0 25px rgba(88, 28, 135, 0.5) !important;
+    0 4px 20px var(--node-glow-color),
+    inset 0 1px 0 var(--node-color-light),
+    0 0 25px var(--node-glow-color) !important;
 }
 
 .theme-halloween .snapped .ai-message {
   background: linear-gradient(135deg,
-      rgba(25, 25, 50, 0.5),
-      rgba(59, 130, 246, 0.25)) !important;
-  border-color: rgba(59, 130, 246, 0.8) !important;
+      var(--node-shadow-color),
+      var(--node-color-light)) !important;
+  border-color: var(--node-color) !important;
   box-shadow:
-    0 4px 20px rgba(25, 25, 50, 0.7),
-    inset 0 1px 0 rgba(124, 58, 237, 0.3),
-    0 0 25px rgba(59, 130, 246, 0.4) !important;
+    0 4px 20px var(--node-shadow-color),
+    inset 0 1px 0 var(--node-border-color),
+    0 0 25px var(--node-color-light) !important;
 }
 
 /* Acid theme styling with neon effects */
@@ -3753,24 +3539,46 @@ onBeforeUnmount(() => {
     0 0 20px rgba(0, 255, 0, 0.3) !important;
 }
 
-.theme-acid .node-card {
-  border-width: 2px;
-  border-style: solid;
-  box-shadow: 
-    0 0 15px rgba(255, 255, 0, 0.3), 
-    inset 0 0 8px rgba(255, 0, 255, 0.1),
-    0 0 25px rgba(0, 255, 0, 0.2);
-  background: var(--base-bg-color) !important;
+/* Removed hardcoded acid styles - now uses CSS custom properties */
+
+/* Removed hardcoded acid snapped styles - now uses CSS custom properties */
+
+/* Universal reactive theme-aware node card styling */
+.node-card {
+  background: linear-gradient(to bottom, var(--node-color-transparent), var(--node-shadow-color)) !important;
+  border-color: var(--node-border-color) !important;
+  box-shadow: 0 0 20px var(--node-glow-color), inset 0 0 10px var(--node-shadow-color) !important;
 }
 
-.theme-acid .node-card.snapped {
+.node-card.snapped {
   background: var(--snapped-backdrop) !important;
-  border-color: rgba(255, 255, 0, 0.8) !important;
-  box-shadow: 
-    0 0 20px rgba(255, 255, 0, 0.5), 
-    inset 0 0 12px rgba(255, 0, 255, 0.2),
-    0 0 35px rgba(0, 255, 0, 0.3),
-    0 0 50px rgba(255, 255, 0, 0.2) !important;
+  border-color: var(--node-color) !important;
+  box-shadow: 0 0 30px var(--node-glow-color), inset 0 0 15px var(--node-shadow-color) !important;
+}
+
+/* Universal reactive message styling that overrides hardcoded theme styles */
+.node-card .user-message {
+  background: linear-gradient(135deg, var(--user-glass-primary), var(--user-glass-secondary)) !important;
+  border-color: var(--node-border-color) !important;
+  box-shadow: 0 4px 16px var(--node-glow-color), inset 0 1px 0 var(--node-color-light), 0 0 20px var(--node-glow-color) !important;
+}
+
+.node-card .ai-message {
+  background: linear-gradient(135deg, var(--ai-glass-primary), var(--ai-glass-secondary)) !important;
+  border-color: var(--node-border-color) !important;
+  box-shadow: 0 4px 16px var(--node-shadow-color), inset 0 1px 0 var(--node-color-light), 0 0 15px var(--node-color-light) !important;
+}
+
+.node-card.snapped .user-message {
+  background: linear-gradient(135deg, var(--user-glass-primary), var(--user-glass-secondary)) !important;
+  border-color: var(--node-color) !important;
+  box-shadow: 0 4px 20px var(--node-glow-color), inset 0 1px 0 var(--node-color-light), 0 0 25px var(--node-glow-color) !important;
+}
+
+.node-card.snapped .ai-message {
+  background: linear-gradient(135deg, var(--ai-glass-primary), var(--ai-glass-secondary)) !important;
+  border-color: var(--node-color) !important;
+  box-shadow: 0 4px 20px var(--node-shadow-color), inset 0 1px 0 var(--node-border-color), 0 0 25px var(--node-color-light) !important;
 }
 
 .theme-acid .snapped .user-message {
@@ -3934,5 +3742,63 @@ onBeforeUnmount(() => {
   transition-property: all;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 300ms;
+}
+
+/* Performance optimizations with CSS containment */
+.branch-node {
+  contain: layout style paint;
+  will-change: transform;
+  transform: translateZ(0); /* Force GPU acceleration */
+}
+
+.node-card {
+  contain: layout style;
+  will-change: auto;
+}
+
+.messages-container {
+  contain: layout style paint;
+  overflow: hidden;
+}
+
+.message-container {
+  contain: layout style;
+  transform: translateZ(0); /* GPU acceleration for smooth animations */
+}
+
+/* Optimize snapped mode performance */
+.snapped-card {
+  contain: layout style paint;
+  will-change: transform, opacity;
+}
+
+.snapped-content {
+  contain: layout style;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+/* Better rendering for model badges */
+.model-badge {
+  contain: layout style;
+  will-change: opacity, transform;
+}
+
+/* Optimize branch buttons */
+.branch-btn {
+  contain: layout style;
+  will-change: opacity;
+  transform: translateZ(0);
+}
+
+/* Performance mode for large conversations */
+@media (max-width: 768px) {
+  .branch-node {
+    contain: strict;
+  }
+  
+  .message-container {
+    contain: strict;
+  }
 }
 </style>

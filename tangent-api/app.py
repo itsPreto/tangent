@@ -29,6 +29,8 @@ import subprocess
 import shutil
 import soundfile as sf
 import numpy as np
+import random
+from datetime import datetime, timedelta, timezone
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -2372,7 +2374,7 @@ def ollama_proxy_metadata(model_name):
 chat_service = ChatPersistenceService(app)
 embedding_service = EmbeddingService()
 clustering_service = ClusteringService(embedding_service, chat_service)
-import_service = ConversationImportService(chat_service)
+import_service = ConversationImportService(chat_service, embedding_service)
 
 # Clustering endpoints
 @api_routes.route('/clustering/start', methods=['POST'])
@@ -2454,6 +2456,71 @@ def stop_clustering():
         return jsonify({'message': 'Clustering stop requested'})
     except Exception as e:
         logger.error(f"Error stopping clustering: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/visualization', methods=['GET'])
+def get_visualization_data():
+    """
+    Get visualization data for D3 force graph from clustering results
+    """
+    try:
+        # Get current clustering status and results
+        status = clustering_service.get_clustering_status()
+        
+        if not status['clusters']:
+            return jsonify({
+                'points': [],
+                'clusters': [],
+                'titles': [],
+                'topics': {},
+                'chats_with_reflections': []
+            })
+        
+        # Transform cluster data into D3 format
+        points = []
+        cluster_assignments = []
+        titles = []
+        topics = {}
+        
+        # Generate positions using a simple grid layout for now
+        import math
+        cluster_radius = 150
+        workspace_radius = 50
+        
+        for cluster_idx, cluster in enumerate(status['clusters']):
+            # Add cluster center point
+            center_x = cluster_radius * math.cos(2 * math.pi * cluster_idx / len(status['clusters']))
+            center_y = cluster_radius * math.sin(2 * math.pi * cluster_idx / len(status['clusters']))
+            
+            # Add workspaces around cluster center
+            for workspace_idx, workspace in enumerate(cluster['workspaces']):
+                # Position workspaces in a circle around cluster center
+                angle = 2 * math.pi * workspace_idx / len(cluster['workspaces'])
+                x = center_x + workspace_radius * math.cos(angle)
+                y = center_y + workspace_radius * math.sin(angle)
+                
+                points.append([x, y])
+                cluster_assignments.append(cluster_idx)
+                titles.append(workspace['title'])
+            
+            # Build topic metadata
+            topics[str(cluster_idx)] = {
+                'topic': cluster['title'],
+                'size': cluster['size'],
+                'coherence': 0.85,  # Default coherence value
+                'reflection': f"This topic contains {cluster['size']} related workspaces"
+            }
+        
+        return jsonify({
+            'points': points,
+            'clusters': cluster_assignments,
+            'titles': titles,
+            'topics': topics,
+            'chats_with_reflections': []  # TODO: Add reflection detection
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting visualization data: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Conversation Import endpoints
@@ -3009,6 +3076,162 @@ def serve_thumbnail(filename):
     """Serve thumbnail files"""
     from flask import send_from_directory
     return send_from_directory(thumbnail_service.upload_path, filename)
+
+# Mock Data Generator
+CONTENT_THEMES = {
+    "tech_support": {
+        "titles": ["Issue with Login", "API Key Not Working", "Database Connection Error", "Frontend Component Bug", "Server is Down"],
+        "user_prompts": ["My app is crashing, can you help?", "I'm getting a 403 Forbidden error.", "How do I reset my password?", "The main button isn't clickable on mobile.", "The server seems to be unresponsive."],
+        "assistant_responses": ["Of course, can you provide the full error log?", "A 403 error means you don't have permission. Have you checked your API key scopes?", "You can reset your password by visiting the settings page and clicking 'Forgot Password'.", "Let's debug the component. Can you check the browser's console for any errors?", "I'm looking into the server status now. It seems we have a high load. We are working on it."]
+    },
+    "creative": {
+        "titles": ["Brainstorming a Story", "Poem about the Stars", "Character Ideas", "World-building for Fantasy", "Sci-Fi Movie Plot"],
+        "user_prompts": ["Let's write a story about a time-traveling librarian.", "Give me a line to start a poem about space.", "I need a name for a grumpy but lovable robot.", "Describe a futuristic city powered by magic.", "What if dogs secretly ruled the world?"],
+        "assistant_responses": ["Excellent idea! Does the librarian travel to the past or future to save a specific book?", "How about: 'The cosmos hums a tune only silence can hear.'", "How about 'Clank' or 'Unit 734' who insists on being called 'Bob'?", "Imagine spires of shimmering crystal woven with arcane circuits, where enchanted vehicles navigate sky-lanes of pure light.", "That's a fantastic premise! The secret canine council would meet in the world's largest dog park, disguised as a normal day of play."]
+    },
+    "general": {
+        "titles": ["Finding a New Hobby", "Classic Lasagna Recipe", "Travel Plans for Italy", "Learning Guitar", "Best way to brew coffee"],
+        "user_prompts": ["I'm bored, can you suggest a new hobby for me?", "What's a good, simple recipe for lasagna?", "What are the must-see cities in Italy for a first-timer?", "I want to learn guitar, where should I start?", "What's the difference between a pour-over and a french press?"],
+        "assistant_responses": ["Have you considered urban exploration or digital art? They're both very engaging and can be done solo.", "For a great lasagna, you'll need a rich bolognese sauce, a creamy béchamel, and layers of fresh pasta and parmesan.", "For a first trip, you can't go wrong with Rome for history, Florence for art, and Venice for its unique canals.", "Start with learning basic chords like G, C, D, and Em. There are many great tutorials on YouTube!", "A pour-over gives a very clean, crisp cup by letting water pass through the grounds, while a French press steeps the grounds, resulting in a fuller-bodied, more robust flavor."]
+    }
+}
+
+def get_mock_content(theme_data):
+    """Returns a random user prompt and assistant response from a theme."""
+    return random.choice(theme_data["user_prompts"]), random.choice(theme_data["assistant_responses"])
+
+def generate_chatgpt_conversation(config, theme_data):
+    """Generates a single conversation in ChatGPT format."""
+    conv_id = f"chat-{uuid.uuid4()}"
+    num_messages = random.randint(2, config['max_messages_per_conversation'])
+    
+    # Timestamps for the entire conversation
+    start_time = time.time() - random.uniform(3600, 86400 * 60) # Sometime in the last 60 days
+    update_time = start_time
+
+    mapping = {}
+    
+    # Create the root node
+    root_id = "client-created-root"
+    first_message_id = str(uuid.uuid4())
+    mapping[root_id] = {"id": root_id, "message": None, "parent": None, "children": [first_message_id]}
+    
+    parent_id = root_id
+    current_node_id = None
+    
+    for i in range(num_messages):
+        msg_id = first_message_id if i == 0 else str(uuid.uuid4())
+        role = "user" if i % 2 == 0 else "assistant"
+        user_prompt, assistant_response = get_mock_content(theme_data)
+        content = user_prompt if role == "user" else assistant_response
+        
+        # Increment time for each message
+        update_time += random.uniform(10, 300)
+
+        message_obj = {
+            "id": msg_id,
+            "author": {"role": role, "name": None, "metadata": {}},
+            "create_time": update_time,
+            "content": {"content_type": "text", "parts": [content]},
+            "status": "finished_successfully",
+            "end_turn": True,
+            "weight": 1.0,
+            "metadata": {"finish_details": {"type": "stop"}, "is_complete": True, "model_slug": "gpt-4o"},
+            "recipient": "all",
+        }
+
+        node = {
+            "id": msg_id,
+            "message": message_obj,
+            "parent": parent_id,
+            "children": [],
+        }
+        
+        # Link from parent
+        if parent_id in mapping:
+            mapping[parent_id]["children"].append(msg_id)
+        
+        mapping[msg_id] = node
+        parent_id = msg_id
+        current_node_id = msg_id
+
+    return {
+        "id": conv_id,
+        "title": random.choice(theme_data["titles"]),
+        "create_time": start_time,
+        "update_time": update_time,
+        "mapping": mapping,
+        "current_node": current_node_id,
+        "moderation_results": [],
+        "plugin_ids": None,
+        "conversation_id": conv_id,
+        "default_model_slug": "auto"
+    }
+
+def generate_claude_conversation(config, theme_data):
+    """Generates a single conversation in Claude format."""
+    conv_id = str(uuid.uuid4())
+    num_messages = random.randint(2, config['max_messages_per_conversation'])
+
+    start_time = datetime.now(timezone.utc) - timedelta(days=random.randint(1, 60))
+    current_time = start_time
+    
+    chat_messages = []
+    for i in range(num_messages):
+        sender = "human" if i % 2 == 0 else "assistant"
+        user_prompt, assistant_response = get_mock_content(theme_data)
+        content = user_prompt if sender == "human" else assistant_response
+        
+        current_time += timedelta(seconds=random.randint(10, 300))
+        timestamp_str = current_time.isoformat().replace("+00:00", "Z")
+
+        chat_messages.append({
+            "uuid": str(uuid.uuid4()),
+            "text": content,
+            "content": [{"type": "text", "text": content, "citations": []}],
+            "sender": sender,
+            "created_at": timestamp_str,
+            "updated_at": timestamp_str,
+            "attachments": [],
+            "files": []
+        })
+
+    return {
+        "uuid": conv_id,
+        "name": random.choice(theme_data["titles"]) if random.random() > 0.2 else "",
+        "created_at": start_time.isoformat().replace("+00:00", "Z"),
+        "updated_at": current_time.isoformat().replace("+00:00", "Z"),
+        "account": {"uuid": f"acc-{uuid.uuid4()}"},
+        "chat_messages": chat_messages
+    }
+
+@app.route('/api/generate-mock-archive', methods=['POST'])
+def generate_archive():
+    try:
+        config = request.get_json()
+        platform = config.get("platform")
+        count = int(config.get("conversation_count", 5))
+        max_msgs = int(config.get("max_messages_per_conversation", 15))
+        theme = config.get("content_source", "general")
+
+        if not platform or platform not in ["chatgpt", "claude"]:
+            return jsonify({"error": "Invalid 'platform' specified. Use 'chatgpt' or 'claude'."}), 400
+        
+        theme_data = CONTENT_THEMES.get(theme, CONTENT_THEMES["general"])
+        
+        conversations = []
+        if platform == "chatgpt":
+            for _ in range(count):
+                conversations.append(generate_chatgpt_conversation(config, theme_data))
+        elif platform == "claude":
+            for _ in range(count):
+                conversations.append(generate_claude_conversation(config, theme_data))
+        
+        return jsonify(conversations)
+
+    except Exception as e:
+        logger.error(f"Error generating mock archive: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 # Register the blueprint AFTER all routes are defined
 app.register_blueprint(api_routes, url_prefix='/api')

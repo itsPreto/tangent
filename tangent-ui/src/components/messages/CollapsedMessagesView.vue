@@ -1,5 +1,5 @@
 <template>
-  <div class="collapsed-messages-container bg-base-200/50 border border-base-300/50 rounded-lg overflow-hidden">
+  <div class="collapsed-messages-container bg-base-200/50 border border-base-300/50 rounded-lg overflow-hidden" :class="'theme-' + currentTheme">
     <!-- Header with compaction info -->
     <div class="flex items-center justify-between p-3 bg-base-300/30 border-b border-base-300/50">
       <div class="flex items-center gap-2 text-sm text-base-content/70">
@@ -70,6 +70,7 @@
 import { computed } from 'vue';
 import { Archive, Hash, ChevronRight, FileText, RotateCcw } from 'lucide-vue-next';
 import type { CompactedSection } from '@/services/tokenTrackingService';
+import { useThemeStore } from '@/stores/themeStore';
 
 const props = defineProps<{
   compactedSection: CompactedSection;
@@ -82,6 +83,11 @@ defineEmits<{
   'show-summary': [];
   'remove-compaction': [];
 }>();
+
+// Theme support
+const themeStore = useThemeStore();
+const currentTheme = computed(() => themeStore.currentTheme);
+const themeColors = computed(() => themeStore.currentThemeColors);
 
 const truncatedSummary = computed(() => {
   const summary = props.compactedSection.summary;

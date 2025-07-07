@@ -1,55 +1,90 @@
 <template>
-  <div class="fixed overflow-hidden canvas-background transition-all duration-300" :style="{
-    left: sidePanelOpen ? '40vw' : '0px', // Leave space for sidebar trigger
-    right: rightPanelOpen ? '40vw' : '0',
-    top: '0',
-    bottom: '0',
-    zIndex: '30',
-  }" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
-    @drop.prevent="handleDrop">
+  <div 
+    class="enhanced-infinite-canvas modern-drag-container" 
+    :class="[
+      'theme-' + currentTheme,
+      { 
+        'drag-over': isDragOver,
+        'drag-active': isDragActive,
+        'left-panel-open': sidePanelOpen,
+        'right-panel-open': rightPanelOpen,
+        'both-panels-open': sidePanelOpen && rightPanelOpen
+      }
+    ]"
+    :style="{
+      left: sidePanelOpen ? '40vw' : '0px',
+      right: rightPanelOpen ? '40vw' : '0',
+      top: '0',
+      bottom: '0',
+      zIndex: '30',
+    }" 
+    @dragenter.prevent="handleDragEnter" 
+    @dragover.prevent="handleDragOver" 
+    @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop"
+    ref="canvasRef"
+  >
 
 
-    <!-- Workspace Search Bar -->
-    <WorkspaceSearchBar v-if="isWorkspaceOverview" v-model="searchQuery" :view-mode="viewMode"
-      @toggle-view="handleViewModeToggle" class="workspace-search-bar" />
 
-    <!-- Clean Onboarding -->
-    <div v-if="workspaces.length === 0" class="absolute inset-0 flex items-center justify-center p-8"
-         :class="{ 'onboarding-drag-active': isDragOver }"
-         @dragenter.prevent="handleDragEnter"
-         @dragover.prevent="handleDragOver" 
-         @dragleave.prevent="handleDragLeave"
-         @drop.prevent="handleDrop">
-      
-      <div class="max-w-5xl w-full">
-        <!-- Header -->
-        <div class="text-center mb-16">
-          <h1 class="text-6xl font-light mb-4 text-base-content">
-            Welcome to Tangent
-          </h1>
-          <p class="text-xl text-base-content/60">
-            Your visual AI workspace
-          </p>
+    <!-- Enhanced Loading State -->
+    <Transition name="fade" mode="out-in">
+      <div v-if="chatStore.isLoading" class="canvas-loading-overlay">
+        <div class="loading-container modern-loading">
+          <div class="loading-spinner ultra-modern"></div>
+          <h3 class="loading-title">Loading workspaces...</h3>
+          <p class="loading-subtitle">Preparing your infinite canvas</p>
+          <div class="loading-progress">
+            <div class="progress-line" :style="{ width: loadingProgress + '%' }"></div>
+          </div>
         </div>
-        
-        <!-- Options -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
-          <!-- Import Option -->
-          <div class="drop-zone group" 
-               :class="{ 'drop-zone-active': isDragOver }">
-            <div class="drop-zone-inner">
-              <div class="text-4xl mb-6 text-base-content/40 group-hover:text-base-content/60 transition-colors">
-                📥
-              </div>
-              <h2 class="text-2xl font-medium mb-4">Import Existing Chats</h2>
-              <p class="text-base-content/60 mb-6">
-                Drop your ChatGPT or Claude export files here to convert them into Tangent workspaces
-              </p>
-              <div class="text-sm text-base-content/40">
-                Supports .zip archives
+      </div>
+    </Transition>
+
+    <!-- Enhanced Onboarding -->
+    <Transition name="zoom-fade" mode="out-in">
+      <div 
+        v-if="workspaces.length === 0 && !chatStore.isLoading" 
+        class="onboarding-container enhanced-onboarding"
+        :class="{ 'drag-active': isDragOver }"
+        @dragenter.prevent="handleDragEnter"
+        @dragover.prevent="handleDragOver" 
+        @dragleave.prevent="handleDragLeave"
+        @drop.prevent="handleDrop"
+      >
+      
+        <div class="onboarding-content">
+          <!-- Animated Welcome Header -->
+          <div class="welcome-header">
+            <div class="welcome-icon">
+              <div class="icon-glow"></div>
+              <Sparkles :size="48" />
+            </div>
+            <h1 class="welcome-title">Welcome to Tangent</h1>
+            <p class="welcome-subtitle">Your infinite AI workspace awaits</p>
+          </div>
+          
+          <!-- Enhanced Action Cards -->
+          <div class="action-cards">
+            <!-- Import Card with hover effects -->
+            <div 
+              class="action-card import-card"
+              :class="{ 'drag-hover': isDragOver }"
+            >
+              <div class="card-glow"></div>
+              <div class="card-content">
+                <div class="card-icon">
+                  <Upload :size="32" />
+                </div>
+                <h2>Import Conversations</h2>
+                <p>Drop your ChatGPT or Claude export files here to transform them into visual workspaces</p>
+                <div class="supported-formats">
+                  <span class="format-tag">JSON</span>
+                  <span class="format-tag">ChatGPT</span>
+                  <span class="format-tag">Claude</span>
+                </div>
               </div>
             </div>
-          </div>
           
           <!-- Create New Option -->
           <button @click="handleNewWorkspace" class="create-new-button group">
@@ -66,12 +101,12 @@
               </div>
             </div>
           </button>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- Main Canvas -->
-    <div v-else class="workspace-container">
+      
+      <!-- Main Canvas -->
+      <div v-else class="workspace-container">
       <Transition name="fade">
         <div v-if="notification.visible"
           class="fixed top-16 left-1/2 transform -translate-x-1/2 px-4 py-2 notification-toast rounded-lg shadow-lg z-50">
@@ -79,15 +114,42 @@
         </div>
       </Transition>
 
+      <!-- Enhanced Workspace Search Bar -->
+      <Transition name="slide-down" appear>
+        <WorkspaceSearchBar 
+          v-if="isWorkspaceOverview" 
+          v-model="searchQuery" 
+          :view-mode="viewMode"
+          :side-panel-open="sidePanelOpen"
+          :right-panel-open="rightPanelOpen"
+          :rag-panel-open="appStore.isRAGPanelOpen"
+          @toggle-view="handleViewModeToggle" 
+          class="workspace-search-bar enhanced-search-bar" 
+        />
+      </Transition>
 
       <!-- Grid View -->
       <transition name="fade" mode="out-in">
-        <GridWorkspaceView v-if="isWorkspaceOverview" :workspaces="filteredWorkspaces"
-          :selected-workspace-id="selectedWorkspaceId" :search-query="searchQuery"
-          @select-workspace="handleWorkspaceSelect" @favorite-workspace="handleWorkspaceFavorite"
-          @duplicate-workspace="handleWorkspaceDuplicate" @archive-workspace="handleWorkspaceArchive"
-          @export-workspace="handleWorkspaceExport" @delete-workspace="handleWorkspaceDelete"
+        <GridWorkspaceView v-if="isWorkspaceOverview" 
+          ref="gridWorkspaceRef"
+          :workspaces="filteredWorkspaces"
+          :selected-workspace-id="selectedWorkspaceId" 
+          :search-query="searchQuery"
+          :external-controls="true"
+          :current-view-mode="externalViewMode"
+          :sort-by="externalSortBy"
+          :card-size="externalCardSize"
+          @select-workspace="handleWorkspaceSelect" 
+          @favorite-workspace="handleWorkspaceFavorite"
+          @duplicate-workspace="handleWorkspaceDuplicate" 
+          @archive-workspace="handleWorkspaceArchive"
+          @export-workspace="handleWorkspaceExport" 
+          @delete-workspace="handleWorkspaceDelete"
           @import-completed="handleImportCompleted"
+          @update-filter-state="handleFilterStateUpdate"
+          @update-graph-stats="handleGraphStatsUpdate"
+          @update-3d-support="handle3DSupportUpdate"
+          @update-fullscreen="handleFullscreenUpdate"
           class="grid-view absolute inset-0" />
       </transition>
 
@@ -98,14 +160,6 @@
         @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
         @keydown="handleKeyDown" @wheel="handleWheel">
         
-        <!-- Import Badge for Detailed Workspace View -->
-        <div v-if="store.currentChatMetadata?.isImported" 
-             class="workspace-import-badge" 
-             :class="`import-${store.currentChatMetadata.format}`">
-          <component :is="getImportIcon(store.currentChatMetadata.format)" :size="16" />
-          <span>{{ getImportLabel(store.currentChatMetadata.format) }}</span>
-        </div>
-
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle">
           <!-- SVG Layer for Connections -->
@@ -116,7 +170,7 @@
                 <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
               </marker>
             </defs>
-            <template v-for="connection in store.connections" :key="`${connection.parent.id}-${connection.child.id}`">
+            <template v-for="connection in visibleConnections" :key="`${connection.parent.id}-${connection.child.id}`">
               <SplineConnector :start-node="connection.parent" :end-node="connection.child"
                 :card-width="getEffectiveCardDimensions(connection.child).width"
                 :card-height="getEffectiveCardDimensions(connection.child).height"
@@ -131,7 +185,7 @@
 
           <!-- Nodes Layer -->
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
-            <template v-for="node in store.nodes" :key="node.id">
+            <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles text and media) -->
               <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
@@ -183,7 +237,7 @@
           <!-- Interaction Layer for Splines - On Top of Everything -->
           <svg class="absolute overflow-visible" style="z-index: 10; pointer-events: none;" :style="svgStyle"
             viewBox="0 0 100000 100000" preserveAspectRatio="none">
-            <template v-for="connection in store.connections"
+            <template v-for="connection in visibleConnections"
               :key="`interaction-${connection.parent.id}-${connection.child.id}`">
               <!-- Clickable paths - show hitbox on hover -->
               <path :d="getSplinePath(connection.parent, connection.child, expandedNodes.has(connection.parent.id))"
@@ -196,9 +250,8 @@
           </svg>
         </div>
       </div>
-
-      <PerformanceTestPanel ref="perfTestPanel" />
     </div>
+    </Transition>
 
     <!-- File Drop Overlay -->
     <div v-show="isDraggingFile"
@@ -222,7 +275,6 @@ import {
   PropType,
 } from "vue";
 import BranchNode from "./node/BranchNode.vue";
-import TangentLogo from '../logo/TangentLogo.vue';
 import emitter from '@/utils/eventBus'
 import GridWorkspaceView from "../workspace/GridWorkspaceView.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
@@ -230,11 +282,13 @@ import WebBranchNode from "./node/WebBranchNode.vue";
 import SplineConnector from "./spline/MainSplineConnector.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useViewportObserver } from "@/composables/useViewportObserver";
 import { useAppStore } from "@/stores/appStore";
 import { useModelStore } from "@/stores/modelStore";
+import { useThemeStore } from "@/stores/themeStore";
 import type { ModelInfo } from '@/types/model';
-import PerformanceTestPanel from './PerformanceTestPanel.vue';
-import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download } from "lucide-vue-next";
+import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download, Sparkles, Upload, ArrowRight } from "lucide-vue-next";
+import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
 
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
@@ -242,8 +296,12 @@ const modelRegistry = ref(new Map<string, ModelInfo>());
 const store = useCanvasStore();
 const chatStore = useChatStore();
 const modelStore = useModelStore();
-const canvasRef = ref(null);
 const appStore = useAppStore();
+const themeStore = useThemeStore();
+
+// Theme computeds
+const currentTheme = computed(() => themeStore.currentTheme);
+const themeColors = computed(() => themeStore.currentThemeColors);
 
 // Populate model registry with all available models
 const updateModelRegistry = () => {
@@ -268,6 +326,12 @@ const updateModelRegistry = () => {
 // View modes and search
 const viewMode = ref('grid'); // Only 'grid' mode now
 const searchQuery = ref('');
+
+// External workspace controls
+const externalViewMode = ref('grid');
+const externalSortBy = ref('recent');
+const externalCardSize = ref(240);
+const gridWorkspaceRef = ref(null);
 
 // RTS perspective constants
 const RTS_SCALE_Y = 0.6; // Vertical compression factor for RTS perspective
@@ -325,7 +389,11 @@ const emit = defineEmits([
   "update:isHeightLocked",
   "workspace-opened",
   "snap",
-  "unsnap"
+  "unsnap",
+  "update-filter-state",
+  "update-graph-stats",
+  "update-3d-support",
+  "update-fullscreen"
 ]);
 
 // Modify zoom ref to be computed
@@ -416,6 +484,9 @@ const notification = ref({ visible: false, message: '' });
 const isPortalHovered = ref(false);
 const isPortalClicked = ref(false);
 const isDragOver = ref(false);
+const isDragActive = ref(false);
+const loadingProgress = ref(0);
+const canvasRef = ref<HTMLElement>();
 
 // Generate cyclone lines
 const cycloneLines = ref([]);
@@ -495,22 +566,23 @@ const features = [
   },
 ];
 
-// Workspace data for grid view
+// Workspace data for grid view - memoized for performance with large datasets
 const workspaces = computed(() => {
+  // Only include essential fields to reduce memory overhead
   return chatStore.chats.map((chat) => ({
     id: chat.id,
-    title: chat.title,
-    nodeCount: chat.nodeCount,
+    title: chat.title || 'Untitled',
+    nodeCount: chat.nodeCount || 0,
     lastUpdated: chat.updatedAt,
-    x: chat.x,
-    y: chat.y,
+    x: chat.x || 0,
+    y: chat.y || 0,
     isExpanding: expandingWorkspaceId.value === chat.id,
     tags: chat.tags || [],
-    color: chat.color,
+    color: chat.color || '#ffffff',
     isFavorite: chat.isFavorite || false,
     status: chat.status || 'active',
-    format: chat.format,  // Format of imported conversation (chatgpt, claude, etc)
-    isImported: chat.isImported || false  // Flag for imported conversations
+    format: chat.format,
+    isImported: chat.isImported || false
   }));
 });
 
@@ -562,7 +634,7 @@ const generateTitleFromDescription = async (description: string): Promise<string
       throw new Error('No text model available for title generation');
     }
 
-    const response = await fetch('http://localhost:5050/api/ollama-proxy/generate', {
+    const response = await fetch('http://127.0.0.1:5050/api/ollama-proxy/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -859,6 +931,84 @@ const nodesLayerStyle = computed(() => ({
   pointerEvents: 'auto', // Allow pointer events for nodes always
 }));
 
+// Viewport culling for performance optimization
+const VIEWPORT_BUFFER = 500; // Buffer zone around viewport in pixels
+const CARD_WIDTH = 672; // Standard card width (42rem = 672px)
+const CARD_HEIGHT = 400; // Estimated card height
+
+// Initialize viewport observer for enhanced performance
+const { observe, unobserve, isElementVisible, getVisibleElementIds } = useViewportObserver({
+  rootMargin: `${VIEWPORT_BUFFER}px`,
+  threshold: 0,
+});
+
+// Enhanced visibility tracking with intersection observer fallback
+const intersectionVisibleNodes = ref(new Set<string>());
+
+const visibleNodes = computed(() => {
+  // Always show all nodes if snapped or in workspace overview
+  if (store.snappedNodeId !== null || isWorkspaceOverview.value) {
+    return store.nodes;
+  }
+
+  // Use intersection observer results if available and nodes are being observed
+  if (intersectionVisibleNodes.value.size > 0) {
+    return store.nodes.filter(node => intersectionVisibleNodes.value.has(node.id));
+  }
+
+  // Fallback to computational viewport culling
+  const viewportLeft = (-panX.value - VIEWPORT_BUFFER) / zoom.value;
+  const viewportTop = (-panY.value - VIEWPORT_BUFFER) / zoom.value;
+  const viewportRight = (windowSize.value.width - panX.value + VIEWPORT_BUFFER) / zoom.value;
+  const viewportBottom = (windowSize.value.height - panY.value + VIEWPORT_BUFFER) / zoom.value;
+
+  return store.nodes.filter(node => {
+    const nodeLeft = node.x;
+    const nodeTop = node.y;
+    const nodeRight = node.x + CARD_WIDTH;
+    const nodeBottom = node.y + CARD_HEIGHT;
+
+    return !(nodeRight < viewportLeft || 
+             nodeLeft > viewportRight || 
+             nodeBottom < viewportTop || 
+             nodeTop > viewportBottom);
+  });
+});
+
+// Visible connections (only between visible nodes)
+const visibleConnections = computed(() => {
+  if (store.snappedNodeId !== null || isWorkspaceOverview.value) {
+    return store.connections;
+  }
+
+  const visibleNodeIds = new Set(visibleNodes.value.map(node => node.id));
+  return store.connections.filter(connection => 
+    visibleNodeIds.has(connection.parent.id) || visibleNodeIds.has(connection.child.id)
+  );
+});
+
+// Update intersection observer when nodes change
+watch(
+  () => store.nodes,
+  (newNodes) => {
+    // Update intersection observer for new nodes
+    nextTick(() => {
+      newNodes.forEach(node => {
+        const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+        if (nodeElement && !intersectionVisibleNodes.value.has(node.id)) {
+          observe(nodeElement, node.id);
+        }
+      });
+
+      // Update visible nodes set from intersection observer
+      const visibleIds = getVisibleElementIds();
+      intersectionVisibleNodes.value = new Set(visibleIds.filter(id => 
+        newNodes.some(node => node.id === id)
+      ));
+    });
+  },
+  { deep: true, immediate: true }
+);
 
 // Coordinate conversion helpers
 const screenToWorld = (screenX, screenY) => {
@@ -905,7 +1055,9 @@ const findNodeAt = (screenX, screenY) => {
 // LOD System
 const LOD_THRESHOLDS = {
   FULL_DETAIL: 0.75,
+  PREVIEW: 0.6,      // New intermediate level
   SUMMARY: 0.3,
+  COMPACT: 0.15,     // New intermediate level  
   BLOCK: 0.1
 };
 
@@ -925,7 +1077,9 @@ const getLODLevel = (nodeId?: string) => {
   
   let level;
   if (zoom.value > LOD_THRESHOLDS.FULL_DETAIL) level = 'full';
+  else if (zoom.value > LOD_THRESHOLDS.PREVIEW) level = 'preview';
   else if (zoom.value > LOD_THRESHOLDS.SUMMARY) level = 'summary';
+  else if (zoom.value > LOD_THRESHOLDS.COMPACT) level = 'compact';
   else if (zoom.value > LOD_THRESHOLDS.BLOCK) level = 'block';
   else level = 'hidden';
   
@@ -1525,6 +1679,17 @@ const handleNodePositionUpdate = (
 };
 
 const handleWheel = (e: WheelEvent) => {
+  // Check if the wheel event is from a messages scroll container
+  const messagesContainer = (e.target as HTMLElement).closest('.messages-scroll-container');
+  if (messagesContainer) {
+    // Check if this is a canvas gesture (zoom with CMD/Ctrl)
+    const isCanvasGesture = e.metaKey || e.ctrlKey;
+    if (!isCanvasGesture) {
+      // Regular scrolling in messages container - don't handle it
+      return;
+    }
+  }
+
   if ((e.target as HTMLElement).closest(".branch-node.snapped")) {
     console.log("Snapped node, ignoring wheel event");
     return;
@@ -1661,8 +1826,15 @@ const handleDragEnter = (e: DragEvent) => {
     const item = e.dataTransfer.items[0];
     if (item.kind === 'file' && (item.type.startsWith('image/') || item.type.startsWith('video/'))) {
       isDraggingFile.value = true;
+      isDragActive.value = true;
       console.log('Drag enter with media file');
     }
+  }
+  
+  // Handle conversation imports on onboarding
+  if (workspaces.value.length === 0) {
+    isDragOver.value = true;
+    isDragActive.value = true;
   }
 };
 
@@ -1676,6 +1848,11 @@ const handleDragLeave = (e: DragEvent) => {
     if (clientX <= rect.left || clientX >= rect.right ||
       clientY <= rect.top || clientY >= rect.bottom) {
       isDraggingFile.value = false;
+      isDragActive.value = false;
+      // Also handle conversation import drag leave
+      if (workspaces.value.length === 0) {
+        isDragOver.value = false;
+      }
     }
   }
 };
@@ -1683,6 +1860,58 @@ const handleDragLeave = (e: DragEvent) => {
 const handleDrop = async (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
+
+  // Handle conversation imports on onboarding screen (when no workspaces exist)
+  if (workspaces.value.length === 0) {
+    isDragOver.value = false;
+    isDragActive.value = false;
+    
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    
+    // Import the conversation files
+    try {
+      const { conversationImportService } = await import('@/services/conversationImportService');
+      
+      // Set up status monitoring to refresh workspace list when first workspace is imported
+      let hasImportedFirstWorkspace = false;
+      const statusUnsubscribe = conversationImportService.onStatusUpdate(async (status) => {
+        // When the first workspace is imported, immediately refresh the workspace list
+        if (!hasImportedFirstWorkspace && status.imported_conversations > 0) {
+          hasImportedFirstWorkspace = true;
+          console.log('First workspace imported, refreshing workspace list...');
+          await chatStore.loadChats();
+          // The UI should now automatically update to show GridWorkspaceView since workspaces.length > 0
+        }
+        
+        // When import is completely finished, do a final refresh
+        if (!status.is_running && status.imported_conversations > 0) {
+          console.log('Import completed, doing final workspace refresh...');
+          await chatStore.loadChats();
+          statusUnsubscribe(); // Clean up the status listener
+          
+          // Note: Clustering is now automatically triggered during the import process
+          console.log('Import and clustering process completed');
+        }
+      });
+      
+      for (const file of Array.from(files)) {
+        if (file.name.endsWith('.json') || file.name.endsWith('.zip')) {
+          console.log('Importing file:', file.name);
+          await conversationImportService.importFile(file);
+          
+          // Show success notification
+          showNotification(`Successfully imported ${file.name}`);
+        } else {
+          showNotification(`Unsupported file type: ${file.name}`, 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      showNotification('Import failed. Please try again.', 'error');
+    }
+    return;
+  }
 
   if (isWorkspaceOverview.value) {
     return;
@@ -1749,6 +1978,11 @@ const handleDragOver = (e: DragEvent) => {
   if (e.dataTransfer) {
     e.dataTransfer.dropEffect = "copy";
   }
+  
+  // Handle conversation imports on onboarding
+  if (workspaces.value.length === 0) {
+    isDragOver.value = true;
+  }
 };
 
 const returnToOverview = async () => {
@@ -1757,6 +1991,18 @@ const returnToOverview = async () => {
   const currentScale = zoom.value;
   const currentPanX = panX.value;
   const currentPanY = panY.value;
+
+  // Remove any existing overlays first
+  const existingOverlays = document.querySelectorAll('.overview-transition-overlay');
+  existingOverlays.forEach(existing => {
+    try {
+      if (existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+      }
+    } catch (error) {
+      console.warn('Failed to remove existing overlay:', error);
+    }
+  });
 
   const overlay = document.createElement('div');
   overlay.className = 'overview-transition-overlay';
@@ -1797,7 +2043,14 @@ const returnToOverview = async () => {
 
     setTimeout(() => {
       document.body.classList.remove('transition-blur');
-      document.body.removeChild(overlay);
+      // Safely remove overlay with error handling
+      try {
+        if (overlay && overlay.parentNode) {
+          document.body.removeChild(overlay);
+        }
+      } catch (error) {
+        console.warn('Failed to remove transition overlay:', error);
+      }
       store.isTransitioning = false;
     }, 500);
   }, 300);
@@ -2315,9 +2568,14 @@ const handleCanvasMouseDown = (e) => {
 
       dragStartPosition.value = screenToWorld(e.clientX, e.clientY);
     }
+  } else {
+    // Clicked on empty canvas - start panning
+    isPanning.value = true;
+    lastPanPosition.value = {
+      x: e.clientX - panX.value,
+      y: e.clientY - panY.value,
+    };
   }
-
-  // No fallback panning - use 2-finger trackpad for panning instead
 };
 
 
@@ -2659,6 +2917,68 @@ const calculateWorkspacesBounds = () => {
   );
 };
 
+// Workspace control methods
+const updateWorkspaceViewMode = (mode: string) => {
+  externalViewMode.value = mode;
+};
+
+const updateWorkspaceSortBy = (sortBy: string) => {
+  externalSortBy.value = sortBy;
+};
+
+const updateWorkspaceCardSize = (size: number) => {
+  externalCardSize.value = size;
+};
+
+const toggleWorkspaceFilters = () => {
+  if (gridWorkspaceRef.value) {
+    gridWorkspaceRef.value.toggleFilters?.();
+  }
+};
+
+const handleFilterStateUpdate = (hasFilters: boolean, count: number) => {
+  // This will be passed back to App.vue to update the dock controls
+  emit('update-filter-state', { hasFilters, count });
+};
+
+const handleGraphStatsUpdate = (stats: { topics: number; workspaces: number }) => {
+  // Pass graph stats to App.vue for the unified controls dock
+  emit('update-graph-stats', stats);
+};
+
+const handle3DSupportUpdate = (supported: boolean) => {
+  emit('update-3d-support', supported);
+};
+
+const handleFullscreenUpdate = (fullscreen: boolean) => {
+  emit('update-fullscreen', fullscreen);
+};
+
+// Graph control methods
+const updateGraphLayout = (layout: string) => {
+  if (gridWorkspaceRef.value) {
+    gridWorkspaceRef.value.updateGraphLayout?.(layout);
+  }
+};
+
+const toggleGraphControls = () => {
+  if (gridWorkspaceRef.value) {
+    gridWorkspaceRef.value.toggleGraphControls?.();
+  }
+};
+
+const resetGraph = () => {
+  if (gridWorkspaceRef.value) {
+    gridWorkspaceRef.value.resetGraph?.();
+  }
+};
+
+const toggleFullscreen = () => {
+  if (gridWorkspaceRef.value) {
+    gridWorkspaceRef.value.toggleFullscreen?.();
+  }
+};
+
 // Expose methods to parent component
 defineExpose({
   autoFitNodes,
@@ -2670,7 +2990,15 @@ defineExpose({
   handleWorkspaceSelect,
   checkAndAutoSnapSingleBranch,
   runPerformanceTest: () => perfTestPanel.value?.generateMockFlowers(),
-  clearPerformanceTest: () => perfTestPanel.value?.clearMockFlowers()
+  clearPerformanceTest: () => perfTestPanel.value?.clearMockFlowers(),
+  updateWorkspaceViewMode,
+  updateWorkspaceSortBy,
+  updateWorkspaceCardSize,
+  toggleWorkspaceFilters,
+  updateGraphLayout,
+  toggleGraphControls,
+  resetGraph,
+  toggleFullscreen
 });
 
 // Reset inactivity timer
@@ -2737,8 +3065,11 @@ const handleMouseMove = (e) => {
       x: canvasX - store.dragOffset.x,
       y: canvasY - store.dragOffset.y,
     });
+  } else if (isPanning.value && lastPanPosition.value) {
+    // Handle canvas panning
+    panX.value = e.clientX - lastPanPosition.value.x;
+    panY.value = e.clientY - lastPanPosition.value.y;
   }
-  // Removed panning logic - now handled by 2-finger trackpad gestures
 };
 
 const handleNodeExpansionChange = ({ nodeId, isExpanded }) => {
@@ -2777,6 +3108,8 @@ const handleTopicSelect = (topicId: string) => {
   focusedTopicId.value = topicId;
   centerOnNode(topicId);
 };
+
+// Combined drag handlers removed - using the ones at lines 1644+ which handle both media and conversation imports
 
 // Active state checks
 const isNodeFocused = (nodeId) => focusedNodeId.value === nodeId;
@@ -2828,6 +3161,15 @@ onMounted(async () => {
     // Initialize model registry
     updateModelRegistry();
 
+    // Simulate loading progress for modern UI
+    const interval = setInterval(() => {
+      loadingProgress.value += Math.random() * 10;
+      if (loadingProgress.value >= 100) {
+        loadingProgress.value = 100;
+        clearInterval(interval);
+      }
+    }, 100);
+
     if (isBrowser && !isInitializing.value) {
       isInitializing.value = true;
       try {
@@ -2854,17 +3196,56 @@ onBeforeUnmount(() => {
   window.removeEventListener("keyup", handleKeyUp);
   // Clean up event listeners
   emitter.off('workspace-loaded-external');
+  
+  // Clean up intersection observer
+  store.nodes.forEach(node => {
+    unobserve(node.id);
+  });
+
+  // Clean up any stuck transition overlays
+  const stuckOverlays = document.querySelectorAll('.overview-transition-overlay');
+  stuckOverlays.forEach(overlay => {
+    try {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    } catch (error) {
+      console.warn('Failed to remove stuck overlay:', error);
+    }
+  });
+  
+  // Clean up body classes
+  document.body.classList.remove('transition-blur');
 });
 </script>
 
 <style scoped>
+/* Onboarding drag state */
+.onboarding-drag-active {
+  background: oklch(from oklch(var(--p)) l c h / 0.05) !important;
+  border: 2px dashed oklch(var(--p)) !important;
+}
+
+.onboarding-drag-active .drop-zone {
+  background: oklch(from oklch(var(--p)) l c h / 0.1) !important;
+  border-color: oklch(var(--p)) !important;
+  transform: scale(1.02);
+}
+
+.onboarding-drag-active .drop-zone-inner {
+  background: oklch(from oklch(var(--p)) l c h / 0.05) !important;
+}
+</style>
+
+<style scoped>
 /* Workspace Import Badge for Detail View */
 .workspace-import-badge {
-  @apply fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg;
+  @apply fixed bottom-4 left-20 z-50 flex items-center gap-2 px-3 py-2 rounded-lg;
   @apply backdrop-blur-sm transition-all duration-200 font-medium text-sm;
   background: oklch(from oklch(var(--b1)) l c h / 0.95);
   border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
   box-shadow: 0 4px 12px oklch(from oklch(var(--bc)) l c h / 0.1);
+  transition: all 0.2s ease, background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
 }
 
 .workspace-import-badge.import-chatgpt {
@@ -2886,6 +3267,7 @@ onBeforeUnmount(() => {
       oklch(var(--b1)),
       oklch(var(--b1)),
       oklch(from oklch(var(--b2)) l c h / 0.3));
+  transition: background 0.3s ease;
 }
 
 /* Cyberpunk theme specific gradient */
@@ -2903,6 +3285,8 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   /* Ensure container is transparent to show parent background */
   background: transparent;
 }
@@ -3075,6 +3459,622 @@ onBeforeUnmount(() => {
 
 .onboarding-drag-active {
   @apply bg-base-200/20;
+}
+
+/* Loading State */
+.loading-container {
+  @apply text-center;
+}
+
+.lottie-loader {
+  filter: 
+    hue-rotate(var(--lottie-hue, 0deg))
+    saturate(var(--lottie-saturation, 1))
+    brightness(var(--lottie-brightness, 1));
+  animation: lottieGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes lottieGlow {
+  0% {
+    filter: 
+      hue-rotate(var(--lottie-hue, 0deg))
+      saturate(var(--lottie-saturation, 1))
+      brightness(var(--lottie-brightness, 1));
+  }
+  100% {
+    filter: 
+      hue-rotate(var(--lottie-hue, 0deg))
+      saturate(var(--lottie-saturation, 1))
+      brightness(var(--lottie-brightness, 1));
+  }
+}
+
+/* Theme-specific Lottie customizations */
+[data-theme="light"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 1.2;
+  --lottie-brightness: 0.9;
+}
+
+[data-theme="dark"] .lottie-loader {
+  --lottie-hue: 0deg;
+  --lottie-saturation: 1.1;
+  --lottie-brightness: 1.1;
+}
+
+[data-theme="cyberpunk"] .lottie-loader {
+  --lottie-hue: 180deg;
+  --lottie-saturation: 1.5;
+  --lottie-brightness: 1.2;
+}
+
+[data-theme="synthwave"] .lottie-loader {
+  --lottie-hue: 300deg;
+  --lottie-saturation: 1.4;
+  --lottie-brightness: 1.1;
+}
+
+/* UI Element Entrance Animations */
+.animate-slide-down {
+  animation: slideDown 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Enhanced Modern Canvas Animations */
+.enhanced-infinite-canvas {
+  @apply fixed overflow-hidden;
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
+    oklch(from oklch(var(--b2)) l c h / 0.95) 100%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              background 0.3s ease;
+}
+
+.enhanced-infinite-canvas.drag-over {
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
+    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
+  transform: scale(1.01);
+}
+
+/* Enhanced Search Bar */
+.enhanced-search-bar {
+  left: 50%;
+  z-index: 50;
+  --tw-translate-x: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-radius: 24px;
+}
+
+/* Ultra Modern Loading */
+.canvas-loading-overlay {
+  @apply absolute inset-0 flex items-center justify-center z-50;
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
+    oklch(from oklch(var(--b2)) l c h / 0.95) 100%);
+  backdrop-filter: blur(24px);
+  transition: background 0.3s ease;
+}
+
+.modern-loading {
+  @apply text-center max-w-md;
+}
+
+.ultra-modern {
+  @apply w-16 h-16 mx-auto mb-6 rounded-full relative;
+  background: conic-gradient(from 0deg, 
+    oklch(var(--p)), 
+    oklch(var(--s)), 
+    oklch(var(--a)), 
+    oklch(var(--p)));
+  animation: ultraSpin 2s linear infinite;
+  transition: background 0.3s ease;
+}
+
+.ultra-modern::before {
+  @apply absolute inset-2 rounded-full;
+  content: '';
+  background: oklch(var(--b1));
+  transition: background 0.3s ease;
+}
+
+.ultra-modern::after {
+  @apply absolute inset-4 rounded-full;
+  content: '';
+  background: conic-gradient(from 0deg, 
+    oklch(var(--p)), 
+    oklch(var(--s)), 
+    oklch(var(--a)), 
+    oklch(var(--p)));
+  animation: ultraSpin 1s linear infinite reverse;
+  transition: background 0.3s ease;
+}
+
+.loading-title {
+  @apply text-2xl font-bold mb-2;
+  color: oklch(var(--bc));
+  animation: titlePulse 2s ease-in-out infinite alternate;
+  transition: color 0.3s ease;
+}
+
+.loading-subtitle {
+  @apply text-base opacity-70 mb-6;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+  transition: color 0.3s ease;
+}
+
+.loading-progress {
+  @apply w-full h-1 rounded-full overflow-hidden;
+  background: oklch(from oklch(var(--bc)) l c h / 0.1);
+  transition: background 0.3s ease;
+}
+
+.progress-line {
+  @apply h-full rounded-full;
+  background: linear-gradient(90deg, 
+    oklch(var(--p)), 
+    oklch(var(--s)), 
+    oklch(var(--a)));
+  transition: width 0.3s ease, background 0.3s ease;
+  animation: progressFlow 2s ease-in-out infinite;
+}
+
+/* Enhanced Onboarding */
+.enhanced-onboarding {
+  @apply absolute inset-0 flex items-center justify-center z-40 p-8;
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
+    oklch(from oklch(var(--b2)) l c h / 0.95) 100%);
+  backdrop-filter: blur(20px);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1), 
+              background 0.3s ease, 
+              color 0.3s ease;
+}
+
+.enhanced-onboarding.drag-active {
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
+    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
+  transform: scale(1.02);
+}
+
+.onboarding-content {
+  @apply max-w-6xl w-full px-4;
+  margin-bottom: 120px;
+  /* Responsive scaling when panels are open */
+  transition: all 0.3s ease;
+}
+
+/* Adapt layout when side panels are open */
+.enhanced-infinite-canvas .onboarding-content {
+  /* Scale down content when space is constrained */
+  max-width: min(90vw, 6rem * 16); /* 90vw or 6xl, whichever is smaller */
+}
+
+/* Specific optimizations for panel states */
+.both-panels-open .onboarding-content {
+  max-width: 100%;
+  padding: 1rem;
+}
+
+.both-panels-open .welcome-header {
+  margin-bottom: 1rem;
+}
+
+.both-panels-open .welcome-title {
+  font-size: 1.75rem;
+  line-height: 1.1;
+}
+
+.both-panels-open .welcome-subtitle {
+  font-size: 0.875rem;
+}
+
+.both-panels-open .action-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: none;
+}
+
+.both-panels-open .action-card {
+  padding: 1rem;
+  border-radius: 0.75rem;
+}
+
+.both-panels-open .action-card h2 {
+  font-size: 1.125rem;
+  margin-bottom: 0.25rem;
+}
+
+.both-panels-open .action-card p {
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.both-panels-open .create-new-button {
+  padding: 1rem;
+}
+
+/* Ultra-compact layout for very narrow spaces (both panels open) */
+@media (max-width: 500px) {
+  .onboarding-content {
+    max-width: 100%;
+    padding: 0.75rem;
+  }
+  
+  .welcome-header {
+    margin-bottom: 1rem;
+  }
+  
+  .welcome-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .welcome-title {
+    font-size: 1.75rem;
+    margin-bottom: 0.25rem;
+    line-height: 1.1;
+  }
+  
+  .welcome-subtitle {
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .action-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: none;
+    margin: 0;
+  }
+  
+  .action-card {
+    padding: 1rem;
+    border-radius: 0.75rem;
+  }
+  
+  .action-card h2 {
+    font-size: 1.125rem;
+    margin-bottom: 0.25rem;
+  }
+  
+  .action-card p {
+    font-size: 0.8rem;
+    line-height: 1.3;
+    margin-bottom: 0.75rem;
+  }
+  
+  .card-icon {
+    margin-bottom: 0.75rem;
+  }
+  
+  .create-new-button {
+    padding: 1rem;
+    border-radius: 0.75rem;
+  }
+  
+  .create-new-button h2 {
+    font-size: 1.125rem;
+    margin-bottom: 0.25rem;
+  }
+  
+  .create-new-button p {
+    font-size: 0.8rem;
+    line-height: 1.3;
+    margin-bottom: 0.75rem;
+  }
+}
+
+.welcome-header {
+  @apply text-center mb-8 lg:mb-16;
+  /* Responsive scaling for narrow spaces */
+  transition: all 0.3s ease;
+}
+
+/* Compact welcome header when space is limited */
+.enhanced-infinite-canvas .welcome-header {
+  margin-bottom: clamp(1rem, 4vw, 4rem);
+}
+
+.welcome-icon {
+  @apply relative mx-auto mb-8 w-24 h-24 flex items-center justify-center;
+  color: oklch(var(--p));
+  transition: color 0.3s ease;
+}
+
+.icon-glow {
+  @apply absolute inset-0 rounded-full;
+  background: radial-gradient(circle, 
+    oklch(from oklch(var(--p)) l c h / 0.3) 0%, 
+    transparent 70%);
+  animation: iconPulse 3s ease-in-out infinite;
+  transition: background 0.3s ease;
+}
+
+.welcome-title {
+  @apply text-4xl lg:text-6xl font-light mb-4;
+  color: oklch(var(--bc));
+  animation: titleFloat 4s ease-in-out infinite;
+  transition: color 0.3s ease, text-shadow 0.3s ease, font-size 0.3s ease;
+  /* Responsive font size based on available width */
+  font-size: clamp(2.5rem, 8vw, 3.75rem);
+}
+
+.welcome-subtitle {
+  @apply text-xl opacity-70;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+  transition: color 0.3s ease;
+}
+
+/* Enhanced Action Cards */
+.action-cards {
+  @apply grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-4xl mx-auto;
+  /* Responsive grid that stacks on narrow screens */
+  transition: gap 0.3s ease;
+}
+
+/* Optimized vertical layout for narrow screens */
+@media (max-width: 800px) {
+  .onboarding-content {
+    max-width: 100%;
+    padding: 1rem;
+  }
+  
+  .welcome-header {
+    margin-bottom: 1.5rem;
+  }
+  
+  .welcome-icon {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 1rem;
+  }
+  
+  .welcome-title {
+    font-size: 2.25rem;
+    margin-bottom: 0.5rem;
+    line-height: 1.2;
+  }
+  
+  .welcome-subtitle {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .action-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: none;
+    margin: 0;
+  }
+  
+  .action-card {
+    padding: 1.5rem;
+    margin: 0;
+    border-radius: 1rem;
+  }
+  
+  .action-card h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .action-card p {
+    font-size: 0.875rem;
+    line-height: 1.4;
+    margin-bottom: 1rem;
+  }
+  
+  .card-icon {
+    margin-bottom: 1rem;
+  }
+  
+  .supported-formats {
+    gap: 0.5rem;
+    justify-self: center;
+    flex-wrap: wrap;
+  }
+  
+  .format-tag {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+  
+  .create-new-button {
+    padding: 1.5rem;
+    border-radius: 1rem;
+  }
+  
+  .create-new-button h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .create-new-button p {
+    font-size: 0.875rem;
+    line-height: 1.4;
+    margin-bottom: 1rem;
+  }
+}
+
+.action-card {
+  @apply relative p-4 lg:p-8 rounded-3xl cursor-pointer;
+  @apply transition-all duration-500 ease-out;
+  /* Responsive padding */
+  padding: clamp(1rem, 4vw, 2rem);
+  background: oklch(from oklch(var(--b1)) l c h / 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  box-shadow: 
+    0 8px 32px oklch(from oklch(var(--b3)) l c h / 0.2),
+    inset 0 1px 0 oklch(from oklch(var(--bc)) l c h / 0.05);
+  animation: cardFloat 6s ease-in-out infinite;
+  transition: all 0.5s ease-out, 
+              background 0.3s ease, 
+              border-color 0.3s ease, 
+              box-shadow 0.3s ease;
+}
+
+.action-card:nth-child(2) {
+  animation-delay: -3s;
+}
+
+.action-card:hover {
+  transform: translateY(-12px) scale(1.02);
+  box-shadow: 
+    0 24px 48px oklch(from oklch(var(--p)) l c h / 0.2),
+    0 0 0 1px oklch(from oklch(var(--p)) l c h / 0.1),
+    inset 0 1px 0 oklch(from oklch(var(--bc)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--p)) l c h / 0.3);
+}
+
+.import-card.drag-hover {
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
+    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
+  border-color: oklch(var(--p));
+  transform: scale(1.05);
+}
+
+.card-glow {
+  @apply absolute inset-0 rounded-3xl opacity-0;
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
+    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
+  transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+.action-card:hover .card-glow {
+  opacity: 1;
+}
+
+.card-content {
+  @apply relative z-10;
+}
+
+.card-icon {
+  @apply w-16 h-16 mx-auto mb-6 flex items-center justify-center rounded-2xl;
+  background: oklch(from oklch(var(--p)) l c h / 0.1);
+  color: oklch(var(--p));
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.action-card h2 {
+  @apply text-2xl font-semibold mb-4;
+  color: oklch(var(--bc));
+  justify-self: center;
+  transition: color 0.3s ease;
+}
+
+.action-card p {
+  @apply text-base opacity-70 mb-6;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+  transition: color 0.3s ease;
+}
+
+.supported-formats {
+  justify-self: center;
+  @apply flex gap-2 flex-wrap;
+}
+
+.format-tag {
+  @apply px-3 py-1 rounded-full text-xs font-medium;
+  background: oklch(from oklch(var(--p)) l c h / 0.1);
+  color: oklch(var(--p));
+  border: 1px solid oklch(from oklch(var(--p)) l c h / 0.2);
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Enhanced Animations */
+@keyframes ultraSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes titlePulse {
+  0%, 100% { 
+    text-shadow: 0 0 20px oklch(from oklch(var(--p)) l c h / 0.3);
+  }
+  50% { 
+    text-shadow: 0 0 40px oklch(from oklch(var(--p)) l c h / 0.5);
+  }
+}
+
+@keyframes progressFlow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes iconPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes titleFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes cardFloat {
+  0%, 100% { transform: translateY(0) rotateX(0deg); }
+  50% { transform: translateY(-5px) rotateX(2deg); }
+}
+
+/* Transition Classes */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.slide-down-enter-from {
+  opacity: 0;
+  transform: translateY(-30px);
+}
+
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-30px);
+}
+
+.zoom-fade-enter-active,
+.zoom-fade-leave-active {
+  transition: all 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.zoom-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.zoom-fade-leave-to {
+  opacity: 0;
+  transform: scale(1.05);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* Accessibility - Reduce motion */

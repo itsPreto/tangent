@@ -1,48 +1,77 @@
 <template>
-  <div class="message-content" :style="themeStyles">
-    <!-- If streaming, display the accumulated snippet -->
+  <div class="message-content-wrapper" :class="contentWrapperClasses">
+    <!-- Streaming content display -->
     <template v-if="props.isStreaming">
-      <div class="mt-3 mb-3">
-        <CodePreview :nodeId="props.nodeId" :language="streamingLanguage" :content="streamingBuffer"
-          :is-streaming="true" :code-index="0" :message-index="getMessageIndex()"
-          @click="handleCodeClick({ content: streamingBuffer, language: streamingLanguage, nodeId: props.nodeId, codeIndex: 0, messageIndex: getMessageIndex(), complete: false })" />
+      <div class="streaming-container">
+        <div class="streaming-indicator">
+          <div class="streaming-pulse"></div>
+          <span class="streaming-text">AI is typing...</span>
+        </div>
+        <div class="streaming-content">
+          <CodePreview :nodeId="props.nodeId" :language="streamingLanguage" :content="streamingBuffer"
+            :is-streaming="true" :code-index="0" :message-index="getMessageIndex()"
+            @click="handleCodeClick({ content: streamingBuffer, language: streamingLanguage, nodeId: props.nodeId, codeIndex: 0, messageIndex: getMessageIndex(), complete: false })" />
+        </div>
       </div>
     </template>
-    <!-- Otherwise, display the parsed (complete) content -->
+    
+    <!-- Complete content display -->
     <template v-else>
-      <span v-for="(part, index) in parsedContent" :key="index">
-        <span v-if="part.type === 'text'" v-html="part.content" class="whitespace-pre-wrap theme-aware-text"
-          :style="{ color: textColor }" />
-        <div v-else-if="part.type === 'code'" class="mt-3 mb-3">
-          <CodePreview :nodeId="props.nodeId" :language="part.language" :content="part.content"
-            :code-index="part.codeIndex" :message-index="getMessageIndex()" :is-streaming="false"
-            @click="handleCodeClick(part)" @preview="handleCodePreview(part)" />
-        </div>
+      <div class="message-content" :style="themeStyles">
+        <div v-for="(part, index) in parsedContent" :key="index" class="content-part">
+          <!-- Text content with enhanced typography -->
+          <div v-if="part.type === 'text'" 
+               class="text-content prose prose-sm max-w-none"
+               :class="textContentClasses"
+               v-html="part.content" />
+          
+          <!-- Code content -->
+          <div v-else-if="part.type === 'code'" class="code-content-wrapper">
+            <CodePreview :nodeId="props.nodeId" :language="part.language" :content="part.content"
+              :code-index="part.codeIndex" :message-index="getMessageIndex()" :is-streaming="false"
+              @click="handleCodeClick(part)" @preview="handleCodePreview(part)" />
+          </div>
 
-        <!-- Handle pasted content with unified CodePreview -->
-        <div v-else-if="part.type === 'paste'" class="mt-3 mb-3">
-          <CodePreview :nodeId="props.nodeId" :content="part.content" :language="part.detectedLanguage || 'text'"
-            :code-index="part.codeIndex || 0" :message-index="getMessageIndex()" :is-streaming="false"
-            :word-count="part.wordCount" :force-expanded="part.content.length > 500" @click="handleCodeClick({
-              content: part.content,
-              language: part.detectedLanguage || 'text',
-              nodeId: props.nodeId,
-              codeIndex: part.codeIndex || 0,
-              messageIndex: getMessageIndex(),
-              complete: true
-            })" />
-        </div>
+          <!-- Pasted content -->
+          <div v-else-if="part.type === 'paste'" class="paste-content-wrapper">
+            <div class="paste-content-header">
+              <div class="paste-icon">
+                <Clipboard class="w-4 h-4" />
+              </div>
+              <span class="paste-label">Pasted Content</span>
+              <div class="paste-meta">
+                <span class="paste-word-count">{{ part.wordCount }} words</span>
+              </div>
+            </div>
+            <CodePreview :nodeId="props.nodeId" :content="part.content" :language="part.detectedLanguage || 'text'"
+              :code-index="part.codeIndex || 0" :message-index="getMessageIndex()" :is-streaming="false"
+              :word-count="part.wordCount" :force-expanded="part.content.length > 500" @click="handleCodeClick({
+                content: part.content,
+                language: part.detectedLanguage || 'text',
+                nodeId: props.nodeId,
+                codeIndex: part.codeIndex || 0,
+                messageIndex: getMessageIndex(),
+                complete: true
+              })" />
+          </div>
 
-        <!-- Handle compacted conversation summaries -->
-        <div v-else-if="part.type === 'compacted'" class="mt-3 mb-3">
-          <CompactedMessageView 
-            :compacted-data="part.compactedData!"
-            @continue-conversation="handleContinueConversation"
-            @branch-from-last="handleBranchFromLast"
-            @toggle-expansion="handleToggleExpansion"
-          />
+          <!-- Compacted conversation summaries -->
+          <div v-else-if="part.type === 'compacted'" class="compacted-content-wrapper">
+            <div class="compacted-content-header">
+              <div class="compacted-icon">
+                <Archive class="w-4 h-4" />
+              </div>
+              <span class="compacted-label">Conversation Summary</span>
+            </div>
+            <CompactedMessageView 
+              :compacted-data="part.compactedData!"
+              @continue-conversation="handleContinueConversation"
+              @branch-from-last="handleBranchFromLast"
+              @toggle-expansion="handleToggleExpansion"
+            />
+          </div>
         </div>
-      </span>
+      </div>
     </template>
   </div>
 </template>
@@ -51,6 +80,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { Clipboard, Archive } from 'lucide-vue-next'
 import emitter, { Events } from '@/utils/eventBus'
 import CodePreview from './CodePreview.vue'
 import CompactedMessageView from './CompactedMessageView.vue'
@@ -99,6 +129,22 @@ const textColor = computed(() => {
 const themeStyles = computed(() => ({
   '--message-text-color': textColor.value
 }))
+
+// Content wrapper classes for theme-aware styling
+const contentWrapperClasses = computed(() => ({
+  [`theme-${currentTheme.value}`]: true,
+  'is-streaming': props.isStreaming
+}))
+
+// Text content classes for enhanced typography
+const textContentClasses = computed(() => {
+  const isDark = ['dark', 'synthwave', 'cyberpunk', 'halloween', 'forest', 'aqua', 'black', 'luxury', 'dracula', 'business', 'acid', 'night', 'coffee'].includes(currentTheme.value)
+  
+  return {
+    'prose-invert': isDark,
+    'theme-aware-text': true
+  }
+})
 
 const getMessageIndex = (): number => {
   return props.messageIndex || 0;
@@ -506,42 +552,396 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* Main wrapper styling */
+.message-content-wrapper {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Content spacing and layout */
 .message-content {
   color: var(--message-text-color, inherit);
+  line-height: 1.7;
+  font-size: 0.95rem;
 }
 
-/* Force proper text coloring in parsed markdown */
-:deep(.theme-aware-text) {
+.content-part {
+  margin-bottom: 0.75rem;
+  transition: opacity 0.2s ease;
+}
+
+.content-part:last-child {
+  margin-bottom: 0;
+}
+
+/* Enhanced text content styling */
+.text-content {
   color: var(--message-text-color) !important;
+  line-height: 1.7;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 }
 
-:deep(.theme-aware-text a) {
-  color: var(--message-text-color);
-  text-decoration: underline;
+/* Streaming content styling */
+.streaming-container {
+  position: relative;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgb(var(--b1)) 0%, rgb(var(--b2) / 0.5) 100%);
+  border: 1px solid rgb(var(--b3) / 0.3);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  box-shadow: 
+    0 2px 4px -1px rgba(0, 0, 0, 0.1),
+    0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 
-:deep(.theme-aware-text h1),
-:deep(.theme-aware-text h2),
-:deep(.theme-aware-text h3),
-:deep(.theme-aware-text h4),
-:deep(.theme-aware-text h5),
-:deep(.theme-aware-text h6),
-:deep(.theme-aware-text p),
-:deep(.theme-aware-text li),
-:deep(.theme-aware-text ul),
-:deep(.theme-aware-text ol),
-:deep(.theme-aware-text blockquote),
-:deep(.theme-aware-text table) {
-  color: var(--message-text-color) !important;
+.streaming-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgb(var(--p)), rgb(var(--s)), rgb(var(--a)));
+  background-size: 200% 100%;
+  animation: streamingGradient 2s ease-in-out infinite;
 }
 
-/* Special styling for blockquotes */
-:deep(.theme-aware-text blockquote) {
-  border-left: 3px solid var(--message-text-color);
-  opacity: 0.8;
+.streaming-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgb(var(--p) / 0.1);
+  border: 1px solid rgb(var(--p) / 0.2);
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
 }
 
-/* Fix for dark themes where we need all generated content to be light */
+.streaming-pulse {
+  width: 8px;
+  height: 8px;
+  background: rgb(var(--p));
+  border-radius: 50%;
+  animation: streamingPulse 1.5s ease-in-out infinite;
+}
+
+.streaming-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(var(--p));
+  letter-spacing: 0.025em;
+}
+
+.streaming-content {
+  position: relative;
+}
+
+/* Code content wrapper */
+.code-content-wrapper {
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Paste content styling */
+.paste-content-wrapper {
+  margin: 0.75rem 0;
+  border: 1px solid rgb(var(--b3) / 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgb(var(--b1));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.paste-content-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgb(var(--s) / 0.1), rgb(var(--s) / 0.05));
+  border-bottom: 1px solid rgb(var(--b3) / 0.2);
+}
+
+.paste-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: rgb(var(--s) / 0.15);
+  border: 1px solid rgb(var(--s) / 0.3);
+  border-radius: 8px;
+  color: rgb(var(--s));
+}
+
+.paste-label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: rgb(var(--bc) / 0.9);
+  letter-spacing: 0.025em;
+}
+
+.paste-meta {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.paste-word-count {
+  padding: 0.25rem 0.75rem;
+  background: rgb(var(--s) / 0.1);
+  border: 1px solid rgb(var(--s) / 0.2);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(var(--s));
+}
+
+/* Compacted content styling */
+.compacted-content-wrapper {
+  margin: 0.75rem 0;
+  border: 1px solid rgb(var(--b3) / 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgb(var(--b1));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.compacted-content-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgb(var(--a) / 0.1), rgb(var(--a) / 0.05));
+  border-bottom: 1px solid rgb(var(--b3) / 0.2);
+}
+
+.compacted-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: rgb(var(--a) / 0.15);
+  border: 1px solid rgb(var(--a) / 0.3);
+  border-radius: 8px;
+  color: rgb(var(--a));
+}
+
+.compacted-label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: rgb(var(--bc) / 0.9);
+  letter-spacing: 0.025em;
+}
+
+/* Enhanced typography for text content */
+:deep(.text-content) {
+  --tw-prose-body: var(--message-text-color);
+  --tw-prose-headings: var(--message-text-color);
+  --tw-prose-lead: rgb(var(--bc) / 0.7);
+  --tw-prose-links: rgb(var(--p));
+  --tw-prose-bold: var(--message-text-color);
+  --tw-prose-counters: rgb(var(--bc) / 0.6);
+  --tw-prose-bullets: rgb(var(--bc) / 0.4);
+  --tw-prose-hr: rgb(var(--bc) / 0.3);
+  --tw-prose-quotes: var(--message-text-color);
+  --tw-prose-quote-borders: rgb(var(--p) / 0.3);
+  --tw-prose-captions: rgb(var(--bc) / 0.6);
+  --tw-prose-code: rgb(var(--p));
+  --tw-prose-pre-code: rgb(var(--bc) / 0.9);
+  --tw-prose-pre-bg: rgb(var(--b2));
+  --tw-prose-th-borders: rgb(var(--bc) / 0.3);
+  --tw-prose-td-borders: rgb(var(--bc) / 0.2);
+}
+
+:deep(.text-content h1),
+:deep(.text-content h2),
+:deep(.text-content h3),
+:deep(.text-content h4),
+:deep(.text-content h5),
+:deep(.text-content h6) {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+:deep(.text-content h1) {
+  font-size: 1.5em;
+  border-bottom: 2px solid rgb(var(--p) / 0.3);
+  padding-bottom: 0.5em;
+}
+
+:deep(.text-content h2) {
+  font-size: 1.3em;
+}
+
+:deep(.text-content h3) {
+  font-size: 1.15em;
+}
+
+:deep(.text-content p) {
+  margin-bottom: 1em;
+}
+
+:deep(.text-content a) {
+  color: rgb(var(--p));
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid rgb(var(--p) / 0.3);
+  transition: all 0.2s ease;
+}
+
+:deep(.text-content a:hover) {
+  border-bottom-color: rgb(var(--p));
+  background: rgb(var(--p) / 0.1);
+  padding: 0.125rem 0.25rem;
+  margin: -0.125rem -0.25rem;
+  border-radius: 4px;
+}
+
+:deep(.text-content blockquote) {
+  border-left: 4px solid rgb(var(--p) / 0.5);
+  background: rgb(var(--p) / 0.05);
+  padding: 1rem 1.5rem;
+  margin: 1.5rem 0;
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+  position: relative;
+}
+
+:deep(.text-content blockquote::before) {
+  content: '"';
+  position: absolute;
+  top: 0.5rem;
+  left: 0.75rem;
+  font-size: 2rem;
+  color: rgb(var(--p) / 0.3);
+  font-family: serif;
+}
+
+:deep(.text-content ul),
+:deep(.text-content ol) {
+  padding-left: 1.5rem;
+  margin: 1rem 0;
+}
+
+:deep(.text-content li) {
+  margin: 0.5rem 0;
+  position: relative;
+}
+
+:deep(.text-content ul li::marker) {
+  color: rgb(var(--p));
+}
+
+:deep(.text-content ol li::marker) {
+  color: rgb(var(--p));
+  font-weight: 600;
+}
+
+:deep(.text-content table) {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.text-content th),
+:deep(.text-content td) {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid rgb(var(--bc) / 0.2);
+}
+
+:deep(.text-content th) {
+  background: rgb(var(--b2));
+  font-weight: 600;
+  color: rgb(var(--bc) / 0.9);
+}
+
+:deep(.text-content tr:hover) {
+  background: rgb(var(--b2) / 0.5);
+}
+
+:deep(.text-content code) {
+  background: rgb(var(--b2));
+  color: rgb(var(--p));
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875em;
+  font-weight: 500;
+  border: 1px solid rgb(var(--bc) / 0.1);
+}
+
+:deep(.text-content pre) {
+  background: rgb(var(--b2));
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1rem 0;
+  border: 1px solid rgb(var(--bc) / 0.1);
+}
+
+:deep(.text-content pre code) {
+  background: none;
+  padding: 0;
+  border: none;
+  color: rgb(var(--bc) / 0.9);
+}
+
+/* Animations */
+@keyframes streamingGradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes streamingPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+/* Theme-specific enhancements */
+.theme-cyberpunk .streaming-container {
+  border-color: rgb(var(--p) / 0.4);
+  box-shadow: 
+    0 0 12px rgb(var(--p) / 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.theme-synthwave .streaming-container {
+  background: linear-gradient(135deg, rgb(var(--p) / 0.1), rgb(var(--s) / 0.1));
+  border-color: rgb(var(--p) / 0.4);
+  box-shadow: 0 0 8px rgb(var(--p) / 0.2);
+}
+
+.theme-dracula .streaming-container {
+  border-color: rgb(var(--p) / 0.6);
+  background: linear-gradient(135deg, rgb(var(--b1)), rgb(var(--p) / 0.05));
+}
+
+.theme-halloween .streaming-container {
+  border-color: rgb(var(--p) / 0.6);
+  box-shadow: 0 0 10px rgb(var(--p) / 0.2);
+}
+
+/* Dark theme text fixes */
 [data-theme="cyberpunk"] .message-content,
 [data-theme="acid"] .message-content,
 [data-theme="dracula"] .message-content,
@@ -552,33 +952,46 @@ onMounted(() => {
   --message-text-color: rgba(255, 255, 255, 0.95) !important;
 }
 
-/* Ensure code elements are readable */
-:deep(pre),
-:deep(code) {
-  color: var(--message-text-color);
-  border-radius: 4px;
-  padding: 0.2em 0.4em;
+/* Responsive design */
+@media (max-width: 768px) {
+  .streaming-container {
+    padding: 0.75rem;
+  }
+  
+  .paste-content-header,
+  .compacted-content-header {
+    padding: 0.5rem 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .paste-meta {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
-/* Dark theme-specific code styles */
-[data-theme="cyberpunk"] :deep(pre),
-[data-theme="cyberpunk"] :deep(code),
-[data-theme="cmyk"] :deep(pre),
-[data-theme="cmyk"] :deep(code),
-[data-theme="acid"] :deep(pre),
-[data-theme="acid"] :deep(code),
-[data-theme="dracula"] :deep(pre),
-[data-theme="dracula"] :deep(code),
-[data-theme="night"] :deep(pre),
-[data-theme="night"] :deep(code),
-[data-theme="synthwave"] :deep(pre),
-[data-theme="synthwave"] :deep(code),
-[data-theme="retro"] :deep(pre),
-[data-theme="retro"] :deep(code),
-[data-theme="black"] :deep(pre),
-[data-theme="black"] :deep(code),
-[data-theme="luxury"] :deep(pre),
-[data-theme="luxury"] :deep(code) {
-  background-color: rgba(255, 255, 255, 0.15);
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  .streaming-container::before {
+    animation: none;
+  }
+  
+  .streaming-pulse {
+    animation: none;
+    opacity: 1;
+  }
+  
+  .content-part {
+    transition: none;
+  }
+}
+
+/* Focus states for better accessibility */
+:deep(.text-content a:focus) {
+  outline: 2px solid rgb(var(--p));
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 </style>

@@ -34,6 +34,40 @@ class Node(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     children = db.relationship('Node', backref=db.backref('parent', remote_side=[id]), cascade='all, delete-orphan')
 
+class NodeEmbedding(db.Model):
+    __tablename__ = 'node_embeddings'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False)
+    embedding = db.Column(db.JSON, nullable=False)  # Store as JSON array
+    embedding_model = db.Column(db.String(100), nullable=False)  # Track model used
+    content_hash = db.Column(db.String(64), nullable=False)  # SHA256 of content for cache invalidation
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    node = db.relationship('Node', backref='embeddings')
+    
+    # Indexes for performance
+    __table_args__ = (
+        db.Index('idx_node_embeddings_node_id', 'node_id'),
+        db.Index('idx_node_embeddings_model', 'embedding_model'),
+        db.Index('idx_node_embeddings_hash', 'content_hash'),
+    )
+
+class ClusteringResult(db.Model):
+    __tablename__ = 'clustering_results'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    chat_ids = db.Column(db.JSON, nullable=False)  # List of chat IDs included in clustering
+    clustering_params = db.Column(db.JSON, nullable=False)  # Parameters used for clustering
+    clusters = db.Column(db.JSON, nullable=False)  # Cluster assignments and centroids
+    embedding_model = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_clustering_results_model', 'embedding_model'),
+        db.Index('idx_clustering_results_created', 'created_at'),
+    )
+
 class ChatPersistenceService:
     def __init__(self, app):
         self.app = app  # Store reference to Flask app
@@ -111,20 +145,33 @@ class ChatPersistenceService:
 
     def list_chats(self) -> List[Dict]:
             """Get list of all chats with basic info"""
-            chats = Chat.query.order_by(Chat.updated_at.desc()).all()
-            print(f"Chats from DB: {chats}")  # ADD THIS LINE for debugging
+            # Use a more efficient query that gets node counts without loading all nodes
+            from sqlalchemy import func
+            
+            # Join with nodes table to get count without loading node data
+            chats_with_counts = db.session.query(
+                Chat.id,
+                Chat.title,
+                Chat.created_at,
+                Chat.updated_at,
+                Chat.import_format,
+                Chat.original_id,
+                func.count(Node.id).label('node_count')
+            ).outerjoin(Node, Chat.id == Node.chat_id)\
+             .group_by(Chat.id, Chat.title, Chat.created_at, Chat.updated_at, Chat.import_format, Chat.original_id)\
+             .order_by(Chat.updated_at.desc()).all()
             
             result = []
-            for chat in chats:
+            for chat_data in chats_with_counts:
                 result.append({
-                    'id': chat.id,
-                    'title': chat.title,
-                    'createdAt': chat.created_at.isoformat(),
-                    'updatedAt': chat.updated_at.isoformat(),
-                    'nodeCount': len(chat.nodes),
-                    'format': chat.import_format,  # Use sticky import format from chat table
-                    'isImported': chat.import_format is not None,  # Flag for imported conversations
-                    'originalId': chat.original_id  # Original ID from source platform
+                    'id': chat_data.id,
+                    'title': chat_data.title,
+                    'createdAt': chat_data.created_at.isoformat(),
+                    'updatedAt': chat_data.updated_at.isoformat(),
+                    'nodeCount': chat_data.node_count,
+                    'format': chat_data.import_format,  # Use sticky import format from chat table
+                    'isImported': chat_data.import_format is not None,  # Flag for imported conversations
+                    'originalId': chat_data.original_id  # Original ID from source platform
                 })
             
             return result

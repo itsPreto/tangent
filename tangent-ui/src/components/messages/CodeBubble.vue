@@ -2,6 +2,7 @@
   <div class="relative inline-flex items-center gap-2 px-3 py-2 bg-base-200/90 backdrop-blur 
               border border-base-300 rounded-full cursor-pointer transition-all duration-200
               hover:bg-base-300/90 hover:shadow-md group"
+       :class="'theme-' + currentTheme"
        @mouseenter="isHovered = true"
        @mouseleave="isHovered = false"
        @click="handleClick">
@@ -63,6 +64,7 @@ import { ref, computed, onMounted } from 'vue';
 import { Code, Copy, Edit, Eye } from 'lucide-vue-next';
 import emitter from '@/utils/eventBus';
 import { useAppStore } from '@/stores/appStore';
+import { useThemeStore } from '@/stores/themeStore';
 
 interface CodeBubbleProps {
   language?: string;
@@ -86,6 +88,11 @@ const props = withDefaults(defineProps<CodeBubbleProps>(), {
 
 const emit = defineEmits<CodeBubbleEmits>();
 const appStore = useAppStore();
+
+// Theme support
+const themeStore = useThemeStore();
+const currentTheme = computed(() => themeStore.currentTheme);
+const themeColors = computed(() => themeStore.currentThemeColors);
 
 const isHovered = ref(false);
 const isEdited = ref(false);

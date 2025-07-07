@@ -1,20 +1,21 @@
 <template>
   <div class="min-h-screen bg-background app-container" :class="['theme-' + currentTheme]">
 
-    <!-- Side Panel -->
-    <SidePanel
-      v-if="appStore.isSidePanelOpen"
-      class="fixed left-0 top-0 h-full w-[40vw] bg-background transform transition-transform shadow-xl duration-300 z-40 side-panel overflow-hidden"
-      :class="'theme-' + currentTheme"
-      style="margin: 2rem 2rem 2rem 0rem; border-color: #334155; border-width: 1px; height: calc(100vh - 4rem); border-radius: 0 1.5rem 1.5rem 0; border-left: none;"
-      :node-id="currentNodeId" @panel-opened="appStore.openSidePanel" @panel-closed="appStore.closeSidePanel" />
+    <!-- Side Panel with smooth slide animation -->
+    <Transition 
+      name="slide-panel-left"
+      appear
+      @before-enter="onBeforeEnter"
+      @enter="onEnter" 
+      @leave="onLeave">
+      <SidePanel
+        v-if="appStore.isSidePanelOpen"
+        class="fixed left-0 top-0 h-full w-[40vw] bg-background shadow-xl z-40 side-panel overflow-hidden"
+        :class="'theme-' + currentTheme"
+        style="border-color: #334155; border-width: 1px; height: 100vh; border-left: none;"
+        :node-id="currentNodeId" @panel-opened="appStore.openSidePanel" @panel-closed="appStore.closeSidePanel" />
+    </Transition>
 
-    <!-- Toggle Button -->
-    <button @click="appStore.toggleSidePanel()"
-      class="fixed top-1/2 -translate-y-1/2 z-50 p-2 border border-l-0 rounded-r-md transition-all duration-300 shadow-md toggle-panel-btn"
-      :style="{ ...toggleButtonStyle, left: appStore.isSidePanelOpen ? 'calc(40vw - 0.1rem)' : '0' }">
-      <ChevronRight class="w-5 h-5 transition-transform" :class="{ 'rotate-180': appStore.isSidePanelOpen }" />
-    </button>
 
     <!-- Top Controls Container -->
     <div class="fixed transition-all duration-300 top-controls relative" style="z-index: 60;"
@@ -35,6 +36,12 @@
               class="absolute top-full left-0 mt-1 bg-base-100 rounded-lg shadow-lg border min-w-40"
               style="z-index: 9999;" :style="dropdownStyle">
               <div class="p-1">
+                <button @click="appStore.toggleSidePanel(); showOverflowMenu = false"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded">
+                  <Terminal v-if="!appStore.isSidePanelOpen" class="w-4 h-4" />
+                  <X v-else class="w-4 h-4" />
+                  {{ appStore.isSidePanelOpen ? 'Close IDE' : 'Open IDE' }}
+                </button>
                 <button @click="handleNewWorkspace; showOverflowMenu = false"
                   class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded">
                   <Plus class="w-4 h-4" />
@@ -63,14 +70,15 @@
               class="absolute top-full right-0 mt-1 bg-base-100 rounded-lg shadow-lg border min-w-40"
               style="z-index: 9999;" :style="dropdownStyle">
               <div class="p-1">
-                <WorkspaceMenu class="w-full" ref="workspaceMenuRef" @workspace-loaded="handleWorkspaceLoaded" />
-                <button @click="appStore.openAgentConfigurator(); showRightOverflowMenu = false"
+                <button @click="appStore.toggleAgentConfigurator(); showRightOverflowMenu = false"
                   class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded">
-                  <Settings class="w-4 h-4" />
-                  Settings
-                  <span v-if="selectedModel" class="ml-auto text-xs opacity-70">{{ selectedModel.name.substring(0, 10)
+                  <Settings v-if="!appStore.isAgentConfiguratorOpen" class="w-4 h-4" />
+                  <X v-else class="w-4 h-4" />
+                  {{ appStore.isAgentConfiguratorOpen ? 'Close Settings' : 'Open Settings' }}
+                  <span v-if="selectedModel && !appStore.isAgentConfiguratorOpen" class="ml-auto text-xs opacity-70">{{ selectedModel.name.substring(0, 10)
                   }}...</span>
                 </button>
+                <WorkspaceMenu class="w-full" ref="workspaceMenuRef" @workspace-loaded="handleWorkspaceLoaded" />
               </div>
             </div>
           </div>
@@ -90,6 +98,16 @@
 
             <!-- Primary Actions -->
             <div class="flex items-center gap-1" :class="{ 'gap-1': isCompactMode, 'gap-2': !isCompactMode }">
+              <!-- IDE Panel Toggle -->
+              <button @click="appStore.toggleSidePanel()"
+                class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
+                :class="[compactButtonClasses, { 'btn-primary': appStore.isSidePanelOpen }]" 
+                :style="buttonStyles" 
+                :title="appStore.isSidePanelOpen ? 'Close IDE Panel' : 'Open IDE Panel'">
+                <Terminal v-if="!appStore.isSidePanelOpen" :class="iconSizeClasses" />
+                <X v-else :class="iconSizeClasses" />
+              </button>
+              
               <button @click="handleNewWorkspace"
                 class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
                 :class="compactButtonClasses" :style="buttonStyles" :title="'New Workspace'">
@@ -106,6 +124,7 @@
 
           <!-- Right Controls Section -->
           <div class="flex items-center gap-2 right-controls">
+            
 
             <!-- <ThemeToggle v-if="!isCompactMode" /> -->
 
@@ -139,23 +158,16 @@
                 </div>
               </div>
             </div>
-
-            <!-- Compact model indicator -->
-            <button v-if="selectedModel && isCompactMode" @click="appStore.openAgentConfigurator()"
-              class="btn btn-sm btn-ghost theme-btn relative flex items-center justify-center" :style="buttonStyles"
-              :title="selectedModel.name">
-              <div class="w-2 h-2 rounded-full bg-primary absolute -top-1 -right-1"></div>
-              <Settings :class="iconSizeClasses" />
+            <!-- Agent Configurator Panel Toggle -->
+            <button @click="appStore.toggleAgentConfigurator()"
+              class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
+              :class="[compactButtonClasses, { 'btn-primary': appStore.isAgentConfiguratorOpen }]" 
+              :style="buttonStyles" 
+              :title="appStore.isAgentConfiguratorOpen ? 'Close Settings Panel' : 'Open Settings Panel'">
+              <Settings v-if="!appStore.isAgentConfiguratorOpen" :class="iconSizeClasses" />
+              <X v-else :class="iconSizeClasses" />
             </button>
 
-            <!-- Settings Button -->
-            <!-- <button v-if="!isCompactMode || !selectedModel" 
-                @click="appStore.openAgentConfigurator()" 
-                class="btn btn-sm btn-ghost theme-btn flex items-center justify-center" 
-                :style="buttonStyles"
-                :title="'Settings'">
-                <Settings :class="iconSizeClasses" />
-              </button> -->
 
           </div>
         </div>
@@ -167,12 +179,39 @@
       </template>
     </div>
 
+    <!-- Workspace Controls Dock - Only visible in overview mode and not during onboarding -->
+    <WorkspaceControlsDock 
+      v-if="isInOverview && !isOnboarding"
+      :current-view-mode="workspaceViewMode"
+      :sort-by="workspaceSortBy"
+      :card-size="workspaceCardSize"
+      :has-active-filters="workspaceHasActiveFilters"
+      :active-filter-count="workspaceActiveFilterCount"
+      :is-side-panel-open="appStore.isSidePanelOpen"
+      :is-agent-configurator-open="appStore.isAgentConfiguratorOpen"
+      :graph-stats="workspaceGraphStats"
+      :graph-layout="workspaceGraphLayout"
+      :show-graph-controls="workspaceShowGraphControls"
+      :is3-d-supported="workspaceIs3DSupported"
+      :is-fullscreen="workspaceIsFullscreen"
+      @update:view-mode="updateWorkspaceViewMode"
+      @update:sort-by="updateWorkspaceSortBy"
+      @update:card-size="updateWorkspaceCardSize"
+      @toggle-filters="toggleWorkspaceFilters"
+      @update:graph-layout="updateWorkspaceGraphLayout"
+      @toggle-graph-controls="toggleWorkspaceGraphControls"
+      @reset-graph="resetWorkspaceGraph"
+      @toggle-fullscreen="toggleWorkspaceFullscreen"
+    />
+
     <!-- Bottom Controls Container -->
-    <div class="fixed bottom-0 transition-all duration-300 flex justify-start pointer-events-none" 
-         :class="isInOverview ? 'z-40' : 'z-50'"
+    <div class="fixed bottom-0 flex justify-start pointer-events-none" 
+         style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
          :style="{
+           zIndex: 50,
            left: (!isInOverview && appStore.isSidePanelOpen) ? '40vw' : '1rem',
-           right: (!isInOverview && appStore.isAgentConfiguratorOpen) ? '40vw' : 'auto'
+           right: (!isInOverview && appStore.isAgentConfiguratorOpen) ? 'calc(40vw + 20rem)' : 'auto',
+           marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
          }">
       <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mb-4 pointer-events-auto">
         <button v-if="!isInOverview" @click="handleBackToWorkspaces" class="btn btn-sm back-to-workspaces-btn hover:bg-base-300/90"
@@ -180,7 +219,7 @@
           <ArrowLeft class="w-4 h-4" />
           <span class="text-md"></span>
         </button>
-        <button @click="appStore.toggleRAGPanel" 
+        <button v-if="!isOnboarding" @click="appStore.toggleRAGPanel" 
           class="btn btn-sm hover:bg-base-300/90 flex items-center gap-2"
           :class="{ 'btn-primary': appStore.isRAGPanelOpen }"
           :style="controlButtonStyle"
@@ -193,7 +232,11 @@
 
     <!-- Canvas Controls -->
     <div v-if="!isInOverview" class="fixed bottom-4 z-50 flex items-center gap-2"
-      :style="{ right: appStore.isAgentConfiguratorOpen ? 'calc(40vw)' : '0px' }">
+      style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
+      :style="{ 
+        right: appStore.isAgentConfiguratorOpen ? 'calc(40vw + 1rem)' : '1rem',
+        marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
+      }">
       <button class="h-8 px-3 canvas-control-btn hover:bg-base-300/90" :style="controlButtonStyle"
         @click="toggleAutoZoom">
         <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
@@ -218,12 +261,19 @@
         :right-panel-open="appStore.isAgentConfiguratorOpen" :gesture-mode="gestureMode" v-model:zoom="canvasZoom"
         v-model:auto-zoom-enabled="canvasAutoZoom" v-model:is-height-locked="isHeightLocked"
         :viewport-height="windowSize.innerHeight" :viewport-width="windowSize.innerWidth"
-        @node-selected="handleNodeSelected" />
+        @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
+        @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
+        @update-fullscreen="handleFullscreenUpdate" />
     </div>
 
     <!-- Workspace Overview Title -->
-    <div v-if="!isInOverview" class="fixed bottom-4 z-50 w-full text-center transition-all duration-300"
-      :style="{ left: appStore.isSidePanelOpen ? '40vw' : '0', right: '0' }">
+    <div v-if="!isInOverview" class="fixed bottom-4 z-50 w-full text-center"
+      style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
+      :style="{ 
+        left: appStore.isSidePanelOpen ? '40vw' : '0', 
+        right: appStore.isAgentConfiguratorOpen ? '40vw' : '0',
+        marginBottom: appStore.isRAGPanelOpen ? '4rem' : '0'
+      }">
       <div v-if="showOverviewTitle"
         class="inline-block px-8 py-3 overview-title border border-base-300 text-lg font-semibold relative overflow-hidden group hover:px-12 hover:py-4 transition-all duration-300"
         :style="overviewTitleStyle">
@@ -238,22 +288,25 @@
 
 
     <!-- Agent Configurator Right Side Panel -->
-    <AgentConfiguratorSidePanel
-      class="fixed right-0 top-0 h-full w-[40vw] bg-background transform transition-transform duration-300 z-40 agent-configurator-panel overflow-hidden"
-      :class="[
-        appStore.isAgentConfiguratorOpen ? 'translate-x-0' : 'translate-x-full',
-        'theme-' + currentTheme
-      ]"
-      style="margin-top: 2rem; margin-bottom: 2rem; margin-left: 2rem;  height: calc(100vh - 4rem); border-radius: 1.5rem 0 0 1.5rem; border-right: none;"
-      @close="appStore.closeAgentConfigurator" @model-selected="handleModelSelected" @api-key-saved="handleApiKeySaved"
-      :current-model="selectedModel" />
+    <Transition 
+      name="slide-panel-right"
+      appear
+      @before-enter="onBeforeEnterRight"
+      @enter="onEnterRight" 
+      @leave="onLeaveRight">
+      <AgentConfiguratorSidePanel
+        v-if="appStore.isAgentConfiguratorOpen"
+        class="fixed right-0 top-0 h-full w-[40vw] bg-background z-40 agent-configurator-panel overflow-hidden"
+        :class="'theme-' + currentTheme"
+        :style="{ 
+          marginLeft: '2rem',  
+          height: '100vh', 
+          borderRight: 'none'
+        }"
+        @close="appStore.closeAgentConfigurator" @model-selected="handleModelSelected" @api-key-saved="handleApiKeySaved"
+        :current-model="selectedModel" />
+    </Transition>
 
-    <!-- Agent Configurator Toggle Button -->
-    <button @click="appStore.toggleAgentConfigurator"
-      class="fixed top-1/2 -translate-y-1/2 z-50 p-2 border border-r-0 rounded-l-md transition-all duration-300 shadow-md agent-toggle-btn"
-      :style="{ ...toggleButtonStyle, right: appStore.isAgentConfiguratorOpen ? 'calc(40vw - 0.1rem)' : '0' }">
-      <ChevronRight class="w-5 h-5 transition-transform" :class="{ 'rotate-180': !appStore.isAgentConfiguratorOpen }" />
-    </button>
 
     <!-- Progress Indicator -->
     <div v-if="isImporting" class="fixed inset-0 z-50 flex items-center justify-center progress-overlay"
@@ -279,7 +332,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, provide, watch, nextTick } from 'vue';
-import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText } from 'lucide-vue-next';
+import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText, Terminal, X } from 'lucide-vue-next';
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
@@ -289,6 +342,7 @@ import SidePanel from './components/sidebar/SandPackSidePanel.vue';
 import AgentConfiguratorSidePanel from './components/settings/AgentConfiguratorSidePanel.vue';
 import RAGDocumentPanel from './components/ui/RAGDocumentPanel.vue';
 import Badge from './components/ui/Badge.vue';
+import WorkspaceControlsDock from './components/workspace/WorkspaceControlsDock.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -327,8 +381,13 @@ const appStore = useAppStore();
 const themeStore = useThemeStore();
 const agentStore = useAgentStore();
 
-// Theme awareness
-const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
+// Onboarding state - hide UI components when no workspaces exist
+const isOnboarding = computed(() => {
+  return chatStore.chats.length === 0 && !chatStore.isLoading;
+});
+
+// Theme awareness - use reactive theme store
+const currentTheme = computed(() => themeStore.currentTheme);
 
 // Theme observer
 let themeObserver;
@@ -520,6 +579,7 @@ const canvasWrapperStyle = computed(() => {
   let marginRight = '0';
   let height = '100vh';
   let marginBottom = '0';
+  let paddingTop = '3rem';
 
   if (leftPanelOpen && rightPanelOpen) {
     width = '20vw';
@@ -539,12 +599,18 @@ const canvasWrapperStyle = computed(() => {
     marginBottom = '20vh';
   }
 
+  // Extra padding when workspace controls dock is visible
+  if (isInOverview.value) {
+    paddingTop = '7rem'; // Account for header (3rem) + dock height + spacing
+  }
+
   return {
     width,
     marginLeft,
     marginRight,
     height,
-    marginBottom
+    marginBottom,
+    paddingTop
   };
 });
 
@@ -929,6 +995,93 @@ const showOverviewTitle = computed(() => {
   return isInOverview.value;
 });
 
+// Workspace controls state
+const workspaceViewMode = ref('grid');
+const workspaceSortBy = ref('recent');
+const workspaceCardSize = ref(240);
+const workspaceHasActiveFilters = ref(false);
+const workspaceActiveFilterCount = ref(0);
+
+// Graph-specific controls
+const workspaceGraphStats = ref({ topics: 0, workspaces: 0 });
+const workspaceGraphLayout = ref('radial');
+const workspaceShowGraphControls = ref(false);
+const workspaceIs3DSupported = ref(false);
+const workspaceIsFullscreen = ref(false);
+
+// Workspace controls methods
+const updateWorkspaceViewMode = (mode: string) => {
+  workspaceViewMode.value = mode;
+  // Pass to InfiniteCanvas/GridWorkspaceView
+  if (canvasRef.value) {
+    canvasRef.value.updateWorkspaceViewMode?.(mode);
+  }
+};
+
+const updateWorkspaceSortBy = (sortBy: string) => {
+  workspaceSortBy.value = sortBy;
+  if (canvasRef.value) {
+    canvasRef.value.updateWorkspaceSortBy?.(sortBy);
+  }
+};
+
+const updateWorkspaceCardSize = (size: number) => {
+  workspaceCardSize.value = size;
+  if (canvasRef.value) {
+    canvasRef.value.updateWorkspaceCardSize?.(size);
+  }
+};
+
+const toggleWorkspaceFilters = () => {
+  if (canvasRef.value) {
+    canvasRef.value.toggleWorkspaceFilters?.();
+  }
+};
+
+// Graph control methods
+const updateWorkspaceGraphLayout = (layout: string) => {
+  workspaceGraphLayout.value = layout;
+  if (canvasRef.value) {
+    canvasRef.value.updateGraphLayout?.(layout);
+  }
+};
+
+const toggleWorkspaceGraphControls = () => {
+  workspaceShowGraphControls.value = !workspaceShowGraphControls.value;
+  if (canvasRef.value) {
+    canvasRef.value.toggleGraphControls?.();
+  }
+};
+
+const resetWorkspaceGraph = () => {
+  if (canvasRef.value) {
+    canvasRef.value.resetGraph?.();
+  }
+};
+
+const toggleWorkspaceFullscreen = () => {
+  if (canvasRef.value) {
+    canvasRef.value.toggleFullscreen?.();
+  }
+};
+
+const handleFilterStateUpdate = ({ hasFilters, count }: { hasFilters: boolean; count: number }) => {
+  workspaceHasActiveFilters.value = hasFilters;
+  workspaceActiveFilterCount.value = count;
+};
+
+const handleGraphStatsUpdate = ({ topics, workspaces }: { topics: number; workspaces: number }) => {
+  workspaceGraphStats.value = { topics, workspaces };
+};
+
+const handle3DSupportUpdate = (supported: boolean) => {
+  workspaceIs3DSupported.value = supported;
+};
+
+const handleFullscreenUpdate = (fullscreen: boolean) => {
+  workspaceIsFullscreen.value = fullscreen;
+};
+
 const handleNodeSelected = (node: Node) => {
   selectedNode.value = node;
 };
@@ -1151,14 +1304,32 @@ const handleDocumentDragged = (document: any, event: DragEvent) => {
   // TODO: Handle document drag to create new nodes with context
 };
 
-// Theme update function
-const updateThemeFromDOM = () => {
-  const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
-  if (newTheme !== currentTheme.value) {
-    currentTheme.value = newTheme;
-    console.log('Theme changed to', currentTheme.value);
-  }
+// Transition debugging methods
+const onBeforeEnter = (el: Element) => {
+  console.log('Left panel before enter');
 };
+
+const onEnter = (el: Element) => {
+  console.log('Left panel enter');
+};
+
+const onLeave = (el: Element) => {
+  console.log('Left panel leave');
+};
+
+const onBeforeEnterRight = (el: Element) => {
+  console.log('Right panel before enter');
+};
+
+const onEnterRight = (el: Element) => {
+  console.log('Right panel enter');
+};
+
+const onLeaveRight = (el: Element) => {
+  console.log('Right panel leave');
+};
+
+// Theme is now managed reactively by the theme store
 
 // Watchers and lifecycle hooks
 watch(() => canvasRef.value?.workspaces, (newWorkspaces) => {
@@ -1185,27 +1356,18 @@ watch(() => modelStore.selectedModel, (newModel) => {
 });
 
 onMounted(async () => {
+  // Prevent layout flash by preloading critical state
   canvasStore.initFromLocalStorage(); // Keep this for other settings
+  
+  // Load chats with minimal flash by ensuring UI state is ready
   await chatStore.loadChats();
+  
+  // Use nextTick to ensure DOM is fully rendered before showing UI
+  await nextTick();
+  
   emitter.on('navigate-to-code-bubble', handleNavigateToCodeBubble);
 
-  // Setup theme observer
-  themeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'data-theme') {
-        updateThemeFromDOM();
-      }
-    });
-  });
-
-  // Start observing theme changes on document element
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme']
-  });
-
-  // Initial theme check
-  updateThemeFromDOM();
+  // Theme is now managed by the theme store, no need for DOM observation
 
   document.addEventListener('keydown', handleGlobalHotkey);
   document.addEventListener('click', handleClickOutside);
@@ -1224,16 +1386,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  if (themeObserver) {
-    themeObserver.disconnect();
-  }
-
   emitter.off('navigate-to-code-bubble', handleNavigateToCodeBubble);
   window.removeEventListener('resize', updateWindowSize);
   document.removeEventListener('keydown', handleGlobalHotkey);
   document.removeEventListener('click', handleClickOutside);
-
-  // Note: Drag-and-drop cleanup no longer needed
 });
 </script>
 
@@ -1256,7 +1412,6 @@ onBeforeUnmount(() => {
 
 /* Canvas wrapper positioning to avoid header overlap */
 .canvas-wrapper {
-  padding-top: 3rem;
   height: 100vh;
   overflow: hidden;
 }
@@ -1594,5 +1749,108 @@ onBeforeUnmount(() => {
 
 .slide-panel-leave-to {
   transform: translateX(-100%);
+}
+
+/* Left Panel Specific Transitions */
+.slide-panel-left-enter-active,
+.slide-panel-left-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.slide-panel-left-enter-from {
+  transform: translateX(-100%);
+}
+
+.slide-panel-left-enter-to {
+  transform: translateX(0);
+}
+
+.slide-panel-left-leave-from {
+  transform: translateX(0);
+}
+
+.slide-panel-left-leave-to {
+  transform: translateX(-100%);
+}
+
+/* Global Theme Transition Rules for Smooth Theme Changes */
+* {
+  transition: background-color 0.3s ease, 
+              color 0.3s ease, 
+              border-color 0.3s ease,
+              box-shadow 0.3s ease,
+              text-shadow 0.3s ease !important;
+}
+
+/* Prevent layout flash during navigation */
+.workspace-controls-dock,
+.controls-bar {
+  will-change: transform, opacity;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+/* Optimize transitions for better performance */
+.workspace-controls-dock {
+  transform: translateZ(0); /* Create composite layer */
+}
+
+/* Smooth visibility transitions */
+.top-controls {
+  transition: opacity 0.15s ease-out, visibility 0.15s ease-out;
+}
+
+/* Prevent flash when switching between modes */
+.canvas-wrapper {
+  transition: margin 0.2s ease-out;
+}
+
+/* Preserve existing transitions for transform and specific properties */
+*[style*="transition:"],
+.transition-all,
+.transition-transform,
+.transition-colors,
+.transition-opacity {
+  /* Keep existing transitions intact */
+}
+
+/* Theme-aware elements get enhanced transitions */
+.btn, .card, .navbar, .menu, .modal, .dropdown, .tooltip,
+.bg-base-100, .bg-base-200, .bg-base-300,
+.text-base-content, .text-primary, .text-secondary,
+[class*="bg-"], [class*="text-"], [class*="border-"] {
+  transition: background-color 0.3s ease, 
+              color 0.3s ease, 
+              border-color 0.3s ease,
+              box-shadow 0.3s ease !important;
+}
+
+/* Side Panel Slide Transitions */
+.slide-panel-left-enter-active,
+.slide-panel-left-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  will-change: transform;
+}
+
+.slide-panel-left-enter-from {
+  transform: translateX(-100%) !important;
+}
+
+.slide-panel-left-leave-to {
+  transform: translateX(-100%) !important;
+}
+
+.slide-panel-right-enter-active,
+.slide-panel-right-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  will-change: transform;
+}
+
+.slide-panel-right-enter-from {
+  transform: translateX(100%) !important;
+}
+
+.slide-panel-right-leave-to {
+  transform: translateX(100%) !important;
 }
 </style>
