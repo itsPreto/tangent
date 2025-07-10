@@ -1,48 +1,28 @@
 <template>
-  <div
-    ref="parentRef"
-    class="h-full overflow-y-auto overflow-x-hidden px-2 messages-scroll-container"
-    :class="'theme-' + currentTheme"
-    :key="currentTheme"
-    tabindex="0"
-    @wheel="throttledScrollHandler"
-  >
-    <div
-      :style="{
-        height: `${rowVirtualizer.getTotalSize()}px`,
+  <div ref="parentRef" class="overflow-y-auto overflow-x-hidden px-2 messages-scroll-container"
+    :class="'theme-' + currentTheme" :key="currentTheme" :style="{ height: '100%', minHeight: '300px' }" tabindex="0"
+    @wheel="throttledScrollHandler">
+    <div :style="{
+      height: `${rowVirtualizer.getTotalSize()}px`,
+      width: '100%',
+      position: 'relative',
+    }">
+      <div v-for="virtualRow in rowVirtualizer.getVirtualItems()" :key="virtualRow.index" :style="{
+        position: 'absolute',
+        top: 0,
+        left: 0,
         width: '100%',
-        position: 'relative',
-      }"
-    >
-      <div
-        v-for="virtualRow in rowVirtualizer.getVirtualItems()"
-        :key="virtualRow.index"
-        :style="{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          transform: `translateY(${virtualRow.start}px)`,
-        }"
-        :data-index="virtualRow.index"
-      >
-        <div
-          ref="measureElement"
-          :data-index="virtualRow.index"
-          class="relative group message-container"
-          :class="{ 
-            'user-message': messages[virtualRow.index].role === 'user', 
-            'ai-message': messages[virtualRow.index].role === 'assistant' 
-          }"
-          :data-message-index="virtualRow.index"
-          :data-message-id="`${nodeId}-message-${virtualRow.index}`"
-          :data-code-bubble-parent="true"
-          :style="getMessageStyles(virtualRow.index)"
-        >
-          <MessageTimestamp 
-            :timestamp="messages[virtualRow.index].timestamp" 
-            :side="messages[virtualRow.index].role === 'user' ? 'right' : 'left'" 
-          />
+        height: `${virtualRow.size}px`,
+        transform: `translateY(${virtualRow.start}px)`,
+      }" :data-index="virtualRow.index">
+        <div :ref="el => measureElement[virtualRow.index] = el" :data-index="virtualRow.index"
+          class="relative group message-container" :class="{
+            'user-message': messages[virtualRow.index].role === 'user',
+            'ai-message': messages[virtualRow.index].role === 'assistant'
+          }" :data-message-index="virtualRow.index" :data-message-id="`${nodeId}-message-${virtualRow.index}`"
+          :data-code-bubble-parent="true" :style="getMessageStyles(virtualRow.index)">
+          <MessageTimestamp :timestamp="messages[virtualRow.index].timestamp"
+            :side="messages[virtualRow.index].role === 'user' ? 'right' : 'left'" />
 
           <!-- Message Content Container -->
           <div class="relative z-10">
@@ -50,28 +30,26 @@
             <div class="relative">
               <div class="flex items-start gap-3">
                 <!-- Action Buttons -->
-                <div class="flex items-center gap-2 flex-shrink-0 ml-auto" v-if="!messages[virtualRow.index].isStreaming">
-                  <button @click.stop="$emit('expand-message', virtualRow.index)" class="p-1.5 rounded-full hover:bg-white/10">
+                <div class="flex items-center gap-2 flex-shrink-0 ml-auto"
+                  v-if="!messages[virtualRow.index].isStreaming">
+                  <button @click.stop="$emit('expand-message', virtualRow.index)"
+                    class="p-1.5 rounded-full hover:bg-white/10">
                     <component :is="expandedMessages.has(virtualRow.index) ? Maximize2 : Minimize2"
                       class="w-4 h-4 text-base-content/60" />
                   </button>
                 </div>
               </div>
-              
+
               <!-- Modern chat bubble layout -->
               <div class="message-bubble-container">
                 <!-- User message bubble (right side) -->
                 <div v-if="messages[virtualRow.index].role === 'user'" class="user-bubble-wrapper">
                   <div class="user-bubble">
                     <div class="message-content-wrapper">
-                      <MessageContent 
-                        :content="messages[virtualRow.index].content" 
-                        :is-streaming="messages[virtualRow.index].isStreaming" 
-                        :node-id="nodeId"
-                        :content-parts="messages[virtualRow.index].contentParts" 
-                        :message-index="virtualRow.index" 
-                        :data-message-idx="virtualRow.index"
-                      />
+                      <MessageContent :content="messages[virtualRow.index].content"
+                        :is-streaming="messages[virtualRow.index].isStreaming" :node-id="nodeId"
+                        :content-parts="messages[virtualRow.index].contentParts" :message-index="virtualRow.index"
+                        :data-message-idx="virtualRow.index" />
                     </div>
                   </div>
                   <div class="message-meta user-meta">
@@ -82,9 +60,8 @@
                 <!-- AI message bubble (left side) -->
                 <div v-else class="ai-bubble-wrapper">
                   <div class="ai-avatar-container">
-                    <img :src="getAvatarUrl(getModelInfo(messages[virtualRow.index].modelId))" 
-                         :alt="getModelDisplayName(messages[virtualRow.index])" 
-                         class="ai-avatar" />
+                    <img :src="getAvatarUrl(getModelInfo(messages[virtualRow.index].modelId))"
+                      :alt="getModelDisplayName(messages[virtualRow.index])" class="ai-avatar" />
                   </div>
                   <div class="ai-content-container">
                     <div class="ai-model-header">
@@ -96,14 +73,10 @@
                     </div>
                     <div class="ai-bubble">
                       <div class="message-content-wrapper">
-                        <MessageContent 
-                          :content="messages[virtualRow.index].content" 
-                          :is-streaming="messages[virtualRow.index].isStreaming" 
-                          :node-id="nodeId"
-                          :content-parts="messages[virtualRow.index].contentParts" 
-                          :message-index="virtualRow.index" 
-                          :data-message-idx="virtualRow.index"
-                        />
+                        <MessageContent :content="messages[virtualRow.index].content"
+                          :is-streaming="messages[virtualRow.index].isStreaming" :node-id="nodeId"
+                          :content-parts="messages[virtualRow.index].contentParts" :message-index="virtualRow.index"
+                          :data-message-idx="virtualRow.index" />
                       </div>
                     </div>
                     <div class="message-meta ai-meta">
@@ -115,29 +88,24 @@
             </div>
 
             <!-- Message Actions (floating on hover) -->
-            <div class="message-actions opacity-0 group-hover:opacity-100 transition-all duration-200" 
-                 :class="{
-                   'user-actions': messages[virtualRow.index].role === 'user',
-                   'ai-actions': messages[virtualRow.index].role === 'assistant'
-                 }">
+            <div class="message-actions opacity-0 group-hover:opacity-100 transition-all duration-200" :class="{
+              'user-actions': messages[virtualRow.index].role === 'user',
+              'ai-actions': messages[virtualRow.index].role === 'assistant'
+            }">
               <div class="action-buttons-container">
-                <button v-if="messages[virtualRow.index].isStreaming" 
-                        @click.stop="$emit('stop-streaming')" 
-                        class="action-btn stop-btn"
-                        title="Stop streaming">
+                <button v-if="messages[virtualRow.index].isStreaming" @click.stop="$emit('stop-streaming')"
+                  class="action-btn stop-btn" title="Stop streaming">
                   <XCircle class="w-4 h-4" />
                 </button>
 
                 <template v-else-if="messages[virtualRow.index].role === 'assistant'">
-                  <button @click.stop="$emit('resend', virtualRow.index - 1)" 
-                          class="action-btn resend-btn" 
-                          title="Regenerate response">
+                  <button @click.stop="$emit('resend', virtualRow.index - 1)" class="action-btn resend-btn"
+                    title="Regenerate response">
                     <RotateCw class="w-4 h-4" />
                   </button>
 
-                  <button @click.stop="copyToMarkdown(messages[virtualRow.index])" 
-                          class="action-btn copy-btn" 
-                          title="Copy message">
+                  <button @click.stop="copyToMarkdown(messages[virtualRow.index])" class="action-btn copy-btn"
+                    title="Copy message">
                     <ClipboardCopy class="w-4 h-4" />
                   </button>
 
@@ -194,7 +162,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import { useVirtualizer } from '@tanstack/vue-virtual';
-import { useThrottle, useRequestAnimationFrame, useMessageHeightCache } from '@/composables/usePerformanceOptimization';
+import { useThrottle, useMessageHeightCache } from '@/composables/usePerformanceOptimization';
 import {
   Maximize2,
   Minimize2,
@@ -253,40 +221,59 @@ const themeStore = useThemeStore();
 const currentTheme = computed(() => themeStore.currentTheme);
 const themeColors = computed(() => themeStore.currentThemeColors);
 
-// Performance optimizations
+// Performance optimizations with height caching
 const { cacheHeight, getHeight, averageHeight } = useMessageHeightCache();
 
 // Estimated row height - this will be dynamically adjusted
-const estimateSize = ref(100);
+const estimateSize = ref(160); // More conservative default that matches min-height + padding
 
 // Throttled scroll handler for better performance
 const [throttledScrollHandler] = useThrottle((event: WheelEvent) => {
   emit('wheel', event);
 }, 16); // ~60fps
 
-// Virtual scrolling setup with height caching
+// Virtual scrolling setup with proper height measurement
 const rowVirtualizer = useVirtualizer(
   computed(() => ({
     count: props.messages.length,
     getScrollElement: () => parentRef.value,
     estimateSize: (index) => {
       const messageId = `${props.nodeId}-message-${index}`;
-      return getHeight(messageId);
+      const cachedHeight = getHeight(messageId);
+      return cachedHeight > 0 ? cachedHeight : estimateSize.value;
     },
-    overscan: 5, // Render 5 items above and below the visible area
+    overscan: 3,
     measureElement: (el) => {
-      // Measure and cache actual element heights
+      if (!el) return estimateSize.value;
+
       const element = el as HTMLElement;
-      const height = element?.getBoundingClientRect().height || estimateSize.value;
-      
-      // Cache the height for future use
-      const index = element?.getAttribute('data-index');
-      if (index) {
+      const index = element.getAttribute('data-index');
+
+      // First, try to return cached height if available
+      if (index !== null) {
         const messageId = `${props.nodeId}-message-${index}`;
-        cacheHeight(messageId, height);
+        const cachedHeight = getHeight(messageId);
+        if (cachedHeight > 0) {
+          return cachedHeight;
+        }
       }
-      
-      return height;
+
+      // Only measure if element is potentially visible
+      const rect = element.getBoundingClientRect();
+      const height = rect.height;
+
+      // Only cache height if it's reasonable and element seems to be properly rendered
+      // Avoid caching when element is out of viewport (height could be 0 or invalid)
+      if (height > 50 && height < 2000 && rect.width > 0) {
+        if (index !== null) {
+          const messageId = `${props.nodeId}-message-${index}`;
+          cacheHeight(messageId, height);
+          return height;
+        }
+      }
+
+      // Fall back to estimate if measurement is invalid
+      return estimateSize.value;
     },
   }))
 );
@@ -304,11 +291,36 @@ watch(
   (newLength, oldLength) => {
     if (newLength > oldLength) {
       nextTick(() => {
-        scrollToBottom();
+        // Force remeasure all items when new messages are added
+        rowVirtualizer.value.measure();
+
+        // Wait a bit longer for DOM to settle before scrolling
+        setTimeout(() => {
+          scrollToBottom();
+        }, 50);
       });
     }
   }
 );
+
+// Watch for content changes and remeasure
+watch(
+  () => props.messages,
+  () => {
+    // Clear cache for potentially changed messages
+    nextTick(() => {
+      // Allow DOM to update then remeasure
+      setTimeout(() => {
+        rowVirtualizer.value.measure();
+      }, 50);
+    });
+  },
+  { deep: true }
+);
+
+let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Height measurement will be done with simple periodic updates
 
 // Expose scroll methods and DOM element for external use
 defineExpose({
@@ -320,6 +332,52 @@ defineExpose({
   scrollToBottom,
   scrollToIndex: (index: number) => {
     rowVirtualizer.scrollToIndex(index);
+  },
+  // Method to reset virtual scrolling (useful for zoom changes)
+  resetVirtualScrolling: () => {
+    console.log('Resetting virtual scrolling');
+    // Clear height cache and remeasure
+    const { clearCache } = useMessageHeightCache();
+    clearCache();
+
+    nextTick(() => {
+      setTimeout(() => {
+        const updateEstimateSize = () => {
+          const messageContainers = document.querySelectorAll('.message-container');
+          if (messageContainers.length > 0) {
+            const heights = Array.from(messageContainers).map(
+              el => {
+                const rect = (el as HTMLElement).getBoundingClientRect();
+                return rect.width > 0 ? rect.height : 0; // Only use height if element is visible
+              }
+            ).filter(h => h > 50 && h < 2000);
+
+            if (heights.length > 0) {
+              const avgHeight = heights.reduce((sum, h) => sum + h, 0) / heights.length;
+              estimateSize.value = Math.max(avgHeight, 150);
+
+              // Cache heights for existing elements
+              messageContainers.forEach((container) => {
+                const rect = (container as HTMLElement).getBoundingClientRect();
+                const height = rect.height;
+                const index = (container as HTMLElement).getAttribute('data-index');
+                if (height > 50 && height < 2000 && rect.width > 0 && index !== null) {
+                  const messageId = `${props.nodeId}-message-${index}`;
+                  cacheHeight(messageId, height);
+                }
+              });
+
+              // Trigger remeasurement
+              nextTick(() => {
+                rowVirtualizer.value.measure();
+              });
+            }
+          }
+        };
+
+        updateEstimateSize();
+      }, 100);
+    });
   },
   // Expose the DOM element for compatibility with existing code
   $el: parentRef,
@@ -345,32 +403,58 @@ defineExpose({
   },
 });
 
-// Dynamic height adjustment based on content
+// Height measurement setup
 onMounted(() => {
-  // Observe the first few messages to get better size estimates
-  const resizeObserver = new ResizeObserver((entries) => {
-    const heights = entries.map(entry => entry.contentRect.height);
-    if (heights.length > 0) {
-      const avgHeight = heights.reduce((sum, h) => sum + h, 0) / heights.length;
-      estimateSize.value = Math.max(avgHeight, 80); // Minimum height of 80px
-    }
-  });
+  // Initial height calculation after DOM settles
+  const updateEstimateSize = () => {
+    const messageContainers = document.querySelectorAll('.message-container');
+    if (messageContainers.length > 0) {
+      const heights = Array.from(messageContainers).map(
+        el => {
+          const rect = (el as HTMLElement).getBoundingClientRect();
+          return rect.width > 0 ? rect.height : 0; // Only use height if element is visible
+        }
+      ).filter(h => h > 50 && h < 2000); // Only reasonable heights
 
-  // Observe the first few rendered elements
-  const observer = new MutationObserver(() => {
-    const elements = document.querySelectorAll('.message-container');
-    elements.forEach((el, index) => {
-      if (index < 5) { // Only observe first 5 elements
-        resizeObserver.observe(el as HTMLElement);
+      if (heights.length > 0) {
+        const avgHeight = heights.reduce((sum, h) => sum + h, 0) / heights.length;
+        estimateSize.value = Math.max(avgHeight, 150);
+
+        // Cache heights for existing elements
+        messageContainers.forEach((container) => {
+          const rect = (container as HTMLElement).getBoundingClientRect();
+          const height = rect.height;
+          const index = (container as HTMLElement).getAttribute('data-index');
+          if (height > 50 && height < 2000 && rect.width > 0 && index !== null) {
+            const messageId = `${props.nodeId}-message-${index}`;
+            cacheHeight(messageId, height);
+          }
+        });
+
+        // Trigger remeasurement
+        nextTick(() => {
+          rowVirtualizer.value.measure();
+        });
       }
-    });
-  });
+    }
+  };
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  // Wait for DOM to be ready
+  setTimeout(updateEstimateSize, 100);
+
+  // Also update when messages change
+  watch(
+    () => props.messages.length,
+    () => {
+      setTimeout(updateEstimateSize, 100);
+    }
+  );
+
 
   onBeforeUnmount(() => {
-    resizeObserver.disconnect();
-    observer.disconnect();
+    if (resizeTimeout) {
+      clearTimeout(resizeTimeout);
+    }
   });
 });
 </script>
@@ -380,12 +464,18 @@ onMounted(() => {
 .messages-scroll-container {
   contain: layout style paint;
   will-change: scroll-position;
+  position: relative;
+  overflow-anchor: none;
+  /* Prevent scroll anchoring issues */
+  max-height: 100%;
+  box-sizing: border-box;
 }
 
 .message-container {
   contain: layout style;
   transition: transform 0.2s ease;
-  transform: translateZ(0); /* Force GPU acceleration */
+  transform: translateZ(0);
+  /* Force GPU acceleration */
 }
 
 .message-container:hover {
@@ -394,12 +484,18 @@ onMounted(() => {
 
 /* Modern chat bubble layout */
 .message-container {
-  margin-bottom: 1.5rem;
-  padding: 0;
+  margin-bottom: 0;
+  padding: 0.75rem 0 1rem 0;
+  min-height: 80px;
+  /* Ensure minimum height for proper virtual scrolling */
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .message-container:last-child {
-  margin-bottom: 0;
+  padding-bottom: 1rem;
+  /* Keep bottom padding for last message */
 }
 
 /* Message bubble container */
@@ -412,10 +508,9 @@ onMounted(() => {
 /* User message styling (right side) */
 .user-bubble-wrapper {
   display: flex;
-  flex-direction: column;
   align-items: flex-end;
   margin-left: 20%;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 
 .user-bubble {
@@ -453,8 +548,9 @@ onMounted(() => {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  margin-right: 20%;
-  margin-bottom: 0.5rem;
+  margin-right: 2%;
+  margin-left: 2%;
+  margin-bottom: 0;
   gap: 0.75rem;
 }
 
@@ -514,15 +610,17 @@ onMounted(() => {
 }
 
 .ai-bubble {
-  background: hsl(var(--b1));
-  border: 1px solid hsl(var(--b3) / 0.5);
-  color: hsl(var(--bc));
+  background: hsl(100% 0 0);
+  border: 1px solid hsl(93.2686% 0.016223 262.751375 / 0.5);
+  color: hsl(41.8869% 0.053885 255.824911);
   padding: 0.75rem 1rem;
   border-radius: 0.25rem 1.25rem 1.25rem 1.25rem;
   max-width: 100%;
+  justify-items: anchor-center;
   word-wrap: break-word;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   position: relative;
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 
@@ -643,41 +741,17 @@ onMounted(() => {
 }
 
 /* Theme-specific enhancements */
-/* Dark themes need special treatment for AI bubbles */
-[data-theme="dark"] .ai-bubble,
-[data-theme="synthwave"] .ai-bubble,
-[data-theme="cyberpunk"] .ai-bubble,
-[data-theme="halloween"] .ai-bubble,
-[data-theme="forest"] .ai-bubble,
-[data-theme="aqua"] .ai-bubble,
-[data-theme="black"] .ai-bubble,
-[data-theme="luxury"] .ai-bubble,
-[data-theme="dracula"] .ai-bubble,
-[data-theme="business"] .ai-bubble,
-[data-theme="acid"] .ai-bubble,
-[data-theme="night"] .ai-bubble,
-[data-theme="coffee"] .ai-bubble {
-  background: hsl(var(--b2));
-  border-color: hsl(var(--b3));
-}
-
-/* Themes with special glow effects */
-[data-theme="cyberpunk"] .user-bubble,
-[data-theme="synthwave"] .user-bubble {
-  box-shadow: 0 0 20px hsl(var(--p) / 0.4);
-}
-
-[data-theme="cyberpunk"] .ai-bubble,
-[data-theme="synthwave"] .ai-bubble {
-  box-shadow: 0 0 10px hsl(var(--p) / 0.15);
-}
+/* Theme-specific styling now handled by parent component's CSS custom properties */
 
 /* Animation for streaming indicator */
 @keyframes streamingPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.3;
     transform: scale(1.2);
@@ -689,26 +763,26 @@ onMounted(() => {
   .user-bubble-wrapper {
     margin-left: 10%;
   }
-  
+
   .ai-bubble-wrapper {
     margin-right: 10%;
   }
-  
+
   .ai-avatar {
     width: 1.75rem;
     height: 1.75rem;
   }
-  
+
   .user-bubble,
   .ai-bubble {
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
   }
-  
+
   .user-actions {
     left: -50px;
   }
-  
+
   .ai-actions {
     right: -50px;
   }
@@ -718,15 +792,15 @@ onMounted(() => {
   .user-bubble-wrapper {
     margin-left: 5%;
   }
-  
+
   .ai-bubble-wrapper {
     margin-right: 5%;
   }
-  
+
   .user-actions {
     left: -40px;
   }
-  
+
   .ai-actions {
     right: -40px;
   }
@@ -748,5 +822,22 @@ onMounted(() => {
 .virtual-item {
   will-change: transform;
   transform: translateZ(0);
+}
+
+/* Ensure virtual rows are properly isolated */
+.message-container {
+  isolation: isolate;
+  z-index: 1;
+}
+
+/* Prevent content shifting during virtual scrolling */
+.messages-scroll-container>div {
+  contain: size layout style;
+}
+
+/* Ensure virtual items don't interfere with each other */
+.messages-scroll-container>div>div {
+  contain: layout style;
+  pointer-events: auto;
 }
 </style>

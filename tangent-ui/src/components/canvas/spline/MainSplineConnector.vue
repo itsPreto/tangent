@@ -175,9 +175,6 @@ let isVisible = true
 // Constants
 const baseStroke = 2
 const baseFontSize = 14
-const baseParticleRadius = 3
-const baseParticleSpeed = 0.002
-const numParticles = 2 // Reduced from 4 to 2 for performance
 const labelOffset = 12
 
 // Dynamic theme-based colors
@@ -352,7 +349,7 @@ const connectionPoints = computed(() => {
   }
 
   const endPoint = {
-    x: endNodeX + (isLeft ? endCardWidth : 0),
+    x: endNodeX + (isLeft ? endCardWidth - 1 : 1), // Stop 1px before the edge
     y: endNodeY + endCardHeight / 2
   }
 
@@ -369,22 +366,22 @@ const pathAndControlPoints = computed(() => {
   const dx = endPoint.x - startPoint.x
   const dy = endPoint.y - startPoint.y
   const dist = Math.hypot(dx, dy)
-  const cpDist = Math.min(dist * 0.8, 200)
-  const vert = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1)
+  
+  // Improved curve calculation for better visual flow
+  const cpDist = Math.min(dist * 0.5, 300) // Slightly less aggressive curve
+  const vert = Math.min(Math.abs(dy) * 0.2, 60) * (dy < 0 ? -1 : 1) // Reduced vertical influence
 
   const controlPoint1 = {
     x: startPoint.x + (isLeftBranch.value ? -cpDist : cpDist),
-    y: startPoint.y + vert
+    y: startPoint.y + vert * 0.5 // Smoother transition
   }
   const controlPoint2 = {
-    x: endPoint.x + (isLeftBranch.value ? cpDist : -cpDist),
-    y: endPoint.y - vert
+    x: endPoint.x + (isLeftBranch.value ? cpDist * 0.6 : -cpDist * 0.6), // Asymmetric for better flow
+    y: endPoint.y - vert * 0.5
   }
 
-  const path = `M ${startPoint.x} ${startPoint.y}
-                C ${controlPoint1.x} ${controlPoint1.y},
-                  ${controlPoint2.x} ${controlPoint2.y},
-                  ${endPoint.x} ${endPoint.y}`
+  // Clean up path formatting for better performance
+  const path = `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C${controlPoint1.x.toFixed(1)},${controlPoint1.y.toFixed(1)},${controlPoint2.x.toFixed(1)},${controlPoint2.y.toFixed(1)},${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`
 
   return { startPoint, endPoint, controlPoint1, controlPoint2, path }
 })
@@ -399,23 +396,15 @@ const reversedPathData = computed(() => {
             ${startPoint.x} ${startPoint.y}`
 })
 
-// Styling
+// Styling - consistent across all zoom levels
 const strokeWidth = computed(() => {
-  const scale = 1 / Math.pow(props.zoomLevel, 1.2)
-  return baseStroke * Math.min(scale, 4)
+  return baseStroke * (props.isActive ? 1.5 : 1) // Only scale for active state
 })
 
 const dashPattern = computed(() => {
-  const scale = 1 / Math.pow(props.zoomLevel, 1.2)
-  return `${4 * Math.min(scale, 4)} ${6 * Math.min(scale, 4)}`
+  return "4 6" // Consistent dash pattern regardless of zoom
 })
-const particleRadius = computed(() => {
-  const scale = 1 / Math.pow(props.zoomLevel, 2.2)
-  return baseParticleRadius * Math.min(scale, 3)
-})
-const fontSize = computed(() =>
-  Math.max(baseFontSize * (1 / Math.min(1, props.zoomLevel)), baseFontSize)
-)
+const fontSize = computed(() => baseFontSize) // Consistent font size regardless of zoom
 
 // Gradient coordinates for directional flow from parent to child
 const gradientCoords = computed(() => {
@@ -735,8 +724,7 @@ function handleSimpleDoubleClick(e: MouseEvent) {
 // Calculate visual stroke width based on state
 function getVisualStrokeWidth() {
   let width = strokeWidth.value
-  if (props.isActive) width *= 1.5
-  if (isHovered.value && !props.isActive) width *= 1.2
+  if (isHovered.value && !props.isActive) width *= 1.2 // Only add hover effect if not active
   return width
 }
 
@@ -755,19 +743,35 @@ function setupObserver() {
   return () => obs.disconnect()
 }
 
-// Watch for changes - simplified since we no longer have particle animations
+// Performance optimized watch - only update when positions actually change
+let lastPositions = { sx: 0, sy: 0, ex: 0, ey: 0 }
+let frameRequested = false
+
 watch(
   () => [
     props.startNode.x,
     props.startNode.y,
     props.endNode.x,
-    props.endNode.y,
-    props.zoomLevel
+    props.endNode.y
   ],
-  () => {
-    // Paths update automatically via computed properties
-    // No animation reset needed for gradient-based connections
-  }
+  ([sx, sy, ex, ey]) => {
+    // Only trigger updates if position changed significantly (> 0.5px)
+    const changed = 
+      Math.abs(sx - lastPositions.sx) > 0.5 ||
+      Math.abs(sy - lastPositions.sy) > 0.5 ||
+      Math.abs(ex - lastPositions.ex) > 0.5 ||
+      Math.abs(ey - lastPositions.ey) > 0.5
+    
+    if (changed && !frameRequested) {
+      frameRequested = true
+      requestAnimationFrame(() => {
+        lastPositions = { sx, sy, ex, ey }
+        frameRequested = false
+        // Paths update automatically via computed properties
+      })
+    }
+  },
+  { flush: 'post' } // Use post-flush for better performance
 )
 
 // Lifecycle

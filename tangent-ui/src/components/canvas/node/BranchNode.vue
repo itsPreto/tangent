@@ -21,29 +21,8 @@
     }">
     </div>
 
-    <!-- Block LOD: Simple colored rectangle -->
-    <div v-if="shouldShowBlock" class="w-64 h-16 rounded-lg border-2 transition-all duration-300" :style="{
-      backgroundColor: baseColorSet.value.transparent,
-      borderColor: baseColorSet.value.base
-    }"></div>
-    
-    <!-- Compact LOD: Minimal card with title only -->
-    <div v-else-if="shouldShowCompact" class="w-[320px] h-[60px] rounded-lg border backdrop-blur-sm p-3 transition-all duration-300" :style="{
-      backgroundColor: baseColorSet.value.transparent,
-      borderColor: baseColorSet.value.base
-    }">
-      <div class="flex items-center justify-between h-full">
-        <span class="text-sm font-medium truncate text-base-content flex-1">
-          {{ node.title || "Untitled Thread" }}
-        </span>
-        <span class="text-xs text-base-content/60 ml-2 flex-shrink-0">
-          ({{ node.messages?.length || 0 }})
-        </span>
-      </div>
-    </div>
-    
-    <!-- Summary LOD: Compact title card with last message preview -->
-    <div v-else-if="shouldShowSummary" class="w-[480px] h-[100px] rounded-lg border backdrop-blur-sm p-4 transition-all duration-300" :style="{
+    <!-- Preview LOD: Shows last message preview -->  
+    <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-lg border backdrop-blur-sm p-4 transition-all duration-300" :style="{
       backgroundColor: baseColorSet.value.transparent,
       borderColor: baseColorSet.value.base
     }">
@@ -61,54 +40,10 @@
         <!-- Last message preview -->
         <div class="flex-1 overflow-hidden">
           <div class="text-xs text-base-content/70 leading-relaxed" v-if="lastMessagePreview">
+            <span class="font-medium">{{ lastMessage?.role === 'user' ? 'You' : 'AI' }}:</span>
             {{ lastMessagePreview }}
           </div>
           <div class="text-xs text-base-content/50 italic" v-else>
-            No messages yet
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Preview LOD: Shows first and last few messages with simplified controls -->
-    <div v-else-if="shouldShowPreview" class="w-[580px] h-[300px] rounded-lg border backdrop-blur-sm transition-all duration-300" :style="{
-      backgroundColor: baseColorSet.value.transparent,
-      borderColor: baseColorSet.value.base
-    }">
-      <div class="p-4 h-full flex flex-col">
-        <!-- Header -->
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-lg font-medium truncate text-base-content flex-1">
-            {{ node.title || "Untitled Thread" }}
-          </span>
-          <span class="text-sm text-base-content/60 ml-2 flex-shrink-0">
-            {{ node.messages?.length || 0 }} messages
-          </span>
-        </div>
-        
-        <!-- Preview messages (first 2 and last 2) -->
-        <div class="flex-1 overflow-hidden space-y-2">
-          <template v-if="node.messages && node.messages.length > 0">
-            <!-- First few messages -->
-            <div v-for="(msg, i) in node.messages.slice(0, Math.min(2, node.messages.length))" 
-                 :key="i" class="text-xs text-base-content/70 truncate">
-              <span class="font-medium">{{ msg.role === 'user' ? 'You' : 'AI' }}:</span>
-              {{ msg.content }}
-            </div>
-            
-            <!-- Separator if there are more messages -->
-            <div v-if="node.messages.length > 4" class="text-center py-1">
-              <span class="text-xs text-base-content/50">⋯ {{ node.messages.length - 4 }} more messages ⋯</span>
-            </div>
-            
-            <!-- Last few messages -->
-            <div v-for="(msg, i) in node.messages.slice(-Math.min(2, Math.max(0, node.messages.length - 2)))" 
-                 :key="'last-' + i" class="text-xs text-base-content/70 truncate">
-              <span class="font-medium">{{ msg.role === 'user' ? 'You' : 'AI' }}:</span>
-              {{ msg.content }}
-            </div>
-          </template>
-          <div v-else class="text-xs text-base-content/50 italic text-center py-4">
             No messages yet
           </div>
         </div>
@@ -149,7 +84,7 @@
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-3">
             <button @click.stop="toggleExpanded" class="p-2 rounded-full hover:bg-white/10 transition-colors"
-              :style="{ color: threadColor }">
+              :style="{ color: threadColor }" title="Expand or collapse conversation">
               <ChevronDown class="w-5 h-5 transition-transform duration-200" :class="{ '-rotate-90': !isExpanded }" />
             </button>
 
@@ -183,7 +118,8 @@
                         <Sparkles class="w-4 h-4 text-base-content/60 hover:text-primary" />
                       </button>
                       <!-- Manual edit button -->
-                      <button @click.stop="startEditing" class="p-1 rounded-full hover:bg-white/10 transition-all duration-200">
+                      <button @click.stop="startEditing" class="p-1 rounded-full hover:bg-white/10 transition-all duration-200"
+                              title="Edit conversation title">
                         <Edit2 class="w-4 h-4 text-base-content/60" />
                       </button>
                     </div>
@@ -329,10 +265,13 @@
 
         <!-- Messages Container -->
         <div :class="[
-          'messages-container transition-all duration-300 relative flex-grow overflow-hidden overflow-x-hidden',
+          'messages-container transition-all duration-300 relative flex-grow',
           isSnapped ? 'snapped-messages-container' : '',
           isExpanded && node.messages ? 'space-y-4' : ''
-        ]">
+        ]" :style="{
+          height: isSnapped ? 'calc(100vh - 200px)' : '400px',
+          overflow: 'hidden'
+        }">
           <!-- Compacted Messages Section -->
           <div v-if="isExpanded && compactedSections.length > 0" class="px-2 space-y-3">
             <CollapsedMessagesView
@@ -375,8 +314,8 @@
             </div>
           </div>
 
-          <!-- Expanded Messages View with Virtualization -->
-          <VirtualizedMessageList
+          <!-- Expanded Messages View with Lazy Loading -->
+          <LazyLoadMessageList
             v-if="isExpanded && node.messages"
             ref="messagesContainerRef"
             :messages="displayMessages"
@@ -397,6 +336,7 @@
             @resend="(index) => $emit('resend', index)"
             @create-branch="(index, direction) => createBranch(index, direction)"
             @wheel="handleMessagesWheel"
+            @edit-message="handleEditMessage"
           />
 
           <!-- Loading Indicator for Progressive Loading -->
@@ -409,12 +349,12 @@
           <div v-if="isSnapped && showScrollButtons" class="absolute right-4 bottom-20 flex flex-col gap-2 z-50">
             <button @click="scrollToTop"
               class="p-2 rounded-full bg-base-300/80 hover:bg-base-300 transition-colors scroll-btn"
-              :class="{ 'opacity-0 pointer-events-none': isAtTop }">
+              :class="{ 'opacity-0 pointer-events-none': isAtTop }" title="Scroll to top">
               <ChevronUp class="w-5 h-5" />
             </button>
             <button @click="scrollToBottom"
               class="p-2 rounded-full bg-base-300/80 hover:bg-base-300 transition-colors scroll-btn"
-              :class="{ 'opacity-0 pointer-events-none': isAtBottom }">
+              :class="{ 'opacity-0 pointer-events-none': false }" title="Scroll to bottom">
               <ChevronDown class="w-5 h-5" />
             </button>
           </div>
@@ -457,7 +397,7 @@ import {
 
 import MessageInput from '../../messages/MessageInput.vue';
 import CollapsedMessagesView from '../../messages/CollapsedMessagesView.vue';
-import VirtualizedMessageList from '../../messages/VirtualizedMessageList.vue';
+import LazyLoadMessageList from '../../messages/LazyLoadMessageList.vue';
 import { useCanvasStore } from '../../../stores/canvasStore';
 import { Card } from '@/components/ui/card';
 import Badge from '../../ui/Badge.vue';
@@ -473,6 +413,7 @@ import { useProgressiveMessageLoading } from '@/composables/useProgressiveMessag
 import type { ModelParameters } from '@/types/model';
 import type { ModelInfo } from '@/types/model';
 import { useModelStore } from '@/stores/modelStore';
+import { useThemeStore } from '@/stores/themeStore';
 import anthropic from '@/assets/anthropic.jpeg';
 import emitter, { Events } from '@/utils/eventBus'
 import openai from '@/assets/openai.jpeg';
@@ -497,7 +438,6 @@ interface BranchNodeProps {  // Use a dedicated interface
   openRouterApiKey: string;
   modelType: string;
   zoom: number;
-  lodLevel?: string;
   modelRegistry: Map<string, ModelInfo>;
   isSidePanelOpen: boolean;
   isRightPanelOpen?: boolean;
@@ -517,7 +457,8 @@ const emit = defineEmits([
   'snap',
   'unsnap',
   'focus-input',
-  'expansion-change'
+  'expansion-change',
+  'update-messages'
 ]);
 
 // Local state and refs
@@ -552,6 +493,7 @@ const currentTokenCount = ref(0);
 
 const canvasStore = useCanvasStore();
 const modelStore = useModelStore();
+const themeStore = useThemeStore();
 
 // Use centralized theme composable
 const { 
@@ -565,18 +507,27 @@ const {
   adjustColorLightness
 } = useThemeColors();
 
-// DEBUGGING: Add explicit theme watching like MessageInput does
-const activeTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
-let themeObserver;
-onMounted(() => {
-  themeObserver = new MutationObserver(() => {
-    const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
-    console.log('BranchNode: DOM theme changed to', newTheme);
-    activeTheme.value = newTheme;
-  });
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-});
-onBeforeUnmount(() => themeObserver?.disconnect());
+// Force CSS re-evaluation on theme change
+watch(currentTheme, async (newTheme, oldTheme) => {
+  if (oldTheme && newTheme !== oldTheme) {
+    console.log('BranchNode: Theme changed from', oldTheme, 'to', newTheme);
+    
+    // Force browser to re-evaluate CSS by temporarily removing theme classes
+    const element = nodeElement.value;
+    if (element) {
+      // Remove old theme class
+      element.classList.remove(`theme-${oldTheme}`);
+      
+      // Force reflow
+      element.offsetHeight;
+      
+      // Add new theme class
+      element.classList.add(`theme-${newTheme}`);
+      
+      console.log('BranchNode: Forced CSS re-evaluation for theme', newTheme);
+    }
+  }
+}, { flush: 'post' });
 
 
 const snappedBackgroundStyle = computed(() => {
@@ -595,9 +546,9 @@ for (let i = 0; i < props.node.id.length; i++) {
 // Get the reactive color set based on the hash
 const baseColorSet = getIndexedColorSet(Math.abs(hash));
 
-// DEBUGGING: Watch for changes
+// Watch for theme changes to ensure reactivity
 watch(baseColorSet, (newColorSet) => {
-  console.log('BranchNode: baseColorSet recomputing for theme', activeTheme.value);
+  console.log('BranchNode: baseColorSet recomputing for theme', currentTheme.value);
   console.log('New color set:', newColorSet);
 }, { immediate: true });
 
@@ -643,33 +594,20 @@ let abortController: AbortController | null = null;
 const isMediaProcessing = ref(false);
 const isAutoCaptioning = ref(false);
 
-// LOD System - Level of Detail based rendering
+// Simplified LOD System - just 2 levels
 const shouldShowFullDetail = computed(() => {
-  const result = props.lodLevel === 'full';
-  return result;
+  return props.lodLevel === 'full';
 });
 const shouldShowPreview = computed(() => {
-  const result = props.lodLevel === 'preview';
-  return result;
-});
-const shouldShowSummary = computed(() => {
-  const result = props.lodLevel === 'summary';
-  return result;
-});
-const shouldShowCompact = computed(() => {
-  const result = props.lodLevel === 'compact';
-  return result;
-});
-const shouldShowBlock = computed(() => {
-  const result = props.lodLevel === 'block';
-  return result;
-});
-const shouldHide = computed(() => {
-  const result = props.lodLevel === 'hidden';
-  return result;
+  return props.lodLevel === 'preview';
 });
 
-// Last message preview for summary LOD
+// Last message and preview for preview LOD
+const lastMessage = computed(() => {
+  if (!node.value?.messages || node.value.messages.length === 0) return null;
+  return node.value.messages[node.value.messages.length - 1];
+});
+
 const lastMessagePreview = computed(() => {
   if (!props.node.messages || props.node.messages.length === 0) {
     return '';
@@ -707,12 +645,8 @@ const lodNodeStyle = computed(() => {
     transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, width 0.3s ease, height 0.3s ease'
   };
   
-  if (shouldHide.value) {
-    return { ...baseStyle, opacity: 0.1, pointerEvents: 'none', transform: 'scale(0.8)' };
-  } else if (shouldShowBlock.value) {
-    return { ...baseStyle, opacity: 0.7, transform: 'scale(0.95)' };
-  } else if (shouldShowSummary.value) {
-    return { ...baseStyle, opacity: 0.85, transform: 'scale(0.98)' };
+  if (shouldShowPreview.value) {
+    return { ...baseStyle, opacity: 0.9, transform: 'scale(0.98)' };
   }
   
   return { ...baseStyle, opacity: 1, transform: 'scale(1)' };
@@ -1082,16 +1016,110 @@ const regenerateCaption = async () => {
 // Color conversion functions
 // Color utility functions are now imported from the centralized theme utilities
 
+// Theme-specific message styles based on current theme
+const themeMessageStyles = computed(() => {
+  const theme = currentTheme.value;
+  const styles = {};
+  
+  // Get the actual theme colors from the theme store
+  const themeStoreColors = themeStore.currentThemeColors;
+  
+  // Log when this recomputes
+  console.log('BranchNode: themeMessageStyles recomputing for theme', theme);
+  console.log('BranchNode: themeStoreColors in themeMessageStyles', themeStoreColors);
+  
+  // Use the theme's primary color with transparency for backgrounds
+  const primaryColor = themeStoreColors.primary;
+  const secondaryColor = themeStoreColors.secondary;
+  const accentColor = themeStoreColors.accent;
+  
+  // Dark themes
+  const darkThemes = ['dark', 'synthwave', 'cyberpunk', 'dracula', 'night', 'black', 'luxury', 'forest', 'coffee'];
+  if (darkThemes.includes(theme)) {
+    styles['--node-text-color'] = 'rgba(255, 255, 255, 0.95)';
+    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 10%, rgba(0, 0, 0, 0.8))`;
+    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(30, 30, 30, 0.6))`;
+  } else {
+    // Light themes
+    styles['--node-text-color'] = 'rgba(0, 0, 0, 0.85)';
+    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(255, 255, 255, 0.9))`;
+    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(245, 245, 245, 0.8))`;
+  }
+  
+  // Theme-specific user message backgrounds using actual theme colors
+  switch(theme) {
+    case 'cyberpunk':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 30%, transparent), color-mix(in srgb, ${accentColor} 20%, transparent))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 30%, transparent), color-mix(in srgb, ${primaryColor} 15%, transparent))`;
+      break;
+    case 'synthwave':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 25%, transparent), color-mix(in srgb, ${accentColor} 30%, transparent))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 20%, transparent), color-mix(in srgb, ${primaryColor} 30%, transparent))`;
+      break;
+    case 'halloween':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 20%, transparent), color-mix(in srgb, ${secondaryColor} 15%, transparent))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${accentColor} 20%, transparent), color-mix(in srgb, ${primaryColor} 15%, transparent))`;
+      break;
+    case 'acid':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 25%, transparent), color-mix(in srgb, ${accentColor} 15%, transparent))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 25%, transparent), color-mix(in srgb, ${accentColor} 15%, transparent))`;
+      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.95)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 15%, rgba(20, 20, 20, 0.9))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(30, 30, 30, 0.6))`;
+      break;
+    case 'night':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 40%, transparent), color-mix(in srgb, ${secondaryColor} 35%, transparent))`;
+      break;
+    case 'luxury':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 20%, transparent), color-mix(in srgb, ${accentColor} 25%, transparent))`;
+      break;
+    case 'valentine':
+    case 'cupcake':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 20%, transparent), color-mix(in srgb, ${secondaryColor} 25%, transparent))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${accentColor} 20%, transparent), color-mix(in srgb, ${primaryColor} 25%, transparent))`;
+      break;
+    case 'forest':
+    case 'garden':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 20%, transparent), color-mix(in srgb, ${secondaryColor} 25%, transparent))`;
+      break;
+    default:
+      // Default fallback uses theme colors
+      styles['--user-message-bg'] = `color-mix(in srgb, ${primaryColor} 15%, transparent)`;
+      styles['--ai-message-bg'] = `color-mix(in srgb, ${secondaryColor} 15%, transparent)`;
+  }
+  
+  // Snapped backdrop uses theme colors with appropriate opacity
+  if (darkThemes.includes(theme)) {
+    styles['--snapped-backdrop'] = `color-mix(in srgb, ${primaryColor} 12%, rgba(20, 20, 30, 0.85))`;
+  } else {
+    styles['--snapped-backdrop'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(250, 250, 255, 0.85))`;
+  }
+  
+  return styles;
+});
+
 // Generate theme-specific styles for the node
 const nodeThemeStyle = computed(() => {
-  // DEBUGGING: Log when this recomputes
-  console.log('BranchNode: nodeThemeStyle recomputing for theme', activeTheme.value);
+  // Log when this recomputes
+  console.log('BranchNode: nodeThemeStyle recomputing for theme', currentTheme.value);
+  console.log('BranchNode: themeStore.currentThemeColors', themeStore.currentThemeColors);
   
   // Use the composable's theme colors
   const textColor = baseColorSet.value.contrastText;
   const bgColors = backgroundColors.value;
+  const themeStoreColors = themeStore.currentThemeColors;
 
-  const styles = {
+  // Default user message colors using theme colors
+  const userColors = {
+    primary: `color-mix(in srgb, ${themeStoreColors.primary} 15%, transparent)`,
+    secondary: `color-mix(in srgb, ${themeStoreColors.primary} 25%, transparent)`,
+    border: `color-mix(in srgb, ${themeStoreColors.primary} 30%, transparent)`,
+    accent: themeStoreColors.primary,
+    shadow: `color-mix(in srgb, ${themeStoreColors.primary} 20%, transparent)`,
+    highlight: `color-mix(in srgb, ${themeStoreColors.primary} 40%, transparent)`
+  };
+
+  const baseStyles = {
     '--node-color': baseColorSet.value.base,
     '--node-color-light': baseColorSet.value.light,
     '--node-color-dark': baseColorSet.value.dark,
@@ -1102,11 +1130,25 @@ const nodeThemeStyle = computed(() => {
     '--node-shadow-color': adjustColorOpacity(baseColorSet.value.dark, 0.5),
     '--base-bg-color': bgColors.base,
     '--message-bg-color': bgColors.message,
-    '--user-glass-primary': baseColorSet.value.transparent,
-    '--user-glass-secondary': adjustColorOpacity(baseColorSet.value.light, 0.3),
-    '--ai-glass-primary': adjustColorOpacity(baseColorSet.value.dark, 0.15),
-    '--ai-glass-secondary': adjustColorOpacity(baseColorSet.value.base, 0.1)
+    
+    // User message glassmorphism using theme colors
+    '--user-glass-primary': userColors.primary,
+    '--user-glass-secondary': userColors.secondary,
+    '--user-border-color': userColors.border,
+    '--user-accent-color': userColors.accent,
+    '--user-shadow-color': userColors.shadow,
+    '--user-highlight-color': userColors.highlight,
+    
+    // AI message glassmorphism using theme colors
+    '--ai-glass-primary': `color-mix(in srgb, ${themeStoreColors.secondary} 15%, transparent)`,
+    '--ai-glass-secondary': `color-mix(in srgb, ${themeStoreColors.secondary} 25%, transparent)`,
+    '--ai-border-color': `color-mix(in srgb, ${themeStoreColors.secondary} 30%, transparent)`,
+    '--ai-shadow-color': `color-mix(in srgb, ${themeStoreColors.secondary} 20%, transparent)`,
+    '--ai-highlight-color': `color-mix(in srgb, ${themeStoreColors.secondary} 40%, transparent)`
   };
+  
+  // Merge base styles with theme-specific message styles
+  const styles = { ...baseStyles, ...themeMessageStyles.value };
   
   console.log('BranchNode: CSS custom properties:', styles);
   return styles;
@@ -1522,10 +1564,10 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 const scrollToTop = () => {
   if (messagesContainerRef.value) {
-    messagesContainerRef.value.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    // Use the exposed scrollToTop method from LazyLoadMessageList
+    if (typeof messagesContainerRef.value.scrollToTop === 'function') {
+      messagesContainerRef.value.scrollToTop();
+    }
   }
 };
 
@@ -1545,16 +1587,9 @@ const updateModelParams = (params: ModelParameters) => {
 
 const scrollToBottom = () => {
   if (messagesContainerRef.value) {
-    // Use the exposed scrollToBottom method from VirtualizedMessageList
+    // Use the exposed scrollToBottom method from LazyLoadMessageList
     if (typeof messagesContainerRef.value.scrollToBottom === 'function') {
       messagesContainerRef.value.scrollToBottom();
-    } else {
-      // Fallback for direct DOM element access
-      const container = messagesContainerRef.value;
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth'
-      });
     }
   }
 };
@@ -1562,7 +1597,7 @@ const scrollToBottom = () => {
 const updateScrollButtonsVisibility = () => {
   if (!messagesContainerRef.value) return;
   
-  // Get scroll properties - handle both component and DOM element
+  // Get scroll properties - use exposed properties from LazyLoadMessageList
   const scrollTop = messagesContainerRef.value.scrollTop || 0;
   const scrollHeight = messagesContainerRef.value.scrollHeight || 0;
   const clientHeight = messagesContainerRef.value.clientHeight || 0;
@@ -1779,6 +1814,30 @@ const buildBranchContext = async (node: any): Promise<string> => {
     console.error('Error building branch context:', error);
     // Fallback to simple context
     return node.messages?.slice(-3).map(m => m.content).join(' ') || '';
+  }
+};
+
+const handleEditMessage = async (index: number, newContent: string) => {
+  if (!node.messages || index < 0 || index >= node.messages.length) return;
+  
+  // Update the message content locally
+  const updatedMessages = [...node.messages];
+  updatedMessages[index] = {
+    ...updatedMessages[index],
+    content: newContent
+  };
+  
+  // Emit event to update the node
+  emit('update-messages', updatedMessages);
+  
+  // If it's a user message, resend to get a new AI response
+  if (updatedMessages[index].role === 'user') {
+    // Remove all messages after this one
+    const messagesToKeep = updatedMessages.slice(0, index + 1);
+    emit('update-messages', messagesToKeep);
+    
+    // Resend the edited message
+    emit('resend', index);
   }
 };
 
@@ -2073,10 +2132,16 @@ const handleMessagesWheel = (e: WheelEvent) => {
   const container = messagesContainerRef.value;
   if (!container) return;
   
+  // Get the actual DOM element from the VirtualizedMessageList component
+  const scrollElement = container.$el || container;
+  
   const isScrollingUp = e.deltaY < 0;
   const isScrollingDown = e.deltaY > 0;
-  const isAtTop = container.scrollTop <= 0;
-  const isAtBottom = container.scrollTop >= container.scrollHeight - container.clientHeight;
+  const scrollTop = scrollElement.scrollTop || 0;
+  const scrollHeight = scrollElement.scrollHeight || 0;
+  const clientHeight = scrollElement.clientHeight || 0;
+  const isAtTop = scrollTop <= 0;
+  const isAtBottom = scrollTop >= scrollHeight - clientHeight;
   
   // Allow canvas pan when at scroll boundaries
   if ((isScrollingUp && isAtTop) || (isScrollingDown && isAtBottom)) {
@@ -2088,8 +2153,8 @@ const handleMessagesWheel = (e: WheelEvent) => {
   // Prevent default to ensure smooth scrolling within messages
   e.preventDefault();
   
-  // Manually apply the scroll
-  container.scrollTop += e.deltaY;
+  // Manually apply the scroll to the actual DOM element
+  scrollElement.scrollTop += e.deltaY;
 };
 
 watch(() => displayMessages.value, () => {
@@ -2419,231 +2484,13 @@ onBeforeUnmount(() => {
 <style scoped>
 /* COMPLETE BRANCH NODE STYLES - Fixed theme contrasting and consistent snapped backgrounds */
 
-/* FIXED: Proper theme detection for text contrast */
-.branch-node {
-  --node-color: var(--p);
-  --node-color-light: var(--pf, var(--p));
-  --node-color-dark: var(--pc, var(--p));
-  --node-color-transparent: rgba(var(--p), 0.1);
-  --node-text-color: var(--pc, #000);
-  --node-glow-color: rgba(var(--p), 0.4);
-  --node-border-color: rgba(var(--p), 0.6);
-  --node-shadow-color: rgba(var(--p), 0.5);
-  --base-bg-color: rgba(255, 255, 255, 0.7);
-  --message-bg-color: rgba(245, 245, 245, 0.6);
-  --snapped-backdrop: rgba(0, 0, 0, 0.4);
-  /* Default backdrop */
-}
+/* All CSS custom properties are now set dynamically via nodeThemeStyle computed property */
 
-/* FIXED: Dark themes get light text and dark backdrops */
-.theme-dark,
-.theme-synthwave,
-.theme-cyberpunk,
-.theme-dracula,
-.theme-night,
-.theme-black,
-.theme-luxury,
-.theme-forest,
-.theme-coffee {
-  --node-text-color: rgba(255, 255, 255, 0.95) !important;
-  --base-bg-color: rgba(0, 0, 0, 0.7);
-  --message-bg-color: rgba(30, 30, 30, 0.6);
-}
+/* Theme styles are now handled dynamically via CSS custom properties */
 
-/* FIXED: Light themes get dark text and light backdrops */
-.theme-light,
-.theme-corporate,
-.theme-cupcake,
-.theme-bumblebee,
-.theme-emerald,
-.theme-retro,
-.theme-valentine,
-.theme-garden,
-.theme-lofi,
-.theme-pastel,
-.theme-fantasy,
-.theme-wireframe,
-.theme-autumn,
-.theme-acid,
-.theme-lemonade,
-.theme-winter {
-  --node-text-color: rgba(0, 0, 0, 0.85) !important;
-  --base-bg-color: rgba(255, 255, 255, 0.8);
-  --message-bg-color: rgba(245, 245, 245, 0.7);
-}
+/* Snapped backdrop colors are now handled dynamically via CSS custom properties */
 
-/* FIXED: Mixed themes */
-.theme-cmyk {
-  --node-text-color: rgba(0, 0, 0, 0.85) !important;
-  --base-bg-color: rgba(255, 255, 255, 0.8);
-}
-
-/* THEME-SPECIFIC SNAPPED BACKDROPS - Match canvas backgrounds */
-.theme-light {
-  --snapped-backdrop: rgba(248, 250, 252, 0.8);
-}
-
-/* Light gray */
-.theme-dark {
-  --snapped-backdrop: rgba(15, 23, 42, 0.8);
-}
-
-/* Dark slate */
-.theme-cupcake {
-  --snapped-backdrop: rgba(253, 242, 248, 0.8);
-}
-
-/* Pink tint */
-.theme-bumblebee {
-  --snapped-backdrop: rgba(255, 251, 235, 0.8);
-}
-
-/* Warm yellow */
-.theme-emerald {
-  --snapped-backdrop: rgba(236, 253, 245, 0.8);
-}
-
-/* Green tint */
-.theme-corporate {
-  --snapped-backdrop: rgba(248, 250, 252, 0.8);
-}
-
-/* Clean gray */
-.theme-synthwave {
-  --snapped-backdrop: rgba(20, 5, 40, 0.8);
-}
-
-/* Dark purple */
-.theme-retro {
-  --snapped-backdrop: rgba(255, 248, 220, 0.8);
-}
-
-/* Deep cyberpunk purple */
-.theme-cyberpunk {
-  --snapped-backdrop: rgba(20, 5, 30, 0.9);
-}
-
-/* Dark yellow base */
-.theme-valentine {
-  --snapped-backdrop: rgba(255, 240, 245, 0.8);
-}
-
-/* Dark purple/blue Halloween theme */
-.theme-halloween {
-  --snapped-backdrop: rgba(15, 10, 25, 0.95);
-}
-
-/* Dark orange */
-.theme-garden {
-  --snapped-backdrop: rgba(240, 253, 244, 0.8);
-}
-
-/* Light green */
-.theme-forest {
-  --snapped-backdrop: rgba(10, 25, 15, 0.8);
-}
-
-/* Dark green */
-.theme-aqua {
-  --snapped-backdrop: rgba(5, 25, 35, 0.8);
-}
-
-/* Dark teal */
-.theme-lofi {
-  --snapped-backdrop: rgba(250, 248, 246, 0.8);
-}
-
-/* Warm off-white */
-.theme-pastel {
-  --snapped-backdrop: rgba(252, 251, 255, 0.8);
-}
-
-/* Very light purple */
-.theme-fantasy {
-  --snapped-backdrop: rgba(255, 240, 255, 0.8);
-}
-
-/* Light magenta */
-.theme-wireframe {
-  --snapped-backdrop: rgba(255, 255, 255, 0.9);
-}
-
-/* Pure white */
-.theme-black {
-  --snapped-backdrop: rgba(0, 0, 0, 0.8);
-}
-
-/* Pure black */
-.theme-luxury {
-  --snapped-backdrop: rgba(15, 15, 15, 0.8);
-}
-
-/* Rich black */
-.theme-dracula {
-  --snapped-backdrop: rgba(40, 42, 54, 0.8);
-}
-
-/* Dracula background */
-.theme-cmyk {
-  --snapped-backdrop: rgba(245, 245, 255, 0.8);
-}
-
-/* Light blue tint */
-.theme-autumn {
-  --snapped-backdrop: rgba(255, 248, 235, 0.8);
-}
-
-/* Warm cream */
-.theme-business {
-  --snapped-backdrop: rgba(25, 35, 45, 0.8);
-}
-
-/* Dark with neon glow */
-.theme-acid {
-  --snapped-backdrop: rgba(20, 20, 20, 0.9);
-}
-
-/* Bright yellow tint */
-.theme-lemonade {
-  --snapped-backdrop: rgba(255, 255, 240, 0.8);
-}
-
-/* Light yellow */
-.theme-night {
-  --snapped-backdrop: rgba(15, 20, 35, 0.8);
-}
-
-/* Deep blue */
-.theme-coffee {
-  --snapped-backdrop: rgba(25, 15, 10, 0.8);
-}
-
-/* Dark brown */
-.theme-winter {
-  --snapped-backdrop: rgba(240, 248, 255, 0.8);
-}
-
-/* Ice blue */
-
-/* Enhanced glassmorphism variables for better contrast */
-:root {
-  /* User message glassmorphism - warm contrasting colors */
-  --user-glass-primary: rgba(99, 102, 241, 0.15);
-  /* Indigo */
-  --user-glass-secondary: rgba(79, 70, 229, 0.25);
-  /* Darker indigo */
-  --user-border-color: rgba(99, 102, 241, 0.3);
-  --user-accent-color: rgb(99, 102, 241);
-  --user-shadow-color: rgba(99, 102, 241, 0.2);
-  --user-highlight-color: rgba(165, 180, 252, 0.4);
-
-  /* AI message glassmorphism - uses node theme color */
-  --ai-glass-primary: var(--node-color-transparent);
-  --ai-glass-secondary: rgba(var(--node-color), 0.25);
-  --ai-border-color: rgba(var(--node-color), 0.3);
-  --ai-shadow-color: rgba(var(--node-color), 0.2);
-  --ai-highlight-color: rgba(var(--node-color), 0.4);
-}
+/* Glassmorphism variables are now set dynamically via nodeThemeStyle computed property */
 
 /* Base container for the node */
 .branch-node {
@@ -2819,29 +2666,7 @@ onBeforeUnmount(() => {
   /* Ensure message text uses theme-appropriate color */
 }
 
-/* User message glassmorphism - Contrasting warm tone */
-.user-message {
-  background: linear-gradient(135deg,
-      var(--user-glass-primary),
-      var(--user-glass-secondary)) !important;
-  border: 1px solid var(--user-border-color) !important;
-  border-left: 3px solid var(--user-accent-color) !important;
-  box-shadow:
-    0 4px 16px var(--user-shadow-color),
-    inset 0 1px 0 var(--user-highlight-color) !important;
-}
-
-/* AI message glassmorphism - Node theme color */
-.ai-message {
-  background: linear-gradient(135deg,
-      var(--ai-glass-primary),
-      var(--ai-glass-secondary)) !important;
-  border: 1px solid var(--ai-border-color) !important;
-  border-left: 3px solid var(--node-color) !important;
-  box-shadow:
-    0 4px 16px var(--ai-shadow-color),
-    inset 0 1px 0 var(--ai-highlight-color) !important;
-}
+/* Message styles moved to later in the file to use dynamic properties */
 
 /* Remove the old pseudo-elements since we're using direct backgrounds */
 .user-message::before,
@@ -2889,7 +2714,7 @@ onBeforeUnmount(() => {
 /* Enhanced hover effects for the new centered layout */
 .message-container:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px var(--node-shadow-color);
 }
 
 .user-message:hover {
@@ -3034,29 +2859,20 @@ onBeforeUnmount(() => {
   letter-spacing: 0.025em;
 }
 
-/* Dark theme adjustments for AI label */
-[data-theme="dark"] .ai-model-label,
-[data-theme="synthwave"] .ai-model-label,
-[data-theme="cyberpunk"] .ai-model-label,
-[data-theme="dracula"] .ai-model-label,
-[data-theme="night"] .ai-model-label,
-[data-theme="halloween"] .ai-model-label,
-[data-theme="forest"] .ai-model-label,
-[data-theme="black"] .ai-model-label,
-[data-theme="luxury"] .ai-model-label,
-[data-theme="business"] .ai-model-label,
-[data-theme="coffee"] .ai-model-label {
-  background: hsl(var(--p) / 0.15);
-  border: 1px solid hsl(var(--p) / 0.3);
+/* AI model label styling uses dynamic theme properties */
+.ai-model-label {
+  background: var(--node-color-transparent);
+  color: var(--node-color);
+  border: 1px solid var(--node-border-color);
 }
 
 /* Snapped mode AI label styling */
 .message-label {
-  background: hsl(var(--p) / 0.1);
-  color: hsl(var(--p));
+  background: var(--node-color-transparent);
+  color: var(--node-color);
   padding: 0.25rem 0.5rem;
   border-radius: 6px;
-  border: 1px solid hsl(var(--p) / 0.2);
+  border: 1px solid var(--node-border-color);
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0.025em;
@@ -3299,161 +3115,33 @@ onBeforeUnmount(() => {
   transition: all 0.3s ease;
 }
 
-/* Theme-specific glassmorphism customizations */
-.theme-cyberpunk .user-message {
-  background: linear-gradient(135deg,
-      rgba(255, 117, 152, 0.3),
-      rgba(247, 213, 29, 0.2)) !important;
-  border-color: rgba(255, 117, 152, 0.7) !important;
-  box-shadow:
-    0 4px 16px rgba(255, 117, 152, 0.5),
-    inset 0 1px 0 rgba(247, 213, 29, 0.4),
-    0 0 15px rgba(255, 117, 152, 0.4) !important;
-}
-
-.theme-cyberpunk .ai-message {
-  background: linear-gradient(135deg,
-      rgba(117, 209, 240, 0.3),
-      rgba(255, 117, 152, 0.15)) !important;
-  border-color: rgba(117, 209, 240, 0.7) !important;
-  box-shadow:
-    0 4px 16px rgba(117, 209, 240, 0.5),
-    inset 0 1px 0 rgba(255, 117, 152, 0.3),
-    0 0 15px rgba(117, 209, 240, 0.4) !important;
-}
-
-.theme-synthwave .user-message {
-  background: linear-gradient(135deg,
-      rgba(255, 150, 0, 0.25),
-      rgba(255, 100, 150, 0.3)) !important;
-  border-color: rgba(255, 150, 0, 0.6) !important;
-}
-
-.theme-synthwave .ai-message {
-  background: linear-gradient(135deg,
-      rgba(150, 0, 255, 0.2),
-      rgba(200, 100, 255, 0.3)) !important;
-  border-color: rgba(150, 0, 255, 0.5) !important;
-}
-
-.theme-valentine .user-message,
-.theme-cupcake .user-message {
-  background: linear-gradient(135deg,
-      rgba(100, 150, 255, 0.2),
-      rgba(150, 100, 255, 0.25)) !important;
-  border-color: rgba(100, 150, 255, 0.5) !important;
-}
-
-.theme-valentine .ai-message,
-.theme-cupcake .ai-message {
-  background: linear-gradient(135deg,
-      rgba(255, 150, 200, 0.2),
-      rgba(255, 200, 220, 0.25)) !important;
-  border-color: rgba(255, 150, 200, 0.4) !important;
-}
-
-.theme-forest .user-message,
-.theme-garden .user-message {
-  background: linear-gradient(135deg,
-      rgba(100, 200, 255, 0.2),
-      rgba(150, 220, 255, 0.25)) !important;
-  border-color: rgba(100, 200, 255, 0.5) !important;
-}
-
-.theme-night .user-message {
-  background: linear-gradient(135deg, rgb(132 32 231), rgb(129 140 248)) !important;
-  border-color: rgba(255, 200, 100, 0.6) !important;
-}
-
-.theme-luxury .user-message {
-  background: linear-gradient(135deg,
-      rgba(218, 165, 32, 0.2),
-      rgba(255, 215, 0, 0.25)) !important;
-  border-color: rgba(218, 165, 32, 0.5) !important;
-  box-shadow:
-    0 4px 16px rgba(218, 165, 32, 0.3),
-    inset 0 1px 0 rgba(255, 215, 0, 0.4),
-    0 0 10px rgba(218, 165, 32, 0.2) !important;
-}
-
-/* Removed hardcoded cyberpunk styles - now uses CSS custom properties */
-
-/* Removed hardcoded synthwave styles - now uses CSS custom properties */
-
-/* Removed hardcoded retro styles - now uses CSS custom properties */
-
-/* Removed hardcoded valentine/cupcake styles - now uses CSS custom properties */
-
-/* Removed hardcoded aqua styles - now uses CSS custom properties */
-
-/* Removed hardcoded forest/garden styles - now uses CSS custom properties */
-
-/* Removed hardcoded night styles - now uses CSS custom properties */
-
-/* Removed hardcoded coffee styles - now uses CSS custom properties */
-
-/* Removed hardcoded luxury styles - now uses CSS custom properties */
-
-/* Enhanced cyberpunk snapped state styling */
-/* Removed hardcoded cyberpunk snapped styles - now uses CSS custom properties */
-
-.theme-cyberpunk .snapped .user-message {
-  background: linear-gradient(135deg,
-      rgba(255, 117, 152, 0.4),
-      rgba(247, 213, 29, 0.25)) !important;
-  border-color: rgba(255, 117, 152, 0.8) !important;
-  box-shadow:
-    0 4px 20px rgba(255, 117, 152, 0.6),
-    inset 0 1px 0 rgba(247, 213, 29, 0.5),
-    0 0 20px rgba(255, 117, 152, 0.5) !important;
-}
-
-.theme-cyberpunk .snapped .ai-message {
-  background: linear-gradient(135deg,
-      rgba(117, 209, 240, 0.4),
-      rgba(255, 117, 152, 0.2)) !important;
-  border-color: rgba(117, 209, 240, 0.8) !important;
-  box-shadow:
-    0 4px 20px rgba(117, 209, 240, 0.6),
-    inset 0 1px 0 rgba(255, 117, 152, 0.4),
-    0 0 20px rgba(117, 209, 240, 0.5) !important;
-}
-
-/* Halloween theme styling with purple and blue */
-.theme-halloween .user-message {
-  background: linear-gradient(135deg,
-      var(--node-color-transparent),
-      var(--node-shadow-color)) !important;
+/* Message styling now uses dynamic CSS custom properties */
+.user-message {
+  background: var(--user-message-bg, var(--user-glass-primary)) !important;
   border-color: var(--node-border-color) !important;
-  box-shadow:
-    0 4px 16px var(--node-glow-color),
-    inset 0 1px 0 var(--node-color-light),
-    0 0 20px var(--node-glow-color) !important;
+  box-shadow: 0 4px 16px var(--node-glow-color), inset 0 1px 0 var(--node-color-light) !important;
 }
 
-.theme-halloween .ai-message {
-  background: linear-gradient(135deg,
-      var(--node-shadow-color),
-      var(--node-color-light)) !important;
+.ai-message {
+  background: var(--ai-message-bg, var(--ai-glass-primary)) !important;
+  border-color: var(--node-border-color) !important;
+  box-shadow: 0 4px 16px var(--node-shadow-color), inset 0 1px 0 var(--node-color-light) !important;
+}
+
+/* Snapped message styling uses enhanced dynamic properties */
+.snapped .user-message {
+  background: var(--user-message-bg, var(--user-glass-primary)) !important;
   border-color: var(--node-color) !important;
-  box-shadow:
-    0 4px 16px var(--node-shadow-color),
-    inset 0 1px 0 var(--node-border-color),
-    0 0 20px var(--node-color-light) !important;
+  box-shadow: 0 4px 20px var(--node-glow-color), inset 0 1px 0 var(--node-color-light), 0 0 25px var(--node-glow-color) !important;
 }
 
-.theme-halloween .node-card {
-  position: relative;
-  border-width: 2px;
-  border-style: solid;
-  border-color: var(--node-border-color) !important;
-  box-shadow: 
-    0 0 20px var(--node-glow-color), 
-    inset 0 0 10px var(--node-shadow-color),
-    0 0 30px var(--node-color-light);
+.snapped .ai-message {
+  background: var(--ai-message-bg, var(--ai-glass-primary)) !important;
+  border-color: var(--node-color) !important;
+  box-shadow: 0 4px 20px var(--node-shadow-color), inset 0 1px 0 var(--node-border-color), 0 0 25px var(--node-color-light) !important;
 }
 
-/* Add bat decorations with CSS */
+/* Halloween theme decorations (only non-color styling remains) */
 .theme-halloween .node-card::before,
 .theme-halloween .node-card::after {
   content: '🦇';
@@ -3484,152 +3172,15 @@ onBeforeUnmount(() => {
   75% { transform: translateY(-5px) rotate(3deg); }
 }
 
-.theme-halloween .node-card.snapped {
-  background: var(--snapped-backdrop) !important;
-  border-color: var(--node-color) !important;
-  box-shadow: 
-    0 0 25px var(--node-glow-color), 
-    inset 0 0 15px var(--node-shadow-color),
-    0 0 40px var(--node-color-light),
-    0 0 60px var(--node-glow-color) !important;
-}
-
-.theme-halloween .snapped .user-message {
-  background: linear-gradient(135deg,
-      var(--node-color-transparent),
-      var(--node-shadow-color)) !important;
-  border-color: var(--node-color) !important;
-  box-shadow:
-    0 4px 20px var(--node-glow-color),
-    inset 0 1px 0 var(--node-color-light),
-    0 0 25px var(--node-glow-color) !important;
-}
-
-.theme-halloween .snapped .ai-message {
-  background: linear-gradient(135deg,
-      var(--node-shadow-color),
-      var(--node-color-light)) !important;
-  border-color: var(--node-color) !important;
-  box-shadow:
-    0 4px 20px var(--node-shadow-color),
-    inset 0 1px 0 var(--node-border-color),
-    0 0 25px var(--node-color-light) !important;
-}
-
-/* Acid theme styling with neon effects */
-.theme-acid .user-message {
-  background: linear-gradient(135deg,
-      rgba(255, 0, 255, 0.25),
-      rgba(255, 255, 0, 0.15)) !important;
-  border-color: rgba(255, 0, 255, 0.7) !important;
-  box-shadow:
-    0 4px 16px rgba(255, 0, 255, 0.4),
-    inset 0 1px 0 rgba(255, 255, 0, 0.3),
-    0 0 20px rgba(255, 0, 255, 0.3) !important;
-}
-
-.theme-acid .ai-message {
-  background: linear-gradient(135deg,
-      rgba(0, 255, 0, 0.25),
-      rgba(255, 255, 0, 0.15)) !important;
-  border-color: rgba(0, 255, 0, 0.7) !important;
-  box-shadow:
-    0 4px 16px rgba(0, 255, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 0, 0.3),
-    0 0 20px rgba(0, 255, 0, 0.3) !important;
-}
+/* Acid theme now uses dynamic CSS custom properties */
 
 /* Removed hardcoded acid styles - now uses CSS custom properties */
 
 /* Removed hardcoded acid snapped styles - now uses CSS custom properties */
 
-/* Universal reactive theme-aware node card styling */
-.node-card {
-  background: linear-gradient(to bottom, var(--node-color-transparent), var(--node-shadow-color)) !important;
-  border-color: var(--node-border-color) !important;
-  box-shadow: 0 0 20px var(--node-glow-color), inset 0 0 10px var(--node-shadow-color) !important;
-}
+/* All theme-specific styling now handled by dynamic CSS custom properties */
 
-.node-card.snapped {
-  background: var(--snapped-backdrop) !important;
-  border-color: var(--node-color) !important;
-  box-shadow: 0 0 30px var(--node-glow-color), inset 0 0 15px var(--node-shadow-color) !important;
-}
-
-/* Universal reactive message styling that overrides hardcoded theme styles */
-.node-card .user-message {
-  background: linear-gradient(135deg, var(--user-glass-primary), var(--user-glass-secondary)) !important;
-  border-color: var(--node-border-color) !important;
-  box-shadow: 0 4px 16px var(--node-glow-color), inset 0 1px 0 var(--node-color-light), 0 0 20px var(--node-glow-color) !important;
-}
-
-.node-card .ai-message {
-  background: linear-gradient(135deg, var(--ai-glass-primary), var(--ai-glass-secondary)) !important;
-  border-color: var(--node-border-color) !important;
-  box-shadow: 0 4px 16px var(--node-shadow-color), inset 0 1px 0 var(--node-color-light), 0 0 15px var(--node-color-light) !important;
-}
-
-.node-card.snapped .user-message {
-  background: linear-gradient(135deg, var(--user-glass-primary), var(--user-glass-secondary)) !important;
-  border-color: var(--node-color) !important;
-  box-shadow: 0 4px 20px var(--node-glow-color), inset 0 1px 0 var(--node-color-light), 0 0 25px var(--node-glow-color) !important;
-}
-
-.node-card.snapped .ai-message {
-  background: linear-gradient(135deg, var(--ai-glass-primary), var(--ai-glass-secondary)) !important;
-  border-color: var(--node-color) !important;
-  box-shadow: 0 4px 20px var(--node-shadow-color), inset 0 1px 0 var(--node-border-color), 0 0 25px var(--node-color-light) !important;
-}
-
-.theme-acid .snapped .user-message {
-  background: linear-gradient(135deg,
-      rgba(255, 0, 255, 0.35),
-      rgba(255, 255, 0, 0.2)) !important;
-  border-color: rgba(255, 0, 255, 0.8) !important;
-  box-shadow:
-    0 4px 20px rgba(255, 0, 255, 0.5),
-    inset 0 1px 0 rgba(255, 255, 0, 0.4),
-    0 0 25px rgba(255, 0, 255, 0.4) !important;
-}
-
-.theme-acid .snapped .ai-message {
-  background: linear-gradient(135deg,
-      rgba(0, 255, 0, 0.35),
-      rgba(255, 255, 0, 0.2)) !important;
-  border-color: rgba(0, 255, 0, 0.8) !important;
-  box-shadow:
-    0 4px 20px rgba(0, 255, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 0, 0.4),
-    0 0 25px rgba(0, 255, 0, 0.4) !important;
-}
-
-/* Fix acid theme text visibility */
-.theme-acid .node-card .text-base-content {
-  color: rgba(255, 255, 255, 0.95) !important;
-  text-shadow: 0 0 10px rgba(255, 255, 0, 0.3);
-}
-
-.theme-acid .node-card .text-base-content\/60 {
-  color: rgba(255, 255, 255, 0.7) !important;
-  text-shadow: 0 0 8px rgba(0, 255, 0, 0.2);
-}
-
-.theme-acid .node-card span.text-lg {
-  color: rgba(255, 255, 255, 0.95) !important;
-  text-shadow: 0 0 12px rgba(255, 255, 0, 0.4);
-}
-
-.theme-acid .node-card input {
-  background: rgba(30, 30, 30, 0.9) !important;
-  color: rgba(255, 255, 255, 0.95) !important;
-  border-color: rgba(255, 255, 0, 0.5) !important;
-}
-
-/* Make all icons in acid theme more visible */
-.theme-acid .node-card svg {
-  color: rgba(255, 255, 255, 0.8) !important;
-  filter: drop-shadow(0 0 3px rgba(255, 255, 0, 0.5));
-}
+/* Acid theme special effects handled by dynamic properties and --node-text-color */
 
 /* UPDATED: Mobile responsiveness for centered layout */
 @media (max-width: 640px) {
@@ -3683,20 +3234,7 @@ onBeforeUnmount(() => {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Add glassmorphism shadow effects for both message types */
-.user-message {
-  box-shadow:
-    0 4px 16px var(--user-shadow-color),
-    inset 0 1px 0 var(--user-highlight-color),
-    0 1px 3px rgba(0, 0, 0, 0.1) !important;
-}
-
-.ai-message {
-  box-shadow:
-    0 4px 16px var(--ai-shadow-color),
-    inset 0 1px 0 var(--ai-highlight-color),
-    0 1px 3px rgba(0, 0, 0, 0.1) !important;
-}
+/* Box shadow effects are included in the main message style definitions */
 
 /* Add subtle animation for new messages */
 @keyframes messageAppear {
@@ -3758,7 +3296,8 @@ onBeforeUnmount(() => {
 
 .messages-container {
   contain: layout style paint;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .message-container {

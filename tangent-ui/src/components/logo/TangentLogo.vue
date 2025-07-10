@@ -117,8 +117,10 @@
           <Check v-if="theme === currentTheme" class="w-4 h-4 ml-auto text-primary" />
         </button>
       </div>
+      
       </div>
     </Teleport>
+
     <div
       class="w-[180px] h-[36px] relative perspective-[1000px] rounded-lg overflow-hidden mt-2 cursor-pointer logo-container"
       @mousemove="handleMouseMove"
@@ -208,6 +210,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { Check, Search } from 'lucide-vue-next';
 import LogoSVG from './LogoSVG.vue';
+import { useThemeStore } from '@/stores/themeStore';
 
 type ThemeColors = {
   primary: string;
@@ -236,12 +239,13 @@ const isShowingFront = ref(true);
 const gridRef = ref<HTMLDivElement | null>(null);
 const isAnimating = ref(false);
 
+// Theme store
+const themeStore = useThemeStore();
+
 // Theme toggle state
 const isDropdownOpen = ref(false);
 const search = ref('');
-const currentTheme = ref<ThemeName>(
-  (localStorage.getItem('theme') as ThemeName) || 'light'
-);
+const currentTheme = computed(() => themeStore.currentTheme);
 const showThemeLabel = ref(false);
 const isHoveringDots = ref(false);
 const hoverSide = ref<'left' | 'right' | null>(null);
@@ -554,9 +558,7 @@ const getThemeOptionStyle = (theme: ThemeName) => {
 };
 
 const selectTheme = (theme: ThemeName) => {
-  currentTheme.value = theme;
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('theme', theme);
+  themeStore.setTheme(theme);
   isDropdownOpen.value = false;
 };
 
@@ -587,7 +589,7 @@ const showThemeLabelBriefly = () => {
 const updateThemeFromDOM = () => {
   const newTheme = document.documentElement.getAttribute('data-theme') as ThemeName || 'light';
   if (newTheme !== currentTheme.value) {
-    currentTheme.value = newTheme;
+    themeStore.setTheme(newTheme);
   }
 };
 
@@ -657,7 +659,7 @@ onMounted(() => {
   intervalId = window.setInterval(animateFlip, 5050);
   
   const savedTheme = localStorage.getItem('theme') as ThemeName || 'light';
-  currentTheme.value = savedTheme;
+  themeStore.setTheme(savedTheme);
   document.documentElement.setAttribute('data-theme', savedTheme);
   
   themeObserver = new MutationObserver((mutations) => {

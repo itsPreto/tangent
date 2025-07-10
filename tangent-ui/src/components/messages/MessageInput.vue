@@ -125,6 +125,7 @@
             :disabled="!isLoading && !hasContent"
             class="send-button"
             :class="{ 'loading': isLoading, 'ready': hasContent && !isLoading }"
+            :title="isLoading ? 'Stop current request' : 'Send message'"
           >
             <div class="send-icon-container">
               <StopCircle v-if="isLoading" class="send-icon" />
@@ -277,16 +278,7 @@ let previewTimeout = null;
 
 // Theme integration
 const themeStore = useThemeStore();
-const activeTheme = ref(document.documentElement.getAttribute('data-theme') || 'light');
-
-let themeObserver;
-onMounted(() => {
-  themeObserver = new MutationObserver(() => {
-    activeTheme.value = document.documentElement.getAttribute('data-theme') || 'light';
-  });
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-});
-onBeforeUnmount(() => themeObserver?.disconnect());
+const activeTheme = computed(() => themeStore.currentTheme);
 
 // Computed properties
 const hasContent = computed(() => {

@@ -1643,6 +1643,17 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
+  const updateNodeMessages = async (id: string, messages: Message[]) => {
+    const node = nodes.value.find(n => n.id === id);
+    if (node) {
+      node.messages = messages;
+      // Auto-save messages
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, id, { messages });
+      }
+    }
+  };
+
   const generateTitleForBranch = async (nodeId: string, firstUserMessage: string) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (!node) {
@@ -1956,14 +1967,7 @@ export const useCanvasStore = defineStore('canvas', () => {
       y: centerY - CARD_HEIGHT / 2,
       title: 'New Thread',
       parentId: null,
-      messages: [
-        {
-          role: 'assistant',
-          content: 'How can I help you?',
-          contentParts: [],
-          timestamp: new Date().toISOString(),
-        }
-      ],
+      messages: [],
       type: 'main',
       branchMessageIndex: null,
       streamingContent: null
@@ -2141,6 +2145,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     updateNodePosition,
     removeNode,
     updateNodeTitle,
+    updateNodeMessages,
     generateTitleForBranch,
     regenerateNodeTitle,
     addMessage,

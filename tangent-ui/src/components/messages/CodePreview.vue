@@ -1,89 +1,60 @@
 <template>
   <div class="code-preview-container my-2">
-    <!-- Default thumbnail preview mode -->
+    <!-- Modern compact preview mode -->
     <div v-if="!expanded" 
-         class="code-preview-card group relative overflow-hidden cursor-pointer transition-all duration-300 
-                hover:shadow-xl hover:scale-[1.02] transform-gpu" 
+         class="modern-code-card group relative overflow-hidden cursor-pointer" 
          :class="`theme-${currentTheme}`"
          @click="toggleExpanded">
       
-      <!-- Background with gradient -->
-      <div class="absolute inset-0 bg-gradient-to-br from-base-100 via-base-200/50 to-base-300/30"></div>
+      <!-- Contrast overlay for better visibility -->
+      <div class="card-contrast-layer"></div>
       
-      <!-- Main content -->
-      <div class="relative flex h-32">
-        <!-- Thumbnail Section -->
-        <div v-if="isCode" class="flex-shrink-0 w-40 p-3 flex items-center justify-center bg-gradient-to-br from-base-300/20 to-base-300/40">
-          <div class="w-32 h-24 rounded-lg overflow-hidden shadow-lg bg-white border-2 border-base-300/50 
-                      transition-all duration-300 group-hover:shadow-xl group-hover:border-primary/30 cursor-pointer"
-               @click.stop="openThumbnailModal">
-            <img v-if="thumbnailUrl" 
-                 :src="thumbnailUrl" 
-                 alt="Live preview" 
-                 class="w-full h-full object-cover"
-                 @error="thumbnailUrl = null" />
-            <div v-else class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-base-100 to-base-200 text-base-content/40">
-              <Code class="w-8 h-8 mb-1 opacity-60" />
-              <span class="text-xs font-medium">Live Preview</span>
+      <!-- Card content -->
+      <div class="card-content">
+        <!-- Header section -->
+        <div class="card-header">
+          <div class="card-icon-section">
+            <div class="language-icon">
+              <component :is="getContentIcon" class="w-5 h-5" />
+            </div>
+            <div class="language-info">
+              <h3 class="language-title">{{ getContentLabel }}</h3>
+              <div class="meta-badges">
+                <span class="line-badge">{{ lineCount }} lines</span>
+                <span v-if="wordCount && !isCode" class="word-badge">{{ wordCount }} words</span>
+                <span v-if="isStreaming" class="streaming-badge">
+                  <span class="streaming-dot"></span>
+                  live
+                </span>
+              </div>
             </div>
           </div>
           
-          <!-- Loading indicator -->
-          <div v-if="thumbnailLoading" class="absolute inset-0 flex items-center justify-center bg-base-200/80 rounded-lg">
-            <div class="w-6 h-6 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <div class="expand-indicator" title="Expand code view">
+            <ChevronDown class="w-4 h-4" />
           </div>
         </div>
         
-        <!-- Content Section -->
-        <div class="flex-1 flex flex-col min-w-0">
-          <!-- Header -->
-          <div class="flex items-center justify-between p-4 border-b border-base-300/30">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <component :is="getContentIcon" class="w-4 h-4 text-primary" />
-                </div>
-                <div class="min-w-0">
-                  <h3 class="font-semibold text-sm text-base-content/90 truncate">{{ getContentLabel }}</h3>
-                  <div class="flex items-center gap-2 mt-0.5">
-                    <span class="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
-                      {{ lineCount }} lines
-                    </span>
-                    <span v-if="wordCount && !isCode" class="px-2 py-0.5 bg-secondary/10 text-secondary rounded-full text-xs font-medium">
-                      {{ wordCount }} words
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="flex items-center gap-2">
-              <span v-if="isStreaming" class="flex items-center gap-1.5 px-2 py-1 bg-success/10 text-success rounded-full text-xs font-medium">
-                <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
-                streaming
-              </span>
-              <div class="w-6 h-6 rounded-full bg-base-300/30 flex items-center justify-center transition-all duration-200 group-hover:bg-primary/20">
-                <ChevronDown class="w-4 h-4 text-base-content/60 transition-all duration-200 group-hover:text-primary" />
-              </div>
+        <!-- Preview content -->
+        <div class="preview-section">
+          <!-- Code thumbnail if available -->
+          <div v-if="isCode && thumbnailUrl" class="code-thumbnail" @click.stop="openThumbnailModal">
+            <img :src="thumbnailUrl" alt="Live preview" class="thumbnail-img" @error="thumbnailUrl = null" />
+            <div class="thumbnail-overlay">
+              <div class="thumbnail-label">Live Preview</div>
             </div>
           </div>
           
-          <!-- Code Preview -->
-          <div class="flex-1 p-4 relative overflow-hidden">
-            <div v-if="isCode" class="h-full">
-              <pre class="text-xs font-mono leading-relaxed text-base-content/70 overflow-hidden"><code ref="previewCodeRef" :class="`language-${detectedLanguage}`" v-html="highlightedPreview"></code></pre>
-            </div>
-            <div v-else class="text-sm text-base-content/80 leading-relaxed line-clamp-4">{{ previewContent }}</div>
-            
-            <!-- Fade overlay -->
-            <div class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-base-100 via-base-100/80 to-transparent pointer-events-none"></div>
+          <!-- Code preview text -->
+          <div class="code-preview-text">
+            <pre v-if="isCode" class="preview-code"><code :class="`language-${detectedLanguage}`" v-html="highlightedPreview"></code></pre>
+            <div v-else class="preview-plain">{{ previewContent }}</div>
           </div>
         </div>
       </div>
       
-      <!-- Hover glow effect -->
-      <div class="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
-           style="box-shadow: inset 0 0 0 1px rgba(var(--p) / 0.2), 0 0 20px rgba(var(--p) / 0.1);"></div>
+      <!-- Hover effects -->
+      <div class="card-glow"></div>
     </div>
 
     <!-- Thumbnail Modal -->
@@ -119,45 +90,45 @@
     </Teleport>
 
     <!-- Expanded full view mode -->
-    <div v-if="expanded" class="code-preview-card border border-base-300 
+    <div v-if="expanded" class="code-preview-card expanded-bg border expanded-border
                        rounded-md overflow-hidden shadow-lg transition-all duration-300" 
          :class="`theme-${currentTheme}`">
-      <div class="flex items-center justify-between p-3 backdrop-blur border-b border-base-300/50">
+      <div class="flex items-center justify-between p-3 backdrop-blur border-b header-border">
         <div class="flex items-center gap-2">
-          <component :is="getContentIcon" class="w-5 h-5 text-base-content/60" />
-          <span class="font-medium text-base-content/80">{{ getContentLabel }}</span>
-          <span class="px-2 py-1 bg-base-100/90 border border-base-200 rounded text-xs text-base-content/70">
+          <component :is="getContentIcon" class="w-5 h-5 icon-color-expanded" />
+          <span class="font-medium expanded-label-text">{{ getContentLabel }}</span>
+          <span class="px-2 py-1 expanded-badge-bg border expanded-badge-border rounded text-xs expanded-badge-text">
             {{ lineCount }} lines
           </span>
-          <span v-if="wordCount && !isCode" class="px-2 py-1 bg-base-100/90 border border-base-200 rounded text-xs text-base-content/70">
+          <span v-if="wordCount && !isCode" class="px-2 py-1 expanded-badge-bg border expanded-badge-border rounded text-xs expanded-badge-text">
             {{ wordCount }} words
           </span>
         </div>
         <div class="flex items-center gap-2">
           <button ref="copyButtonRef" @click.stop="copyContent" 
-                  class="p-2 rounded-full hover:bg-base-300/80 transition-colors duration-200 
-                         text-base-content/60 hover:text-base-content/80"
+                  class="p-2 rounded-full expanded-btn-bg hover:expanded-btn-hover transition-colors duration-200 
+                         expanded-btn-color hover:expanded-btn-hover-color"
                   @mouseenter="showCopyTooltip = true"
                   @mouseleave="showCopyTooltip = false">
             <Copy class="w-4 h-4" />
           </button>
           <button v-if="isCode" ref="openButtonRef" @click.stop="openInSandbox" 
-                  class="p-2 rounded-full bg-primary/20 hover:bg-primary/30 text-primary 
+                  class="p-2 rounded-full expanded-primary-btn-bg hover:expanded-primary-btn-hover expanded-primary-btn-text 
                          transition-colors duration-200"
                   @mouseenter="showOpenTooltip = true"
                   @mouseleave="showOpenTooltip = false">
             <ExternalLink class="w-4 h-4" />
           </button>
           <button @click.stop="toggleExpanded" 
-                  class="p-2 rounded-full hover:bg-base-300/80 transition-colors duration-200 
-                         text-base-content/60 hover:text-base-content/80">
+                  class="p-2 rounded-full expanded-btn-bg hover:expanded-btn-hover transition-colors duration-200 
+                         expanded-btn-color hover:expanded-btn-hover-color">
             <ChevronUp class="w-4 h-4" />
           </button>
         </div>
       </div>
-      <div class="p-4 bg-base-100/90 backdrop-blur max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-base-300 scrollbar-track-transparent">
+      <div class="p-4 expanded-content-bg backdrop-blur max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-base-300 scrollbar-track-transparent">
         <pre v-if="isCode" class="text-sm font-mono whitespace-pre-wrap"><code ref="fullCodeRef" :class="`language-${detectedLanguage}`" v-html="highlightedCode"></code></pre>
-        <div v-else class="text-sm text-base-content/90 whitespace-pre-wrap">{{ content }}</div>
+        <div v-else class="text-sm expanded-content-text whitespace-pre-wrap">{{ content }}</div>
       </div>
     </div>
 
@@ -614,22 +585,447 @@ const closeThumbnailModal = () => {
   overflow: hidden;
 }
 
-/* Enhanced card styling */
-.code-preview-card {
+/* Modern card design with maximum contrast */
+.modern-code-card {
+  position: relative;
   border-radius: 12px;
-  border: 1px solid rgb(var(--b3) / 0.3);
-  background: rgb(var(--b1));
+  /* Strong contrasting background */
+  background: hsl(var(--b1));
+  border: 2px solid hsl(var(--bc) / 0.15);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  /* Very strong shadow for maximum visibility */
   box-shadow: 
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    0 1px 2px rgba(0, 0, 0, 0.06);
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(0, 0, 0, 0.1),
+    0 16px 32px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.1);
+  /* Ensure solid background */
+  background-color: hsl(var(--b1));
 }
 
-.code-preview-card:hover {
-  border-color: rgb(var(--p) / 0.3);
+.modern-code-card:hover {
+  transform: translateY(-6px) scale(1.01);
+  border-color: hsl(var(--p) / 0.4);
+  border-width: 2px;
+  /* Even stronger hover shadow */
   box-shadow: 
-    0 10px 25px rgba(0, 0, 0, 0.15),
-    0 4px 10px rgba(0, 0, 0, 0.1),
-    0 0 0 1px rgb(var(--p) / 0.1);
+    0 4px 8px rgba(0, 0, 0, 0.25),
+    0 8px 16px rgba(0, 0, 0, 0.2),
+    0 16px 32px rgba(0, 0, 0, 0.15),
+    0 24px 48px rgba(0, 0, 0, 0.1),
+    0 32px 64px rgba(0, 0, 0, 0.05),
+    0 0 0 2px hsl(var(--p) / 0.3);
+}
+
+.card-contrast-layer {
+  position: absolute;
+  inset: 0;
+  /* Subtle inner shadow for depth */
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 12px;
+}
+
+.card-content {
+  position: relative;
+  z-index: 2;
+  padding: 1rem;
+  /* Remove the translucent background */
+  background: transparent;
+}
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.card-icon-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.language-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, 
+    hsl(var(--p) / 0.15) 0%, 
+    hsl(var(--p) / 0.08) 100%);
+  color: hsl(var(--p));
+  flex-shrink: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 
+    0 2px 8px hsl(var(--p) / 0.12),
+    0 1px 4px hsl(var(--p) / 0.08),
+    inset 0 1px 0 hsl(var(--p) / 0.2);
+  border: 1px solid hsl(var(--p) / 0.2);
+}
+
+.modern-code-card:hover .language-icon {
+  background: linear-gradient(135deg, 
+    hsl(var(--p) / 0.25) 0%, 
+    hsl(var(--p) / 0.15) 100%);
+  transform: scale(1.08) translateY(-1px);
+  box-shadow: 
+    0 4px 16px hsl(var(--p) / 0.2),
+    0 2px 8px hsl(var(--p) / 0.15),
+    inset 0 1px 0 hsl(var(--p) / 0.3),
+    0 0 20px hsl(var(--p) / 0.1);
+}
+
+.language-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.language-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: hsl(var(--bc) / 0.9);
+  margin-bottom: 0.375rem;
+  line-height: 1.2;
+}
+
+.meta-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.line-badge, .word-badge, .streaming-badge {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+  border-radius: 8px;
+  line-height: 1.2;
+}
+
+.line-badge {
+  background: hsl(var(--p) / 0.1);
+  color: hsl(var(--p));
+  border: 1px solid hsl(var(--p) / 0.2);
+}
+
+.word-badge {
+  background: hsl(var(--s) / 0.1);
+  color: hsl(var(--s));
+  border: 1px solid hsl(var(--s) / 0.2);
+}
+
+.streaming-badge {
+  background: hsl(var(--su) / 0.1);
+  color: hsl(var(--su));
+  border: 1px solid hsl(var(--su) / 0.2);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.streaming-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: hsl(var(--su));
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.expand-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, 
+    hsl(var(--b2) / 0.8) 0%, 
+    hsl(var(--b3) / 0.6) 100%);
+  color: hsl(var(--bc) / 0.6);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  box-shadow: 
+    0 1px 3px hsl(var(--bc) / 0.08),
+    inset 0 1px 0 hsl(var(--b1) / 0.5);
+  border: 1px solid hsl(var(--b3) / 0.3);
+}
+
+.modern-code-card:hover .expand-indicator {
+  background: linear-gradient(135deg, 
+    hsl(var(--p) / 0.15) 0%, 
+    hsl(var(--p) / 0.08) 100%);
+  color: hsl(var(--p));
+  transform: rotate(180deg) scale(1.1);
+  box-shadow: 
+    0 2px 8px hsl(var(--p) / 0.15),
+    inset 0 1px 0 hsl(var(--p) / 0.2),
+    0 0 12px hsl(var(--p) / 0.08);
+}
+
+.preview-section {
+  position: relative;
+}
+
+.code-thumbnail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 80px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid hsl(var(--b3) / 0.4);
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--b2)) 100%);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 3;
+  box-shadow: 
+    0 2px 8px hsl(var(--bc) / 0.08),
+    0 1px 4px hsl(var(--bc) / 0.06),
+    inset 0 1px 0 hsl(var(--b1) / 0.8);
+}
+
+.code-thumbnail:hover {
+  transform: scale(1.08) translateY(-2px);
+  border-color: hsl(var(--p) / 0.5);
+  box-shadow: 
+    0 6px 20px hsl(var(--bc) / 0.12),
+    0 3px 10px hsl(var(--bc) / 0.08),
+    0 0 0 2px hsl(var(--p) / 0.2),
+    0 0 16px hsl(var(--p) / 0.1);
+}
+
+.thumbnail-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumbnail-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, hsl(var(--bc) / 0.8));
+  padding: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.code-thumbnail:hover .thumbnail-overlay {
+  opacity: 1;
+}
+
+.thumbnail-label {
+  font-size: 0.5rem;
+  color: hsl(var(--pc));
+  font-weight: 500;
+  text-align: center;
+}
+
+.code-preview-text {
+  margin-right: 90px; /* Space for thumbnail */
+  max-height: 4rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.preview-code {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Monaco, Consolas, monospace;
+  color: hsl(var(--bc) / 0.8);
+  margin: 0;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.preview-plain {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: hsl(var(--bc) / 0.8);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-glow {
+  position: absolute;
+  inset: -2px;
+  border-radius: 18px;
+  opacity: 0;
+  background: linear-gradient(135deg, 
+    hsl(var(--p) / 0.15) 0%, 
+    hsl(var(--s) / 0.08) 30%,
+    hsl(var(--a) / 0.06) 70%, 
+    hsl(var(--p) / 0.1) 100%);
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(1px);
+  box-shadow: 
+    0 0 20px hsl(var(--p) / 0.15),
+    0 0 40px hsl(var(--p) / 0.08),
+    0 0 60px hsl(var(--p) / 0.04);
+}
+
+.modern-code-card:hover .card-glow {
+  opacity: 1;
+  filter: blur(2px);
+  box-shadow: 
+    0 0 30px hsl(var(--p) / 0.2),
+    0 0 60px hsl(var(--p) / 0.12),
+    0 0 100px hsl(var(--p) / 0.06);
+}
+
+/* Animations */
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(1.2);
+  }
+}
+
+/* Theme-specific enhancements for modern cards */
+.theme-cyberpunk .modern-code-card {
+  border-color: hsl(var(--p) / 0.5);
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--p) / 0.02) 50%, 
+    hsl(var(--s) / 0.01) 100%);
+  box-shadow: 
+    0 2px 8px hsl(var(--p) / 0.15),
+    0 4px 16px hsl(var(--p) / 0.08),
+    0 8px 32px hsl(var(--p) / 0.04),
+    0 0 0 1px hsl(var(--p) / 0.2),
+    inset 0 1px 0 hsl(var(--b1) / 0.9);
+}
+
+.theme-cyberpunk .modern-code-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 
+    0 8px 24px hsl(var(--p) / 0.25),
+    0 16px 48px hsl(var(--p) / 0.15),
+    0 24px 80px hsl(var(--p) / 0.08),
+    0 0 0 2px hsl(var(--p) / 0.4),
+    0 0 60px hsl(var(--p) / 0.2),
+    inset 0 1px 0 hsl(var(--b1));
+}
+
+.theme-cyberpunk .card-glow {
+  background: linear-gradient(135deg, 
+    hsl(var(--p) / 0.2) 0%, 
+    hsl(var(--s) / 0.15) 30%,
+    hsl(var(--a) / 0.12) 70%, 
+    hsl(var(--p) / 0.18) 100%);
+  box-shadow: 
+    0 0 40px hsl(var(--p) / 0.25),
+    0 0 80px hsl(var(--p) / 0.15),
+    0 0 120px hsl(var(--p) / 0.08);
+}
+
+.theme-synthwave .modern-code-card {
+  border-color: hsl(var(--p) / 0.6);
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--p) / 0.04) 30%,
+    hsl(var(--s) / 0.03) 70%,
+    hsl(var(--a) / 0.02) 100%);
+  box-shadow: 
+    0 2px 8px hsl(var(--p) / 0.12),
+    0 4px 16px hsl(var(--p) / 0.06),
+    0 0 24px hsl(var(--p) / 0.08),
+    inset 0 1px 0 hsl(var(--b1) / 0.8);
+}
+
+.theme-synthwave .modern-code-card:hover {
+  box-shadow: 
+    0 8px 24px hsl(var(--p) / 0.2),
+    0 16px 48px hsl(var(--p) / 0.12),
+    0 0 60px hsl(var(--p) / 0.15),
+    0 0 0 2px hsl(var(--p) / 0.3);
+}
+
+.theme-dracula .modern-code-card,
+.theme-night .modern-code-card,
+.theme-business .modern-code-card,
+.theme-halloween .modern-code-card {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--b1) / 0.95) 50%, 
+    hsl(var(--b2) / 0.9) 100%);
+  border-color: hsl(var(--b3) / 0.5);
+  box-shadow: 
+    0 3px 12px hsl(var(--bc) / 0.12),
+    0 6px 24px hsl(var(--bc) / 0.08),
+    0 12px 48px hsl(var(--bc) / 0.04),
+    inset 0 1px 0 hsl(var(--b1) / 0.8);
+}
+
+.theme-dracula .modern-code-card:hover,
+.theme-night .modern-code-card:hover,
+.theme-business .modern-code-card:hover,
+.theme-halloween .modern-code-card:hover {
+  box-shadow: 
+    0 6px 24px hsl(var(--bc) / 0.15),
+    0 12px 48px hsl(var(--bc) / 0.1),
+    0 24px 80px hsl(var(--bc) / 0.06),
+    0 0 0 1px hsl(var(--p) / 0.3),
+    0 0 40px hsl(var(--p) / 0.1);
+}
+
+.theme-dracula .preview-code,
+.theme-night .preview-code,
+.theme-business .preview-code,
+.theme-halloween .preview-code {
+  color: hsl(var(--bc) / 0.9);
+}
+
+.theme-valentine .modern-code-card,
+.theme-retro .modern-code-card,
+.theme-winter .modern-code-card,
+.theme-cupcake .modern-code-card,
+.theme-light .modern-code-card {
+  background: hsl(var(--b1));
+  border: 2px solid hsl(var(--bc) / 0.2);
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.15),
+    0 4px 8px rgba(0, 0, 0, 0.12),
+    0 8px 16px rgba(0, 0, 0, 0.08),
+    0 16px 32px rgba(0, 0, 0, 0.04);
+}
+
+/* Extra contrast for light themes */
+.theme-valentine .card-content,
+.theme-retro .card-content,
+.theme-winter .card-content,
+.theme-cupcake .card-content,
+.theme-light .card-content {
+  background: linear-gradient(180deg, 
+    rgba(255, 255, 255, 0.95) 0%, 
+    rgba(255, 255, 255, 0.85) 100%);
+  backdrop-filter: blur(8px);
+}
+
+.theme-forest .modern-code-card {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--p) / 0.02) 100%);
 }
 
 /* Thumbnail styling */
@@ -714,103 +1110,275 @@ const closeThumbnailModal = () => {
   }
 }
 
-/* Theme-specific enhancements */
+/* Universal theme-aware components */
+.theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--b2) / 0.8) 50%, 
+    hsl(var(--b3) / 0.6) 100%);
+}
+
+.thumbnail-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b2) / 0.5) 0%, 
+    hsl(var(--b3) / 0.3) 100%);
+}
+
+.thumbnail-container {
+  background: hsl(var(--b1));
+  border-color: hsl(var(--b3) / 0.5);
+}
+
+.placeholder-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--b2)) 100%);
+}
+
+.header-border {
+  border-color: hsl(var(--b3) / 0.4);
+}
+
+.icon-bg {
+  background: hsl(var(--p) / 0.15);
+}
+
+.icon-color {
+  color: hsl(var(--p));
+}
+
+.header-text {
+  color: hsl(var(--bc) / 0.95);
+}
+
+.badge-bg {
+  background: hsl(var(--p) / 0.15);
+}
+
+.badge-text {
+  color: hsl(var(--p));
+}
+
+.badge-secondary-bg {
+  background: hsl(var(--s) / 0.15);
+}
+
+.badge-secondary-text {
+  color: hsl(var(--s));
+}
+
+.streaming-bg {
+  background: hsl(var(--su) / 0.15);
+}
+
+.streaming-text {
+  color: hsl(var(--su));
+}
+
+.streaming-indicator {
+  background: hsl(var(--su));
+}
+
+.chevron-bg {
+  background: hsl(var(--b3) / 0.3);
+}
+
+.chevron-color {
+  color: hsl(var(--bc) / 0.7);
+}
+
+.group:hover .chevron-hover-bg {
+  background: hsl(var(--p) / 0.2);
+}
+
+.group:hover .chevron-hover-color {
+  color: hsl(var(--p));
+}
+
+.preview-bg {
+  background: linear-gradient(180deg, 
+    hsl(var(--b1) / 0.95) 0%, 
+    hsl(var(--b2) / 0.8) 100%);
+}
+
+.code-text {
+  color: hsl(var(--bc) / 0.85);
+}
+
+.preview-text {
+  color: hsl(var(--bc) / 0.9);
+}
+
+.fade-overlay {
+  background: linear-gradient(to top, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--b1) / 0.8) 50%, 
+    transparent 100%);
+}
+
+.hover-glow {
+  box-shadow: inset 0 0 0 1px hsl(var(--p) / 0.3), 
+              0 0 25px hsl(var(--p) / 0.15);
+}
+
+/* Expanded view styles */
+.expanded-bg {
+  background: hsl(var(--b1));
+}
+
+.expanded-border {
+  border-color: hsl(var(--b3) / 0.4);
+}
+
+.icon-color-expanded {
+  color: hsl(var(--bc) / 0.7);
+}
+
+.expanded-label-text {
+  color: hsl(var(--bc) / 0.9);
+}
+
+.expanded-badge-bg {
+  background: hsl(var(--b2));
+}
+
+.expanded-badge-border {
+  border-color: hsl(var(--b3));
+}
+
+.expanded-badge-text {
+  color: hsl(var(--bc) / 0.8);
+}
+
+.expanded-btn-bg {
+  background: transparent;
+}
+
+.expanded-btn-color {
+  color: hsl(var(--bc) / 0.7);
+}
+
+.expanded-btn-hover {
+  background: hsl(var(--b3) / 0.5);
+}
+
+.expanded-btn-hover-color {
+  color: hsl(var(--bc));
+}
+
+.expanded-primary-btn-bg {
+  background: hsl(var(--p) / 0.2);
+}
+
+.expanded-primary-btn-text {
+  color: hsl(var(--p));
+}
+
+.expanded-primary-btn-hover {
+  background: hsl(var(--p) / 0.3);
+}
+
+.expanded-content-bg {
+  background: hsl(var(--b1) / 0.95);
+}
+
+.expanded-content-text {
+  color: hsl(var(--bc) / 0.95);
+}
+
+/* Theme-specific enhanced contrast */
 .theme-cyberpunk .code-preview-card {
-  border-color: rgb(var(--p) / 0.4);
+  border-color: hsl(var(--p) / 0.6);
   box-shadow: 
-    0 0 12px rgb(var(--p) / 0.15),
-    0 4px 20px rgba(0, 0, 0, 0.2);
+    0 0 15px hsl(var(--p) / 0.2),
+    0 4px 25px rgba(0, 0, 0, 0.3);
 }
 
-.theme-cyberpunk .code-preview-thumbnail:hover,
-.theme-cyberpunk .code-preview-card:hover {
-  box-shadow: 0 0 20px rgb(var(--p) / 0.4);
+.theme-cyberpunk .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--p) / 0.08) 50%, 
+    hsl(var(--s) / 0.06) 100%);
 }
 
-.theme-synthwave .code-preview-thumbnail,
+.theme-cyberpunk .hover-glow {
+  box-shadow: inset 0 0 0 1px hsl(var(--p) / 0.4), 
+              0 0 30px hsl(var(--p) / 0.3);
+}
+
+.theme-synthwave .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(var(--p) / 0.12) 30%, 
+    hsl(var(--s) / 0.1) 70%, 
+    hsl(var(--a) / 0.08) 100%);
+}
+
 .theme-synthwave .code-preview-card {
-  background: linear-gradient(135deg, rgb(var(--p) / 0.1), rgb(var(--s) / 0.1));
-  border-color: rgb(var(--p) / 0.4);
-  box-shadow: 0 0 8px rgb(var(--p) / 0.2);
+  border-color: hsl(var(--p) / 0.5);
+  box-shadow: 0 0 12px hsl(var(--p) / 0.25);
 }
 
-.theme-retro .code-preview-thumbnail,
-.theme-retro .code-preview-card {
-  border-color: rgb(var(--p) / 0.4);
-  background: rgb(var(--b1) / 0.95);
+.theme-dracula .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(231 15% 18%) 50%, 
+    hsl(232 14% 31%) 100%);
 }
 
-.theme-luxury .code-preview-thumbnail,
-.theme-luxury .code-preview-card {
-  border-color: rgb(var(--p) / 0.5);
-  box-shadow: 0 2px 8px rgb(var(--p) / 0.1);
+.theme-dracula .code-text,
+.theme-dracula .preview-text {
+  color: hsl(var(--bc));
 }
 
-.theme-dracula .code-preview-thumbnail,
-.theme-dracula .code-preview-card {
-  border-color: rgb(var(--p) / 0.6);
-  background: rgb(12 56 95 / 56%);
+.theme-night .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(210 30% 12%) 50%, 
+    hsl(215 25% 18%) 100%);
 }
 
-.theme-forest .code-preview-thumbnail,
-.theme-forest .code-preview-card {
-  border-color: rgb(var(--p) / 0.5);
-  background: rgb(var(--b1) / 0.98);
+.theme-business .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(215 20% 15%) 50%, 
+    hsl(220 15% 20%) 100%);
 }
 
-.theme-valentine .code-preview-thumbnail,
-.theme-valentine .code-preview-card {
-  border-color: rgb(var(--p) / 0.4);
-  background: linear-gradient(135deg, rgb(var(--b1) / 0.95), rgb(var(--p) / 0.05));
+/* Dark theme enhanced code highlighting */
+.theme-night .code-text,
+.theme-business .code-text,
+.theme-dracula .code-text {
+  color: hsl(var(--bc) / 0.95);
 }
 
-.theme-halloween .code-preview-thumbnail,
-.theme-halloween .code-preview-card {
-  border-color: rgb(var(--p) / 0.6);
-  box-shadow: 0 0 10px rgb(var(--p) / 0.2);
+.theme-halloween .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(25 100% 5%) 50%, 
+    hsl(15 100% 8%) 100%);
 }
 
-.theme-aqua .code-preview-thumbnail,
-.theme-aqua .code-preview-card {
-  border-color: rgb(var(--p) / 0.5);
-  background: linear-gradient(135deg, rgb(var(--b1) / 0.95), rgb(var(--p) / 0.03));
+.theme-forest .theme-bg {
+  background: linear-gradient(135deg, 
+    hsl(var(--b1)) 0%, 
+    hsl(155 30% 12%) 50%, 
+    hsl(160 25% 18%) 100%);
 }
 
-.theme-night .code-preview-thumbnail,
-.theme-night .code-preview-card {
-  border-color: rgb(var(--p) / 0.4);
-  background: rgb(24 100 134);
-}
-
-.theme-coffee .code-preview-thumbnail,
-.theme-coffee .code-preview-card {
-  border-color: rgb(var(--p) / 0.5);
-  background: rgb(var(--b1) / 0.97);
-}
-
-.theme-winter .code-preview-thumbnail,
-.theme-winter .code-preview-card {
-  border-color: rgb(var(--p) / 0.4);
-  background: rgb(var(--b1) / 0.98);
-}
-
-.theme-business .code-preview-thumbnail,
-.theme-business .code-preview-card {
-  border-color: rgb(var(--p) / 0.3);
-  background: rgb(43 76 92);
-}
-
-/* Prism.js theme customization with better dark theme contrast */
+/* Enhanced syntax highlighting with theme-aware contrast */
 :deep(.token.comment),
 :deep(.token.prolog),
 :deep(.token.doctype),
 :deep(.token.cdata) {
-  color: rgb(var(--bc) / 0.6);
+  color: hsl(var(--bc) / 0.55);
   font-style: italic;
+  font-weight: 400;
 }
 
 :deep(.token.punctuation) {
-  color: rgb(var(--bc) / 0.8);
+  color: hsl(var(--bc) / 0.75);
+  font-weight: 500;
 }
 
 :deep(.token.property),
@@ -820,7 +1388,8 @@ const closeThumbnailModal = () => {
 :deep(.token.constant),
 :deep(.token.symbol),
 :deep(.token.deleted) {
-  color: #ff6b6b;
+  color: hsl(0 84% 65%);
+  font-weight: 600;
 }
 
 :deep(.token.selector),
@@ -829,7 +1398,8 @@ const closeThumbnailModal = () => {
 :deep(.token.char),
 :deep(.token.builtin),
 :deep(.token.inserted) {
-  color: #51cf66;
+  color: hsl(142 76% 58%);
+  font-weight: 500;
 }
 
 :deep(.token.operator),
@@ -837,24 +1407,91 @@ const closeThumbnailModal = () => {
 :deep(.token.url),
 :deep(.language-css .token.string),
 :deep(.style .token.string) {
-  color: #ffd43b;
+  color: hsl(45 100% 65%);
+  font-weight: 500;
 }
 
 :deep(.token.atrule),
 :deep(.token.attr-value),
 :deep(.token.keyword) {
-  color: #339af0;
+  color: hsl(213 94% 68%);
+  font-weight: 600;
 }
 
 :deep(.token.function),
 :deep(.token.class-name) {
-  color: #74c0fc;
+  color: hsl(199 89% 72%);
+  font-weight: 600;
 }
 
 :deep(.token.regex),
 :deep(.token.important),
 :deep(.token.variable) {
-  color: #f783ac;
+  color: hsl(316 73% 69%);
+  font-weight: 500;
+}
+
+/* Dark theme specific syntax highlighting */
+.theme-night :deep(.token.comment),
+.theme-business :deep(.token.comment),
+.theme-dracula :deep(.token.comment),
+.theme-halloween :deep(.token.comment) {
+  color: hsl(var(--bc) / 0.45);
+}
+
+.theme-night :deep(.token.property),
+.theme-business :deep(.token.property),
+.theme-dracula :deep(.token.property),
+.theme-halloween :deep(.token.property),
+.theme-night :deep(.token.tag),
+.theme-business :deep(.token.tag),
+.theme-dracula :deep(.token.tag),
+.theme-halloween :deep(.token.tag),
+.theme-night :deep(.token.number),
+.theme-business :deep(.token.number),
+.theme-dracula :deep(.token.number),
+.theme-halloween :deep(.token.number) {
+  color: hsl(0 75% 70%);
+}
+
+.theme-night :deep(.token.string),
+.theme-business :deep(.token.string),
+.theme-dracula :deep(.token.string),
+.theme-halloween :deep(.token.string) {
+  color: hsl(142 65% 65%);
+}
+
+.theme-night :deep(.token.keyword),
+.theme-business :deep(.token.keyword),
+.theme-dracula :deep(.token.keyword),
+.theme-halloween :deep(.token.keyword) {
+  color: hsl(213 85% 75%);
+}
+
+.theme-night :deep(.token.function),
+.theme-business :deep(.token.function),
+.theme-dracula :deep(.token.function),
+.theme-halloween :deep(.token.function) {
+  color: hsl(199 80% 78%);
+}
+
+/* Light theme adjustments for better contrast */
+.theme-valentine :deep(.token.string),
+.theme-retro :deep(.token.string),
+.theme-winter :deep(.token.string) {
+  color: hsl(142 85% 45%);
+}
+
+.theme-valentine :deep(.token.keyword),
+.theme-retro :deep(.token.keyword),
+.theme-winter :deep(.token.keyword) {
+  color: hsl(213 100% 55%);
+}
+
+.theme-valentine :deep(.token.number),
+.theme-retro :deep(.token.number),
+.theme-winter :deep(.token.number) {
+  color: hsl(0 90% 55%);
 }
 
 /* Tooltip positioning fix */

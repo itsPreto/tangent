@@ -158,13 +158,13 @@
         class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
         @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
         @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
-        @keydown="handleKeyDown" @wheel="handleWheel">
+        @keydown="handleKeyDown">
         
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle">
           <!-- SVG Layer for Connections -->
-          <svg class="absolute overflow-visible" style="z-index: 1; pointer-events: none;" :style="svgStyle"
-            viewBox="0 0 100000 100000" preserveAspectRatio="none">
+          <svg class="absolute overflow-visible" style="z-index: 0; pointer-events: none;" :style="svgStyle"
+            preserveAspectRatio="none">
             <defs>
               <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                 <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
@@ -179,23 +179,23 @@
                 :end-lod-level="getEffectiveCardDimensions(connection.child).lodLevel"
                 :start-lod-level="getEffectiveCardDimensions(connection.parent).lodLevel"
                 :is-active="isConnectionActive(connection)" :zoom-level="zoom"
-                :is-source-node-expanded="expandedNodes.value?.has(connection.parent.id) || false" />
+                :is-source-node-expanded="expandedNodes.has(connection.parent.id)" />
             </template>
           </svg>
 
           <!-- Nodes Layer -->
-          <div class="absolute" :style="nodesLayerStyle" style="z-index: 2">
+          <div class="absolute" :style="nodesLayerStyle" style="z-index: 1">
             <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles text and media) -->
               <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
-                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
                 :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
-                " @delete="() => handleNodeDelete(node.id)" :style="{
+                " @delete="() => handleNodeDelete(node.id)"
+                @update-messages="(messages) => store.updateNodeMessages(node.id, messages)" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning
                     ? 'transform 0.3s ease-out'
@@ -219,15 +219,15 @@
               <!-- Branch Node -->
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
-                :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
                 :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle"
                 @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
                 @delete="() => handleNodeDelete(node.id)" @update-position="handleNodePositionUpdate"
                 @snap="handleNodeSnap" @unsnap="handleNodeUnsnap" @focus-input="handleFocusInput"
-                @expansion-change="handleNodeExpansionChange" :style="{
+                @expansion-change="handleNodeExpansionChange"
+                @update-messages="(messages) => store.updateNodeMessages(node.id, messages)" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
                 }" />
@@ -235,8 +235,8 @@
           </div>
 
           <!-- Interaction Layer for Splines - On Top of Everything -->
-          <svg class="absolute overflow-visible" style="z-index: 10; pointer-events: none;" :style="svgStyle"
-            viewBox="0 0 100000 100000" preserveAspectRatio="none">
+          <svg class="absolute overflow-visible" style="z-index: 2; pointer-events: none;" :style="svgStyle"
+            preserveAspectRatio="none">
             <template v-for="connection in visibleConnections"
               :key="`interaction-${connection.parent.id}-${connection.child.id}`">
               <!-- Clickable paths - show hitbox on hover -->
@@ -420,13 +420,10 @@ watch(
   (newZoom, oldZoom) => {
     // Clear focused LOD node when user manually zooms
     // but only if the zoom change is significant (not from clicking on the node)
-    if (focusedLODNodeId.value && Math.abs(newZoom - oldZoom) > 0.01) {
+    if (Math.abs(newZoom - oldZoom) > 0.01) {
       // Check if we're still above the full detail threshold
-      if (newZoom <= LOD_THRESHOLDS.FULL_DETAIL) {
-        // Don't clear if the focused LOD node is the current navigation focus
-        if (focusedLODNodeId.value !== focusedNodeId.value) {
-          focusedLODNodeId.value = null;
-        }
+      if (newZoom <= 0.5) {
+        // Handle low zoom level
       }
     }
   }
@@ -440,20 +437,7 @@ const isPanning = ref(false);
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
 // Node that's been clicked on for LOD focus
-const focusedLODNodeId = ref<string | null>(null);
 
-// Watch for focused node changes to update LOD focus
-watch(
-  () => focusedNodeId.value,
-  (newNodeId, oldNodeId) => {
-    if (newNodeId !== oldNodeId) {
-      // Always update LOD focus to the new node (or null)
-      // This ensures only one node is highlighted at a time
-      focusedLODNodeId.value = newNodeId;
-    }
-  },
-  { immediate: true }
-);
 const focusedTopicId = ref<string | null>(null);
 const isDraggingFile = ref(false);
 
@@ -612,6 +596,63 @@ const getNodeCenter = (node) => ({
   x: node.x + store.CARD_WIDTH / 2,
   y: node.y + store.CARD_HEIGHT / 2,
 });
+
+// LOD Level calculation based on zoom and node state
+const getLODLevel = (nodeId: string) => {
+  const isNodeSnapped = snappedNodeId.value === nodeId;
+  const isNodeFocusedState = focusedNodeId.value === nodeId;
+  
+  // Always use full detail for snapped nodes
+  if (isNodeSnapped) return 'full';
+  
+  // Use zoom level to determine LOD
+  if (zoom.value >= 1.0) return 'full';
+  if (zoom.value >= 0.5) return 'summary';
+  if (zoom.value >= 0.2) return 'preview';
+  return 'block';
+};
+
+// Calculate effective card dimensions based on LOD level and node type
+const getEffectiveCardDimensions = (node: any) => {
+  const lodLevel = getLODLevel(node.id);
+  
+  // Base dimensions
+  let width = CARD_WIDTH; // 672px
+  let height = CARD_HEIGHT; // 400px
+  
+  // Adjust dimensions based on LOD level
+  switch (lodLevel) {
+    case 'block':
+      width = 120;
+      height = 60;
+      break;
+    case 'preview':
+      width = 480;
+      height = 120;
+      break;
+    case 'summary':
+      width = 560;
+      height = 200;
+      break;
+    case 'full':
+    default:
+      width = CARD_WIDTH;
+      height = CARD_HEIGHT;
+      break;
+  }
+  
+  // Adjust for specific node types
+  if (node.type === 'web') {
+    // Web nodes might be slightly different
+    height *= 0.8;
+  }
+  
+  return {
+    width,
+    height,
+    lodLevel
+  };
+};
 
 const getMediaUrl = (mediaContent) => {
   if (!mediaContent) return '';
@@ -920,7 +961,7 @@ const transformStyle = computed(() => {
 const svgStyle = computed(() => ({
   width: "100000px",
   height: "100000px",
-  viewBox: `0 0 ${windowSize.value.width} ${windowSize.value.height}`,
+  viewBox: "0 0 100000 100000", // Match the actual coordinate space of nodes
 }));
 
 const nodesLayerStyle = computed(() => ({
@@ -946,8 +987,8 @@ const { observe, unobserve, isElementVisible, getVisibleElementIds } = useViewpo
 const intersectionVisibleNodes = ref(new Set<string>());
 
 const visibleNodes = computed(() => {
-  // Always show all nodes if snapped or in workspace overview
-  if (store.snappedNodeId !== null || isWorkspaceOverview.value) {
+  // Always show all nodes if snapped, in workspace overview, or during any drag/pan operations
+  if (store.snappedNodeId !== null || isWorkspaceOverview.value || isPanning.value || store.isDragging || isMultiDragging.value || workspaceDragState.value.isDragging) {
     return store.nodes;
   }
 
@@ -956,11 +997,12 @@ const visibleNodes = computed(() => {
     return store.nodes.filter(node => intersectionVisibleNodes.value.has(node.id));
   }
 
-  // Fallback to computational viewport culling
-  const viewportLeft = (-panX.value - VIEWPORT_BUFFER) / zoom.value;
-  const viewportTop = (-panY.value - VIEWPORT_BUFFER) / zoom.value;
-  const viewportRight = (windowSize.value.width - panX.value + VIEWPORT_BUFFER) / zoom.value;
-  const viewportBottom = (windowSize.value.height - panY.value + VIEWPORT_BUFFER) / zoom.value;
+  // Fallback to computational viewport culling with larger buffer to prevent disappearing
+  const buffer = VIEWPORT_BUFFER * 2; // Double buffer for safety
+  const viewportLeft = (-panX.value - buffer) / zoom.value;
+  const viewportTop = (-panY.value - buffer) / zoom.value;
+  const viewportRight = (windowSize.value.width - panX.value + buffer) / zoom.value;
+  const viewportBottom = (windowSize.value.height - panY.value + buffer) / zoom.value;
 
   return store.nodes.filter(node => {
     const nodeLeft = node.x;
@@ -1052,77 +1094,9 @@ const findNodeAt = (screenX, screenY) => {
 };
 
 
-// LOD System
-const LOD_THRESHOLDS = {
-  FULL_DETAIL: 0.75,
-  PREVIEW: 0.6,      // New intermediate level
-  SUMMARY: 0.3,
-  COMPACT: 0.15,     // New intermediate level  
-  BLOCK: 0.1
-};
 
-// LOD transition state
-const lodTransitionState = ref({
-  isTransitioning: false,
-  previousLevel: 'full',
-  currentLevel: 'full',
-  transitionStartTime: 0
-});
 
-const getLODLevel = (nodeId?: string) => {
-  // If this node is the focused LOD node, always return full detail
-  if (nodeId && nodeId === focusedLODNodeId.value) {
-    return 'full';
-  }
-  
-  let level;
-  if (zoom.value > LOD_THRESHOLDS.FULL_DETAIL) level = 'full';
-  else if (zoom.value > LOD_THRESHOLDS.PREVIEW) level = 'preview';
-  else if (zoom.value > LOD_THRESHOLDS.SUMMARY) level = 'summary';
-  else if (zoom.value > LOD_THRESHOLDS.COMPACT) level = 'compact';
-  else if (zoom.value > LOD_THRESHOLDS.BLOCK) level = 'block';
-  else level = 'hidden';
-  
-  // Handle smooth transitions
-  if (level !== lodTransitionState.value.currentLevel) {
-    lodTransitionState.value.previousLevel = lodTransitionState.value.currentLevel;
-    lodTransitionState.value.currentLevel = level;
-    lodTransitionState.value.isTransitioning = true;
-    lodTransitionState.value.transitionStartTime = Date.now();
-    
-    // Clear transition state after animation completes
-    setTimeout(() => {
-      lodTransitionState.value.isTransitioning = false;
-    }, 300); // Match CSS transition duration
-  }
-  
-  return level;
-};
 
-// Calculate effective card dimensions based on LOD level
-const getEffectiveCardDimensions = (node) => {
-  const lodLevel = getLODLevel(node?.id);
-  let dimensions;
-
-  switch (lodLevel) {
-    case 'block':
-      // Block LOD: w-64 h-16 (256px x 64px) - smallest size
-      dimensions = { width: 256, height: 64, lodLevel: 'block' };
-      break;
-    case 'summary':
-      // Summary LOD: title and message preview - medium size between block and full
-      dimensions = { width: 480, height: 100, lodLevel: 'summary' };
-      break;
-    case 'full':
-    case 'hidden':
-    default:
-      // Full size or hidden - above 0.5 zoom
-      dimensions = { width: store.CARD_WIDTH, height: store.CARD_HEIGHT, lodLevel: 'full' };
-      break;
-  }
-
-  return dimensions;
-};
 
 // Undo/Redo Functions
 const addToUndoStack = (action) => {
@@ -1572,48 +1546,23 @@ const handleNodeSelect = async (nodeId: string) => {
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
-  // Check if clicking on a LOD node that's not at full detail
-  const currentLOD = getLODLevel(nodeId);
-  if (currentLOD !== 'full') {
-    // Set this as the focused LOD node
-    focusedLODNodeId.value = nodeId;
-    
-    // Zoom to at least the full detail threshold
-    const targetZoom = Math.max(LOD_THRESHOLDS.FULL_DETAIL + 0.1, zoom.value);
-    
-    store.isTransitioning = true;
-    focusedNodeId.value = nodeId;
-    
-    await nextTick();
-    
-    const bounds = calculateNodeBounds(node);
-    const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
-    const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
-    
-    const verticalOffset = Math.min(rect.height * 0.05, 30);
-    panX.value = rect.width / 2 - nodeCenterX * targetZoom;
-    panY.value = rect.height / 2 - nodeCenterY * targetZoom + verticalOffset;
-    
-    zoom.value = targetZoom;
-  } else {
-    // Normal selection for nodes already at full detail
-    store.isTransitioning = true;
-    focusedNodeId.value = nodeId;
+  // Focus and center on the node
+  store.isTransitioning = true;
+  focusedNodeId.value = nodeId;
+  
+  await nextTick();
+  
+  const bounds = calculateNodeBounds(node);
+  const newZoom = calculateRequiredZoom(bounds, rect);
 
-    await nextTick();
+  const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
+  const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
 
-    const bounds = calculateNodeBounds(node);
-    const newZoom = calculateRequiredZoom(bounds, rect);
+  const verticalOffset = Math.min(rect.height * 0.05, 30);
+  panX.value = rect.width / 2 - nodeCenterX * newZoom;
+  panY.value = rect.height / 2 - nodeCenterY * newZoom + verticalOffset;
 
-    const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
-    const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
-
-    const verticalOffset = Math.min(rect.height * 0.05, 30);
-    panX.value = rect.width / 2 - nodeCenterX * newZoom;
-    panY.value = rect.height / 2 - nodeCenterY * newZoom + verticalOffset;
-
-    zoom.value = newZoom;
-  }
+  zoom.value = newZoom;
 
   setTimeout(() => {
     store.isTransitioning = false;
@@ -1691,6 +1640,16 @@ const handleWheel = (e: WheelEvent) => {
   }
 
   if ((e.target as HTMLElement).closest(".branch-node.snapped")) {
+    // Allow scrolling within message containers when node is snapped
+    const target = e.target as HTMLElement;
+    const isMessageScrollContainer = target.closest(".messages-scroll-container");
+    const isMessageContainer = target.closest(".message-container");
+    const isMessageContent = target.closest(".message-content");
+    
+    if (isMessageScrollContainer || isMessageContainer || isMessageContent) {
+      // Let the message container handle its own scrolling
+      return;
+    }
     console.log("Snapped node, ignoring wheel event");
     return;
   }
@@ -1767,9 +1726,6 @@ onBeforeUnmount(() => {
   }
   if (inactivityTimer.value) {
     clearTimeout(inactivityTimer.value);
-  }
-  if (animationFrame.value) {
-    cancelAnimationFrame(animationFrame.value);
   }
 });
 
@@ -2071,7 +2027,12 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
     await nextTick();
 
     // Check for auto-snapping after workspace loads
-    checkAndAutoSnapSingleBranch();
+    const autoSnapped = checkAndAutoSnapSingleBranch();
+    
+    // Auto-fit nodes if we didn't auto-snap
+    if (!autoSnapped) {
+      autoFitNodes();
+    }
     return;
   }
 
@@ -2105,8 +2066,11 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
   // Check for auto-snapping before autoFitNodes
   const autoSnapped = checkAndAutoSnapSingleBranch();
 
-  // Only call autoFitNodes if we didn't auto-snap
-  if (!autoSnapped) {
+  // Always auto-fit when entering canvas
+  if (autoSnapped) {
+    // Delay autofit slightly if auto-snapping occurred to let snapping complete
+    setTimeout(() => autoFitNodes(), 100);
+  } else {
     autoFitNodes();
   }
 
@@ -2194,9 +2158,9 @@ const centerOnNode = (nodeId) => {
   const rect = canvasRef.value.getBoundingClientRect();
 
   // If zoom is too low for full detail, zoom in to spotlight the node
-  if (zoom.value < LOD_THRESHOLDS.FULL_DETAIL) {
-    // Zoom to just above the full detail threshold
-    const targetZoom = LOD_THRESHOLDS.FULL_DETAIL + 0.1;
+  if (zoom.value < 0.5) {
+    // Zoom to just above the threshold
+    const targetZoom = 0.6;
     panX.value = rect.width / 2 - center.x * targetZoom;
     const verticalOffset = Math.min(rect.height * 0.05, 30);
     panY.value = rect.height / 2 - center.y * targetZoom + verticalOffset;
@@ -2208,8 +2172,6 @@ const centerOnNode = (nodeId) => {
   }
 
   focusedNodeId.value = nodeId;
-  // Set LOD focus to ensure node shows at full detail
-  focusedLODNodeId.value = nodeId;
 
   setTimeout(() => {
     store.isTransitioning = false;
@@ -2325,14 +2287,20 @@ const handleCreateBranch = async (
     firstUserMessage: firstUserMessage
   });
 
-  // Step 3: Center on the new node
+  console.log('[InfiniteCanvas] Created new branch node:', newNode.id, 'at position:', adjustedPosition);
+
+  // Ensure the new node is immediately visible by forcing a visibility update
+  intersectionVisibleNodes.value.add(newNode.id);
+
+  // Step 3: Center on the new node immediately
+  await nextTick(); // Wait for DOM update
   centerOnNode(newNode.id);
 
   // Step 4: Snap the new branch node
   setTimeout(() => {
     console.log('[InfiniteCanvas] Auto-snapping new branch node:', newNode.id);
     emitter.emit('auto-snap-node', { nodeId: newNode.id });
-  }, 400);
+  }, 600); // Increased timeout to ensure centering completes
 };
 
 // Handle resending messages
@@ -2360,72 +2328,74 @@ const handleResend = async (nodeId: string, userMessageIndex: number) => {
   );
 };
 
-// Calculate spline path for interaction layer - EXACTLY match SplineConnector
-const getSplinePath = (startNode: any, endNode: any, isExpanded: boolean) => {
-  // Use LOD-aware dimensions to match SplineConnector
+// Shared function to calculate spline path - used by both visual and interaction layers
+const calculateSplinePath = (startNode: any, endNode: any, isExpanded: boolean) => {
+  // Use exact same variables as MainSplineConnector
+  const startNodeX = startNode.x;
+  const startNodeY = startNode.y;
+  const endNodeX = endNode.x;
+  const endNodeY = endNode.y;
+  
   const endDimensions = getEffectiveCardDimensions(endNode);
   const startDimensions = getEffectiveCardDimensions(startNode);
   const endCardWidth = endDimensions.width;
   const endCardHeight = endDimensions.height;
   const startCardWidth = startDimensions.width;
   const startCardHeight = startDimensions.height;
-  const isLeftBranch = endNode.type === 'left-branch';
-
-  // Use the passed expansion state directly (same as SplineConnector receives)
-  const isSourceNodeExpanded = isExpanded;
-
-  // EXACT same calculation as SplineConnector calculateConnectionPoints()
-  const startLodLevel = startDimensions.lodLevel;
-  const endLodLevel = endDimensions.lodLevel;
-
+  
+  const isLeft = endNode.type === 'left-branch';
+  const isSourceExpanded = isExpanded;
+  
   const idx = endNode.branchMessageIndex ?? 0;
-
-  // Calculate yOff based on specific LOD level to match SplineConnector
+  
+  // EXACT yOff calculation as MainSplineConnector
   let yOff;
-  switch (startLodLevel) {
+  switch (startDimensions.lodLevel) {
     case 'block':
-      // Very small spacing for block LOD
-      yOff = isSourceNodeExpanded ? Math.min(idx * 15 + 8, startCardHeight / 2) : startCardHeight / 2;
+      yOff = isSourceExpanded ? Math.min(idx * 15 + 8, startCardHeight / 2) : startCardHeight / 2;
       break;
     case 'summary':
-      // Medium spacing for summary LOD
-      yOff = isSourceNodeExpanded ? Math.min(idx * 30 + 15, startCardHeight / 2) : startCardHeight / 2;
+      yOff = isSourceExpanded ? Math.min(idx * 30 + 15, startCardHeight / 2) : startCardHeight / 2;
       break;
     case 'full':
     default:
-      // Full spacing for full LOD
-      yOff = isSourceNodeExpanded ? idx * 120 + 40 : 40;
+      yOff = isSourceExpanded ? idx * 120 + 40 : 40;
       break;
   }
 
+  // EXACT startPoint and endPoint calculation as MainSplineConnector
   const startPoint = {
-    x: isLeftBranch ? startNode.x - 1 : startNode.x + startCardWidth + 1,
-    y: startNode.y + Math.min(yOff, startCardHeight - 10)
+    x: isLeft ? startNodeX - 1 : startNodeX + startCardWidth + 1,
+    y: startNodeY + Math.min(yOff, startCardHeight - 10)
   };
 
   const endPoint = {
-    x: endNode.x + (isLeftBranch ? endCardWidth : 0),
-    y: endNode.y + endCardHeight / 2
+    x: endNodeX + (isLeft ? endCardWidth - 1 : 1), // Stop 1px before the edge
+    y: endNodeY + endCardHeight / 2
   };
 
-  // EXACT same pathAndControlPoints calculation
+  // EXACT pathAndControlPoints calculation as MainSplineConnector
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
   const dist = Math.hypot(dx, dy);
-  const cpDist = Math.min(dist * 0.8, 200);
-  const vert = Math.min(Math.abs(dy), 100) * (dy < 0 ? -1 : 1);
+  
+  const cpDist = Math.min(dist * 0.5, 300);
+  const vert = Math.min(Math.abs(dy) * 0.2, 60) * (dy < 0 ? -1 : 1);
 
   const controlPoint1 = {
-    x: startPoint.x + (isLeftBranch ? -cpDist : cpDist),
-    y: startPoint.y + vert
+    x: startPoint.x + (isLeft ? -cpDist : cpDist),
+    y: startPoint.y + vert * 0.5
   };
   const controlPoint2 = {
-    x: endPoint.x + (isLeftBranch ? cpDist : -cpDist),
-    y: endPoint.y - vert
+    x: endPoint.x + (isLeft ? cpDist * 0.6 : -cpDist * 0.6),
+    y: endPoint.y - vert * 0.5
   };
 
-  return `M ${startPoint.x} ${startPoint.y} C ${controlPoint1.x} ${controlPoint1.y}, ${controlPoint2.x} ${controlPoint2.y}, ${endPoint.x} ${endPoint.y}`;
+  return `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C${controlPoint1.x.toFixed(1)},${controlPoint1.y.toFixed(1)},${controlPoint2.x.toFixed(1)},${controlPoint2.y.toFixed(1)},${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`;
 };
+
+// Use the shared function for interaction layer
+const getSplinePath = calculateSplinePath;
 
 // Handle spline double-click from interaction layer
 const handleSplineDoubleClick = (connection: any) => {
@@ -2815,8 +2785,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
   if (targetNodeId) {
     focusedNodeId.value = targetNodeId;
-    // Set LOD focus to spotlight the navigated node
-    focusedLODNodeId.value = targetNodeId;
     centerOnNode(targetNodeId);
   }
 };

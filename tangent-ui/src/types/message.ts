@@ -1,7 +1,7 @@
 // src/types/message.ts
 
 export interface ContentPart {
-  type: 'text' | 'code' | 'paste' | 'compacted';
+  type: 'text' | 'code' | 'paste' | 'compacted' | 'think';
   content: string;
   language?: string;
   detectedLanguage?: string; // For auto-detected language in pasted content

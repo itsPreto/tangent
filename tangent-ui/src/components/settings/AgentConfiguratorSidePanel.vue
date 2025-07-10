@@ -22,6 +22,10 @@
               <span class="tab-icon">🎭</span>
               <span class="tab-label">Mock Data</span>
             </button>
+            <button @click="activeTab = 'themes'" class="tab-btn" :class="{ active: activeTab === 'themes' }">
+              <span class="tab-icon">🎨</span>
+              <span class="tab-label">Themes</span>
+            </button>
           </div>
         </div>
 
@@ -1436,6 +1440,157 @@
             </div>
           </div>
         </div>
+
+        <!-- Themes Tab -->
+        <div v-if="activeTab === 'themes'" class="tab-content">
+          <div class="themes-content">
+            <div class="section-title">Theme Customization</div>
+            <p class="section-description">
+              Customize theme colors or create new themes. Changes apply instantly.
+            </p>
+
+            <!-- Current Theme Display -->
+            <div class="current-theme-section">
+              <div class="config-label">Current Theme</div>
+              <div class="current-theme-display">
+                <div class="theme-preview">
+                  <div class="color-dot" :style="{ backgroundColor: themeStore.currentThemeColors.primary }"></div>
+                  <div class="color-dot" :style="{ backgroundColor: themeStore.currentThemeColors.secondary }"></div>
+                  <div class="color-dot" :style="{ backgroundColor: themeStore.currentThemeColors.accent }"></div>
+                </div>
+                <span class="theme-name">{{ themeStore.currentTheme }}</span>
+                <span v-if="themeStore.isCustomTheme(themeStore.currentTheme)" class="custom-badge">Custom</span>
+              </div>
+            </div>
+
+            <!-- Theme Colors Editor -->
+            <div class="theme-colors-section">
+              <div class="config-label">Colors</div>
+              <div class="colors-grid">
+                <div class="color-input-group">
+                  <label class="color-label">Primary</label>
+                  <div class="color-input-row">
+                    <input
+                      v-model="editableColors.primary"
+                      type="color"
+                      class="color-picker"
+                      @input="startEditingTheme"
+                    />
+                    <input
+                      v-model="editableColors.primary"
+                      type="text"
+                      class="color-text-input"
+                      placeholder="#570DF8"
+                      @input="startEditingTheme"
+                    />
+                  </div>
+                </div>
+
+                <div class="color-input-group">
+                  <label class="color-label">Secondary</label>
+                  <div class="color-input-row">
+                    <input
+                      v-model="editableColors.secondary"
+                      type="color"
+                      class="color-picker"
+                      @input="startEditingTheme"
+                    />
+                    <input
+                      v-model="editableColors.secondary"
+                      type="text"
+                      class="color-text-input"
+                      placeholder="#F000B8"
+                      @input="startEditingTheme"
+                    />
+                  </div>
+                </div>
+
+                <div class="color-input-group">
+                  <label class="color-label">Accent</label>
+                  <div class="color-input-row">
+                    <input
+                      v-model="editableColors.accent"
+                      type="color"
+                      class="color-picker"
+                      @input="startEditingTheme"
+                    />
+                    <input
+                      v-model="editableColors.accent"
+                      type="text"
+                      class="color-text-input"
+                      placeholder="#37CDBE"
+                      @input="startEditingTheme"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Theme Actions -->
+            <div class="theme-actions-section">
+              <div class="theme-buttons">
+                <button
+                  @click="saveAsNewTheme"
+                  class="btn-secondary"
+                  :disabled="!hasChanges"
+                >
+                  Save as New Theme
+                </button>
+                <button
+                  @click="resetColors"
+                  class="btn-ghost"
+                  :disabled="!hasChanges"
+                >
+                  Reset
+                </button>
+                <button
+                  v-if="isEditingTheme"
+                  @click="discardChanges"
+                  class="btn-ghost"
+                >
+                  Discard Changes
+                </button>
+              </div>
+            </div>
+
+            <!-- Custom Themes List -->
+            <div v-if="Object.keys(themeStore.customThemes).length > 0" class="custom-themes-section">
+              <div class="config-label">Custom Themes</div>
+              <div class="custom-themes-list">
+                <div
+                  v-for="(theme, name) in themeStore.customThemes"
+                  :key="name"
+                  class="custom-theme-item"
+                  :class="{ active: themeStore.currentTheme === name }"
+                >
+                  <div class="theme-info">
+                    <div class="theme-preview">
+                      <div class="color-dot" :style="{ backgroundColor: theme.colors.primary }"></div>
+                      <div class="color-dot" :style="{ backgroundColor: theme.colors.secondary }"></div>
+                      <div class="color-dot" :style="{ backgroundColor: theme.colors.accent }"></div>
+                    </div>
+                    <span class="theme-name">{{ theme.name }}</span>
+                  </div>
+                  <div class="theme-actions">
+                    <button
+                      @click="applyTheme(name)"
+                      class="btn-xs btn-primary"
+                      :disabled="themeStore.currentTheme === name"
+                    >
+                      Apply
+                    </button>
+                    <button
+                      @click="deleteCustomTheme(name)"
+                      class="btn-xs btn-error"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1520,6 +1675,22 @@ const apiKeys = reactive({
 
 // Filters
 const activeFilters = ref(new Set());
+
+// Theme customization state
+const editableColors = reactive({
+  primary: '',
+  secondary: '',
+  accent: ''
+});
+
+const originalColors = reactive({
+  primary: '',
+  secondary: '',
+  accent: ''
+});
+
+const isEditingTheme = ref(false);
+const originalThemeName = ref('');
 
 // System Messages
 const systemMessages = reactive({
@@ -1694,6 +1865,111 @@ const updateThemeFromDOM = () => {
   }
 };
 
+// Theme customization methods
+const initializeEditableColors = () => {
+  // Store original theme info
+  originalThemeName.value = themeStore.currentTheme;
+  
+  const currentColors = themeStore.currentThemeColors;
+  editableColors.primary = currentColors.primary;
+  editableColors.secondary = currentColors.secondary;
+  editableColors.accent = currentColors.accent;
+  
+  originalColors.primary = currentColors.primary;
+  originalColors.secondary = currentColors.secondary;
+  originalColors.accent = currentColors.accent;
+  
+  isEditingTheme.value = false;
+};
+
+const startEditingTheme = () => {
+  isEditingTheme.value = true;
+  updateThemeColors();
+};
+
+const updateThemeColors = () => {
+  // Create a temporary preview theme
+  const previewTheme = {
+    name: '__preview__',
+    colors: {
+      primary: editableColors.primary,
+      secondary: editableColors.secondary,
+      accent: editableColors.accent
+    },
+    isDark: themeStore.isDarkTheme(originalThemeName.value),
+    isCustom: true as const
+  };
+  
+  // Save the preview theme temporarily
+  themeStore.saveCustomTheme(previewTheme);
+  
+  // Apply the preview theme if we're editing
+  if (isEditingTheme.value) {
+    themeStore.setTheme('__preview__');
+  }
+};
+
+const saveAsNewTheme = () => {
+  const themeName = prompt('Enter a name for your custom theme:');
+  if (!themeName) return;
+  
+  const customTheme = {
+    name: themeName,
+    colors: {
+      primary: editableColors.primary,
+      secondary: editableColors.secondary,
+      accent: editableColors.accent
+    },
+    isDark: themeStore.isDarkTheme(originalThemeName.value),
+    isCustom: true as const
+  };
+  
+  // Remove preview theme
+  themeStore.deleteCustomTheme('__preview__');
+  
+  // Save the new theme
+  themeStore.saveCustomTheme(customTheme);
+  themeStore.setTheme(themeName);
+  
+  isEditingTheme.value = false;
+  initializeEditableColors();
+};
+
+const resetColors = () => {
+  editableColors.primary = originalColors.primary;
+  editableColors.secondary = originalColors.secondary;
+  editableColors.accent = originalColors.accent;
+  
+  // Revert to original theme
+  discardChanges();
+};
+
+const discardChanges = () => {
+  if (isEditingTheme.value) {
+    // Remove preview theme
+    themeStore.deleteCustomTheme('__preview__');
+    
+    // Revert to original theme
+    themeStore.setTheme(originalThemeName.value);
+    
+    isEditingTheme.value = false;
+  }
+};
+
+const applyTheme = (themeName: string) => {
+  // Discard any unsaved changes
+  discardChanges();
+  
+  themeStore.setTheme(themeName);
+  initializeEditableColors();
+};
+
+const deleteCustomTheme = (themeName: string) => {
+  if (confirm(`Are you sure you want to delete the theme "${themeName}"?`)) {
+    themeStore.deleteCustomTheme(themeName);
+  }
+};
+
 // Theme-based computed values
 const isDark = computed(() => themeStore.isDarkTheme(currentTheme.value));
 const colors = computed(() => themeStore.getThemeColors(currentTheme.value));
@@ -1704,6 +1980,17 @@ const mainStyle = computed(() => ({
   '--secondary': colors.value.secondary,
   '--accent': colors.value.accent
 }));
+
+// Theme customization computed properties
+const hasChanges = computed(() => {
+  return editableColors.primary !== originalColors.primary ||
+         editableColors.secondary !== originalColors.secondary ||
+         editableColors.accent !== originalColors.accent;
+});
+
+const previewThemeName = computed(() => {
+  return isEditingTheme.value ? '__preview__' : themeStore.currentTheme;
+});
 
 // Computed
 const allModels = computed(() => {
@@ -3035,6 +3322,9 @@ const getBaseCategoryScore = (category, model) => {
 onMounted(async () => {
   if (voices.value.length === 0) await ttsService.loadVoices();
   Object.assign(ttsSettings, ttsService.settings);
+  
+  // Initialize theme colors
+  initializeEditableColors();
 
   // Setup theme observer
   themeObserver = new MutationObserver(() => {
@@ -3048,6 +3338,25 @@ onMounted(async () => {
 
   // Initial theme check
   updateThemeFromDOM();
+  
+  // Watch for theme changes and reinitialize colors
+  watch(() => themeStore.currentTheme, () => {
+    initializeEditableColors();
+  });
+
+  // Watch for color changes to update preview
+  watch([() => editableColors.primary, () => editableColors.secondary, () => editableColors.accent], () => {
+    if (isEditingTheme.value) {
+      updateThemeColors();
+    }
+  });
+
+  // Watch for tab changes to discard unsaved changes
+  watch(() => activeTab.value, (newTab, oldTab) => {
+    if (oldTab === 'themes' && isEditingTheme.value) {
+      discardChanges();
+    }
+  });
 
   const providers = ['ollama', 'openrouter', 'anthropic', 'google'];
   for (const provider of providers) {
@@ -3063,6 +3372,9 @@ onBeforeUnmount(() => {
   if (themeObserver) {
     themeObserver.disconnect();
   }
+  
+  // Clean up preview theme if component is unmounted
+  discardChanges();
 });
 </script>
 
@@ -6675,5 +6987,224 @@ onBeforeUnmount(() => {
 
 [data-theme="dark"] .preview-item strong {
   color: rgb(209 213 219);
+}
+
+/* Theme Customization Styles */
+.themes-content {
+  padding: 1rem;
+}
+
+.current-theme-section {
+  margin-bottom: 1.5rem;
+}
+
+.current-theme-display {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background-color: rgb(var(--b2));
+  border-radius: 0.5rem;
+  border: 1px solid rgb(var(--bc) / 0.1);
+}
+
+.theme-preview {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.color-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 1px solid rgb(var(--bc) / 0.2);
+}
+
+.theme-name {
+  font-weight: 500;
+  color: rgb(var(--bc));
+}
+
+.custom-badge {
+  padding: 0.125rem 0.5rem;
+  background-color: rgb(var(--p) / 0.2);
+  color: rgb(var(--p));
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.theme-colors-section {
+  margin-bottom: 1.5rem;
+}
+
+.colors-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.color-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.color-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(var(--bc) / 0.8);
+}
+
+.color-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.color-picker {
+  width: 3rem;
+  height: 2.5rem;
+  border: 1px solid rgb(var(--bc) / 0.2);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  background: none;
+}
+
+.color-text-input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgb(var(--bc) / 0.2);
+  border-radius: 0.375rem;
+  background-color: rgb(var(--b1));
+  color: rgb(var(--bc));
+  font-size: 0.875rem;
+}
+
+.color-text-input:focus {
+  outline: none;
+  border-color: rgb(var(--p));
+  box-shadow: 0 0 0 3px rgb(var(--p) / 0.1);
+}
+
+.theme-actions-section {
+  margin-bottom: 1.5rem;
+}
+
+.theme-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.custom-themes-section {
+  margin-top: 1.5rem;
+}
+
+.custom-themes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.custom-theme-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background-color: rgb(var(--b2));
+  border: 1px solid rgb(var(--bc) / 0.1);
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.custom-theme-item:hover {
+  background-color: rgb(var(--b3));
+}
+
+.custom-theme-item.active {
+  border-color: rgb(var(--p));
+  background-color: rgb(var(--p) / 0.1);
+}
+
+.theme-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.theme-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.btn-xs {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 0.25rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background-color: rgb(var(--p));
+  color: rgb(var(--pc));
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: rgb(var(--p) / 0.8);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-error {
+  background-color: rgb(var(--er));
+  color: rgb(var(--erc));
+}
+
+.btn-error:hover {
+  background-color: rgb(var(--er) / 0.8);
+}
+
+.btn-secondary {
+  background-color: rgb(var(--s));
+  color: rgb(var(--sc));
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: rgb(var(--s) / 0.8);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: rgb(var(--bc));
+  border: 1px solid rgb(var(--bc) / 0.2);
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background-color: rgb(var(--bc) / 0.1);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

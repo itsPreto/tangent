@@ -3,14 +3,35 @@
     <!-- Streaming content display -->
     <template v-if="props.isStreaming">
       <div class="streaming-container">
-        <div class="streaming-indicator">
-          <div class="streaming-pulse"></div>
-          <span class="streaming-text">AI is typing...</span>
-        </div>
-        <div class="streaming-content">
-          <CodePreview :nodeId="props.nodeId" :language="streamingLanguage" :content="streamingBuffer"
-            :is-streaming="true" :code-index="0" :message-index="getMessageIndex()"
-            @click="handleCodeClick({ content: streamingBuffer, language: streamingLanguage, nodeId: props.nodeId, codeIndex: 0, messageIndex: getMessageIndex(), complete: false })" />
+        <div class="streaming-parts">
+          <!-- Regular text content -->
+          <div v-if="streamingTextContent" class="streaming-text-content">
+            <div class="text-content prose prose-sm max-w-none"
+                 :class="textContentClasses"
+                 v-html="streamingTextContent" />
+          </div>
+          
+          <!-- Thinking block while streaming -->
+          <ThinkingBlock 
+            v-if="streamingThinkContent" 
+            :content="streamingThinkContent" 
+            :is-streaming="true"
+            :node-id="props.nodeId"
+            :message-index="getMessageIndex()" 
+          />
+          
+          <!-- Code block while streaming -->
+          <div v-if="streamingCodeContent" class="streaming-code-content">
+            <CodePreview 
+              :nodeId="props.nodeId" 
+              :language="streamingLanguage" 
+              :content="streamingCodeContent"
+              :is-streaming="true" 
+              :code-index="0" 
+              :message-index="getMessageIndex()"
+              @click="handleCodeClick({ content: streamingCodeContent, language: streamingLanguage, nodeId: props.nodeId, codeIndex: 0, messageIndex: getMessageIndex(), complete: false })" 
+            />
+          </div>
         </div>
       </div>
     </template>
@@ -30,6 +51,16 @@
             <CodePreview :nodeId="props.nodeId" :language="part.language" :content="part.content"
               :code-index="part.codeIndex" :message-index="getMessageIndex()" :is-streaming="false"
               @click="handleCodeClick(part)" @preview="handleCodePreview(part)" />
+          </div>
+          
+          <!-- Think content -->
+          <div v-else-if="part.type === 'think'" class="think-content-wrapper">
+            <ThinkingBlock 
+              :content="part.content" 
+              :is-streaming="false"
+              :node-id="props.nodeId"
+              :message-index="getMessageIndex()" 
+            />
           </div>
 
           <!-- Pasted content -->
@@ -84,6 +115,7 @@ import { Clipboard, Archive } from 'lucide-vue-next'
 import emitter, { Events } from '@/utils/eventBus'
 import CodePreview from './CodePreview.vue'
 import CompactedMessageView from './CompactedMessageView.vue'
+import ThinkingBlock from './ThinkingBlock.vue'
 import type { ContentPart } from '@/types/message'
 import { useAppStore } from '@/stores/appStore'
 import { useChatStore } from "@/stores/chatStore";
@@ -107,8 +139,8 @@ const appStore = useAppStore()
 const chatStore = useChatStore()
 const themeStore = useThemeStore()
 
-// Theme awareness - get current theme
-const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 'light')
+// Theme awareness - get current theme from store
+const currentTheme = computed(() => themeStore.currentTheme)
 
 // Determine text color based on theme
 const textColor = computed(() => {
@@ -158,6 +190,11 @@ const streamingBuffer = ref('')
 const streamingLanguage = ref('react')
 const isStreamingActive = ref(false)
 
+// Separate streaming content types
+const streamingTextContent = ref('')
+const streamingThinkContent = ref('')
+const streamingCodeContent = ref('')
+
 // Enhanced language detection function
 function detectLanguage(text: string): string {
   // Vue SFC detection
@@ -205,6 +242,64 @@ function detectLanguage(text: string): string {
   }
 
   return 'text';
+}
+
+// Parse think tags from content - enhanced for streaming
+function parseThinkTags(text: string, isStreaming = false): { beforeThink: string, thinkContent: string, afterThink: string, hasThink: boolean } {
+  // For streaming: detect opening tag even without closing tag
+  if (isStreaming) {
+    const openTagIndex = text.indexOf('<think>');
+    if (openTagIndex !== -1) {
+      const beforeThink = text.substring(0, openTagIndex);
+      const afterOpenTag = text.substring(openTagIndex + 7); // 7 = length of '<think>'
+      
+      // Check if we have a closing tag
+      const closeTagIndex = afterOpenTag.indexOf('</think>');
+      if (closeTagIndex !== -1) {
+        // Complete think block
+        const thinkContent = afterOpenTag.substring(0, closeTagIndex);
+        const afterThink = afterOpenTag.substring(closeTagIndex + 8); // 8 = length of '</think>'
+        return {
+          beforeThink: beforeThink.trim(),
+          thinkContent: thinkContent.trim(),
+          afterThink: afterThink.trim(),
+          hasThink: true
+        };
+      } else {
+        // Partial think block (streaming)
+        return {
+          beforeThink: beforeThink.trim(),
+          thinkContent: afterOpenTag.trim(),
+          afterThink: '',
+          hasThink: true
+        };
+      }
+    }
+  } else {
+    // For complete content: use regex as before
+    const thinkRegex = /<think>([\s\S]*?)<\/think>/i;
+    const match = text.match(thinkRegex);
+    
+    if (match) {
+      const beforeThink = text.substring(0, match.index || 0);
+      const thinkContent = match[1] || '';
+      const afterThink = text.substring((match.index || 0) + match[0].length);
+      
+      return {
+        beforeThink: beforeThink.trim(),
+        thinkContent: thinkContent.trim(),
+        afterThink: afterThink.trim(),
+        hasThink: true
+      };
+    }
+  }
+  
+  return {
+    beforeThink: text,
+    thinkContent: '',
+    afterThink: '',
+    hasThink: false
+  };
 }
 
 // FIXED: extractCodeBlock function with proper Vue SFC detection
@@ -302,63 +397,92 @@ watch(
     if (!props.isStreaming) {
       lastCompleteContent.value = newContent;
       streamingBuffer.value = '';
+      streamingTextContent.value = '';
+      streamingThinkContent.value = '';
+      streamingCodeContent.value = '';
       isStreamingActive.value = false;
+      
+      // Force re-parse of complete content to ensure think tags are properly handled
+      // This will trigger the parsedContent computed to re-run
       return;
     }
 
-    // While streaming, check if we have code
-    const extracted = extractCodeBlock(newContent);
+    // Parse streaming content for different types (with streaming flag)
+    const thinkParsed = parseThinkTags(newContent, true);
+    const codeParsed = extractCodeBlock(newContent);
 
-    // Only treat as code if we have actual code markers
-    if (extracted.isCodeBlock) {
-      streamingBuffer.value = extracted.code;
-      streamingLanguage.value = extracted.language || 'text';
+    // Handle thinking content
+    if (thinkParsed.hasThink) {
+      streamingThinkContent.value = thinkParsed.thinkContent;
+      // Process the rest of the content without think tags
+      const remainingContent = thinkParsed.beforeThink + ' ' + thinkParsed.afterThink;
+      const codeInRemaining = extractCodeBlock(remainingContent.trim());
+      
+      if (codeInRemaining.isCodeBlock) {
+        streamingCodeContent.value = codeInRemaining.code;
+        streamingLanguage.value = codeInRemaining.language || 'text';
+        streamingTextContent.value = '';
+      } else {
+        streamingTextContent.value = remainingContent.trim();
+        streamingCodeContent.value = '';
+      }
+    } else if (codeParsed.isCodeBlock) {
+      // Only code content
+      streamingCodeContent.value = codeParsed.code;
+      streamingLanguage.value = codeParsed.language || 'text';
+      streamingTextContent.value = '';
+      streamingThinkContent.value = '';
+    } else {
+      // Only text content
+      streamingTextContent.value = newContent;
+      streamingCodeContent.value = '';
+      streamingThinkContent.value = '';
+    }
 
+    // Emit sandbox events for code content
+    if (streamingCodeContent.value) {
       emitter.emit('show-sandbox', {
-        code: streamingBuffer.value,
+        code: streamingCodeContent.value,
         language: streamingLanguage.value,
         isStreaming: true,
         nodeId: props.nodeId,
         partial: true
       } as Events['show-sandbox']);
-
-      isStreamingActive.value = true;
-    } else {
-      // For non-code content, don't use CodeBubble
-      isStreamingActive.value = false;
     }
+
+    isStreamingActive.value = true;
   },
   { immediate: true }
 );
 
-// When streaming stops, emit one final update
+// When streaming stops, ensure content is properly preserved
 watch(
   () => props.isStreaming,
-  (newVal) => {
-    if (!newVal && isStreamingActive.value && streamingBuffer.value) {
-      emitter.emit('show-sandbox', {
-        code: streamingBuffer.value,
-        language: streamingLanguage.value,
-        isStreaming: false,
-        nodeId: props.nodeId,
-        partial: false
-      } as Events['show-sandbox']);
+  (newVal, oldVal) => {
+    if (oldVal && !newVal) {
+      // Streaming just stopped - preserve the final content
+      lastCompleteContent.value = props.content;
+      
+      // Emit final sandbox update if needed
+      if (isStreamingActive.value && streamingCodeContent.value) {
+        emitter.emit('show-sandbox', {
+          code: streamingCodeContent.value,
+          language: streamingLanguage.value,
+          isStreaming: false,
+          nodeId: props.nodeId,
+          partial: false
+        } as Events['show-sandbox']);
+      }
+      
+      // Clear streaming state
       isStreamingActive.value = false;
     }
   }
 );
 
 const parsedContent = computed<ContentPart[]>(() => {
-  // If we have contentParts from the message, use those directly
-  if (props.contentParts && props.contentParts.length > 0) {
-    return props.contentParts.map((part, index) => ({
-      ...part,
-      codeIndex: part.codeIndex ?? index,
-      complete: true
-    }));
-  }
-
-  // Fallback to parsing the raw content (for backward compatibility)
+  // Always re-parse from raw content to ensure think tags are detected
+  // This ensures existing messages get updated with improved parsing logic
   const contentToProcess = lastCompleteContent.value || props.content;
   const parts: ContentPart[] = [];
   let codeIndex = 0;
@@ -406,6 +530,35 @@ const parsedContent = computed<ContentPart[]>(() => {
   }
 
   function processTextContent(text: string) {
+    if (!text) return;
+
+    // First, extract and process think tags
+    const thinkParsed = parseThinkTags(text);
+    
+    if (thinkParsed.hasThink) {
+      // Process content before think tag
+      if (thinkParsed.beforeThink) {
+        processTextSegment(thinkParsed.beforeThink);
+      }
+      
+      // Add think tag as separate part
+      parts.push({
+        type: 'think',
+        content: thinkParsed.thinkContent,
+        complete: true
+      });
+      
+      // Process content after think tag
+      if (thinkParsed.afterThink) {
+        processTextSegment(thinkParsed.afterThink);
+      }
+    } else {
+      // No think tags, process normally
+      processTextSegment(text);
+    }
+  }
+
+  function processTextSegment(text: string) {
     if (!text) return;
 
     let inCodeBlock = false;
@@ -514,41 +667,7 @@ const handleToggleExpansion = (expanded: boolean) => {
   });
 };
 
-// Update current theme when it changes in the DOM
-const updateThemeFromDOM = () => {
-  const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
-  if (newTheme !== currentTheme.value) {
-    currentTheme.value = newTheme;
-  }
-};
-
-// Set up theme observer on mount
-onMounted(() => {
-  // Setup theme observation
-  const themeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'data-theme') {
-        updateThemeFromDOM();
-      }
-    });
-  });
-
-  // Start observing theme changes on document element
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme']
-  });
-
-  // Initial theme check
-  updateThemeFromDOM();
-
-  // Clean up on unmount
-  onBeforeUnmount(() => {
-    if (themeObserver) {
-      themeObserver.disconnect();
-    }
-  });
-});
+// Theme reactivity is handled automatically by the theme store
 </script>
 
 <style scoped>
@@ -584,15 +703,41 @@ onMounted(() => {
 /* Streaming content styling */
 .streaming-container {
   position: relative;
-  padding: 1rem;
-  background: linear-gradient(135deg, rgb(var(--b1)) 0%, rgb(var(--b2) / 0.5) 100%);
-  border: 1px solid rgb(var(--b3) / 0.3);
   border-radius: 8px;
-  backdrop-filter: blur(8px);
-  box-shadow: 
-    0 2px 4px -1px rgba(0, 0, 0, 0.1),
-    0 1px 2px -1px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+}
+
+.streaming-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.streaming-text-content {
+  padding: 0.5rem 0;
+}
+
+.streaming-text-content .text-content {
+  position: relative;
+}
+
+.streaming-text-content .text-content::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: hsl(var(--p));
+  margin-left: 0.125rem;
+  animation: blink 1s infinite;
+  vertical-align: baseline;
+}
+
+.streaming-code-content {
+  margin: 0.5rem 0;
+}
+
+.think-content-wrapper {
+  margin: 0.5rem 0;
 }
 
 .streaming-container::before {
@@ -917,40 +1062,14 @@ onMounted(() => {
   }
 }
 
-/* Theme-specific enhancements */
-.theme-cyberpunk .streaming-container {
-  border-color: rgb(var(--p) / 0.4);
-  box-shadow: 
-    0 0 12px rgb(var(--p) / 0.15),
-    0 4px 20px rgba(0, 0, 0, 0.2);
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 
-.theme-synthwave .streaming-container {
-  background: linear-gradient(135deg, rgb(var(--p) / 0.1), rgb(var(--s) / 0.1));
-  border-color: rgb(var(--p) / 0.4);
-  box-shadow: 0 0 8px rgb(var(--p) / 0.2);
-}
+/* Theme-specific enhancements removed - now handled by parent component */
 
-.theme-dracula .streaming-container {
-  border-color: rgb(var(--p) / 0.6);
-  background: linear-gradient(135deg, rgb(var(--b1)), rgb(var(--p) / 0.05));
-}
-
-.theme-halloween .streaming-container {
-  border-color: rgb(var(--p) / 0.6);
-  box-shadow: 0 0 10px rgb(var(--p) / 0.2);
-}
-
-/* Dark theme text fixes */
-[data-theme="cyberpunk"] .message-content,
-[data-theme="acid"] .message-content,
-[data-theme="dracula"] .message-content,
-[data-theme="night"] .message-content,
-[data-theme="synthwave"] .message-content,
-[data-theme="black"] .message-content,
-[data-theme="luxury"] .message-content {
-  --message-text-color: rgba(255, 255, 255, 0.95) !important;
-}
+/* Text color is now handled by the theme store and parent component */
 
 /* Responsive design */
 @media (max-width: 768px) {
