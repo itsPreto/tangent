@@ -508,8 +508,7 @@ onMounted(() => {
 /* User message styling (right side) */
 .user-bubble-wrapper {
   display: flex;
-  align-items: flex-end;
-  margin-left: 20%;
+  justify-content: right;
   margin-bottom: 0;
 }
 

@@ -434,6 +434,7 @@ interface ExtendedMessage extends ModelParameters {
 interface BranchNodeProps {  // Use a dedicated interface
   node: Node;
   isSelected: boolean;
+  isMultiSelected?: boolean;
   selectedModel: string;
   openRouterApiKey: string;
   modelType: string;
@@ -510,7 +511,6 @@ const {
 // Force CSS re-evaluation on theme change
 watch(currentTheme, async (newTheme, oldTheme) => {
   if (oldTheme && newTheme !== oldTheme) {
-    console.log('BranchNode: Theme changed from', oldTheme, 'to', newTheme);
     
     // Force browser to re-evaluate CSS by temporarily removing theme classes
     const element = nodeElement.value;
@@ -524,7 +524,6 @@ watch(currentTheme, async (newTheme, oldTheme) => {
       // Add new theme class
       element.classList.add(`theme-${newTheme}`);
       
-      console.log('BranchNode: Forced CSS re-evaluation for theme', newTheme);
     }
   }
 }, { flush: 'post' });
@@ -545,13 +544,6 @@ for (let i = 0; i < props.node.id.length; i++) {
 
 // Get the reactive color set based on the hash
 const baseColorSet = getIndexedColorSet(Math.abs(hash));
-
-// Watch for theme changes to ensure reactivity
-watch(baseColorSet, (newColorSet) => {
-  console.log('BranchNode: baseColorSet recomputing for theme', currentTheme.value);
-  console.log('New color set:', newColorSet);
-}, { immediate: true });
-
 const showParamsEditor = ref(false);
 const avatarRef = ref<HTMLElement | null>(null);
 // --- Computed avatarRect for ModelParamsEditor ---
@@ -1024,10 +1016,6 @@ const themeMessageStyles = computed(() => {
   // Get the actual theme colors from the theme store
   const themeStoreColors = themeStore.currentThemeColors;
   
-  // Log when this recomputes
-  console.log('BranchNode: themeMessageStyles recomputing for theme', theme);
-  console.log('BranchNode: themeStoreColors in themeMessageStyles', themeStoreColors);
-  
   // Use the theme's primary color with transparency for backgrounds
   const primaryColor = themeStoreColors.primary;
   const secondaryColor = themeStoreColors.secondary;
@@ -1100,10 +1088,6 @@ const themeMessageStyles = computed(() => {
 
 // Generate theme-specific styles for the node
 const nodeThemeStyle = computed(() => {
-  // Log when this recomputes
-  console.log('BranchNode: nodeThemeStyle recomputing for theme', currentTheme.value);
-  console.log('BranchNode: themeStore.currentThemeColors', themeStore.currentThemeColors);
-  
   // Use the composable's theme colors
   const textColor = baseColorSet.value.contrastText;
   const bgColors = backgroundColors.value;
@@ -1150,7 +1134,6 @@ const nodeThemeStyle = computed(() => {
   // Merge base styles with theme-specific message styles
   const styles = { ...baseStyles, ...themeMessageStyles.value };
   
-  console.log('BranchNode: CSS custom properties:', styles);
   return styles;
 });
 
@@ -1158,8 +1141,8 @@ const nodeThemeStyle = computed(() => {
 const threadColor = computed(() => baseColorSet.value.base);
 
 const shouldGlow = computed(() => {
-  // Only glow if the node is selected and zoom is below 100% (i.e., less than 1)
-  return props.isSelected && props.zoom < 1.5;
+  // Glow if the node is selected (focus) or multi-selected, and zoom is below 150%
+  return (props.isSelected || props.isMultiSelected) && props.zoom < 1.5;
 });
 
 const calculateSnappedPosition = () => {
@@ -2059,7 +2042,6 @@ const toggleExpanded = () => {
 
 const toggleAutoTTS = () => {
   autoTTSEnabled.value = !autoTTSEnabled.value;
-  console.log('BranchNode: Auto TTS toggled to:', autoTTSEnabled.value, 'for node:', props.node.id);
   // Store the preference in localStorage for persistence
   localStorage.setItem(`autoTTS_${props.node.id}`, autoTTSEnabled.value.toString());
 };
@@ -2482,16 +2464,6 @@ onBeforeUnmount(() => {
 });
 </script>
 <style scoped>
-/* COMPLETE BRANCH NODE STYLES - Fixed theme contrasting and consistent snapped backgrounds */
-
-/* All CSS custom properties are now set dynamically via nodeThemeStyle computed property */
-
-/* Theme styles are now handled dynamically via CSS custom properties */
-
-/* Snapped backdrop colors are now handled dynamically via CSS custom properties */
-
-/* Glassmorphism variables are now set dynamically via nodeThemeStyle computed property */
-
 /* Base container for the node */
 .branch-node {
   position: absolute;
@@ -3115,7 +3087,6 @@ onBeforeUnmount(() => {
   transition: all 0.3s ease;
 }
 
-/* Message styling now uses dynamic CSS custom properties */
 .user-message {
   background: var(--user-message-bg, var(--user-glass-primary)) !important;
   border-color: var(--node-border-color) !important;
@@ -3128,7 +3099,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px var(--node-shadow-color), inset 0 1px 0 var(--node-color-light) !important;
 }
 
-/* Snapped message styling uses enhanced dynamic properties */
 .snapped .user-message {
   background: var(--user-message-bg, var(--user-glass-primary)) !important;
   border-color: var(--node-color) !important;
@@ -3172,17 +3142,6 @@ onBeforeUnmount(() => {
   75% { transform: translateY(-5px) rotate(3deg); }
 }
 
-/* Acid theme now uses dynamic CSS custom properties */
-
-/* Removed hardcoded acid styles - now uses CSS custom properties */
-
-/* Removed hardcoded acid snapped styles - now uses CSS custom properties */
-
-/* All theme-specific styling now handled by dynamic CSS custom properties */
-
-/* Acid theme special effects handled by dynamic properties and --node-text-color */
-
-/* UPDATED: Mobile responsiveness for centered layout */
 @media (max-width: 640px) {
 
   .user-message,

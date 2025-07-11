@@ -239,12 +239,21 @@ export const useChatStore = defineStore('chat', () => {
         }
     };
 
+    // Recent workspaces computed property
+    const recentWorkspaces = computed(() => {
+        return chats.value
+            .filter(chat => chat.status !== 'archived')
+            .sort((a, b) => new Date(b.lastModified || b.createdAt).getTime() - new Date(a.lastModified || a.createdAt).getTime())
+            .slice(0, 6);
+    });
+
     return {
         currentChatId,
         chats,
         isLoading,
         error,
         currentChat,
+        recentWorkspaces,
         loadChats,
         createChat,
         loadChat,

@@ -52,6 +52,20 @@ export interface Message {
   timestamp: string;
   isStreaming?: boolean;
   modelId?: string;
+  routingResult?: {
+    category: 'code' | 'vision' | 'text' | 'custom';
+    confidence: number;
+    model: {
+      id: string;
+      name: string;
+      source: string;
+    } | null;
+    agent?: any;
+    reasoning?: string;
+    fallbackUsed?: boolean;
+    responseTime?: number;
+    title?: string;
+  };
 }
 
 export interface Node {

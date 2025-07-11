@@ -77,7 +77,9 @@ Category:`;
     'javascript', 'python', 'typescript', 'react', 'vue', 'css', 'html',
     'api', 'endpoint', 'database', 'query', 'algorithm', 'programming',
     'syntax', 'compile', 'runtime', 'framework', 'library', 'npm', 'git',
-    'terminal', 'command line', 'bash', 'shell', 'regex', 'json', 'xml'
+    'terminal', 'command line', 'bash', 'shell', 'regex', 'json', 'xml',
+    'threejs', 'three.js', 'webgl', 'canvas', 'scene', 'mesh', 'geometry',
+    'material', 'shader', 'render', 'animation', 'texture', 'lighting'
   ];
 
   private readonly VISION_KEYWORDS = [

@@ -236,6 +236,9 @@ export const useCanvasStore = defineStore('canvas', () => {
   // Topic clustering state
   const topicClusters = ref(new Map());
   const nodeTopics = ref(new Map());
+  
+  // Connection labels storage
+  const connectionLabels = ref(new Map<string, string>());
 
   let abortController: AbortController | null = null;
 
@@ -1603,7 +1606,15 @@ export const useCanvasStore = defineStore('canvas', () => {
 
       // Auto-save if in a chat
       if (chatStore.currentChatId) {
-        chatStore.autoSave(chatStore.currentChatId, id, updatedData);
+        // For critical updates like parentId, save immediately instead of debouncing
+        const criticalFields = ['parentId', 'branchMessageIndex'];
+        const hasCriticalUpdate = Object.keys(updatedData).some(key => criticalFields.includes(key));
+        
+        if (hasCriticalUpdate) {
+          await chatStore.updateNode(chatStore.currentChatId, id, updatedData);
+        } else {
+          chatStore.autoSave(chatStore.currentChatId, id, updatedData);
+        }
       }
     }
   };
@@ -1821,6 +1832,9 @@ export const useCanvasStore = defineStore('canvas', () => {
       const chatData = await chatStore.loadChat(chatId);
       if (!chatData) throw new Error('Failed to load chat');
 
+      console.log('[CanvasStore] Loading chat data:', chatData);
+      console.log('[CanvasStore] Chat nodes structure:', chatData.nodes);
+
       // Store chat metadata for access by components
       currentChatMetadata.value = {
         format: chatData.format,
@@ -1828,14 +1842,23 @@ export const useCanvasStore = defineStore('canvas', () => {
         originalId: chatData.originalId
       };
 
+      // Restore connection labels if they exist
+      if (chatData.connectionLabels) {
+        console.log('[CanvasStore] Restoring connection labels:', chatData.connectionLabels);
+        connectionLabels.value.clear();
+        for (const [key, label] of Object.entries(chatData.connectionLabels)) {
+          connectionLabels.value.set(key, label as string);
+        }
+      }
+
       // Clear existing nodes
       nodes.value = [];
 
-      // Convert and load nodes
-      const flattenNodes = (node: any): Node[] => {
-        const children = node.children || [];
-        return [
-          {
+      // Convert and load nodes - handle both flat array and hierarchical structure
+      const processNodes = (nodeData: any): Node[] => {
+        // Check if nodeData is already a flat array (for compatibility)
+        if (Array.isArray(nodeData)) {
+          return nodeData.map(node => ({
             id: node.id,
             type: node.type,
             title: node.title,
@@ -1847,13 +1870,35 @@ export const useCanvasStore = defineStore('canvas', () => {
             streamingContent: null,
             modelParams: node.modelParams,
             ...node.metadata
-          },
-          ...children.flatMap(flattenNodes)
-        ];
+          }));
+        }
+        
+        // Handle hierarchical structure (single root node with children)
+        const flattenNodes = (node: any): Node[] => {
+          const children = node.children || [];
+          return [
+            {
+              id: node.id,
+              type: node.type,
+              title: node.title,
+              x: node.x,
+              y: node.y,
+              parentId: node.parentId,
+              branchMessageIndex: node.branchMessageIndex,
+              messages: node.messages || [],
+              streamingContent: null,
+              modelParams: node.modelParams,
+              ...node.metadata
+            },
+            ...children.flatMap(flattenNodes)
+          ];
+        };
+        
+        return flattenNodes(nodeData);
       };
 
       // Load nodes and update state
-      nodes.value = flattenNodes(chatData.nodes);
+      nodes.value = processNodes(chatData.nodes);
       lastSavedWorkspaceId.value = chatId;
       
       // Restore model parameters for each node
@@ -2100,12 +2145,32 @@ export const useCanvasStore = defineStore('canvas', () => {
     nodeModelParams.value.clear();
     topicClusters.value.clear();
     nodeTopics.value.clear();
+    connectionLabels.value.clear();
     
     // Clear any other potential memory consumers
     snappedNodesStack.value = [];
     snappedNodeId.value = null;
     
     console.log('Canvas store caches cleared');
+  };
+  
+  // Connection label functions
+  const setConnectionLabel = (parentId: string, childId: string, label: string) => {
+    const key = `${parentId}->${childId}`;
+    connectionLabels.value.set(key, label);
+    
+    // Auto-save connection labels if in a chat
+    if (chatStore.currentChatId) {
+      const labelsObj = Object.fromEntries(connectionLabels.value);
+      chatStore.updateChatMetadata(chatStore.currentChatId, {
+        connectionLabels: labelsObj
+      });
+    }
+  };
+  
+  const getConnectionLabel = (parentId: string, childId: string): string | undefined => {
+    const key = `${parentId}->${childId}`;
+    return connectionLabels.value.get(key);
   };
   
   const getMemoryUsage = () => {
@@ -2182,5 +2247,10 @@ export const useCanvasStore = defineStore('canvas', () => {
     cleanupMemory,
     clearAllCaches,
     getMemoryUsage,
+    
+    // Connection labels
+    setConnectionLabel,
+    getConnectionLabel,
+    connectionLabels,
   };
 });

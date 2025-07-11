@@ -68,6 +68,35 @@
             :style="getControlButtonStyle(isInlineAssistantActive)" title="AI Assist">
             <Sparkles class="w-4 h-4" />
           </button>
+          
+          <!-- Dependency Detection Toggle -->
+          <button @click="dependencyDetectionEnabled = !dependencyDetectionEnabled" 
+            class="btn btn-sm editor-control-btn"
+            :class="dependencyDetectionEnabled ? 'btn-success' : 'btn-ghost'"
+            :style="getControlButtonStyle(dependencyDetectionEnabled)" 
+            :title="dependencyDetectionEnabled ? 'Dynamic Dependencies ON' : 'Dynamic Dependencies OFF'">
+            <Box class="w-4 h-4" />
+          </button>
+          
+          <!-- Debug Info -->
+          <div class="text-xs opacity-60" v-if="dependencyDetectionEnabled">
+            <span>Lang: {{ currentLanguage }}</span>
+          </div>
+          
+          <!-- Manual Dependency Detection Trigger -->
+          <button @click="updateDynamicDependencies(currentCode)" 
+            class="btn btn-sm btn-ghost"
+            :disabled="isLoadingDependencies"
+            title="Manually trigger dependency detection">
+            🔍
+          </button>
+          
+          <!-- Dependency Loading Indicator -->
+          <div v-if="isLoadingDependencies" class="flex items-center gap-1 text-xs text-success">
+            <div class="loading loading-spinner loading-xs"></div>
+            <span>Resolving deps...</span>
+          </div>
+          
           <button @click="copyToClipboard" class="btn btn-ghost btn-sm editor-control-btn" :style="controlButtonStyle">
             <Copy class="w-4 h-4" />
           </button>
@@ -161,8 +190,8 @@
                 </div>
               </template>
               <template v-else>
-                <SandpackProvider :files="debouncedSandpackFiles" :template="getTemplate(currentLanguage)" :theme="editorTheme"
-                  :customSetup="sandpackSetup" :options="{
+                <SandpackProvider :files="enhancedSandpackFiles" :template="getTemplate(currentLanguage)" :theme="editorTheme"
+                  :customSetup="dynamicSandpackSetup" :options="{
                     autorun: !isStreaming && !isCompiling,
                     recompileMode: 'immediate',
                     recompileDelay: 0
@@ -478,7 +507,7 @@ import { DotLottieVue } from '@lottiefiles/dotlottie-vue'
 import { getTemplateCode, getFiles } from '@/utils/relicTemplates'
 import { SandpackProvider, SandpackPreview, SandpackCodeEditor } from 'sandpack-vue3'
 import type { SandpackFiles, SandpackMessage } from '@codesandbox/sandpack-react'
-import { sandpackSetup } from '../sidebar/sandpackDeps'
+import { sandpackSetup, getSmartSandpackSetup, createDynamicSandpackSetup } from '../sidebar/sandpackDeps'
 import PreviewContainer from './SandPackPreviewContainer.vue'
 import PythonPreview from './PythonPreview.vue'
 import PythonEditor from './PythonEditor.vue'
@@ -603,6 +632,10 @@ const currentSnippetIndex = ref(-1)
 const splitPosition = ref(50)
 const showDiffModal = ref(false)
 const previewRef = ref<null | { getBundlerError: () => string }>(null)
+const dynamicSandpackSetup = ref(sandpackSetup)
+const isLoadingDependencies = ref(false)
+const dependencyDetectionEnabled = ref(true)
+const dependencyDetectionTimer = ref<number | null>(null)
 const previewErrors = ref('')
 const lastSavedCode = ref('')
 const hasEdits = ref(false)
@@ -1158,6 +1191,25 @@ root.render(
   return sandpackFiles.value
 })
 
+// Enhanced sandpack files that include additional files from dynamic setup
+const enhancedSandpackFiles = computed(() => {
+  const baseFiles = debouncedSandpackFiles.value
+  
+  // Merge with additional files from dynamic setup
+  const additionalFiles = dynamicSandpackSetup.value.additionalFiles || {}
+  
+  console.log('🔗 Enhanced files:', {
+    baseFiles: Object.keys(baseFiles),
+    additionalFiles: Object.keys(additionalFiles),
+    total: Object.keys({...baseFiles, ...additionalFiles}).length
+  })
+  
+  return {
+    ...baseFiles,
+    ...additionalFiles
+  }
+})
+
 // Theme-based styling (keeping existing styles)
 const headerStyle = computed(() => {
   return {
@@ -1640,6 +1692,78 @@ const saveFile = async () => {
 }
 
 
+// Dynamic dependency detection function
+const updateDynamicDependencies = async (code: string) => {
+  if (!dependencyDetectionEnabled.value || isLoadingDependencies.value) {
+    console.log('⏭️ Skipping dependency detection:', {
+      enabled: dependencyDetectionEnabled.value,
+      loading: isLoadingDependencies.value
+    });
+    return
+  }
+  
+  isLoadingDependencies.value = true
+  
+  try {
+    // Get current editor code to preserve it
+    let currentEditorCode = code
+    if (currentLanguage.value !== 'python' && sandpackEditorRef.value && sandpackEditorRef.value.getCode) {
+      try {
+        currentEditorCode = await sandpackEditorRef.value.getCode() || code
+      } catch (err) {
+        console.log('Could not get current editor code, using provided code')
+      }
+    }
+    
+    console.log('🔍 Analyzing code for dependencies...', {
+      codeLength: currentEditorCode.length,
+      codePreview: currentEditorCode.substring(0, 100) + '...'
+    })
+    
+    const smartSetup = await getSmartSandpackSetup(currentEditorCode, {
+      useNpmRegistry: true,
+      includeLegacyDeps: true,
+      timeout: 3000 // 3 second timeout
+    })
+    
+    // Only update if dependencies actually changed
+    const currentDeps = JSON.stringify(dynamicSandpackSetup.value.dependencies)
+    const newDeps = JSON.stringify(smartSetup.dependencies)
+    
+    if (currentDeps !== newDeps) {
+      console.log('📦 Dependencies updated:', {
+        before: Object.keys(dynamicSandpackSetup.value.dependencies).length,
+        after: Object.keys(smartSetup.dependencies).length,
+        added: Object.keys(smartSetup.dependencies).filter(dep => 
+          !dynamicSandpackSetup.value.dependencies[dep]
+        ),
+        hasTailwind: !!smartSetup.dependencies.tailwindcss,
+        additionalFiles: Object.keys(smartSetup.additionalFiles || {})
+      })
+      
+      // Update the current code to the latest editor state
+      currentCode.value = currentEditorCode
+      
+      dynamicSandpackSetup.value = smartSetup
+    }
+  } catch (error) {
+    console.warn('❌ Failed to detect dependencies:', error)
+  } finally {
+    isLoadingDependencies.value = false
+  }
+}
+
+// Debounced dependency detection to prevent too many calls
+const debouncedUpdateDependencies = (code: string) => {
+  if (dependencyDetectionTimer.value) {
+    clearTimeout(dependencyDetectionTimer.value)
+  }
+  
+  dependencyDetectionTimer.value = setTimeout(() => {
+    updateDynamicDependencies(code)
+  }, 1000) // 1 second debounce
+}
+
 const handleCodeUpdate = (newCode: string) => {
   currentCode.value = newCode
   
@@ -1653,6 +1777,14 @@ const handleCodeUpdate = (newCode: string) => {
     hasEdits: hasEdits.value,
     isRelic: currentFileId.value?.startsWith('relic-')
   })
+
+  // Update dynamic dependencies for JavaScript/React code
+  if (currentLanguage.value === 'react' || currentLanguage.value === 'javascript') {
+    console.log('🔍 Triggering dependency detection for:', currentLanguage.value);
+    debouncedUpdateDependencies(newCode)
+  } else {
+    console.log('⏭️ Skipping dependency detection for language:', currentLanguage.value);
+  }
 
   // Update the current file in memory immediately
   if (currentFileId.value) {
@@ -2479,6 +2611,11 @@ onMounted(() => {
   emitter.on('show-sandbox', handleShowSandbox)
   loadRelics() // async but we don't need to await
   
+  // Initialize dynamic dependencies for the current code
+  if (currentCode.value && (currentLanguage.value === 'react' || currentLanguage.value === 'javascript')) {
+    updateDynamicDependencies(currentCode.value)
+  }
+  
   // Start periodic code checker for relics
   setInterval(checkCodeChanges, 1000)
 })
@@ -2502,6 +2639,11 @@ onUnmounted(() => {
   // Clear any pending compilation timeout
   if (compilationTimer.value) {
     clearTimeout(compilationTimer.value)
+  }
+  
+  // Clear any pending dependency detection timeout
+  if (dependencyDetectionTimer.value) {
+    clearTimeout(dependencyDetectionTimer.value)
   }
 })
 

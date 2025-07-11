@@ -46,25 +46,25 @@
       pointer-events="none"
     />
 
+    <!-- Enhanced glow path (always visible with constant intensity) -->
+    <path
+      :d="pathData"
+      :stroke="`url(#connection-gradient-${startNode.id}-${endNode.id})`"
+      :stroke-width="strokeWidth * 6"
+      :stroke-dasharray="dashPattern"
+      fill="none"
+      class="glow-path"
+      :style="{
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        filter: `blur(${strokeWidth * 1.5}px)`,
+        opacity: 0.8,
+        pointerEvents: 'none'
+      }"
+    />
+
     <!-- Label with contrast background -->
     <g class="label-container" v-if="hasLabel" style="pointer-events: all; z-index: 10;">
-      
-      <!-- Enhanced glow path for active state -->
-      <path
-        v-if="isActive"
-        :d="pathData"
-        :stroke="`url(#connection-gradient-${startNode.id}-${endNode.id})`"
-        :stroke-width="strokeWidth * 3"
-        :stroke-dasharray="dashPattern"
-        fill="none"
-        class="glow-path"
-        :style="{
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          filter: `blur(${strokeWidth * 0.8}px)`,
-          opacity: 0.6
-        }"
-      />
       
       <!-- A single, clean text element. -->
       <text class="text-container" style="pointer-events: all;">
@@ -398,7 +398,7 @@ const reversedPathData = computed(() => {
 
 // Styling - consistent across all zoom levels
 const strokeWidth = computed(() => {
-  return baseStroke * (props.isActive ? 1.5 : 1) // Only scale for active state
+  return baseStroke * 1.5 // Always use the active stroke width
 })
 
 const dashPattern = computed(() => {
@@ -643,7 +643,11 @@ function getLabelColor(): string {
 }
 
 // Label content
-const hasLabel = computed(() => customLabel.value || getDefaultLabel())
+const hasLabel = computed(() => {
+  return customLabel.value || 
+         canvasStore.getConnectionLabel(props.startNode.id, props.endNode.id) || 
+         getDefaultLabel()
+})
 
 function getDefaultLabel() {
   const idx = props.endNode.branchMessageIndex ?? 0
@@ -654,6 +658,11 @@ function getDefaultLabel() {
 
 function getLabelText() {
   if (customLabel.value) return customLabel.value
+  
+  // Check for stored connection label first
+  const storedLabel = canvasStore.getConnectionLabel(props.startNode.id, props.endNode.id)
+  if (storedLabel) return storedLabel
+  
   const defaultLabel = getDefaultLabel()
   return defaultLabel || `Branch ${(props.endNode.branchMessageIndex ?? 0) + 1}`
 }

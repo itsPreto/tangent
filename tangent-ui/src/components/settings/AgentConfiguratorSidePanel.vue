@@ -22,10 +22,6 @@
               <span class="tab-icon">🎭</span>
               <span class="tab-label">Mock Data</span>
             </button>
-            <button @click="activeTab = 'themes'" class="tab-btn" :class="{ active: activeTab === 'themes' }">
-              <span class="tab-icon">🎨</span>
-              <span class="tab-label">Themes</span>
-            </button>
           </div>
         </div>
 
@@ -176,14 +172,14 @@
                 <div class="system-header">
                   <span class="section-title">System Message</span>
                   <span v-if="selectedAgent" class="selected-agent">
-                    {{agentTypes.find(a => a.id === selectedAgent)?.emoji}}
-                    {{agentTypes.find(a => a.id === selectedAgent)?.name}}
+                    {{agentTypes.value.find(a => a.id === selectedAgent)?.emoji}}
+                    {{agentTypes.value.find(a => a.id === selectedAgent)?.name}}
                   </span>
                 </div>
 
                 <div v-if="selectedAgent" class="system-message-editor">
                   <textarea v-model="systemMessages[selectedAgent]" @input="updateSystemMessage" class="system-textarea"
-                    :placeholder="`Enter system message for ${agentTypes.find(a => a.id === selectedAgent)?.name}...`"
+                    :placeholder="`Enter system message for ${agentTypes.value.find(a => a.id === selectedAgent)?.name}...`"
                     rows="4"></textarea>
                   <div class="system-actions">
                     <button @click="resetSystemMessage" class="reset-btn">
@@ -1440,157 +1436,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Themes Tab -->
-        <div v-if="activeTab === 'themes'" class="tab-content">
-          <div class="themes-content">
-            <div class="section-title">Theme Customization</div>
-            <p class="section-description">
-              Customize theme colors or create new themes. Changes apply instantly.
-            </p>
-
-            <!-- Current Theme Display -->
-            <div class="current-theme-section">
-              <div class="config-label">Current Theme</div>
-              <div class="current-theme-display">
-                <div class="theme-preview">
-                  <div class="color-dot" :style="{ backgroundColor: themeStore.currentThemeColors.primary }"></div>
-                  <div class="color-dot" :style="{ backgroundColor: themeStore.currentThemeColors.secondary }"></div>
-                  <div class="color-dot" :style="{ backgroundColor: themeStore.currentThemeColors.accent }"></div>
-                </div>
-                <span class="theme-name">{{ themeStore.currentTheme }}</span>
-                <span v-if="themeStore.isCustomTheme(themeStore.currentTheme)" class="custom-badge">Custom</span>
-              </div>
-            </div>
-
-            <!-- Theme Colors Editor -->
-            <div class="theme-colors-section">
-              <div class="config-label">Colors</div>
-              <div class="colors-grid">
-                <div class="color-input-group">
-                  <label class="color-label">Primary</label>
-                  <div class="color-input-row">
-                    <input
-                      v-model="editableColors.primary"
-                      type="color"
-                      class="color-picker"
-                      @input="startEditingTheme"
-                    />
-                    <input
-                      v-model="editableColors.primary"
-                      type="text"
-                      class="color-text-input"
-                      placeholder="#570DF8"
-                      @input="startEditingTheme"
-                    />
-                  </div>
-                </div>
-
-                <div class="color-input-group">
-                  <label class="color-label">Secondary</label>
-                  <div class="color-input-row">
-                    <input
-                      v-model="editableColors.secondary"
-                      type="color"
-                      class="color-picker"
-                      @input="startEditingTheme"
-                    />
-                    <input
-                      v-model="editableColors.secondary"
-                      type="text"
-                      class="color-text-input"
-                      placeholder="#F000B8"
-                      @input="startEditingTheme"
-                    />
-                  </div>
-                </div>
-
-                <div class="color-input-group">
-                  <label class="color-label">Accent</label>
-                  <div class="color-input-row">
-                    <input
-                      v-model="editableColors.accent"
-                      type="color"
-                      class="color-picker"
-                      @input="startEditingTheme"
-                    />
-                    <input
-                      v-model="editableColors.accent"
-                      type="text"
-                      class="color-text-input"
-                      placeholder="#37CDBE"
-                      @input="startEditingTheme"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Theme Actions -->
-            <div class="theme-actions-section">
-              <div class="theme-buttons">
-                <button
-                  @click="saveAsNewTheme"
-                  class="btn-secondary"
-                  :disabled="!hasChanges"
-                >
-                  Save as New Theme
-                </button>
-                <button
-                  @click="resetColors"
-                  class="btn-ghost"
-                  :disabled="!hasChanges"
-                >
-                  Reset
-                </button>
-                <button
-                  v-if="isEditingTheme"
-                  @click="discardChanges"
-                  class="btn-ghost"
-                >
-                  Discard Changes
-                </button>
-              </div>
-            </div>
-
-            <!-- Custom Themes List -->
-            <div v-if="Object.keys(themeStore.customThemes).length > 0" class="custom-themes-section">
-              <div class="config-label">Custom Themes</div>
-              <div class="custom-themes-list">
-                <div
-                  v-for="(theme, name) in themeStore.customThemes"
-                  :key="name"
-                  class="custom-theme-item"
-                  :class="{ active: themeStore.currentTheme === name }"
-                >
-                  <div class="theme-info">
-                    <div class="theme-preview">
-                      <div class="color-dot" :style="{ backgroundColor: theme.colors.primary }"></div>
-                      <div class="color-dot" :style="{ backgroundColor: theme.colors.secondary }"></div>
-                      <div class="color-dot" :style="{ backgroundColor: theme.colors.accent }"></div>
-                    </div>
-                    <span class="theme-name">{{ theme.name }}</span>
-                  </div>
-                  <div class="theme-actions">
-                    <button
-                      @click="applyTheme(name)"
-                      class="btn-xs btn-primary"
-                      :disabled="themeStore.currentTheme === name"
-                    >
-                      Apply
-                    </button>
-                    <button
-                      @click="deleteCustomTheme(name)"
-                      class="btn-xs btn-error"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -1798,12 +1643,16 @@ const apiProviders = [
   { id: 'google', name: 'Google', placeholder: 'AIza...' }
 ];
 
-const agentTypes = [
-  { id: 'text', name: 'Text Agent', emoji: '💬', color: '#3b82f6' },
-  { id: 'vision', name: 'Vision Agent', emoji: '👁️', color: '#8b5cf6' },
-  { id: 'code', name: 'Code Agent', emoji: '💻', color: '#10b981' },
-  { id: 'router', name: 'Router Agent', emoji: '🧠', color: '#f59e0b' }
-];
+// Theme-aware agent types
+const agentTypes = computed(() => {
+  const colors = themeStore.currentThemeColors;
+  return [
+    { id: 'text', name: 'Text Agent', emoji: '💬', color: colors.primary },
+    { id: 'vision', name: 'Vision Agent', emoji: '👁️', color: colors.secondary },
+    { id: 'code', name: 'Code Agent', emoji: '💻', color: colors.accent },
+    { id: 'router', name: 'Router Agent', emoji: '🧠', color: colors.primary }
+  ];
+});
 
 // Dynamic agent creation state
 const showCustomAgentForm = ref(false);
@@ -1811,10 +1660,15 @@ const customAgentForm = reactive({
   name: '',
   description: '',
   emoji: '🤖',
-  color: '#6366f1',
+  color: '#6366f1', // Will be updated dynamically
   triggerPatterns: [''],
   tags: ['']
 });
+
+// Update custom agent form color when theme changes
+watch(() => themeStore.currentThemeColors.primary, (newColor) => {
+  customAgentForm.color = newColor;
+}, { immediate: true });
 
 const quickFilters = [
   { id: 'vision', label: 'Vision' },
@@ -2063,7 +1917,7 @@ const filteredModels = computed(() => {
 
 const totalModels = computed(() => allModels.value.length);
 const freeModelsCount = computed(() => allModels.value.filter(m => m.isFree).length);
-const configuredAgentsCount = computed(() => agentTypes.filter(agent => getAgentModel(agent.id)).length);
+const configuredAgentsCount = computed(() => agentTypes.value.filter(agent => getAgentModel(agent.id)).length);
 const displayedModels = computed(() => {
   const endIndex = (currentPage.value + 1) * itemsPerPage;
   return filteredModels.value.slice(0, endIndex);
@@ -2225,7 +2079,7 @@ const setAsAgent = (agentId, model) => {
   } else {
     // For standard agents
     agentStore.setAgentModel(agentId, model);
-    const agentType = agentTypes.find(a => a.id === agentId);
+    const agentType = agentTypes.value.find(a => a.id === agentId);
     showNotification(`Set as ${agentType?.name}`);
   }
   emit('model-selected', model);
@@ -2242,7 +2096,7 @@ const clearAgent = (agentId) => {
     const config = agentStore.agentConfigs.find(config => config.type === agentId && config.isDefault);
     if (config) {
       agentStore.updateAgentConfig(config.id, { model: null });
-      showNotification(`${agentTypes.find(a => a.id === agentId)?.name} cleared`);
+      showNotification(`${agentTypes.value.find(a => a.id === agentId)?.name} cleared`);
     }
   }
 };
@@ -2347,7 +2201,7 @@ const allAgentTypes = computed(() => {
     isCustom: true
   }));
 
-  return [...agentTypes, ...customAgents];
+  return [...agentTypes.value, ...customAgents];
 });
 
 // Testing computed properties
@@ -5878,9 +5732,9 @@ onBeforeUnmount(() => {
 }
 
 .theme-dracula .panel-container {
-  background: linear-gradient(1deg, rgb(245 150 236 / 34%), rgba(3, 136, 166, 0.601));
-  box-shadow: -8px 0 40px rgba(255, 121, 198, 0.15), inset 0px 1px 20px 2px rgba(255, 121, 198, 0.08);
-  border-color: rgba(255, 121, 198, 0.3);
+  background: linear-gradient(1deg, rgba(255, 51, 51, 0.2), rgba(15, 15, 15, 0.9));
+  box-shadow: -8px 0 40px rgba(255, 51, 51, 0.15), inset 0px 1px 20px 2px rgba(255, 51, 51, 0.08);
+  border-color: rgba(255, 51, 51, 0.3);
 }
 
 .theme-halloween .panel-container {
@@ -5897,7 +5751,7 @@ onBeforeUnmount(() => {
 }
 
 .theme-business .panel-container {
-  background: linear-gradient(357deg, rgb(0 0 0 / 59%), rgb(46 99 200 / 80%));
+  background: linear-gradient(214deg, rgb(30 34 40), rgb(30 34 38), rgb(46 99 200 / 80%));
   box-shadow: -8px 0 40px rgba(75, 107, 251, 0.15), inset 0px 1px 15px 2px rgba(75, 107, 251, 0.05);
   border-color: rgba(75, 107, 251, 0.2);
 }

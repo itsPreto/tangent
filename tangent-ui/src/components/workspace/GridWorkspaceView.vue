@@ -177,7 +177,7 @@
           @select-workspace="handleSelectWorkspace"
           class="topics-sidebar"
         />
-        <D3ForceGraph 
+        <ForceGraph 
           v-if="clusteringStatus.clusters && clusteringStatus.clusters.length > 0"
           ref="d3GraphRef"
           :clustering-status="clusteringStatus"
@@ -647,7 +647,7 @@ import {
 import { clusteringService, type ClusteringStatus } from '@/services/clusteringService';
 import { conversationImportService, type ImportStatus } from '@/services/conversationImportService';
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
-import D3ForceGraph from './D3ForceGraph.vue';
+import ForceGraph from './ForceGraph.vue';
 import TopicsPanel from './TopicsPanel.vue';
 import CanvasPreview from './CanvasPreview.vue';
 

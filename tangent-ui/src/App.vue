@@ -47,6 +47,16 @@
                   <Plus class="w-4 h-4" />
                   New Workspace
                 </button>
+                <button @click="handleShowAllWorkspaces; showOverflowMenu = false"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded">
+                  <FolderOpen class="w-4 h-4" />
+                  All Workspaces
+                </button>
+                <button @click="appStore.toggleRAGPanel(); showOverflowMenu = false"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded">
+                  <FileText class="w-4 h-4" />
+                  Documents
+                </button>
                 <!-- <button @click="triggerFileSelect; showOverflowMenu = false"
                       class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded">
                       <UploadCloud class="w-4 h-4" />
@@ -113,6 +123,20 @@
                 :class="compactButtonClasses" :style="buttonStyles" :title="'New Workspace'">
                 <Plus :class="iconSizeClasses" />
                 <span v-if="!isCompactMode" class="hidden sm:inline text-xs">New</span>
+              </button>
+              
+              <button @click="handleShowAllWorkspaces"
+                class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
+                :class="compactButtonClasses" :style="buttonStyles" :title="'All Workspaces'">
+                <FolderOpen :class="iconSizeClasses" />
+                <span v-if="!isCompactMode" class="hidden sm:inline text-xs">All</span>
+              </button>
+              
+              <button @click="appStore.toggleRAGPanel()"
+                class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
+                :class="[compactButtonClasses, { 'btn-primary': appStore.isRAGPanelOpen }]" :style="buttonStyles" :title="'Toggle Documents Panel'">
+                <FileText :class="iconSizeClasses" />
+                <span v-if="!isCompactMode" class="hidden sm:inline text-xs">Docs</span>
               </button>
 
               <div class="flex-shrink min-w-0 max-w-[150px] sm:max-w-[200px]">
@@ -214,18 +238,10 @@
            marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
          }">
       <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mb-4 pointer-events-auto">
-        <button v-if="!isInOverview" @click="handleBackToWorkspaces" class="btn btn-sm back-to-workspaces-btn hover:bg-base-300/90"
+        <button v-if="!isInOverview && !isOnWelcomeScreen" @click="handleBackToWorkspaces" class="btn btn-sm back-to-workspaces-btn hover:bg-base-300/90"
           :style="controlButtonStyle">
           <ArrowLeft class="w-4 h-4" />
           <span class="text-md"></span>
-        </button>
-        <button v-if="!isOnboarding" @click="appStore.toggleRAGPanel" 
-          class="btn btn-sm hover:bg-base-300/90 flex items-center gap-2"
-          :class="{ 'btn-primary': appStore.isRAGPanelOpen }"
-          :style="controlButtonStyle"
-          title="Toggle Document Search Panel">
-          <FileText class="w-4 h-4" />
-          <span class="text-sm">Documents</span>
         </button>
       </div>
     </div>
@@ -332,7 +348,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, provide, watch, nextTick } from 'vue';
-import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText, Terminal, X } from 'lucide-vue-next';
+import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText, Terminal, X, FolderOpen } from 'lucide-vue-next';
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
@@ -458,6 +474,10 @@ const showRightOverflowMenu = ref(false);
 
 const isInOverview = computed(() => {
   return canvasRef.value?.isWorkspaceOverview ?? true;
+});
+
+const isOnWelcomeScreen = computed(() => {
+  return canvasRef.value?.isWelcomeScreen ?? true;
 });
 
 // Responsive breakpoints based on available space
@@ -1092,6 +1112,12 @@ const handleWorkspaceLoaded = () => {
 
 
 const workspaceMenuRef = ref<any>(null);
+
+const handleShowAllWorkspaces = () => {
+  if (canvasRef.value) {
+    canvasRef.value.showWorkspaceOverview();
+  }
+};
 
 const handleNewWorkspace = async () => {
   // Start with an animation that signals creation

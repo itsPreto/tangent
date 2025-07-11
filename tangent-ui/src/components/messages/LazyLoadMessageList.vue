@@ -27,7 +27,23 @@
             <div class="message-header">
               <!-- Left column: Timestamp -->
               <div class="header-left">
-                <span class="message-timestamp-prominent">{{ formatTime(message.timestamp) }}</span>
+                <span class="message-timestamp-prominent" :style="{ 
+                  '--timestamp-color': bestContrastingColor,
+                  '--timestamp-bg': `${bestContrastingColor}10`,
+                  '--timestamp-border': `${bestContrastingColor}30`
+                }">{{ formatTime(message.timestamp) }}</span>
+                
+                <!-- Routing Indicator -->
+                <div v-if="message.routingResult" 
+                     class="routing-indicator" 
+                     :class="`routing-${message.routingResult.category}`"
+                     :title="`Routed to ${message.routingResult.category} agent (${message.routingResult.confidence}% confidence)`"
+                     @click="toggleRoutingDetails(startIndex + index)">
+                  <div class="routing-icon">
+                    <component :is="getRoutingIcon(message.routingResult.category)" :size="12" />
+                  </div>
+                  <span class="routing-label">{{ message.routingResult.category }}</span>
+                </div>
               </div>
 
               <!-- Center column: Model Name -->
@@ -134,6 +150,52 @@
               </div>
             </div>
           </div>
+          
+          <!-- Routing Details Panel -->
+          <div v-if="message.routingResult && showRoutingDetails.has(startIndex + index)" 
+               class="routing-details-panel">
+            <div class="routing-details-header">
+              <div class="routing-details-title">
+                <component :is="getRoutingIcon(message.routingResult.category)" :size="16" />
+                <span>Routing Analysis</span>
+              </div>
+              <button @click="toggleRoutingDetails(startIndex + index)" class="routing-close-btn">
+                <X :size="16" />
+              </button>
+            </div>
+            
+            <div class="routing-details-content">
+              <div class="routing-detail-item">
+                <span class="routing-detail-label">Category:</span>
+                <span class="routing-detail-value">{{ message.routingResult.category }}</span>
+              </div>
+              
+              <div class="routing-detail-item">
+                <span class="routing-detail-label">Confidence:</span>
+                <span class="routing-detail-value">{{ message.routingResult.confidence }}%</span>
+              </div>
+              
+              <div class="routing-detail-item">
+                <span class="routing-detail-label">Model:</span>
+                <span class="routing-detail-value">{{ message.routingResult.model?.name || 'None' }}</span>
+              </div>
+              
+              <div v-if="message.routingResult.reasoning" class="routing-detail-item">
+                <span class="routing-detail-label">Reasoning:</span>
+                <span class="routing-detail-value">{{ message.routingResult.reasoning }}</span>
+              </div>
+              
+              <div v-if="message.routingResult.fallbackUsed" class="routing-detail-item">
+                <span class="routing-detail-label">Fallback Used:</span>
+                <span class="routing-detail-value routing-fallback">Yes</span>
+              </div>
+              
+              <div v-if="message.routingResult.responseTime" class="routing-detail-item">
+                <span class="routing-detail-label">Response Time:</span>
+                <span class="routing-detail-value">{{ message.routingResult.responseTime }}ms</span>
+              </div>
+            </div>
+          </div>
 
           <!-- Action buttons now integrated into header above -->
         </div>
@@ -213,6 +275,11 @@ import {
   Edit2,
   Check,
   X,
+  Code,
+  Eye,
+  MessageCircle,
+  Settings,
+  Zap,
 } from 'lucide-vue-next';
 
 import MessageContent from './MessageContent.vue';
@@ -221,6 +288,8 @@ import TTSControls from './TTSControls.vue';
 import type { Message } from '@/types/message';
 import type { ModelInfo } from '@/types/model';
 import { useThemeStore } from '@/stores/themeStore';
+import { useThemeColors } from '@/composables/useThemeColors';
+import { getContrastTextColor } from '@/utils/themeUtils';
 
 // Props
 interface Props {
@@ -268,6 +337,45 @@ const editingContent = ref('');
 // Theme support
 const themeStore = useThemeStore();
 const currentTheme = computed(() => themeStore.currentTheme);
+const { themeColors } = useThemeColors();
+
+// Calculate best contrasting color from primary, secondary, accent
+const bestContrastingColor = computed(() => {
+  const colors = themeColors.value;
+  const candidates = [
+    { name: 'primary', color: colors.primary },
+    { name: 'secondary', color: colors.secondary },
+    { name: 'accent', color: colors.accent }
+  ];
+  
+  // Get the current background color (light background for the badge)
+  const backgroundColor = '#ffffff'; // Light background used by the badge
+  
+  // Calculate contrast ratio for each color against the background
+  const getContrastRatio = (color: string) => {
+    const textColor = getContrastTextColor(color);
+    // Return a score based on color distinctiveness
+    const rgb = color.replace('#', '');
+    const r = parseInt(rgb.substring(0, 2), 16);
+    const g = parseInt(rgb.substring(2, 4), 16);
+    const b = parseInt(rgb.substring(4, 6), 16);
+    
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    
+    // Return the luminance as contrast score (darker colors have better contrast on light bg)
+    return 1 - luminance;
+  };
+  
+  // Find the color with best contrast
+  const bestColor = candidates.reduce((best, current) => {
+    const currentScore = getContrastRatio(current.color);
+    const bestScore = getContrastRatio(best.color);
+    return currentScore > bestScore ? current : best;
+  });
+  
+  return bestColor.color;
+});
 
 // Lazy loading state
 const INITIAL_LOAD = 20;
@@ -420,6 +528,30 @@ watch(
     }
   }
 );
+
+// Routing indicator state
+const showRoutingDetails = ref<Set<number>>(new Set());
+
+// Routing functions
+const getRoutingIcon = (category: string) => {
+  switch (category) {
+    case 'code': return Code;
+    case 'vision': return Eye;
+    case 'text': return MessageCircle;
+    case 'custom': return Settings;
+    default: return Zap;
+  }
+};
+
+const toggleRoutingDetails = (messageIndex: number) => {
+  const newSet = new Set(showRoutingDetails.value);
+  if (newSet.has(messageIndex)) {
+    newSet.delete(messageIndex);
+  } else {
+    newSet.add(messageIndex);
+  }
+  showRoutingDetails.value = newSet;
+};
 
 // Expose methods for external use
 defineExpose({
@@ -628,9 +760,9 @@ defineExpose({
 .message-timestamp-prominent {
   font-size: 0.7rem;
   font-weight: 600;
-  color: hsl(var(--bc) / 0.9);
-  background: hsl(var(--p) / 0.1);
-  border: 1px solid hsl(var(--p) / 0.2);
+  color: var(--timestamp-color, #f2459c);
+  background: var(--timestamp-bg, hsl(var(--p) / 0.1));
+  border: 1px solid var(--timestamp-border, hsl(var(--p) / 0.2));
   padding: 0.25rem 0.5rem;
   border-radius: 0.375rem;
   backdrop-filter: blur(4px);
@@ -941,5 +1073,131 @@ defineExpose({
 .branch-btn {
   position: absolute;
   z-index: 20;
+}
+
+/* Routing indicator styles */
+.routing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.375rem;
+  font-size: 0.65rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 0.5rem;
+  backdrop-filter: blur(4px);
+  border: 1px solid transparent;
+}
+
+.routing-indicator:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.routing-code {
+  background: hsl(var(--p) / 0.1);
+  color: hsl(var(--p));
+  border-color: hsl(var(--p) / 0.2);
+}
+
+.routing-vision {
+  background: hsl(var(--s) / 0.1);
+  color: hsl(var(--s));
+  border-color: hsl(var(--s) / 0.2);
+}
+
+.routing-text {
+  background: hsl(var(--in) / 0.1);
+  color: hsl(var(--in));
+  border-color: hsl(var(--in) / 0.2);
+}
+
+.routing-custom {
+  background: hsl(var(--wa) / 0.1);
+  color: hsl(var(--wa));
+  border-color: hsl(var(--wa) / 0.2);
+}
+
+.routing-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.routing-label {
+  text-transform: capitalize;
+}
+
+/* Routing details panel */
+.routing-details-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: hsl(var(--b1) / 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--bc) / 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.routing-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid hsl(var(--bc) / 0.1);
+}
+
+.routing-details-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: hsl(var(--bc) / 0.8);
+}
+
+.routing-close-btn {
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  color: hsl(var(--bc) / 0.6);
+  transition: all 0.2s ease;
+}
+
+.routing-close-btn:hover {
+  background: hsl(var(--er) / 0.1);
+  color: hsl(var(--er));
+}
+
+.routing-details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.routing-detail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.routing-detail-label {
+  font-weight: 600;
+  color: hsl(var(--bc) / 0.7);
+  min-width: 5rem;
+  flex-shrink: 0;
+}
+
+.routing-detail-value {
+  color: hsl(var(--bc) / 0.9);
+  flex: 1;
+}
+
+.routing-fallback {
+  color: hsl(var(--wa));
+  font-weight: 600;
 }
 </style>

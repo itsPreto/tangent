@@ -130,14 +130,59 @@ class ChatPersistenceService:
                 'children': [node_to_dict(child) for child in node.children]
             }
             
-        main_node = Node.query.filter_by(chat_id=chat_id, parent_id=None).first()
+        # Get all nodes for this chat to build the hierarchy properly
+        all_nodes = Node.query.filter_by(chat_id=chat_id).all()
+        
+        # Build a map of node ID to node for efficient lookup
+        node_map = {node.id: node for node in all_nodes}
+        
+        # Build the hierarchy by organizing nodes into parent-child relationships
+        for node in all_nodes:
+            if node.parent_id and node.parent_id in node_map:
+                parent = node_map[node.parent_id]
+                # Ensure children list exists
+                if not hasattr(parent, '_children_cache'):
+                    parent._children_cache = []
+                parent._children_cache.append(node)
+        
+        # Enhanced node_to_dict function that uses the cached children
+        def enhanced_node_to_dict(node):
+            children = getattr(node, '_children_cache', [])
+            return {
+                'id': node.id,
+                'type': node.type,
+                'title': node.title,
+                'x': node.x,
+                'y': node.y,
+                'parentId': node.parent_id,
+                'branchMessageIndex': node.branch_message_index,
+                'messages': node.messages or [],
+                'metadata': node.node_metadata or {},
+                'children': [enhanced_node_to_dict(child) for child in children]
+            }
+        
+        # Find the main node (root node with no parent)
+        main_node = next((node for node in all_nodes if node.parent_id is None), None)
+        
+        if not main_node:
+            # Fallback: return empty structure if no main node found
+            return {
+                'id': chat.id,
+                'title': chat.title,
+                'createdAt': chat.created_at.isoformat(),
+                'updatedAt': chat.updated_at.isoformat(),
+                'nodes': {'id': None, 'children': []},
+                'format': chat.import_format,
+                'isImported': chat.import_format is not None,
+                'originalId': chat.original_id
+            }
         
         return {
             'id': chat.id,
             'title': chat.title,
             'createdAt': chat.created_at.isoformat(),
             'updatedAt': chat.updated_at.isoformat(),
-            'nodes': node_to_dict(main_node),
+            'nodes': enhanced_node_to_dict(main_node),
             'format': chat.import_format,  # Include sticky import format
             'isImported': chat.import_format is not None,
             'originalId': chat.original_id
@@ -195,9 +240,17 @@ class ChatPersistenceService:
         if 'metadata' in data:
             data['node_metadata'] = data.pop('metadata')
             
+        # Convert camelCase to snake_case for database fields
+        field_mapping = {
+            'parentId': 'parent_id',
+            'branchMessageIndex': 'branch_message_index'
+        }
+        
         for key, value in data.items():
-            if hasattr(node, key):
-                setattr(node, key, value)
+            # Use field mapping if available, otherwise use key as-is
+            db_field = field_mapping.get(key, key)
+            if hasattr(node, db_field):
+                setattr(node, db_field, value)
                 
         db.session.commit()
         return True

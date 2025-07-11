@@ -30,6 +30,7 @@ import shutil
 import soundfile as sf
 import numpy as np
 import random
+import math
 from datetime import datetime, timedelta, timezone
 
 logging.basicConfig(level=logging.DEBUG)
@@ -3232,6 +3233,455 @@ def generate_archive():
     except Exception as e:
         logger.error(f"Error generating mock archive: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/generate-workspace', methods=['POST', 'OPTIONS'])
+def generate_workspace():
+    """
+    Generate a structured workspace based on user input or template
+    """
+    # Handle OPTIONS request for CORS
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response
+    
+    try:
+        data = request.get_json()
+        user_input = data.get('userInput', '').strip()
+        template_id = data.get('templateId')
+        preferences = data.get('preferences', {})
+        
+        if not user_input and not template_id:
+            return jsonify({"error": "Either userInput or templateId is required"}), 400
+
+        # If template ID is provided, use predefined structure
+        if template_id:
+            workspace = generate_from_template(template_id, user_input)
+            if workspace:
+                return jsonify(workspace)
+            else:
+                return jsonify({"error": "Template not found"}), 404
+
+        # Generate workspace using LLM
+        workspace = generate_workspace_with_llm(user_input, preferences)
+        return jsonify(workspace)
+
+    except Exception as e:
+        logger.error(f"Error generating workspace: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+def generate_from_template(template_id: str, user_input: str = ""):
+    """Generate workspace from predefined template"""
+    
+    # Template definitions
+    templates = {
+        'game-dev': {
+            'title': 'Game Development Project',
+            'branches': [
+                {
+                    'id': 'game-concept',
+                    'title': 'Game Concept',
+                    'starterMessage': "Let's brainstorm your game concept! What type of experience do you want players to have? We can explore different genres, mechanics, and themes to find the perfect match for your vision.",
+                    'position': {'x': 0, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'technical-planning',
+                    'title': 'Technical Planning', 
+                    'starterMessage': "Now let's plan the technical requirements for your game. We'll choose the right engine, define platform requirements, and outline the technical architecture needed to bring your concept to life.",
+                    'position': {'x': 400, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'art-design',
+                    'title': 'Art & Design',
+                    'starterMessage': "Time to design the visual style and user interface for your game. We'll explore art styles, create a visual identity, and plan the UI/UX that will make your game both beautiful and intuitive.",
+                    'position': {'x': 0, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'monetization',
+                    'title': 'Monetization Strategy',
+                    'starterMessage': "Let's plan how your game will generate revenue sustainably. We'll explore different monetization models, design fair pricing strategies, and ensure your business model enhances rather than detracts from the player experience.",
+                    'position': {'x': 400, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'marketing-launch',
+                    'title': 'Marketing & Launch',
+                    'starterMessage': "Ready to plan your launch? Let's identify your target audience, create a marketing strategy, and build anticipation for your game release.",
+                    'position': {'x': 200, 'y': 500},
+                    'type': 'assistant'
+                }
+            ],
+            'connections': [
+                {'parentId': 'game-concept', 'childId': 'technical-planning', 'label': 'implementation'},
+                {'parentId': 'game-concept', 'childId': 'art-design', 'label': 'visual direction'},
+                {'parentId': 'technical-planning', 'childId': 'monetization', 'label': 'feasibility'},
+                {'parentId': 'art-design', 'childId': 'marketing-launch', 'label': 'assets'},
+                {'parentId': 'monetization', 'childId': 'marketing-launch', 'label': 'strategy'}
+            ]
+        },
+        'brainstorm': {
+            'title': 'Brainstorming Session',
+            'branches': [
+                {
+                    'id': 'problem-definition',
+                    'title': 'Problem Definition',
+                    'starterMessage': "Let's clearly define the problem or challenge we're trying to solve. The better we understand the problem, the more effective our solutions will be.",
+                    'position': {'x': 0, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'idea-generation',
+                    'title': 'Idea Generation',
+                    'starterMessage': "Now let's generate as many ideas as possible without judgment. The goal is quantity and creativity - we'll evaluate later!",
+                    'position': {'x': 400, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'idea-evaluation',
+                    'title': 'Idea Evaluation',
+                    'starterMessage': "Time to evaluate our ideas against key criteria like feasibility, impact, and resources required. Let's be systematic about this analysis.",
+                    'position': {'x': 200, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'solution-selection',
+                    'title': 'Solution Selection',
+                    'starterMessage': "Let's select the best solutions based on our evaluation and plan the next steps for implementation.",
+                    'position': {'x': 0, 'y': 500},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'action-planning',
+                    'title': 'Action Planning',
+                    'starterMessage': "Now let's create a concrete action plan to implement our chosen solution, with clear steps and timelines.",
+                    'position': {'x': 400, 'y': 500},
+                    'type': 'assistant'
+                }
+            ],
+            'connections': [
+                {'parentId': 'problem-definition', 'childId': 'idea-generation', 'label': 'context'},
+                {'parentId': 'idea-generation', 'childId': 'idea-evaluation', 'label': 'raw ideas'},
+                {'parentId': 'idea-evaluation', 'childId': 'solution-selection', 'label': 'analysis'},
+                {'parentId': 'solution-selection', 'childId': 'action-planning', 'label': 'decisions'}
+            ]
+        },
+        'research': {
+            'title': 'Research Project',
+            'branches': [
+                {
+                    'id': 'research-question',
+                    'title': 'Research Question',
+                    'starterMessage': "Let's formulate a clear, focused research question that will guide our investigation and help us stay on track.",
+                    'position': {'x': 0, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'source-gathering',
+                    'title': 'Source Gathering',
+                    'starterMessage': "Now let's identify and gather reliable, high-quality sources of information relevant to our research question.",
+                    'position': {'x': 400, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'analysis-notes',
+                    'title': 'Analysis & Notes',
+                    'starterMessage': "Time to analyze our sources systematically and take structured notes that will support our conclusions.",
+                    'position': {'x': 0, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'synthesis',
+                    'title': 'Synthesis',
+                    'starterMessage': "Let's synthesize our findings into coherent insights and identify patterns and themes across our sources.",
+                    'position': {'x': 400, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'conclusions',
+                    'title': 'Conclusions',
+                    'starterMessage': "Finally, let's draw well-supported conclusions and identify the implications of our research findings.",
+                    'position': {'x': 200, 'y': 500},
+                    'type': 'assistant'
+                }
+            ],
+            'connections': [
+                {'parentId': 'research-question', 'childId': 'source-gathering', 'label': 'focus'},
+                {'parentId': 'source-gathering', 'childId': 'analysis-notes', 'label': 'materials'},
+                {'parentId': 'analysis-notes', 'childId': 'synthesis', 'label': 'insights'},
+                {'parentId': 'synthesis', 'childId': 'conclusions', 'label': 'findings'}
+            ]
+        },
+        'writing': {
+            'title': 'Writing Project',
+            'branches': [
+                {
+                    'id': 'concept-theme',
+                    'title': 'Concept & Theme',
+                    'starterMessage': "Let's develop your core concept and explore the themes you want to convey through your writing.",
+                    'position': {'x': 0, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'character-development',
+                    'title': 'Character Development',
+                    'starterMessage': "Time to create compelling, three-dimensional characters that will drive your story forward and connect with readers.",
+                    'position': {'x': 400, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'plot-structure',
+                    'title': 'Plot Structure',
+                    'starterMessage': "Now let's build a solid plot structure and outline that will guide your writing process and maintain narrative momentum.",
+                    'position': {'x': 0, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'writing-drafting',
+                    'title': 'Writing & Drafting',
+                    'starterMessage': "Let's start writing! I'll help you overcome writer's block, develop your unique voice, and maintain consistency throughout your draft.",
+                    'position': {'x': 400, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'revision-polish',
+                    'title': 'Revision & Polish',
+                    'starterMessage': "Time to revise, edit, and polish your work. We'll focus on structure, clarity, style, and making every word count.",
+                    'position': {'x': 200, 'y': 500},
+                    'type': 'assistant'
+                }
+            ],
+            'connections': [
+                {'parentId': 'concept-theme', 'childId': 'character-development', 'label': 'foundation'},
+                {'parentId': 'concept-theme', 'childId': 'plot-structure', 'label': 'direction'},
+                {'parentId': 'character-development', 'childId': 'writing-drafting', 'label': 'voice'},
+                {'parentId': 'plot-structure', 'childId': 'writing-drafting', 'label': 'framework'},
+                {'parentId': 'writing-drafting', 'childId': 'revision-polish', 'label': 'draft'}
+            ]
+        },
+        'science': {
+            'title': 'Scientific Investigation',
+            'branches': [
+                {
+                    'id': 'hypothesis',
+                    'title': 'Hypothesis',
+                    'starterMessage': "Let's formulate a testable hypothesis based on observations. A good hypothesis should be specific, measurable, and falsifiable.",
+                    'position': {'x': 0, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'methodology',
+                    'title': 'Methodology',
+                    'starterMessage': "Now let's design a rigorous experimental methodology. We'll plan the experimental design, controls, and procedures to test our hypothesis.",
+                    'position': {'x': 400, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'data-collection',
+                    'title': 'Data Collection',
+                    'starterMessage': "Time to plan and execute our data collection process. We'll establish protocols for gathering accurate and reliable data.",
+                    'position': {'x': 0, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'analysis',
+                    'title': 'Analysis',
+                    'starterMessage': "Let's analyze our data and look for patterns and significance. We'll use appropriate statistical methods and visualization techniques.",
+                    'position': {'x': 400, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'conclusions',
+                    'title': 'Conclusions',
+                    'starterMessage': "Finally, let's interpret results and draw scientific conclusions. We'll discuss implications, limitations, and future research directions.",
+                    'position': {'x': 200, 'y': 500},
+                    'type': 'assistant'
+                }
+            ],
+            'connections': [
+                {'parentId': 'hypothesis', 'childId': 'methodology', 'label': 'testing approach'},
+                {'parentId': 'methodology', 'childId': 'data-collection', 'label': 'procedure'},
+                {'parentId': 'data-collection', 'childId': 'analysis', 'label': 'raw data'},
+                {'parentId': 'analysis', 'childId': 'conclusions', 'label': 'results'}
+            ]
+        },
+        'business': {
+            'title': 'Business Strategy',
+            'branches': [
+                {
+                    'id': 'market-analysis',
+                    'title': 'Market Analysis',
+                    'starterMessage': "Let's analyze your target market and competitive landscape. We'll identify opportunities, threats, and market positioning strategies.",
+                    'position': {'x': 0, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'value-proposition',
+                    'title': 'Value Proposition',
+                    'starterMessage': "Now let's define your unique value proposition and positioning. What makes your offering special and why should customers choose you?",
+                    'position': {'x': 400, 'y': 0},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'business-model',
+                    'title': 'Business Model',
+                    'starterMessage': "Time to design a sustainable and scalable business model. We'll define revenue streams, cost structure, and key partnerships.",
+                    'position': {'x': 0, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'financial-planning',
+                    'title': 'Financial Planning',
+                    'starterMessage': "Let's create financial projections and funding strategies. We'll plan budgets, forecast revenues, and identify funding needs.",
+                    'position': {'x': 400, 'y': 300},
+                    'type': 'assistant'
+                },
+                {
+                    'id': 'go-to-market',
+                    'title': 'Go-to-Market',
+                    'starterMessage': "Finally, let's plan your market entry and growth strategy. We'll create a roadmap for launching and scaling your business.",
+                    'position': {'x': 200, 'y': 500},
+                    'type': 'assistant'
+                }
+            ],
+            'connections': [
+                {'parentId': 'market-analysis', 'childId': 'value-proposition', 'label': 'insights'},
+                {'parentId': 'value-proposition', 'childId': 'business-model', 'label': 'positioning'},
+                {'parentId': 'business-model', 'childId': 'financial-planning', 'label': 'structure'},
+                {'parentId': 'financial-planning', 'childId': 'go-to-market', 'label': 'resources'}
+            ]
+        }
+    }
+    
+    template = templates.get(template_id)
+    if not template:
+        return None
+    
+    # Create workspace structure with proper formatting
+    workspace = {
+        'title': template['title'],
+        'nodes': [],
+        'connections': template['connections'],
+        'layout': 'structured'
+    }
+    
+    # Convert branches to nodes with messages
+    for branch in template['branches']:
+        node = {
+            'id': branch['id'],
+            'title': branch['title'],
+            'x': branch['position']['x'],
+            'y': branch['position']['y'],
+            'type': 'branch',
+            'messages': [
+                {
+                    'role': 'assistant',
+                    'content': branch['starterMessage'],
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'id': f"msg-{uuid.uuid4()}"
+                }
+            ]
+        }
+        workspace['nodes'].append(node)
+    
+    return workspace
+
+def generate_workspace_with_llm(user_input: str, preferences: dict):
+    """Generate simple single-node workspace for regular requests"""
+    
+    # Create simple workspace with just the user's input
+    workspace = {
+        'title': user_input[:50] + "..." if len(user_input) > 50 else user_input,
+        'nodes': [],
+        'connections': [],
+        'layout': 'simple'
+    }
+    
+    # Create single main node with user input - no additional branches
+    main_node = {
+        'id': 'main-topic',
+        'title': 'Chat',
+        'x': 400,
+        'y': 300,
+        'type': 'branch',
+        'messages': [
+            {
+                'role': 'user',
+                'content': user_input,
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'id': f"msg-{uuid.uuid4()}"
+            }
+        ]
+    }
+    workspace['nodes'].append(main_node)
+    
+    return workspace
+
+def extract_key_concepts(text: str) -> list:
+    """Extract key concepts from user input"""
+    # Simple keyword extraction - could be enhanced with NLP
+    import re
+    
+    # Remove common words and extract meaningful terms
+    common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'how', 'what', 'when', 'where', 'why', 'who', 'i', 'we', 'you', 'they', 'it', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'need', 'want', 'help', 'me', 'my', 'your'}
+    
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+    concepts = [word for word in words if word not in common_words]
+    
+    # Return top concepts
+    return list(set(concepts))[:5]
+
+def generate_branch_topics(concepts: list, user_input: str) -> list:
+    """Generate branch topics based on concepts"""
+    import math
+    
+    # Default branch generation patterns
+    if any(word in user_input.lower() for word in ['game', 'gaming', 'develop', 'play']):
+        return [
+            {'title': 'Game Design', 'starter_message': 'Let\'s design the core gameplay mechanics and player experience.', 'relation': 'design'},
+            {'title': 'Technical Development', 'starter_message': 'Now let\'s plan the technical implementation and tools needed.', 'relation': 'implementation'},
+            {'title': 'Art & Visuals', 'starter_message': 'Time to create the visual style and artistic direction.', 'relation': 'aesthetics'},
+            {'title': 'Testing & Polish', 'starter_message': 'Let\'s plan testing, feedback, and final polishing phases.', 'relation': 'refinement'}
+        ]
+    
+    elif any(word in user_input.lower() for word in ['business', 'startup', 'company', 'strategy']):
+        return [
+            {'title': 'Market Analysis', 'starter_message': 'Let\'s analyze the market opportunity and competitive landscape.', 'relation': 'research'},
+            {'title': 'Business Model', 'starter_message': 'Now let\'s design a sustainable business model and revenue streams.', 'relation': 'strategy'},
+            {'title': 'Product Development', 'starter_message': 'Time to plan product development and key features.', 'relation': 'execution'},
+            {'title': 'Go-to-Market', 'starter_message': 'Let\'s create a launch strategy and marketing plan.', 'relation': 'launch'}
+        ]
+    
+    elif any(word in user_input.lower() for word in ['research', 'study', 'learn', 'analysis']):
+        return [
+            {'title': 'Research Planning', 'starter_message': 'Let\'s plan our research approach and methodology.', 'relation': 'methodology'},
+            {'title': 'Data Collection', 'starter_message': 'Now let\'s gather relevant information and sources.', 'relation': 'gathering'},
+            {'title': 'Analysis', 'starter_message': 'Time to analyze findings and identify patterns.', 'relation': 'insights'},
+            {'title': 'Conclusions', 'starter_message': 'Let\'s synthesize our findings into actionable conclusions.', 'relation': 'synthesis'}
+        ]
+    
+    # Generic branches based on concepts
+    branches = []
+    for i, concept in enumerate(concepts[:4]):
+        branches.append({
+            'title': concept.title(),
+            'starter_message': f'Let\'s explore {concept} in detail and understand its role in your project.',
+            'relation': 'exploration'
+        })
+    
+    # Ensure we have at least 3 branches
+    while len(branches) < 3:
+        branches.append({
+            'title': f'Area {len(branches) + 1}',
+            'starter_message': 'Let\'s explore this aspect of your project in more detail.',
+            'relation': 'investigation'
+        })
+    
+    return branches[:5]  # Limit to 5 branches max
 
 # Register the blueprint AFTER all routes are defined
 app.register_blueprint(api_routes, url_prefix='/api')

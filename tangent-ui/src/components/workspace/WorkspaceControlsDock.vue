@@ -23,13 +23,6 @@
           <span class="stat-badge">{{ graphStats.workspaces || 0 }} Workspaces</span>
         </div>
 
-        <!-- Interaction Hints -->
-        <div class="interaction-hint">
-          <span class="hint-text">
-            {{ is3DSupported ? 'Mouse to rotate • Click nodes • Scroll to zoom' : 'Drag to pan • Scroll to zoom • Drag nodes • Click workspaces to open' }}
-          </span>
-        </div>
-
         <!-- Layout Selector -->
         <select 
           :value="graphLayout" 

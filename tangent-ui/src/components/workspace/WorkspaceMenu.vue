@@ -557,12 +557,26 @@ watch(sortBy, (newValue) => {
 
 const loadWorkspace = async (id: string) => {
     isOpen.value = false;
+    console.log('WorkspaceMenu loadWorkspace called with ID:', id);
+    console.log('Canvas ref available:', !!canvasRef?.value);
 
-    // Check if we have access to the canvas ref and if we're in overview mode
+    // Check if we have access to the canvas ref and if we're in overview mode or welcome screen
     if (canvasRef?.value) {
         const isInOverview = canvasRef.value.isWorkspaceOverview ?? true;
+        const isInWelcome = canvasRef.value.isWelcomeScreen ?? false;
+        const shouldUseTransition = isInOverview || isInWelcome;
         
-        if (isInOverview) {
+        console.log('Is in overview mode:', isInOverview);
+        console.log('Is in welcome screen:', isInWelcome);
+        console.log('Should use transition:', shouldUseTransition);
+        console.log('Canvas ref methods available:', {
+            handleWorkspaceSelect: typeof canvasRef.value.handleWorkspaceSelect,
+            isWorkspaceOverview: canvasRef.value.isWorkspaceOverview,
+            isWelcomeScreen: canvasRef.value.isWelcomeScreen
+        });
+        
+        if (shouldUseTransition) {
+            console.log('Calling canvas handleWorkspaceSelect...');
             // Use the canvas's workspace selection method to properly transition
             await canvasRef.value.handleWorkspaceSelect(id);
         } else {

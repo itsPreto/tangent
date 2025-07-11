@@ -41,72 +41,9 @@
       </div>
     </Transition>
 
-    <!-- Enhanced Onboarding -->
-    <Transition name="zoom-fade" mode="out-in">
-      <div 
-        v-if="workspaces.length === 0 && !chatStore.isLoading" 
-        class="onboarding-container enhanced-onboarding"
-        :class="{ 'drag-active': isDragOver }"
-        @dragenter.prevent="handleDragEnter"
-        @dragover.prevent="handleDragOver" 
-        @dragleave.prevent="handleDragLeave"
-        @drop.prevent="handleDrop"
-      >
-      
-        <div class="onboarding-content">
-          <!-- Animated Welcome Header -->
-          <div class="welcome-header">
-            <div class="welcome-icon">
-              <div class="icon-glow"></div>
-              <Sparkles :size="48" />
-            </div>
-            <h1 class="welcome-title">Welcome to Tangent</h1>
-            <p class="welcome-subtitle">Your infinite AI workspace awaits</p>
-          </div>
-          
-          <!-- Enhanced Action Cards -->
-          <div class="action-cards">
-            <!-- Import Card with hover effects -->
-            <div 
-              class="action-card import-card"
-              :class="{ 'drag-hover': isDragOver }"
-            >
-              <div class="card-glow"></div>
-              <div class="card-content">
-                <div class="card-icon">
-                  <Upload :size="32" />
-                </div>
-                <h2>Import Conversations</h2>
-                <p>Drop your ChatGPT or Claude export files here to transform them into visual workspaces</p>
-                <div class="supported-formats">
-                  <span class="format-tag">JSON</span>
-                  <span class="format-tag">ChatGPT</span>
-                  <span class="format-tag">Claude</span>
-                </div>
-              </div>
-            </div>
-          
-          <!-- Create New Option -->
-          <button @click="handleNewWorkspace" class="create-new-button group">
-            <div class="create-new-inner">
-              <div class="text-4xl mb-6 text-base-content/40 group-hover:text-primary transition-colors">
-                ✨
-              </div>
-              <h2 class="text-2xl font-medium mb-4">Start Fresh</h2>
-              <p class="text-base-content/60 mb-6">
-                Create a new workspace and begin your AI conversations from scratch
-              </p>
-              <div class="text-sm text-primary/60 group-hover:text-primary transition-colors">
-                Click to create
-              </div>
-            </div>
-          </button>
-          </div>
-        </div>
-      </div>
       
       <!-- Main Canvas -->
-      <div v-else class="workspace-container">
+      <div v-if="!chatStore.isLoading" class="workspace-container">
       <Transition name="fade">
         <div v-if="notification.visible"
           class="fixed top-16 left-1/2 transform -translate-x-1/2 px-4 py-2 notification-toast rounded-lg shadow-lg z-50">
@@ -127,6 +64,18 @@
           class="workspace-search-bar enhanced-search-bar" 
         />
       </Transition>
+
+      <!-- Welcome Screen (default landing) -->
+      <transition name="fade" mode="out-in">
+        <WelcomeScreen 
+          v-if="isWelcomeScreen"
+          @show-all-workspaces="showWorkspaceOverview"
+          @import-workspace="handleImportWorkspace"
+          @open-workspace="handleOpenWorkspace"
+          @generate-workspace="handleGenerateWorkspace"
+          class="welcome-view absolute inset-0"
+        />
+      </transition>
 
       <!-- Grid View -->
       <transition name="fade" mode="out-in">
@@ -154,12 +103,29 @@
       </transition>
 
       <!-- Detailed Workspace View (when a workspace is selected) -->
-      <div v-if="!isWorkspaceOverview" ref="canvasRef"
+      <div v-if="!isWelcomeScreen && !isWorkspaceOverview" ref="canvasRef"
         class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
         @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
         @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
         @keydown="handleKeyDown">
         
+        <!-- Grid Layer (behind everything) -->
+        <div class="absolute inset-0 overflow-hidden" style="z-index: -1;">
+          <canvas
+            ref="gridCanvas"
+            class="absolute inset-0 w-full h-full"
+            :style="gridCanvasStyle"
+          />
+        </div>
+
+        <!-- Selection Rectangle Overlay -->
+        <div
+          v-if="selectionRect.isActive"
+          class="absolute pointer-events-none border-2 border-primary bg-primary/10 rounded-sm"
+          :style="selectionRectStyle"
+          style="z-index: 1000;"
+        />
+
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle">
           <!-- SVG Layer for Connections -->
@@ -188,7 +154,7 @@
             <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles text and media) -->
               <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
-                :is-selected="isNodeFocused(node.id)" :selected-model="selectedModel"
+                :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
                 :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
@@ -218,7 +184,7 @@
 
               <!-- Branch Node -->
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
-                :is-snapped="store.snappedNodeId === node.id" :selected-model="selectedModel"
+                :is-snapped="store.snappedNodeId === node.id" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
                 :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
@@ -234,8 +200,8 @@
             </template>
           </div>
 
-          <!-- Interaction Layer for Splines - On Top of Everything -->
-          <svg class="absolute overflow-visible" style="z-index: 2; pointer-events: none;" :style="svgStyle"
+          <!-- Interaction Layer for Splines - Between SVG and Nodes -->
+          <svg class="absolute overflow-visible" style="z-index: 0.5; pointer-events: none;" :style="svgStyle"
             preserveAspectRatio="none">
             <template v-for="connection in visibleConnections"
               :key="`interaction-${connection.parent.id}-${connection.child.id}`">
@@ -251,7 +217,6 @@
         </div>
       </div>
     </div>
-    </Transition>
 
     <!-- File Drop Overlay -->
     <div v-show="isDraggingFile"
@@ -277,6 +242,7 @@ import {
 import BranchNode from "./node/BranchNode.vue";
 import emitter from '@/utils/eventBus'
 import GridWorkspaceView from "../workspace/GridWorkspaceView.vue";
+import WelcomeScreen from "../welcome/WelcomeScreen.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
 import WebBranchNode from "./node/WebBranchNode.vue";
 import SplineConnector from "./spline/MainSplineConnector.vue";
@@ -471,6 +437,7 @@ const isDragOver = ref(false);
 const isDragActive = ref(false);
 const loadingProgress = ref(0);
 const canvasRef = ref<HTMLElement>();
+const gridCanvas = ref<HTMLCanvasElement>();
 
 // Generate cyclone lines
 const cycloneLines = ref([]);
@@ -514,6 +481,16 @@ const selectedNodeIds = ref(new Set());
 const isMultiDragging = ref(false);
 const multiDragStartPositions = ref(new Map());
 
+// Selection rectangle state
+const selectionRect = ref({
+  isActive: false,
+  startX: 0,
+  startY: 0,
+  currentX: 0,
+  currentY: 0
+});
+const isShiftPressed = ref(false);
+
 // Calculate max node count 
 const maxNodeCount = computed(() => {
   if (!workspaces.value.length) return 1;
@@ -521,7 +498,8 @@ const maxNodeCount = computed(() => {
 });
 
 
-const isWorkspaceOverview = ref(true);
+const isWelcomeScreen = ref(true);
+const isWorkspaceOverview = ref(false);
 const expandingWorkspaceId = ref<string | null>(null);
 
 // Initialize portal animations on component load
@@ -596,6 +574,50 @@ const getNodeCenter = (node) => ({
   x: node.x + store.CARD_WIDTH / 2,
   y: node.y + store.CARD_HEIGHT / 2,
 });
+
+// Cycle through snapped nodes based on direction
+const cycleSnappedNodes = (direction: string) => {
+  const allNodes = store.nodes.filter(node => node.id !== store.snappedNodeId);
+  if (allNodes.length === 0) return;
+  
+  const currentNode = store.nodes.find(node => node.id === store.snappedNodeId);
+  if (!currentNode) return;
+  
+  const currentCenter = getNodeCenter(currentNode);
+  let candidates = [];
+  
+  // Filter nodes based on direction
+  if (direction === "ArrowRight") {
+    candidates = allNodes.filter(node => getNodeCenter(node).x > currentCenter.x);
+    candidates.sort((a, b) => getNodeCenter(a).x - getNodeCenter(b).x);
+  } else if (direction === "ArrowLeft") {
+    candidates = allNodes.filter(node => getNodeCenter(node).x < currentCenter.x);
+    candidates.sort((a, b) => getNodeCenter(b).x - getNodeCenter(a).x);
+  } else if (direction === "ArrowUp") {
+    candidates = allNodes.filter(node => getNodeCenter(node).y < currentCenter.y);
+    candidates.sort((a, b) => getNodeCenter(b).y - getNodeCenter(a).y);
+  } else if (direction === "ArrowDown") {
+    candidates = allNodes.filter(node => getNodeCenter(node).y > currentCenter.y);
+    candidates.sort((a, b) => getNodeCenter(a).y - getNodeCenter(b).y);
+  }
+  
+  // If no candidates in that direction, cycle through all nodes
+  if (candidates.length === 0) {
+    candidates = allNodes;
+  }
+  
+  // Find the next node to snap to
+  const nextNode = candidates[0];
+  if (nextNode) {
+    // First unsnap the current node using the auto-snap event
+    emitter.emit('auto-snap-node', { nodeId: store.snappedNodeId });
+    
+    // Then snap to the new node after a short delay
+    setTimeout(() => {
+      emitter.emit('auto-snap-node', { nodeId: nextNode.id });
+    }, 200);
+  }
+};
 
 // LOD Level calculation based on zoom and node state
 const getLODLevel = (nodeId: string) => {
@@ -972,6 +994,192 @@ const nodesLayerStyle = computed(() => ({
   pointerEvents: 'auto', // Allow pointer events for nodes always
 }));
 
+// Grid system
+const GRID_SIZE = 50; // Base grid size in pixels
+const GRID_SUBDIVISIONS = 5; // Minor grid lines every 5th of major grid
+const GRID_MAJOR_SIZE = GRID_SIZE * GRID_SUBDIVISIONS; // Major grid lines every 250px
+
+const gridCanvasStyle = computed(() => ({
+  width: '100%',
+  height: '100%',
+  pointerEvents: 'none',
+}));
+
+// Selection rectangle style
+const selectionRectStyle = computed(() => {
+  const rect = selectionRect.value;
+  const left = Math.min(rect.startX, rect.currentX);
+  const top = Math.min(rect.startY, rect.currentY);
+  const width = Math.abs(rect.currentX - rect.startX);
+  const height = Math.abs(rect.currentY - rect.startY);
+  
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+  };
+});
+
+// Grid rendering function
+const renderGrid = () => {
+  if (!gridCanvas.value) return;
+  
+  const canvas = gridCanvas.value;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  
+  // Set canvas size to match viewport
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  
+  ctx.scale(dpr, dpr);
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  
+  // Get current transform values
+  const currentZoom = zoom.value;
+  const currentPanX = panX.value;
+  const currentPanY = panY.value;
+  
+  // Skip grid if zoom is too low (performance optimization)
+  if (currentZoom < 0.1) return;
+  
+  // Calculate grid spacing based on zoom level
+  const baseGridSize = GRID_SIZE * currentZoom;
+  const majorGridSize = GRID_MAJOR_SIZE * currentZoom;
+  
+  // Adaptive grid density - show fewer lines when zoomed out
+  let gridStep = GRID_SIZE;
+  if (currentZoom < 0.3) {
+    gridStep = GRID_MAJOR_SIZE; // Only show major grid lines
+  } else if (currentZoom < 0.6) {
+    gridStep = GRID_SIZE * 2; // Show every 2nd grid line
+  }
+  
+  const effectiveGridSize = gridStep * currentZoom;
+  
+  // Calculate grid offset based on pan position
+  const offsetX = (currentPanX / currentZoom) % gridStep;
+  const offsetY = (currentPanY / currentZoom) % gridStep;
+  
+  // Get theme colors with proper detection for all themes
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+  
+  // Define grid colors based on specific themes
+  let majorGridColor, minorGridColor;
+  
+  switch (currentTheme) {
+    // Light themes - use dark dots
+    case 'light':
+    case 'cupcake':
+    case 'bumblebee':
+    case 'emerald':
+    case 'corporate':
+    case 'garden':
+    case 'lofi':
+    case 'pastel':
+    case 'fantasy':
+    case 'wireframe':
+    case 'lemonade':
+      majorGridColor = 'rgba(0, 0, 0, 0.25)';
+      minorGridColor = 'rgba(0, 0, 0, 0.15)';
+      break;
+      
+    // Dark themes - use white dots
+    case 'dark':
+    case 'night':
+    case 'black':
+    case 'synthwave':
+    case 'halloween':
+    case 'forest':
+    case 'aqua':
+    case 'luxury':
+    case 'dracula':
+    case 'business':
+    case 'coffee':
+      majorGridColor = 'rgba(255, 255, 255, 0.25)';
+      minorGridColor = 'rgba(255, 255, 255, 0.15)';
+      break;
+      
+    // Special themes with unique backgrounds
+    case 'cmyk':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on cyan background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    case 'autumn':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on brown background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    case 'acid':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on bright lime background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    case 'winter':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on light blue background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    case 'retro':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on brown background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    case 'cyberpunk':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on dark background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    case 'valentine':
+      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on pink background
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      break;
+      
+    // Default fallback
+    default:
+      majorGridColor = 'rgba(0, 0, 0, 0.25)';
+      minorGridColor = 'rgba(0, 0, 0, 0.15)';
+      break;
+  }
+  
+  // Draw grid dots
+  ctx.fillStyle = gridStep === GRID_MAJOR_SIZE ? majorGridColor : minorGridColor;
+  
+  const dotSize = Math.max(1, currentZoom * 1.5);
+  
+  for (let x = offsetX * currentZoom; x < rect.width + effectiveGridSize; x += effectiveGridSize) {
+    for (let y = offsetY * currentZoom; y < rect.height + effectiveGridSize; y += effectiveGridSize) {
+      ctx.beginPath();
+      ctx.arc(x, y, dotSize, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+  
+  // Draw major grid dots if showing minor grid
+  if (gridStep !== GRID_MAJOR_SIZE && currentZoom > 0.3) {
+    ctx.fillStyle = majorGridColor;
+    const majorDotSize = Math.max(2, currentZoom * 2);
+    const majorOffsetX = (currentPanX / currentZoom) % GRID_MAJOR_SIZE;
+    const majorOffsetY = (currentPanY / currentZoom) % GRID_MAJOR_SIZE;
+    const majorEffectiveSize = GRID_MAJOR_SIZE * currentZoom;
+    
+    for (let x = majorOffsetX * currentZoom; x < rect.width + majorEffectiveSize; x += majorEffectiveSize) {
+      for (let y = majorOffsetY * currentZoom; y < rect.height + majorEffectiveSize; y += majorEffectiveSize) {
+        ctx.beginPath();
+        ctx.arc(x, y, majorDotSize, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+  }
+};
+
 // Viewport culling for performance optimization
 const VIEWPORT_BUFFER = 500; // Buffer zone around viewport in pixels
 const CARD_WIDTH = 672; // Standard card width (42rem = 672px)
@@ -986,40 +1194,17 @@ const { observe, unobserve, isElementVisible, getVisibleElementIds } = useViewpo
 // Enhanced visibility tracking with intersection observer fallback
 const intersectionVisibleNodes = ref(new Set<string>());
 
+// Flag for when we're animating workspace creation
+const isAnimatingWorkspace = ref(false);
+
 const visibleNodes = computed(() => {
-  // Always show all nodes if snapped, in workspace overview, or during any drag/pan operations
-  if (store.snappedNodeId !== null || isWorkspaceOverview.value || isPanning.value || store.isDragging || isMultiDragging.value || workspaceDragState.value.isDragging) {
-    return store.nodes;
-  }
-
-  // Use intersection observer results if available and nodes are being observed
-  if (intersectionVisibleNodes.value.size > 0) {
-    return store.nodes.filter(node => intersectionVisibleNodes.value.has(node.id));
-  }
-
-  // Fallback to computational viewport culling with larger buffer to prevent disappearing
-  const buffer = VIEWPORT_BUFFER * 2; // Double buffer for safety
-  const viewportLeft = (-panX.value - buffer) / zoom.value;
-  const viewportTop = (-panY.value - buffer) / zoom.value;
-  const viewportRight = (windowSize.value.width - panX.value + buffer) / zoom.value;
-  const viewportBottom = (windowSize.value.height - panY.value + buffer) / zoom.value;
-
-  return store.nodes.filter(node => {
-    const nodeLeft = node.x;
-    const nodeTop = node.y;
-    const nodeRight = node.x + CARD_WIDTH;
-    const nodeBottom = node.y + CARD_HEIGHT;
-
-    return !(nodeRight < viewportLeft || 
-             nodeLeft > viewportRight || 
-             nodeBottom < viewportTop || 
-             nodeTop > viewportBottom);
-  });
+  // Just show all nodes - no need for complex visibility management
+  return store.nodes;
 });
 
 // Visible connections (only between visible nodes)
 const visibleConnections = computed(() => {
-  if (store.snappedNodeId !== null || isWorkspaceOverview.value) {
+  if (store.snappedNodeId !== null || isWorkspaceOverview.value || isAnimatingWorkspace.value) {
     return store.connections;
   }
 
@@ -1277,7 +1462,6 @@ const handleNodeDelete = async (nodeId: string) => {
   if (descendants.length > 0) {
     confirmMessage += `\n\nThis will also permanently delete ${descendants.length} child branch${descendants.length === 1 ? '' : 'es'}.`;
   }
-  confirmMessage += '\n\nThis action cannot be undone.';
 
   // Show confirmation dialog
   if (!confirm(confirmMessage)) {
@@ -1302,7 +1486,7 @@ const handleNodeDelete = async (nodeId: string) => {
 };
 
 
-// Create new workspace
+// Create new workspace - now goes to welcome screen
 const handleNewWorkspace = async () => {
   // Trigger portal animation
   isPortalClicked.value = true;
@@ -1317,18 +1501,9 @@ const handleNewWorkspace = async () => {
   }
   await store.clearCurrentWorkspace();
 
-  const newWorkspaceId = await store.createNewWorkspace();
-  if (newWorkspaceId) {
-    await chatStore.loadChats();
-    await store.loadChatState(newWorkspaceId);
-
-    const rootNodeId = store.nodes[0]?.id;
-    if (rootNodeId) {
-      nextTick(() => {
-        centerAndSnapNode(rootNodeId);
-      });
-    }
-  }
+  // Go to welcome screen instead of creating workspace directly
+  isWelcomeScreen.value = true;
+  isWorkspaceOverview.value = false;
 };
 
 // Handle view mode toggle (simplified for grid-only)
@@ -1817,58 +1992,6 @@ const handleDrop = async (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
 
-  // Handle conversation imports on onboarding screen (when no workspaces exist)
-  if (workspaces.value.length === 0) {
-    isDragOver.value = false;
-    isDragActive.value = false;
-    
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-    
-    // Import the conversation files
-    try {
-      const { conversationImportService } = await import('@/services/conversationImportService');
-      
-      // Set up status monitoring to refresh workspace list when first workspace is imported
-      let hasImportedFirstWorkspace = false;
-      const statusUnsubscribe = conversationImportService.onStatusUpdate(async (status) => {
-        // When the first workspace is imported, immediately refresh the workspace list
-        if (!hasImportedFirstWorkspace && status.imported_conversations > 0) {
-          hasImportedFirstWorkspace = true;
-          console.log('First workspace imported, refreshing workspace list...');
-          await chatStore.loadChats();
-          // The UI should now automatically update to show GridWorkspaceView since workspaces.length > 0
-        }
-        
-        // When import is completely finished, do a final refresh
-        if (!status.is_running && status.imported_conversations > 0) {
-          console.log('Import completed, doing final workspace refresh...');
-          await chatStore.loadChats();
-          statusUnsubscribe(); // Clean up the status listener
-          
-          // Note: Clustering is now automatically triggered during the import process
-          console.log('Import and clustering process completed');
-        }
-      });
-      
-      for (const file of Array.from(files)) {
-        if (file.name.endsWith('.json') || file.name.endsWith('.zip')) {
-          console.log('Importing file:', file.name);
-          await conversationImportService.importFile(file);
-          
-          // Show success notification
-          showNotification(`Successfully imported ${file.name}`);
-        } else {
-          showNotification(`Unsupported file type: ${file.name}`, 'error');
-        }
-      }
-    } catch (error) {
-      console.error('Import failed:', error);
-      showNotification('Import failed. Please try again.', 'error');
-    }
-    return;
-  }
-
   if (isWorkspaceOverview.value) {
     return;
   }
@@ -1933,11 +2056,6 @@ const handleDragOver = (e: DragEvent) => {
 
   if (e.dataTransfer) {
     e.dataTransfer.dropEffect = "copy";
-  }
-  
-  // Handle conversation imports on onboarding
-  if (workspaces.value.length === 0) {
-    isDragOver.value = true;
   }
 };
 
@@ -2014,6 +2132,7 @@ const returnToOverview = async () => {
 
 const handleWorkspaceSelect = async (workspaceId: string) => {
   console.log('Selecting workspace:', workspaceId);
+  console.log('Before state change - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
 
   store.isTransitioning = false;
   expandingWorkspaceId.value = workspaceId;
@@ -2021,7 +2140,9 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
   const workspaceNode = document.querySelector(`[data-workspace-id="${workspaceId}"]`);
   if (!workspaceNode) {
     console.warn(`Could not find workspace node with id ${workspaceId}`);
+    isWelcomeScreen.value = false;
     isWorkspaceOverview.value = false;
+    console.log('After state change (no node) - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
     await store.loadChatState(workspaceId);
     expandedNodes.value = new Set(store.nodes.map(node => node.id));
     await nextTick();
@@ -2050,7 +2171,9 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
 
   store.isTransitioning = true;
 
+  isWelcomeScreen.value = false;
   isWorkspaceOverview.value = false;
+  console.log('After state change (with node) - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
 
   await store.loadChatState(workspaceId);
   expandedNodes.value = new Set(store.nodes.map(node => node.id));
@@ -2145,6 +2268,385 @@ const getImportLabel = (format: string) => {
     case 'claude': return 'Claude Import';
     default: return 'Imported';
   }
+};
+
+// Welcome Screen Handlers
+const showWorkspaceOverview = () => {
+  isWelcomeScreen.value = false;
+  isWorkspaceOverview.value = true;
+};
+
+const handleImportWorkspace = () => {
+  // Create a file input and trigger file selection
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json,.zip';
+  fileInput.multiple = true;
+  
+  fileInput.addEventListener('change', async (e) => {
+    const files = (e.target as HTMLInputElement).files;
+    if (!files || files.length === 0) return;
+    
+    try {
+      const { conversationImportService } = await import('@/services/conversationImportService');
+      
+      // Set up status monitoring to refresh workspace list when first workspace is imported
+      let hasImportedFirstWorkspace = false;
+      const statusUnsubscribe = conversationImportService.onStatusUpdate(async (status) => {
+        // When the first workspace is imported, immediately refresh the workspace list
+        if (!hasImportedFirstWorkspace && status.imported_conversations > 0) {
+          hasImportedFirstWorkspace = true;
+          console.log('First workspace imported, refreshing workspace list...');
+          await chatStore.loadChats();
+          // Switch to grid view if we were on welcome screen
+          if (isWelcomeScreen.value) {
+            isWelcomeScreen.value = false;
+            isWorkspaceOverview.value = true;
+          }
+        }
+        
+        // When import is completely finished, do a final refresh
+        if (!status.is_running && status.imported_conversations > 0) {
+          console.log('Import completed, doing final workspace refresh...');
+          await chatStore.loadChats();
+          statusUnsubscribe(); // Clean up the status listener
+          
+          console.log('Import and clustering process completed');
+        }
+      });
+      
+      for (const file of Array.from(files)) {
+        if (file.name.endsWith('.json') || file.name.endsWith('.zip')) {
+          console.log('Importing file:', file.name);
+          await conversationImportService.importFile(file);
+          
+          // Show success notification
+          showNotification(`Successfully imported ${file.name}`);
+        } else {
+          showNotification(`Unsupported file type: ${file.name}`, 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      showNotification('Failed to import files', 'error');
+    }
+  });
+  
+  fileInput.click();
+};
+
+const handleOpenWorkspace = async (workspaceId: string) => {
+  isWelcomeScreen.value = false;
+  await handleWorkspaceSelect(workspaceId);
+};
+
+const handleGenerateWorkspace = async (userInput: string, template?: any) => {
+  try {
+    
+    // Call backend to generate workspace
+    const response = await fetch('http://127.0.0.1:5050/api/generate-workspace', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-cache', // Prevent caching issues
+      body: JSON.stringify({
+        userInput,
+        ...(template?.id && { templateId: template.id }),
+        preferences: {}
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const workspaceData = await response.json();
+    
+    // For simple workspaces, use the backend's single node directly
+    const backendNode = workspaceData.nodes[0];
+    const initialNode = {
+      id: backendNode.id,
+      title: backendNode.title,
+      messages: backendNode.messages,
+      x: backendNode.x,
+      y: backendNode.y,
+      type: 'main',
+      metadata: {
+        isRoot: true,
+        templateId: template?.id
+      }
+    };
+    
+    // Create new chat/workspace with proper initialNode
+    const newChat = await chatStore.createChat(workspaceData.title, initialNode);
+    
+    // Extract chat ID - could be a string ID directly or an object with chatId
+    const chatId = typeof newChat === 'string' ? newChat : (newChat?.chatId || newChat?.id);
+    if (!chatId) {
+      throw new Error('Failed to create chat - no ID returned');
+    }
+    
+    // FIRST: Switch to the canvas workspace immediately
+    isWelcomeScreen.value = false;
+    isWorkspaceOverview.value = false;
+    
+    // Set the current chat ID 
+    chatStore.currentChatId = chatId;
+    
+    // Wait for the canvas to be visible before starting animation
+    await nextTick();
+    
+    // THEN: Load the generated workspace structure with animation
+    if (workspaceData.nodes && workspaceData.nodes.length > 0) {
+      console.log(`Creating ${workspaceData.nodes.length} nodes from template...`);
+      
+      // DON'T clear workspace - we need to keep the main node that was just created
+      // store.clearCurrentWorkspace();
+      
+      // Wait for the chat to be loaded and get the main node
+      await store.loadChatState(chatId);
+      await nextTick();
+      
+      // Handle simple workspaces (single node) differently from templates
+      if (!template && workspaceData.nodes.length === 1) {
+        console.log('[InfiniteCanvas] Processing single-node workspace through agent routing...');
+        
+        // Import router service and process the user's message
+        const { routerService } = await import('@/services/routerService');
+        const routingResult = await routerService.routeRequest({
+          message: userInput,
+          hasImages: false
+        });
+        
+        console.log('[InfiniteCanvas] Routing result:', routingResult);
+        
+        // Get the main node from the store
+        const mainNode = store.nodes.find(n => n.type === 'main');
+        
+        // Store routing result in the main node's first message
+        if (mainNode && mainNode.messages && mainNode.messages[0]) {
+          mainNode.messages[0].routingResult = routingResult;
+          // Update the node in the store to persist the routing result
+          store.updateNode(mainNode.id, {
+            messages: mainNode.messages
+          });
+        }
+        
+        // If we have a routed model, send the message to it
+        if (routingResult.model && mainNode) {
+          console.log(`[InfiniteCanvas] Sending message to ${routingResult.category} agent: ${routingResult.model.name}`);
+          
+          // Send message to the routed model (don't add user message again - it's already in the node)
+          await store.sendMessage(
+            mainNode.id,
+            userInput,
+            routingResult.model,
+            '', // API key - will be handled by the store
+            false // addUserMessage - don't add again, it's already in the node from backend
+          );
+        } else {
+          console.log(`[InfiniteCanvas] No agent configured for ${routingResult.category}, trying fallback agents...`);
+          
+          // Try fallback agents in order: code -> text -> any available
+          const { useAgentStore } = await import('@/stores/agentStore');
+          const agentStore = useAgentStore();
+          
+          let fallbackModel = null;
+          let fallbackCategory = '';
+          
+          // Try code agent first (most requests can be handled by code agents)
+          if (routingResult.category !== 'code') {
+            const codeModel = agentStore.getDefaultModel('code');
+            if (codeModel) {
+              fallbackModel = codeModel;
+              fallbackCategory = 'code';
+            }
+          }
+          
+          // Try text agent if code agent not available
+          if (!fallbackModel) {
+            const textModel = agentStore.getDefaultModel('text');
+            if (textModel) {
+              fallbackModel = textModel;
+              fallbackCategory = 'text';
+            }
+          }
+          
+          if (fallbackModel) {
+            console.log(`[InfiniteCanvas] Using fallback ${fallbackCategory} agent: ${fallbackModel.name}`);
+            
+            // Update routing result to show fallback was used
+            routingResult.model = fallbackModel;
+            routingResult.fallbackUsed = true;
+            routingResult.reasoning = `${routingResult.reasoning || 'No agent configured'} → fallback to ${fallbackCategory}`;
+            
+            // Update the stored routing result
+            if (mainNode && mainNode.messages && mainNode.messages[0]) {
+              mainNode.messages[0].routingResult = routingResult;
+              store.updateNode(mainNode.id, {
+                messages: mainNode.messages
+              });
+            }
+            
+            // Send message to the fallback model
+            await store.sendMessage(
+              mainNode.id,
+              userInput,
+              fallbackModel,
+              '', // API key - will be handled by the store
+              false // addUserMessage - don't add again, it's already in the node from backend
+            );
+          } else {
+            console.log(`[InfiniteCanvas] No agents configured at all, workspace created but message not processed`);
+          }
+        }
+      } else {
+        // Handle template workspaces (multi-node)
+        const mainNode = store.nodes.find(n => n.type === 'main');
+        await createTemplateWorkspace(workspaceData.nodes, workspaceData.connections || [], mainNode);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Failed to generate workspace:', error);
+    // TODO: Show error notification
+  }
+};
+
+// Simple template workspace creation - spawn all nodes at once with proper spacing
+const createTemplateWorkspace = async (nodes, connections, mainNode) => {
+  try {
+    console.log(`Creating template workspace with ${nodes.length} nodes...`);
+    
+    // Create map to track template nodes
+    const createdNodes = new Map();
+    
+    // Add main node to map for connections
+    if (mainNode) {
+      createdNodes.set('main', mainNode);
+      createdNodes.set('root', mainNode);
+    }
+    
+    // Create all nodes at once with proper spacing relative to main node
+    const nodeSpacing = 1000; // Large space between nodes
+    const cols = Math.min(3, Math.ceil(Math.sqrt(nodes.length))); // Max 3 columns for better layout
+    
+    // Calculate starting position based on main node
+    const mainX = mainNode ? mainNode.x : 0;
+    const mainY = mainNode ? mainNode.y : 0;
+    const startX = mainX + 800; // Start well to the right of main node
+    const startY = mainY - (Math.ceil(nodes.length / cols) * nodeSpacing) / 2; // Center vertically around main node
+    
+    for (const [index, nodeData] of nodes.entries()) {
+      const row = Math.floor(index / cols);
+      const col = index % cols;
+      const x = startX + col * nodeSpacing;
+      const y = startY + row * nodeSpacing;
+      
+      const newNode = await store.addNode(
+        null, // No parent initially
+        -1,
+        { x, y },
+        {
+          type: 'branch',
+          title: nodeData.title,
+          messages: nodeData.messages || [{ 
+            role: 'assistant', 
+            content: nodeData.messages?.[0]?.content || `Welcome to ${nodeData.title}`,
+            timestamp: new Date().toISOString(),
+            id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          }]
+        }
+      );
+      
+      createdNodes.set(nodeData.title, newNode);
+    }
+    
+    // Connect ALL template nodes to main node initially
+    // This ensures every template node has a spline connector to the main branch
+    if (mainNode && nodes.length > 0) {
+      for (const [index, nodeData] of nodes.entries()) {
+        const templateNode = createdNodes.get(nodeData.title);
+        if (templateNode) {
+          await store.updateNode(templateNode.id, {
+            parentId: mainNode.id,
+            branchMessageIndex: index // Use index as branch message index for proper spacing
+          });
+        }
+      }
+    }
+    
+    // Establish template connections (these create additional connections between template nodes)
+    if (connections && connections.length > 0) {
+      for (const conn of connections) {
+        const parentNode = createdNodes.get(conn.from);
+        const childNode = createdNodes.get(conn.to);
+        
+        if (parentNode && childNode) {
+          // Create a secondary connection while keeping the main node connection
+          // This creates the template-specific spline connectors
+          
+          if (conn.label) {
+            store.setConnectionLabel(parentNode.id, childNode.id, conn.label);
+          }
+        }
+      }
+    }
+    
+    // Auto-fit to show all nodes
+    await nextTick();
+    autoFitNodes();
+    
+    console.log('Template workspace created successfully!');
+  } catch (error) {
+    console.error('Error creating template workspace:', error);
+  }
+};
+
+// Center on a specific node with animation
+const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 800) => {
+  const node = store.nodes.find((n) => n.id === nodeId);
+  if (!node) return;
+
+  store.isTransitioning = true;
+  const center = getNodeCenter(node);
+  const rect = canvasRef.value.getBoundingClientRect();
+
+  // Animate to the node position
+  const startPanX = panX.value;
+  const startPanY = panY.value;
+  const startZoom = zoom.value;
+  
+  const targetPanX = rect.width / 2 - center.x * targetZoom;
+  const targetPanY = rect.height / 2 - center.y * targetZoom;
+  
+  focusedNodeId.value = nodeId;
+  
+  return new Promise((resolve) => {
+    const startTime = performance.now();
+    
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function (ease-out)
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      
+      panX.value = startPanX + (targetPanX - startPanX) * easeOut;
+      panY.value = startPanY + (targetPanY - startPanY) * easeOut;
+      zoom.value = startZoom + (targetZoom - startZoom) * easeOut;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        store.isTransitioning = false;
+        resolve();
+      }
+    };
+    
+    requestAnimationFrame(animate);
+  });
 };
 
 // Center on a specific node
@@ -2499,6 +3001,11 @@ const handleMouseUp = () => {
   store.isDragging = false;
   store.activeNode = null;
   isPanning.value = false;
+  
+  // Handle selection rectangle completion
+  if (selectionRect.value.isActive) {
+    finishSelection();
+  }
 };
 
 const handleCanvasMouseDown = (e) => {
@@ -2539,12 +3046,32 @@ const handleCanvasMouseDown = (e) => {
       dragStartPosition.value = screenToWorld(e.clientX, e.clientY);
     }
   } else {
-    // Clicked on empty canvas - start panning
-    isPanning.value = true;
-    lastPanPosition.value = {
-      x: e.clientX - panX.value,
-      y: e.clientY - panY.value,
-    };
+    // Clicked on empty canvas
+    if (isShiftPressed.value) {
+      // Start selection rectangle
+      selectionRect.value.isActive = true;
+      selectionRect.value.startX = e.clientX;
+      selectionRect.value.startY = e.clientY;
+      selectionRect.value.currentX = e.clientX;
+      selectionRect.value.currentY = e.clientY;
+      
+      // Clear existing selection if not holding other modifier keys
+      if (!e.ctrlKey && !e.metaKey) {
+        selectedNodeIds.value.clear();
+      }
+    } else {
+      // Start panning
+      isPanning.value = true;
+      lastPanPosition.value = {
+        x: e.clientX - panX.value,
+        y: e.clientY - panY.value,
+      };
+      
+      // Clear selection if not holding modifier keys
+      if (!e.ctrlKey && !e.metaKey) {
+        selectedNodeIds.value.clear();
+      }
+    }
   }
 };
 
@@ -2671,6 +3198,10 @@ const handleKeyDown = (e: KeyboardEvent) => {
     activeTag === 'textarea' ||
     document.activeElement?.hasAttribute('contenteditable');
 
+  // Track shift key for multi-select
+  if (e.key === 'Shift') {
+    isShiftPressed.value = true;
+  }
 
   if (!isEditing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
     e.preventDefault();
@@ -2710,6 +3241,17 @@ const handleKeyDown = (e: KeyboardEvent) => {
   if (store.isTransitioning) return;
 
   if (store.snappedNodeId !== null) {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const cmdKey = isMac ? e.metaKey : e.ctrlKey;
+    
+    // CMD + Arrow keys for cycling through snapped nodes
+    if (cmdKey && (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      cycleSnappedNodes(e.key);
+      return;
+    }
+    
+    // Regular arrow keys for relic navigation
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       emitter.emit('navigate-relic', {
         direction: e.key === "ArrowLeft" ? "previous" : "next",
@@ -2791,7 +3333,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 // Handle key release
 const handleKeyUp = (e: KeyboardEvent) => {
-  // No special handling needed for grid-only mode
+  // Track shift key release for multi-select
+  if (e.key === 'Shift') {
+    isShiftPressed.value = false;
+    // End selection rectangle if active
+    if (selectionRect.value.isActive) {
+      finishSelection();
+    }
+  }
 };
 
 // Unfocus cluster visualization
@@ -2951,7 +3500,9 @@ const toggleFullscreen = () => {
 defineExpose({
   autoFitNodes,
   isWorkspaceOverview,
+  isWelcomeScreen,
   returnToOverview,
+  showWorkspaceOverview,
   handleHeightLock,
   handleHeightUnlock,
   centerAndSnapNode,
@@ -3033,10 +3584,65 @@ const handleMouseMove = (e) => {
       x: canvasX - store.dragOffset.x,
       y: canvasY - store.dragOffset.y,
     });
+  } else if (selectionRect.value.isActive) {
+    // Handle selection rectangle
+    selectionRect.value.currentX = e.clientX;
+    selectionRect.value.currentY = e.clientY;
+    
+    // Update selection in real-time
+    updateSelectionFromRect();
   } else if (isPanning.value && lastPanPosition.value) {
     // Handle canvas panning
     panX.value = e.clientX - lastPanPosition.value.x;
     panY.value = e.clientY - lastPanPosition.value.y;
+  }
+};
+
+// Selection rectangle functions
+const updateSelectionFromRect = () => {
+  if (!selectionRect.value.isActive) return;
+  
+  const rect = selectionRect.value;
+  const left = Math.min(rect.startX, rect.currentX);
+  const top = Math.min(rect.startY, rect.currentY);
+  const right = Math.max(rect.startX, rect.currentX);
+  const bottom = Math.max(rect.startY, rect.currentY);
+  
+  // Convert screen coordinates to world coordinates
+  const topLeft = screenToWorld(left, top);
+  const bottomRight = screenToWorld(right, bottom);
+  
+  // Approximate node dimensions (you may need to adjust these)
+  const NODE_WIDTH = 672; // Standard card width
+  const NODE_HEIGHT = 400; // Approximate card height
+  
+  // Find nodes whose bounding boxes intersect with the selection rectangle
+  const nodesInRect = store.nodes.filter(node => {
+    const nodeLeft = node.x;
+    const nodeTop = node.y;
+    const nodeRight = node.x + NODE_WIDTH;
+    const nodeBottom = node.y + NODE_HEIGHT;
+    
+    // Check if rectangles intersect
+    const intersects = !(nodeRight < topLeft.x || 
+                        nodeLeft > bottomRight.x || 
+                        nodeBottom < topLeft.y || 
+                        nodeTop > bottomRight.y);
+    
+    return intersects;
+  });
+  
+  // Update selection
+  selectedNodeIds.value.clear();
+  nodesInRect.forEach(node => {
+    selectedNodeIds.value.add(node.id);
+  });
+};
+
+const finishSelection = () => {
+  if (selectionRect.value.isActive) {
+    updateSelectionFromRect();
+    selectionRect.value.isActive = false;
   }
 };
 
@@ -3050,25 +3656,47 @@ const handleNodeExpansionChange = ({ nodeId, isExpanded }) => {
 
 // Handle drag start for nodes
 const handleDragStart = (e, node) => {
-  store.isDragging = true;
-  store.activeNode = node.id;
+  // Check if this node is part of a multi-selection
+  if (selectedNodeIds.value.has(node.id) && selectedNodeIds.value.size > 1) {
+    // Start multi-drag
+    isMultiDragging.value = true;
+    multiDragStartPositions.value.clear();
+    
+    // Save start positions for all selected nodes
+    selectedNodeIds.value.forEach(nodeId => {
+      const selectedNode = store.nodes.find(n => n.id === nodeId);
+      if (selectedNode) {
+        multiDragStartPositions.value.set(nodeId, { x: selectedNode.x, y: selectedNode.y });
+      }
+    });
+    
+    // Save drag start position in world coordinates
+    const canvasRect = canvasRef.value.getBoundingClientRect();
+    const worldX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
+    const worldY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
+    dragStartPosition.value = { x: worldX, y: worldY };
+  } else {
+    // Single node drag
+    store.isDragging = true;
+    store.activeNode = node.id;
 
-  // Save the initial position for undo
-  dragStartPosition.value = {
-    nodeId: node.id,
-    x: node.x,
-    y: node.y
-  };
+    // Save the initial position for undo
+    dragStartPosition.value = {
+      nodeId: node.id,
+      x: node.x,
+      y: node.y
+    };
 
-  const canvasRect = canvasRef.value.getBoundingClientRect();
+    const canvasRect = canvasRef.value.getBoundingClientRect();
 
-  const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
-  const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
+    const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
+    const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
 
-  store.dragOffset = {
-    x: canvasX - node.x,
-    y: canvasY - node.y,
-  };
+    store.dragOffset = {
+      x: canvasX - node.x,
+      y: canvasY - node.y,
+    };
+  }
 };
 
 // Handle topic selection
@@ -3124,7 +3752,15 @@ onMounted(async () => {
     window.addEventListener("resize", () => {
       windowSize.value.width = window.innerWidth;
       windowSize.value.height = window.innerHeight;
+      // Re-render grid on window resize
+      nextTick(() => renderGrid());
     });
+
+    // Initialize grid rendering
+    nextTick(() => renderGrid());
+
+    // Setup theme watcher for grid
+    setupThemeWatcher();
 
     // Initialize model registry
     updateModelRegistry();
@@ -3159,9 +3795,34 @@ onMounted(async () => {
   }
 });
 
+// Watch for zoom and pan changes to re-render grid
+watch([() => zoom.value, () => panX.value, () => panY.value], () => {
+  requestAnimationFrame(() => renderGrid());
+}, { flush: 'post' });
+
+// Watch for theme changes to re-render grid with new colors
+let themeObserver: MutationObserver | null = null;
+
+const setupThemeWatcher = () => {
+  themeObserver = new MutationObserver(() => {
+    requestAnimationFrame(() => renderGrid());
+  });
+  
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme', 'class']
+  });
+};
+
+// Theme watcher is now setup in the main onMounted hook above
+
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeyDown);
   window.removeEventListener("keyup", handleKeyUp);
+  // Clean up theme observer
+  if (themeObserver) {
+    themeObserver.disconnect();
+  }
   // Clean up event listeners
   emitter.off('workspace-loaded-external');
   
@@ -3416,18 +4077,6 @@ onBeforeUnmount(() => {
   @apply text-center;
 }
 
-.create-new-button {
-  @apply p-8 rounded-2xl border-2 border-transparent transition-all duration-300 text-left w-full;
-  @apply hover:border-primary/20 hover:bg-primary/5 hover:scale-[1.02];
-}
-
-.create-new-inner {
-  @apply text-center;
-}
-
-.onboarding-drag-active {
-  @apply bg-base-200/20;
-}
 
 /* Loading State */
 .loading-container {
@@ -3599,410 +4248,14 @@ onBeforeUnmount(() => {
   animation: progressFlow 2s ease-in-out infinite;
 }
 
-/* Enhanced Onboarding */
-.enhanced-onboarding {
-  @apply absolute inset-0 flex items-center justify-center z-40 p-8;
-  background: linear-gradient(135deg, 
-    oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
-    oklch(from oklch(var(--b2)) l c h / 0.95) 100%);
-  backdrop-filter: blur(20px);
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1), 
-              background 0.3s ease, 
-              color 0.3s ease;
-}
 
-.enhanced-onboarding.drag-active {
-  background: linear-gradient(135deg, 
-    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
-    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
-  transform: scale(1.02);
-}
 
-.onboarding-content {
-  @apply max-w-6xl w-full px-4;
-  margin-bottom: 120px;
-  /* Responsive scaling when panels are open */
-  transition: all 0.3s ease;
-}
-
-/* Adapt layout when side panels are open */
-.enhanced-infinite-canvas .onboarding-content {
-  /* Scale down content when space is constrained */
-  max-width: min(90vw, 6rem * 16); /* 90vw or 6xl, whichever is smaller */
-}
-
-/* Specific optimizations for panel states */
-.both-panels-open .onboarding-content {
-  max-width: 100%;
-  padding: 1rem;
-}
-
-.both-panels-open .welcome-header {
-  margin-bottom: 1rem;
-}
-
-.both-panels-open .welcome-title {
-  font-size: 1.75rem;
-  line-height: 1.1;
-}
-
-.both-panels-open .welcome-subtitle {
-  font-size: 0.875rem;
-}
-
-.both-panels-open .action-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: none;
-}
-
-.both-panels-open .action-card {
-  padding: 1rem;
-  border-radius: 0.75rem;
-}
-
-.both-panels-open .action-card h2 {
-  font-size: 1.125rem;
-  margin-bottom: 0.25rem;
-}
-
-.both-panels-open .action-card p {
-  font-size: 0.8rem;
-  line-height: 1.3;
-}
-
-.both-panels-open .create-new-button {
-  padding: 1rem;
-}
-
-/* Ultra-compact layout for very narrow spaces (both panels open) */
-@media (max-width: 500px) {
-  .onboarding-content {
-    max-width: 100%;
-    padding: 0.75rem;
-  }
-  
-  .welcome-header {
-    margin-bottom: 1rem;
-  }
-  
-  .welcome-icon {
-    width: 2.5rem;
-    height: 2.5rem;
-    margin-bottom: 0.75rem;
-  }
-  
-  .welcome-title {
-    font-size: 1.75rem;
-    margin-bottom: 0.25rem;
-    line-height: 1.1;
-  }
-  
-  .welcome-subtitle {
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
-  }
-  
-  .action-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    max-width: none;
-    margin: 0;
-  }
-  
-  .action-card {
-    padding: 1rem;
-    border-radius: 0.75rem;
-  }
-  
-  .action-card h2 {
-    font-size: 1.125rem;
-    margin-bottom: 0.25rem;
-  }
-  
-  .action-card p {
-    font-size: 0.8rem;
-    line-height: 1.3;
-    margin-bottom: 0.75rem;
-  }
-  
-  .card-icon {
-    margin-bottom: 0.75rem;
-  }
-  
-  .create-new-button {
-    padding: 1rem;
-    border-radius: 0.75rem;
-  }
-  
-  .create-new-button h2 {
-    font-size: 1.125rem;
-    margin-bottom: 0.25rem;
-  }
-  
-  .create-new-button p {
-    font-size: 0.8rem;
-    line-height: 1.3;
-    margin-bottom: 0.75rem;
-  }
-}
-
-.welcome-header {
-  @apply text-center mb-8 lg:mb-16;
-  /* Responsive scaling for narrow spaces */
-  transition: all 0.3s ease;
-}
-
-/* Compact welcome header when space is limited */
-.enhanced-infinite-canvas .welcome-header {
-  margin-bottom: clamp(1rem, 4vw, 4rem);
-}
-
-.welcome-icon {
-  @apply relative mx-auto mb-8 w-24 h-24 flex items-center justify-center;
-  color: oklch(var(--p));
-  transition: color 0.3s ease;
-}
-
-.icon-glow {
-  @apply absolute inset-0 rounded-full;
-  background: radial-gradient(circle, 
-    oklch(from oklch(var(--p)) l c h / 0.3) 0%, 
-    transparent 70%);
-  animation: iconPulse 3s ease-in-out infinite;
-  transition: background 0.3s ease;
-}
-
-.welcome-title {
-  @apply text-4xl lg:text-6xl font-light mb-4;
-  color: oklch(var(--bc));
-  animation: titleFloat 4s ease-in-out infinite;
-  transition: color 0.3s ease, text-shadow 0.3s ease, font-size 0.3s ease;
-  /* Responsive font size based on available width */
-  font-size: clamp(2.5rem, 8vw, 3.75rem);
-}
-
-.welcome-subtitle {
-  @apply text-xl opacity-70;
-  color: oklch(from oklch(var(--bc)) l c h / 0.7);
-  transition: color 0.3s ease;
-}
-
-/* Enhanced Action Cards */
-.action-cards {
-  @apply grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-4xl mx-auto;
-  /* Responsive grid that stacks on narrow screens */
-  transition: gap 0.3s ease;
-}
-
-/* Optimized vertical layout for narrow screens */
-@media (max-width: 800px) {
-  .onboarding-content {
-    max-width: 100%;
-    padding: 1rem;
-  }
-  
-  .welcome-header {
-    margin-bottom: 1.5rem;
-  }
-  
-  .welcome-icon {
-    width: 3rem;
-    height: 3rem;
-    margin-bottom: 1rem;
-  }
-  
-  .welcome-title {
-    font-size: 2.25rem;
-    margin-bottom: 0.5rem;
-    line-height: 1.2;
-  }
-  
-  .welcome-subtitle {
-    font-size: 1rem;
-    margin-bottom: 1rem;
-  }
-  
-  .action-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    max-width: none;
-    margin: 0;
-  }
-  
-  .action-card {
-    padding: 1.5rem;
-    margin: 0;
-    border-radius: 1rem;
-  }
-  
-  .action-card h2 {
-    font-size: 1.25rem;
-    margin-bottom: 0.5rem;
-  }
-  
-  .action-card p {
-    font-size: 0.875rem;
-    line-height: 1.4;
-    margin-bottom: 1rem;
-  }
-  
-  .card-icon {
-    margin-bottom: 1rem;
-  }
-  
-  .supported-formats {
-    gap: 0.5rem;
-    justify-self: center;
-    flex-wrap: wrap;
-  }
-  
-  .format-tag {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-  }
-  
-  .create-new-button {
-    padding: 1.5rem;
-    border-radius: 1rem;
-  }
-  
-  .create-new-button h2 {
-    font-size: 1.25rem;
-    margin-bottom: 0.5rem;
-  }
-  
-  .create-new-button p {
-    font-size: 0.875rem;
-    line-height: 1.4;
-    margin-bottom: 1rem;
-  }
-}
-
-.action-card {
-  @apply relative p-4 lg:p-8 rounded-3xl cursor-pointer;
-  @apply transition-all duration-500 ease-out;
-  /* Responsive padding */
-  padding: clamp(1rem, 4vw, 2rem);
-  background: oklch(from oklch(var(--b1)) l c h / 0.8);
-  backdrop-filter: blur(20px);
-  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
-  box-shadow: 
-    0 8px 32px oklch(from oklch(var(--b3)) l c h / 0.2),
-    inset 0 1px 0 oklch(from oklch(var(--bc)) l c h / 0.05);
-  animation: cardFloat 6s ease-in-out infinite;
-  transition: all 0.5s ease-out, 
-              background 0.3s ease, 
-              border-color 0.3s ease, 
-              box-shadow 0.3s ease;
-}
-
-.action-card:nth-child(2) {
-  animation-delay: -3s;
-}
-
-.action-card:hover {
-  transform: translateY(-12px) scale(1.02);
-  box-shadow: 
-    0 24px 48px oklch(from oklch(var(--p)) l c h / 0.2),
-    0 0 0 1px oklch(from oklch(var(--p)) l c h / 0.1),
-    inset 0 1px 0 oklch(from oklch(var(--bc)) l c h / 0.1);
-  border-color: oklch(from oklch(var(--p)) l c h / 0.3);
-}
-
-.import-card.drag-hover {
-  background: linear-gradient(135deg, 
-    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
-    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
-  border-color: oklch(var(--p));
-  transform: scale(1.05);
-}
-
-.card-glow {
-  @apply absolute inset-0 rounded-3xl opacity-0;
-  background: linear-gradient(135deg, 
-    oklch(from oklch(var(--p)) l c h / 0.1) 0%, 
-    oklch(from oklch(var(--s)) l c h / 0.05) 100%);
-  transition: opacity 0.3s ease, background 0.3s ease;
-}
-
-.action-card:hover .card-glow {
-  opacity: 1;
-}
-
-.card-content {
-  @apply relative z-10;
-}
-
-.card-icon {
-  @apply w-16 h-16 mx-auto mb-6 flex items-center justify-center rounded-2xl;
-  background: oklch(from oklch(var(--p)) l c h / 0.1);
-  color: oklch(var(--p));
-  transition: background 0.3s ease, color 0.3s ease;
-}
-
-.action-card h2 {
-  @apply text-2xl font-semibold mb-4;
-  color: oklch(var(--bc));
-  justify-self: center;
-  transition: color 0.3s ease;
-}
-
-.action-card p {
-  @apply text-base opacity-70 mb-6;
-  color: oklch(from oklch(var(--bc)) l c h / 0.7);
-  transition: color 0.3s ease;
-}
-
-.supported-formats {
-  justify-self: center;
-  @apply flex gap-2 flex-wrap;
-}
-
-.format-tag {
-  @apply px-3 py-1 rounded-full text-xs font-medium;
-  background: oklch(from oklch(var(--p)) l c h / 0.1);
-  color: oklch(var(--p));
-  border: 1px solid oklch(from oklch(var(--p)) l c h / 0.2);
-  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-}
 
 /* Enhanced Animations */
 @keyframes ultraSpin {
   to { transform: rotate(360deg); }
 }
 
-@keyframes titlePulse {
-  0%, 100% { 
-    text-shadow: 0 0 20px oklch(from oklch(var(--p)) l c h / 0.3);
-  }
-  50% { 
-    text-shadow: 0 0 40px oklch(from oklch(var(--p)) l c h / 0.5);
-  }
-}
-
-@keyframes progressFlow {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-@keyframes iconPulse {
-  0%, 100% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.1); opacity: 1; }
-}
-
-@keyframes titleFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes cardFloat {
-  0%, 100% { transform: translateY(0) rotateX(0deg); }
-  50% { transform: translateY(-5px) rotateX(2deg); }
-}
 
 /* Transition Classes */
 .slide-down-enter-active,
