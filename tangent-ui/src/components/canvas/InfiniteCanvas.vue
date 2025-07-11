@@ -129,8 +129,7 @@
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle">
           <!-- SVG Layer for Connections -->
-          <svg class="absolute overflow-visible" style="z-index: 0; pointer-events: none;" :style="svgStyle"
-            preserveAspectRatio="none">
+          <svg class="absolute overflow-visible" style="z-index: 0; pointer-events: none;" :style="svgStyle">
             <defs>
               <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                 <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
@@ -201,8 +200,7 @@
           </div>
 
           <!-- Interaction Layer for Splines - Between SVG and Nodes -->
-          <svg class="absolute overflow-visible" style="z-index: 0.5; pointer-events: none;" :style="svgStyle"
-            preserveAspectRatio="none">
+          <svg class="absolute overflow-visible" style="z-index: 0.5; pointer-events: none;" :style="svgStyle">
             <template v-for="connection in visibleConnections"
               :key="`interaction-${connection.parent.id}-${connection.child.id}`">
               <!-- Clickable paths - show hitbox on hover -->
@@ -624,14 +622,8 @@ const getLODLevel = (nodeId: string) => {
   const isNodeSnapped = snappedNodeId.value === nodeId;
   const isNodeFocusedState = focusedNodeId.value === nodeId;
   
-  // Always use full detail for snapped nodes
-  if (isNodeSnapped) return 'full';
-  
-  // Use zoom level to determine LOD
-  if (zoom.value >= 1.0) return 'full';
-  if (zoom.value >= 0.5) return 'summary';
-  if (zoom.value >= 0.2) return 'preview';
-  return 'block';
+  // Always use full detail for all nodes (removed zoom-based LOD)
+  return 'full';
 };
 
 // Calculate effective card dimensions based on LOD level and node type
@@ -983,7 +975,7 @@ const transformStyle = computed(() => {
 const svgStyle = computed(() => ({
   width: "100000px",
   height: "100000px",
-  viewBox: "0 0 100000 100000", // Match the actual coordinate space of nodes
+  // Remove viewBox to keep SVG coordinates 1:1 with pixel coordinates
 }));
 
 const nodesLayerStyle = computed(() => ({

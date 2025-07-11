@@ -99,8 +99,8 @@
         v-if="isEditing"
         :x="labelPosition.x"
         :y="labelPosition.y"
-        :width="300 / Math.min(1, zoomLevel)"
-        :height="50 / Math.min(1, zoomLevel)"
+        :width="300 / Math.max(props.zoomLevel, 0.1)"
+        :height="50 / Math.max(props.zoomLevel, 0.1)"
         @dblclick.stop
         style="z-index: 20; pointer-events: all;"
       >
@@ -404,7 +404,10 @@ const strokeWidth = computed(() => {
 const dashPattern = computed(() => {
   return "4 6" // Consistent dash pattern regardless of zoom
 })
-const fontSize = computed(() => baseFontSize) // Consistent font size regardless of zoom
+const fontSize = computed(() => {
+  // Scale font size inversely with zoom level to maintain readability
+  return baseFontSize / Math.max(props.zoomLevel, 0.1) // Prevent division by zero
+})
 
 // Gradient coordinates for directional flow from parent to child
 const gradientCoords = computed(() => {
@@ -669,9 +672,9 @@ function getLabelText() {
 
 const inputWidth = computed(() => {
   const w = labelInput.value.length * fontSize.value * 0.6
-  return Math.max(50, Math.min(300 / props.zoomLevel, w / props.zoomLevel))
+  return Math.max(50 / Math.max(props.zoomLevel, 0.1), Math.min(300 / Math.max(props.zoomLevel, 0.1), w / Math.max(props.zoomLevel, 0.1)))
 })
-const inputHeight = computed(() => (fontSize.value * 1.5) / props.zoomLevel)
+const inputHeight = computed(() => fontSize.value * 1.5 / Math.max(props.zoomLevel, 0.1))
 
 const labelPosition = computed(() => {
   const { startPoint, endPoint } = connectionPoints.value
