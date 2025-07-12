@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valentine's Card for My Babe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        @keyframes sparkle {
+            0%, 100% { opacity: 0; transform: scale(0); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+        
+        .heartbeat {
+            animation: heartbeat 1.5s ease-in-out infinite;
+        }
+        
+        .float {
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        .sparkle {
+            animation: sparkle 2s ease-in-out infinite;
+        }
+        
+        .sparkle-delay-1 { animation-delay: 0.2s; }
+        .sparkle-delay-2 { animation-delay: 0.4s; }
+        .sparkle-delay-3 { animation-delay: 0.6s; }
+        .sparkle-delay-4 { animation-delay: 0.8s; }
+        
+        .gradient-text {
+            background: linear-gradient(45deg, #ff6b9d, #ff477e, #ff006e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .card-shadow {
+            box-shadow: 0 20px 40px rgba(255, 0, 110, 0.3);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-pink-100 via-red-50 to-pink-100 flex items-center justify-center p-4">
+    <div class="relative">
+        <!-- Sparkles around the card -->
+        <div class="absolute -top-10 -left-10 text-4xl sparkle">✨</div>
+        <div class="absolute -top-5 -right-8 text-3xl sparkle sparkle-delay-1">💫</div>
+        <div class="absolute -bottom-8 -left-5 text-3xl sparkle sparkle-delay-2">⭐</div>
+        <div class="absolute -bottom-10 -right-10 text-4xl sparkle sparkle-delay-3">✨</div>
+        <div class="absolute top-1/2 -left-12 text-2xl sparkle sparkle-delay-4">💖</div>
+        <div class="absolute top-1/2 -right-12 text-2xl sparkle sparkle-delay-1">💕</div>
+        
+        <!-- Main Card -->
+        <div class="bg-white rounded-3xl p-12 max-w-2xl card-shadow transform hover:scale-105 transition-transform duration-300">
+            <!-- Floating Hearts Background -->
+            <div class="absolute inset-0 overflow-hidden rounded-3xl">
+                <div class="absolute top-10 left-10 text-6xl opacity-10 float">❤️</div>
+                <div class="absolute bottom-10 right-10 text-5xl opacity-10 float" style="animation-delay: 1s;">💗</div>
+                <div class="absolute top-1/3 right-1/4 text-4xl opacity-10 float" style="animation-delay: 0.5s;">💝</div>
+                <div class="absolute bottom-1/3 left-1/4 text-5xl opacity-10 float" style="animation-delay: 1.5s;">💘</div>
+            </div>
+            
+            <!-- Content -->
+            <div class="relative z-10 text-center space-y-8">
+                <!-- Animated Heart -->
+                <div class="text-8xl heartbeat mb-6">
+                    ❤️
+                </div>
+                
+                <!-- Main Message -->
+                <h1 class="text-5xl font-bold gradient-text mb-4">
+                    this for my baberrr &lt;3
+                </h1>
+                
+                <!-- Love Message -->
+                <div class="space-y-4">
+                    <p class="text-2xl text-pink-600 font-medium">
+                        Happy Valentine's Day!
+                    </p>
+                    <p class="text-xl text-gray-600">
+                        You make every day special
+                    </p>
+                </div>
+                
+                <!-- Row of Small Hearts -->
+                <div class="flex justify-center gap-4 mt-8">
+                    <span class="text-3xl heartbeat" style="animation-delay: 0.2s;">💕</span>
+                    <span class="text-3xl heartbeat" style="animation-delay: 0.4s;">💖</span>
+                    <span class="text-3xl heartbeat" style="animation-delay: 0.6s;">💗</span>
+                    <span class="text-3xl heartbeat" style="animation-delay: 0.8s;">💝</span>
+                    <span class="text-3xl heartbeat" style="animation-delay: 1s;">💘</span>
+                </div>
+                
+                <!-- Love Note -->
+                <div class="mt-8 p-6 bg-pink-50 rounded-2xl border-2 border-pink-200">
+                    <p class="text-lg text-pink-700 italic">
+                        "You're my favorite person in the whole world"
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Floating Hearts Animation -->
+    <script>
+        // Create floating hearts
+        function createHeart() {
+            const heart = document.createElement('div');
+            heart.innerHTML = ['❤️', '💕', '💖', '💗', '💝'][Math.floor(Math.random() * 5)];
+            heart.style.position = 'fixed';
+            heart.style.left = Math.random() * 100 + '%';
+            heart.style.top = '100%';
+            heart.style.fontSize = Math.random() * 20 + 20 + 'px';
+            heart.style.opacity = '0.7';
+            heart.style.pointerEvents = 'none';
+            heart.style.zIndex = '1';
+            
+            document.body.appendChild(heart);
+            
+            // Animate the heart
+            let position = 100;
+            const speed = Math.random() * 2 + 1;
+            const sway = Math.random() * 100 - 50;
+            
+            const animation = setInterval(() => {
+                position -= speed;
+                heart.style.top = position + '%';
+                heart.style.left = parseFloat(heart.style.left) + Math.sin(position / 30) * 0.5 + '%';
+                
+                if (position < -10) {
+                    clearInterval(animation);
+                    heart.remove();
+                }
+            }, 20);
+        }
+        
+        // Create hearts periodically
+        setInterval(createHeart, 1000);
+    </script>
+</body>
+</html>

@@ -114,6 +114,33 @@ export const useThemeStore = defineStore('theme', {
       this.currentTheme = theme;
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem('theme', theme);
+      
+      // Apply custom theme colors as CSS custom properties
+      this.applyThemeColors(theme);
+    },
+
+    /**
+     * Apply theme colors as CSS custom properties
+     */
+    applyThemeColors(theme: ThemeName) {
+      const colors = this.themeColors[theme];
+      const root = document.documentElement;
+      
+      // Convert hex colors to RGB values for CSS custom properties
+      const hexToRgb = (hex: string) => {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `${r} ${g} ${b}`;
+      };
+      
+      // Set CSS custom properties that match our theme colors
+      root.style.setProperty('--theme-primary', colors.primary);
+      root.style.setProperty('--theme-secondary', colors.secondary);
+      root.style.setProperty('--theme-accent', colors.accent);
+      root.style.setProperty('--theme-primary-rgb', hexToRgb(colors.primary));
+      root.style.setProperty('--theme-secondary-rgb', hexToRgb(colors.secondary));
+      root.style.setProperty('--theme-accent-rgb', hexToRgb(colors.accent));
     },
 
     /**

@@ -68,6 +68,84 @@ class ClusteringResult(db.Model):
         db.Index('idx_clustering_results_created', 'created_at'),
     )
 
+class ToolCall(db.Model):
+    __tablename__ = 'tool_calls'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False)
+    tool_name = db.Column(db.String(50), nullable=False)
+    parameters = db.Column(db.JSON, nullable=True)
+    result = db.Column(db.JSON, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='pending')  # 'pending', 'success', 'error'
+    error_message = db.Column(db.Text, nullable=True)
+    duration_ms = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    node = db.relationship('Node', backref='tool_calls')
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_tool_calls_node_id', 'node_id'),
+        db.Index('idx_tool_calls_tool_name', 'tool_name'),
+        db.Index('idx_tool_calls_status', 'status'),
+        db.Index('idx_tool_calls_created', 'created_at'),
+    )
+
+class FileNode(db.Model):
+    __tablename__ = 'file_nodes'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    file_size = db.Column(db.Integer, nullable=True)
+    content_hash = db.Column(db.String(64), nullable=True)
+    mime_type = db.Column(db.String(100), nullable=True)
+    created_by = db.Column(db.String(36), db.ForeignKey('tool_calls.id'), nullable=True)
+    modified_by = db.Column(db.String(36), db.ForeignKey('tool_calls.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    node = db.relationship('Node', backref='file_nodes')
+    creator_tool_call = db.relationship('ToolCall', foreign_keys=[created_by], backref='created_files')
+    modifier_tool_call = db.relationship('ToolCall', foreign_keys=[modified_by], backref='modified_files')
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_file_nodes_node_id', 'node_id'),
+        db.Index('idx_file_nodes_file_path', 'file_path'),
+        db.Index('idx_file_nodes_created_by', 'created_by'),
+        db.Index('idx_file_nodes_modified_by', 'modified_by'),
+    )
+
+class ExecutionNode(db.Model):
+    __tablename__ = 'execution_nodes'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False)
+    command = db.Column(db.Text, nullable=False)
+    working_dir = db.Column(db.String(500), nullable=True)
+    environment = db.Column(db.JSON, nullable=True)
+    pid = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='pending')  # 'pending', 'running', 'completed', 'failed', 'killed'
+    exit_code = db.Column(db.Integer, nullable=True)
+    stdout = db.Column(db.Text, nullable=True)
+    stderr = db.Column(db.Text, nullable=True)
+    started_by = db.Column(db.String(36), db.ForeignKey('tool_calls.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    node = db.relationship('Node', backref='execution_nodes')
+    starter_tool_call = db.relationship('ToolCall', foreign_keys=[started_by], backref='started_executions')
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_execution_nodes_node_id', 'node_id'),
+        db.Index('idx_execution_nodes_status', 'status'),
+        db.Index('idx_execution_nodes_pid', 'pid'),
+        db.Index('idx_execution_nodes_started_by', 'started_by'),
+    )
+
 class ChatPersistenceService:
     def __init__(self, app):
         self.app = app  # Store reference to Flask app
@@ -96,7 +174,7 @@ class ChatPersistenceService:
         main_node = Node(
             id=str(uuid.uuid4()),
             chat_id=chat.id,
-            type='main',
+            type=initial_node_data.get('type', 'main'),  # Use provided type or default to 'main'
             title=initial_node_data.get('title', 'Root Thread'),
             x=initial_node_data.get('x', 100),
             y=initial_node_data.get('y', 100),

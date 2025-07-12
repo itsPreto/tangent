@@ -27,18 +27,17 @@
             <div class="message-header">
               <!-- Left column: Timestamp -->
               <div class="header-left">
-                <span class="message-timestamp-prominent" :style="{ 
+                <span class="message-timestamp-prominent" :style="{
                   '--timestamp-color': bestContrastingColor,
                   '--timestamp-bg': `${bestContrastingColor}10`,
                   '--timestamp-border': `${bestContrastingColor}30`
                 }">{{ formatTime(message.timestamp) }}</span>
-                
+
                 <!-- Routing Indicator -->
-                <div v-if="message.routingResult" 
-                     class="routing-indicator" 
-                     :class="`routing-${message.routingResult.category}`"
-                     :title="`Routed to ${message.routingResult.category} agent (${message.routingResult.confidence}% confidence)`"
-                     @click="toggleRoutingDetails(startIndex + index)">
+                <div v-if="message.routingResult" class="routing-indicator"
+                  :class="`routing-${message.routingResult.category}`"
+                  :title="`Routed to ${message.routingResult.category} agent (${message.routingResult.confidence}% confidence)`"
+                  @click="toggleRoutingDetails(startIndex + index)">
                   <div class="routing-icon">
                     <component :is="getRoutingIcon(message.routingResult.category)" :size="12" />
                   </div>
@@ -150,10 +149,9 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Routing Details Panel -->
-          <div v-if="message.routingResult && showRoutingDetails.has(startIndex + index)" 
-               class="routing-details-panel">
+          <div v-if="message.routingResult && showRoutingDetails.has(startIndex + index)" class="routing-details-panel">
             <div class="routing-details-header">
               <div class="routing-details-title">
                 <component :is="getRoutingIcon(message.routingResult.category)" :size="16" />
@@ -163,33 +161,33 @@
                 <X :size="16" />
               </button>
             </div>
-            
+
             <div class="routing-details-content">
               <div class="routing-detail-item">
                 <span class="routing-detail-label">Category:</span>
                 <span class="routing-detail-value">{{ message.routingResult.category }}</span>
               </div>
-              
+
               <div class="routing-detail-item">
                 <span class="routing-detail-label">Confidence:</span>
                 <span class="routing-detail-value">{{ message.routingResult.confidence }}%</span>
               </div>
-              
+
               <div class="routing-detail-item">
                 <span class="routing-detail-label">Model:</span>
                 <span class="routing-detail-value">{{ message.routingResult.model?.name || 'None' }}</span>
               </div>
-              
+
               <div v-if="message.routingResult.reasoning" class="routing-detail-item">
                 <span class="routing-detail-label">Reasoning:</span>
                 <span class="routing-detail-value">{{ message.routingResult.reasoning }}</span>
               </div>
-              
+
               <div v-if="message.routingResult.fallbackUsed" class="routing-detail-item">
                 <span class="routing-detail-label">Fallback Used:</span>
                 <span class="routing-detail-value routing-fallback">Yes</span>
               </div>
-              
+
               <div v-if="message.routingResult.responseTime" class="routing-detail-item">
                 <span class="routing-detail-label">Response Time:</span>
                 <span class="routing-detail-value">{{ message.routingResult.responseTime }}ms</span>
@@ -347,10 +345,10 @@ const bestContrastingColor = computed(() => {
     { name: 'secondary', color: colors.secondary },
     { name: 'accent', color: colors.accent }
   ];
-  
+
   // Get the current background color (light background for the badge)
   const backgroundColor = '#ffffff'; // Light background used by the badge
-  
+
   // Calculate contrast ratio for each color against the background
   const getContrastRatio = (color: string) => {
     const textColor = getContrastTextColor(color);
@@ -359,21 +357,21 @@ const bestContrastingColor = computed(() => {
     const r = parseInt(rgb.substring(0, 2), 16);
     const g = parseInt(rgb.substring(2, 4), 16);
     const b = parseInt(rgb.substring(4, 6), 16);
-    
+
     // Calculate luminance
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    
+
     // Return the luminance as contrast score (darker colors have better contrast on light bg)
     return 1 - luminance;
   };
-  
+
   // Find the color with best contrast
   const bestColor = candidates.reduce((best, current) => {
     const currentScore = getContrastRatio(current.color);
     const bestScore = getContrastRatio(best.color);
     return currentScore > bestScore ? current : best;
   });
-  
+
   return bestColor.color;
 });
 
@@ -625,8 +623,7 @@ defineExpose({
 /* User message styling (right side) */
 .user-bubble-wrapper {
   display: flex;
-  align-items: flex-end;
-  margin-left: 20%;
+  justify-content: right;
   margin-bottom: 0;
 }
 

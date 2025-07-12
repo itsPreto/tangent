@@ -92,3 +92,34 @@ def create_chat():
 - **Database**: SQLite with Chat->Node hierarchy supporting conversation branching
 - **API Base**: Frontend hardcoded to http://127.0.0.1:5050, backend runs on port 5050
 - **Build**: Uses Bun for faster package management, Vite for bundling with code splitting
+
+## API Testing Protocol
+
+**CRITICAL**: Before implementing or modifying frontend API calls, ALWAYS test endpoints with curl first to understand the exact request/response format the backend expects.
+
+### Testing Workflow
+1. **Before Frontend Changes**: Test any API endpoint modifications with curl
+2. **Verify Request Format**: Check what parameters the backend actually requires
+3. **Validate Response**: Ensure the response structure matches frontend expectations
+4. **Then Update Frontend**: Only after confirming the API works via curl
+
+### Common API Testing Examples
+```bash
+# Test chat creation (requires both title AND initialNode)
+curl -X POST http://127.0.0.1:5050/chats \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Test Chat", "initialNode": {"title": "Root Thread", "x": 100, "y": 100, "messages": [], "metadata": {}}}'
+
+# Test GET endpoints
+curl http://127.0.0.1:5050/chats
+curl http://127.0.0.1:5050/api/claude-code/instances
+
+# Test with authentication if needed
+curl -H "Authorization: Bearer token" http://127.0.0.1:5050/api/endpoint
+```
+
+### Why This Matters
+- Backend API contracts may differ from frontend assumptions
+- Prevents wasted time debugging frontend issues that are actually API mismatches
+- Ensures reliable integration between frontend and backend
+- Catches parameter requirement mismatches early

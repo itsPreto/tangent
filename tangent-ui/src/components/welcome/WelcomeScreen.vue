@@ -15,10 +15,29 @@
 
       <!-- Main Input Section -->
       <div class="input-section" :class="{ 'collapsed': isExpanded }">
-        <div class="input-container">
+        <!-- Claude Code Corner Label (outside container) -->
+        <div v-if="isClaudeCodeMode" class="claude-code-label">
+          <span class="text-xs font-semibold tracking-wider">CLAUDE CODE</span>
+        </div>
+
+        <div class="input-container" :class="{ 'claude-code-mode': isClaudeCodeMode }">
+
           <textarea v-model="userInput" ref="inputRef" class="main-input"
-            placeholder="What would you like to explore or work on today?" :rows="inputRows" @input="handleInputChange"
-            @keydown="handleKeyDown" @focus="handleInputFocus" @blur="handleInputBlur" />
+            :placeholder="isClaudeCodeMode ? 'Describe your task or goal...' : 'What would you like to explore or work on today?'"
+            :rows="inputRows" @input="handleInputChange" @keydown="handleKeyDown" @focus="handleInputFocus"
+            @blur="handleInputBlur" />
+
+          <!-- Claude Code Settings Panel (just tools) -->
+          <div v-if="isClaudeCodeMode" class="claude-code-settings">
+            <div class="tools-section">
+              <div class="tools-compact">
+                <label v-for="(enabled, tool) in claudeCodeSettings.tools" :key="tool" class="tool-toggle-compact">
+                  <input type="checkbox" v-model="claudeCodeSettings.tools[tool]" class="checkbox checkbox-xs" />
+                  <span class="tool-name-compact">{{ tool }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
 
           <div class="input-footer">
             <div class="input-tools">
@@ -34,9 +53,28 @@
               </button>
             </div>
 
-            <button @click="generateWorkspace" :disabled="!userInput.trim() || isGenerating" class="generate-btn">
+            <!-- Claude Code Config Controls -->
+            <div v-if="isClaudeCodeMode" class="claude-config-controls">
+              <div class="config-item">
+                <span class="config-label">Dir:</span>
+                <input type="text" v-model="claudeCodeSettings.workingDir" class="setting-input-compact"
+                  placeholder="/project/path" />
+              </div>
+              <label class="toggle-compact">
+                <input type="checkbox" v-model="claudeCodeSettings.autoSave" class="checkbox checkbox-xs" />
+                <span>Auto-save</span>
+              </label>
+              <select v-model="claudeCodeSettings.permissions" class="select-compact">
+                <option value="auto-allow">Auto-allow</option>
+                <option value="prompt">Prompt</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+
+            <button @click="generateWorkspace" :disabled="!userInput.trim() || isGenerating" class="generate-btn"
+              :class="{ 'claude-code-btn': isClaudeCodeMode }">
               <span v-if="isGenerating" class="loading loading-spinner loading-sm"></span>
-              <span v-else>Generate</span>
+              <span v-else>{{ isClaudeCodeMode ? 'Start Session' : 'Generate' }}</span>
               <ArrowRight :size="16" />
             </button>
           </div>
@@ -51,7 +89,8 @@
             <span class="hover-underline" ref="templatesTitle">templates:</span>
           </h2>
 
-          <div class="templates-container" :class="{ 'horizontal': isExpanded }" @mouseenter="activateTemplatesUnderline" @mouseleave="deactivateTemplatesUnderline">
+          <div class="templates-container" :class="{ 'horizontal': isExpanded }"
+            @mouseenter="activateTemplatesUnderline" @mouseleave="deactivateTemplatesUnderline">
             <div class="templates-grid" :class="{ 'horizontal-grid': isExpanded }">
               <div v-for="template in (isExpanded ? allTemplates : featuredTemplates)" :key="template.id"
                 @click="selectTemplate(template)" class="template-card"
@@ -67,12 +106,14 @@
         </div>
 
         <!-- Recent Workspaces -->
-        <div v-if="recentWorkspaces.length" class="recent-section" :class="{ 'side-by-side': !isExpanded, 'expanded': isExpanded }">
+        <div v-if="recentWorkspaces.length" class="recent-section"
+          :class="{ 'side-by-side': !isExpanded, 'expanded': isExpanded }">
           <h2 class="section-title">
             <span class="hover-underline" ref="workspacesTitle">Recent workspaces:</span>
           </h2>
 
-          <div class="recent-grid" :class="{ 'vertical-layout': !isExpanded, 'horizontal-grid': isExpanded }" @mouseenter="activateWorkspacesUnderline" @mouseleave="deactivateWorkspacesUnderline">
+          <div class="recent-grid" :class="{ 'vertical-layout': !isExpanded, 'horizontal-grid': isExpanded }"
+            @mouseenter="activateWorkspacesUnderline" @mouseleave="deactivateWorkspacesUnderline">
             <div v-for="workspace in recentWorkspaces.slice(0, isExpanded ? 12 : 6)" :key="workspace.id"
               @click="$emit('open-workspace', workspace.id)" class="recent-card">
               <div class="recent-preview">
@@ -124,7 +165,8 @@ import {
   TestTube,
   Briefcase,
   Palette,
-  GraduationCap
+  GraduationCap,
+  Code
 } from 'lucide-vue-next'
 
 import TangentLogo from '@/components/logo/TangentLogo.vue'
@@ -136,7 +178,7 @@ const emit = defineEmits<{
   'show-all-workspaces': []
   'import-workspace': []
   'open-workspace': [workspaceId: string]
-  'generate-workspace': [input: string, template?: WorkspaceTemplate]
+  'generate-workspace': [input: string, template?: WorkspaceTemplate, claudeCodeConfig?: any]
 }>()
 
 // Stores
@@ -157,6 +199,23 @@ const isFocused = ref(false)
 const isDragOver = ref(false)
 const isDragActive = ref(false)
 
+// Claude Code mode state
+const isClaudeCodeMode = ref(false)
+const claudeCodeSettings = ref({
+  tools: {
+    Write: true,
+    Read: true,
+    Bash: true,
+    Edit: true,
+    LS: true,
+    Glob: true,
+    Grep: true
+  },
+  workingDir: '/Users/928546/Desktop/tangent',
+  autoSave: true,
+  permissions: 'auto-allow'
+})
+
 // Theme
 const currentTheme = computed(() => themeStore.currentTheme)
 const themeColors = computed(() => themeStore.currentThemeColors)
@@ -169,6 +228,13 @@ const inputRows = computed(() => {
 })
 
 const handleInputChange = () => {
+  // Check for Claude Code mode activation
+  if (userInput.value.toLowerCase().startsWith('claude')) {
+    isClaudeCodeMode.value = true
+  } else {
+    isClaudeCodeMode.value = false
+  }
+
   // Clear template selection when user modifies the input (not using suggested prompt)
   if (selectedTemplate.value && userInput.value !== selectedTemplate.value.suggestedPrompt) {
     selectedTemplate.value = null
@@ -242,11 +308,21 @@ const generateWorkspace = async () => {
 
   isGenerating.value = true
   try {
-    // Only pass template if it's still selected and user input matches template prompt
-    const shouldUseTemplate = selectedTemplate.value && 
-      (userInput.value === selectedTemplate.value.suggestedPrompt || userInput.value.trim() === '')
-    
-    emit('generate-workspace', userInput.value, shouldUseTemplate ? selectedTemplate.value : undefined)
+    // Handle Claude Code mode
+    if (isClaudeCodeMode.value) {
+      // Remove 'claude' prefix and generate Claude Code workspace
+      const cleanInput = userInput.value.replace(/^claude\s*/i, '').trim()
+      emit('generate-workspace', cleanInput || 'Start a Claude Code session', undefined, {
+        isClaudeCode: true,
+        claudeCodeSettings: claudeCodeSettings.value
+      })
+    } else {
+      // Regular workspace generation
+      const shouldUseTemplate = selectedTemplate.value &&
+        (userInput.value === selectedTemplate.value.suggestedPrompt || userInput.value.trim() === '')
+
+      emit('generate-workspace', userInput.value, shouldUseTemplate ? selectedTemplate.value : undefined)
+    }
   } finally {
     isGenerating.value = false
   }
@@ -766,8 +842,8 @@ onMounted(() => {
 .hero-title {
   font-size: 3rem;
   font-weight: 800;
-  margin-top: -20px;
-  padding-bottom: 48px;
+  margin-top: -30px;
+  padding-bottom: 80px;
   margin-bottom: -6rem;
   background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary), var(--theme-accent));
   -webkit-background-clip: text;
@@ -797,6 +873,8 @@ onMounted(() => {
   align-self: center;
   width: 100%;
   max-width: 800px;
+  overflow: visible;
+  position: relative;
 }
 
 .input-section.collapsed {
@@ -823,11 +901,12 @@ onMounted(() => {
   border: 2px solid color-mix(in srgb, var(--theme-primary) 20%, transparent);
   border-radius: 1.5rem;
   overflow: hidden;
-  transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-    padding 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow:
     0 8px 32px color-mix(in srgb, var(--theme-primary) 8%, transparent),
     0 1px 0px hsl(var(--b1)),
@@ -915,7 +994,10 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.25rem 2rem;
+  padding-top: 0.25rem;
+  padding-right: 2rem;
+  padding-bottom: 0.25rem;
+  padding-left: 2rem;
   background: hsl(var(--b2) / 0.3);
   border-top: 1px solid hsl(var(--b3) / 0.3);
   backdrop-filter: blur(8px);
@@ -1871,5 +1953,227 @@ onMounted(() => {
 .theme-winter .hover-underline::after,
 .theme-winter .hover-underline::before {
   background: linear-gradient(to right, #0EA5E9, #84CC16, #10B981);
+}
+
+/* Claude Code Mode Styles */
+.input-container.claude-code-mode {
+  position: relative;
+  border-color: var(--theme-accent);
+  background: linear-gradient(135deg,
+      color-mix(in srgb, var(--theme-accent) 8%, hsl(var(--b1) / 0.95)),
+      color-mix(in srgb, var(--theme-primary) 6%, hsl(var(--b1) / 0.9)));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--theme-accent) 20%, transparent),
+    0 8px 32px color-mix(in srgb, var(--theme-accent) 15%, transparent);
+  max-height: 400px;
+  transition: max-height 0.3s ease;
+}
+
+.claude-code-label {
+  position: absolute;
+  top: -8px;
+  right: 20px;
+  background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
+  color: white;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 15;
+  animation: slideInLabel 0.3s ease-out;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-primary) 30%, transparent);
+}
+
+@keyframes slideInLabel {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.claude-code-settings {
+  border-top: 1px solid hsl(var(--b3) / 0.2);
+  background: linear-gradient(135deg, hsl(var(--b2) / 0.3), hsl(var(--b3) / 0.2));
+  animation: slideInSettings 0.3s ease-out;
+}
+
+@keyframes slideInSettings {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    max-height: 0;
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 120px;
+  }
+}
+
+.settings-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.settings-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.tools-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: hsl(var(--bc) / 0.7);
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.tools-compact {
+  display: flex;
+  flex-wrap: wrap;
+  place-content: space-evenly;
+  gap: 0.5rem;
+}
+
+.tool-toggle-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: hsl(var(--b3) / 0.2);
+  border: 1px solid hsl(var(--b3) / 0.3);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.75rem;
+}
+
+.tool-toggle-compact:hover {
+  background: hsl(var(--b3) / 0.4);
+  border-color: var(--theme-accent);
+}
+
+.tool-name-compact {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: hsl(var(--bc) / 0.8);
+}
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 200px;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.config-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: hsl(var(--bc) / 0.7);
+  min-width: 25px;
+}
+
+.setting-input-compact {
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  background: hsl(var(--b2) / 0.5);
+  border: 1px solid hsl(var(--b3) / 0.3);
+  border-radius: 0.375rem;
+  color: hsl(var(--bc));
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.setting-input-compact:focus {
+  outline: none;
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-accent) 15%, transparent);
+}
+
+.config-toggles {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.claude-config-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: hsl(var(--bc) / 0.8);
+  cursor: pointer;
+}
+
+.select-compact {
+  padding: 0.25rem 0.5rem;
+  background: hsl(var(--b2) / 0.5);
+  border: 1px solid hsl(var(--b3) / 0.3);
+  border-radius: 0.375rem;
+  color: hsl(var(--bc));
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.select-compact:focus {
+  outline: none;
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-accent) 15%, transparent);
+}
+
+.generate-btn.claude-code-btn {
+  background: linear-gradient(135deg, var(--theme-accent), var(--theme-primary));
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--theme-accent) 30%, transparent),
+    0 1px 0px var(--theme-accent);
+}
+
+.generate-btn.claude-code-btn:hover:not(:disabled) {
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--theme-accent) 40%, transparent),
+    0 1px 0px var(--theme-accent);
+}
+
+@media (max-width: 768px) {
+  .settings-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .config-section {
+    min-width: 0;
+  }
+
+  .config-toggles {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
 }
 </style>

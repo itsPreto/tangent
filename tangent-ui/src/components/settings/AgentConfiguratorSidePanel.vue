@@ -10,9 +10,13 @@
         <div class="tab-header">
           <!-- Tab Navigation -->
           <div class="tab-nav">
+            <button @click="activeTab = 'claude-code'" class="tab-btn" :class="{ active: activeTab === 'claude-code' }">
+              <span class="tab-icon">🤖</span>
+              <span class="tab-label">Claude Code</span>
+            </button>
             <button @click="activeTab = 'agents'" class="tab-btn" :class="{ active: activeTab === 'agents' }">
               <span class="tab-icon">⚙️</span>
-              <span class="tab-label">Agents</span>
+              <span class="tab-label">Models</span>
             </button>
             <button @click="activeTab = 'testing'" class="tab-btn" :class="{ active: activeTab === 'testing' }">
               <span class="tab-icon">🧪</span>
@@ -371,7 +375,7 @@
                           <span v-if="model.isFree" class="free-badge">FREE</span>
                           <span v-if="model.parameterSize" class="size-badge">{{ model.parameterSize }}</span>
                           <span v-if="model.contextLength" class="context-badge">{{ formatContext(model.contextLength)
-                          }}</span>
+                            }}</span>
                         </div>
                       </div>
                       <button @click="toggleFavorite(model)" class="favorite-btn-compact"
@@ -731,7 +735,7 @@
                               <h4>{{ result.modelName }} - Question-by-Question Results</h4>
                               <span class="pass-fail-summary">
                                 {{getModelDetailedResults(result.modelId)?.questionResults.filter(q => q.passed).length
-                                || 0 }}/{{ getModelDetailedResults(result.modelId)?.questionResults.length || 0 }}
+                                  || 0}}/{{ getModelDetailedResults(result.modelId)?.questionResults.length || 0 }}
                                 passed
                               </span>
                             </div>
@@ -755,8 +759,8 @@
                                 <div class="response-comparison">
                                   <div class="expected-response">
                                     <div class="response-label">Expected:</div>
-                                    <div class="response-content expected clickable" 
-                                         @click="showResponseModal('Expected Answer', questionResult.expectedAnswer, true)">
+                                    <div class="response-content expected clickable"
+                                      @click="showResponseModal('Expected Answer', questionResult.expectedAnswer, true)">
                                       {{ questionResult.expectedAnswer }}
                                     </div>
                                   </div>
@@ -1128,7 +1132,7 @@
                       </div>
                       <div class="stat-item">
                         <span class="stat-value">{{testResults.reduce((sum, r) => sum + r.questionsAnswered, 0)
-                        }}</span>
+                          }}</span>
                         <span class="stat-label">Total Questions</span>
                       </div>
                       <div class="stat-item">
@@ -1205,7 +1209,7 @@
                                   <h4>{{ result.modelName }} - Question-by-Question Results</h4>
                                   <span class="pass-fail-summary">
                                     {{getModelDetailedResults(result.modelId)?.questionResults.filter(q =>
-                                    q.passed).length || 0 }}/{{
+                                      q.passed).length || 0}}/{{
                                       getModelDetailedResults(result.modelId)?.questionResults.length || 0 }} passed
                                   </span>
                                 </div>
@@ -1231,7 +1235,7 @@
                                       <div class="expected-response">
                                         <div class="response-label">Expected:</div>
                                         <div class="response-content expected clickable"
-                                             @click="showResponseModal('Expected Answer', questionResult.expectedAnswer, true)">
+                                          @click="showResponseModal('Expected Answer', questionResult.expectedAnswer, true)">
                                           {{ questionResult.expectedAnswer }}
                                         </div>
                                       </div>
@@ -1365,24 +1369,14 @@
 
               <div class="config-group">
                 <label class="config-label">Conversation Count</label>
-                <input 
-                  v-model.number="mockConfig.conversation_count" 
-                  type="number" 
-                  min="1" 
-                  max="50" 
-                  class="config-input"
-                />
+                <input v-model.number="mockConfig.conversation_count" type="number" min="1" max="50"
+                  class="config-input" />
               </div>
 
               <div class="config-group">
                 <label class="config-label">Max Messages per Conversation</label>
-                <input 
-                  v-model.number="mockConfig.max_messages_per_conversation" 
-                  type="number" 
-                  min="2" 
-                  max="30" 
-                  class="config-input"
-                />
+                <input v-model.number="mockConfig.max_messages_per_conversation" type="number" min="2" max="30"
+                  class="config-input" />
               </div>
 
               <div class="config-group">
@@ -1397,11 +1391,7 @@
 
             <!-- Action Buttons -->
             <div class="mock-actions">
-              <button 
-                @click="generateMockData" 
-                :disabled="isGenerating"
-                class="btn-primary mock-generate-btn"
-              >
+              <button @click="generateMockData" :disabled="isGenerating" class="btn-primary mock-generate-btn">
                 <span v-if="isGenerating">⏳ Generating...</span>
                 <span v-else>🎭 Generate & Download</span>
               </button>
@@ -1430,10 +1420,320 @@
                   <strong>Max Messages:</strong> {{ mockConfig.max_messages_per_conversation }}
                 </div>
                 <div class="preview-item">
-                  <strong>Theme:</strong> {{ mockConfig.content_source.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) }}
+                  <strong>Theme:</strong> {{mockConfig.content_source.replace('_', ' ').replace(/\b\w/g, l =>
+                    l.toUpperCase())
+                  }}
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Claude Code Tab Content -->
+        <div v-if="activeTab === 'claude-code'" class="tab-content">
+          <div class="claude-code-content">
+
+            <!-- Header with Stats -->
+            <div class="claude-code-header">
+              <div class="section-title">Claude Code Instances</div>
+              <div class="claude-code-stats">
+                <div class="stat-card">
+                  <div class="stat-value">{{ claudeCodeInstances.length }}</div>
+                  <div class="stat-label">Active Instances</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">${{ totalCost.toFixed(2) }}</div>
+                  <div class="stat-label">Total Cost</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">{{ claudeCodeSessions.length }}</div>
+                  <div class="stat-label">Sessions</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Create New Instance -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Create New Instance</h3>
+                <button @click="showCreateForm = !showCreateForm" class="toggle-btn">
+                  {{ showCreateForm ? 'Cancel' : 'New Instance' }}
+                </button>
+              </div>
+
+              <div v-if="showCreateForm" class="create-instance-form">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Instance Name</label>
+                    <input v-model="newInstance.name" type="text" placeholder="e.g., Frontend Development"
+                      class="form-input" />
+                  </div>
+
+                  <div class="form-group">
+                    <label>Working Directory</label>
+                    <input v-model="newInstance.working_dir" type="text" placeholder="/Users/dev/project"
+                      class="form-input" />
+                  </div>
+
+                  <div class="form-group full-width">
+                    <label>Initial Prompt</label>
+                    <textarea v-model="newInstance.initial_prompt"
+                      placeholder="Describe what you want Claude Code to do..." class="form-textarea"
+                      rows="3"></textarea>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Max Turns</label>
+                    <input v-model.number="newInstance.max_turns" type="number" min="1" max="50" class="form-input" />
+                  </div>
+
+                  <div class="form-group">
+                    <label>Cost Limit ($)</label>
+                    <input v-model.number="newInstance.cost_limit" type="number" step="0.10" min="0.10" max="50"
+                      class="form-input" />
+                  </div>
+
+                  <div class="form-group full-width">
+                    <label>Allowed Tools</label>
+                    <div class="tool-checkboxes">
+                      <label class="checkbox-label">
+                        <input type="checkbox" v-model="newInstance.tools.read" />
+                        <span>Read</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" v-model="newInstance.tools.write" />
+                        <span>Write</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" v-model="newInstance.tools.bash" />
+                        <span>Bash</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" v-model="newInstance.tools.webfetch" />
+                        <span>WebFetch</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button @click="createInstance" class="primary-btn" :disabled="!canCreateInstance">
+                    Create & Start
+                  </button>
+                  <button @click="resetForm" class="secondary-btn">Reset</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Connect Current Session -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Connect Current Session</h3>
+              </div>
+
+              <div class="connect-session-content">
+                <div class="connect-description">
+                  <div class="connect-icon">🔗</div>
+                  <div class="connect-text">
+                    <div class="connect-title">Register this Claude Code session</div>
+                    <div class="connect-subtitle">Make this session visible in the active instances panel</div>
+                  </div>
+                </div>
+
+                <button @click="connectCurrentSession" class="connect-btn" :disabled="isConnecting">
+                  <component :is="isConnecting ? 'Loader' : 'ExternalLink'" class="w-4 h-4"
+                    :class="{ 'animate-spin': isConnecting }" />
+                  {{ isConnecting ? 'Connecting...' : 'Connect Session' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Instances -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Active Instances</h3>
+                <div class="header-actions">
+                  <button @click="showStopConfirmation" class="stop-all-btn" :disabled="claudeCodeInstances.length === 0" title="Stop all running instances">
+                    <Square class="w-4 h-4" />
+                    Stop All
+                  </button>
+                  <button @click="refreshInstances" class="refresh-btn">
+                    <RotateCcw class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Inline Stop Confirmation -->
+              <div v-if="showStopAllConfirmation" class="stop-confirmation">
+                <div class="confirmation-content">
+                  <div class="confirmation-icon">⚠️</div>
+                  <div class="confirmation-text">
+                    <div class="confirmation-title">Stop All Instances</div>
+                    <div class="confirmation-message">This will stop all {{ claudeCodeInstances.length }} running Claude Code instances. This action cannot be undone.</div>
+                  </div>
+                </div>
+                <div class="confirmation-actions">
+                  <button @click="cancelStopAll" class="cancel-btn">Cancel</button>
+                  <button @click="confirmStopAll" class="confirm-btn">
+                    <Square class="w-4 h-4" />
+                    Stop All
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="claudeCodeInstances.length === 0" class="empty-state">
+                <div class="empty-icon">🤖</div>
+                <div class="empty-title">No Active Instances</div>
+                <div class="empty-description">Create a new Claude Code instance to get started</div>
+              </div>
+
+              <div v-else class="instances-list">
+                <div v-for="instance in claudeCodeInstances" :key="instance.instance_id" class="instance-card"
+                  :class="instanceStatusClass(instance.status)">
+                  <div class="instance-header">
+                    <div class="instance-info">
+                      <div class="instance-name">{{ instance.config?.name || `Instance
+                        ${instance.instance_id.substring(0, 8)}`
+                        }}</div>
+                      <div class="instance-meta">
+                        <span class="status-badge" :class="instance.status">{{ instance.status }}</span>
+                        <span class="cost">${{ (instance.cost_usd || 0).toFixed(3) }}</span>
+                        <span class="duration">{{ formatDuration(instance.duration_ms || 0) }}</span>
+                      </div>
+                    </div>
+                    <div class="instance-actions">
+                      <button v-if="instance.status === 'running'" @click="pauseInstance(instance.instance_id)"
+                        class="action-btn pause" title="Pause">
+                        <Pause class="w-4 h-4" />
+                      </button>
+                      <button v-if="instance.status === 'paused'" @click="resumeInstance(instance.instance_id)"
+                        class="action-btn resume" title="Resume">
+                        <Play class="w-4 h-4" />
+                      </button>
+                      <button @click="stopInstance(instance.instance_id)" class="action-btn stop" title="Stop">
+                        <Square class="w-4 h-4" />
+                      </button>
+                      <button @click="showInstanceDetails(instance)" class="action-btn details" title="Details">
+                        <Info class="w-4 h-4" />
+                      </button>
+                      <button v-if="instance.node_id" @click="openInWorkspace(instance)"
+                        class="action-btn open-workspace" title="Open in Workspace">
+                        <ExternalLink class="w-4 h-4" />
+                      </button>
+                      <button v-else @click="createWorkspaceForInstance(instance)" class="action-btn create-workspace"
+                        title="Create Workspace">
+                        <Plus class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="instance-details">
+                    <div class="detail-item">
+                      <strong>Working Dir:</strong> {{ instance.working_dir }}
+                    </div>
+                    <div class="detail-item">
+                      <strong>Turns:</strong> {{ instance.num_turns }} / {{ instance.config?.max_turns || '∞' }}
+                    </div>
+                    <div v-if="instance.session_id" class="detail-item">
+                      <strong>Session:</strong> {{ instance.session_id.substring(0, 12) }}...
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Session History -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Session History</h3>
+                <button @click="refreshSessions" class="refresh-btn">
+                  <RefreshCw class="w-4 h-4" />
+                </button>
+              </div>
+
+              <div v-if="claudeCodeSessions.length === 0" class="empty-state">
+                <div class="empty-icon">📜</div>
+                <div class="empty-title">No Sessions</div>
+                <div class="empty-description">Completed sessions will appear here</div>
+              </div>
+
+              <div v-else class="sessions-list">
+                <div v-for="session in claudeCodeSessions" :key="session.session_id" class="session-card">
+                  <div class="session-header">
+                    <div class="session-info">
+                      <div class="session-name">{{ session.config?.name || 'Unnamed Session' }}</div>
+                      <div class="session-meta">
+                        <span class="session-date">{{ formatDate(session.created_at) }}</span>
+                        <span class="session-cost">${{ (session.cost_usd || 0).toFixed(3) }}</span>
+                        <span class="session-status" :class="session.final_status">{{ session.final_status }}</span>
+                      </div>
+                    </div>
+                    <div class="session-actions">
+                      <button @click="resumeSession(session.session_id)" class="action-btn resume"
+                        title="Resume Session">
+                        <PlayCircle class="w-4 h-4" />
+                      </button>
+                      <button @click="exportSession(session)" class="action-btn export" title="Export">
+                        <Download class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="session-details">
+                    <div class="detail-item">
+                      <strong>Working Dir:</strong> {{ session.working_dir }}
+                    </div>
+                    <div class="detail-item">
+                      <strong>Turns:</strong> {{ session.num_turns }}
+                    </div>
+                    <div class="detail-item">
+                      <strong>Session ID:</strong> {{ session.session_id.substring(0, 20) }}...
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Global Settings -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Global Settings</h3>
+              </div>
+
+              <div class="settings-grid">
+                <div class="setting-group">
+                  <label>Max Concurrent Instances</label>
+                  <input v-model.number="globalSettings.maxInstances" type="number" min="1" max="10"
+                    class="form-input" />
+                </div>
+
+                <div class="setting-group">
+                  <label>Auto-save Sessions</label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" v-model="globalSettings.autoSave" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <div class="setting-group">
+                  <label>Global Cost Limit ($)</label>
+                  <input v-model.number="globalSettings.globalCostLimit" type="number" step="1" min="1"
+                    class="form-input" />
+                </div>
+
+                <div class="setting-group">
+                  <label>Session Timeout (minutes)</label>
+                  <input v-model.number="globalSettings.sessionTimeout" type="number" min="5" max="60"
+                    class="form-input" />
+                </div>
+              </div>
+
+              <div class="settings-actions">
+                <button @click="saveGlobalSettings" class="primary-btn">Save Settings</button>
+                <button @click="resetGlobalSettings" class="secondary-btn">Reset to Defaults</button>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -1448,7 +1748,7 @@
         </div>
       </transition>
     </Teleport>
-    
+
     <!-- Response Modal -->
     <Teleport to="body">
       <transition name="modal">
@@ -1474,11 +1774,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue';
 import {
-  X, Search, Check, Star, Play, Pause, Square, Loader, MessageSquare, RotateCcw, ChevronDown, ChevronRight, Plus, Trash2, Zap
+  X, Search, Check, Star, Play, Pause, Square, Loader, MessageSquare, RotateCcw, ChevronDown, ChevronRight, Plus, Trash2, Zap,
+  Info, PlayCircle, Download, RefreshCw, ExternalLink
 } from 'lucide-vue-next';
+import { useRouter } from 'vue-router';
 import { useModelStore } from '@/stores/modelStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAgentStore } from '@/stores/agentStore';
+import { useToolCallStore } from '@/stores/toolCallStore';
+import { useChatStore } from '@/stores/chatStore';
 import ttsService from '@/services/ttsService';
 import { mockDataService, type MockDataConfig } from '@/services/mockDataService';
 
@@ -1493,12 +1797,15 @@ const props = defineProps({
   currentModel: Object
 });
 
-const emit = defineEmits(['close', 'model-selected', 'api-key-saved']);
+const emit = defineEmits(['close', 'model-selected', 'api-key-saved', 'open-workspace']);
 
 // Stores
+const router = useRouter();
 const modelStore = useModelStore();
 const themeStore = useThemeStore();
 const agentStore = useAgentStore();
+const toolCallStore = useToolCallStore();
+const chatStore = useChatStore();
 
 // State
 const activeTab = ref('agents');
@@ -1520,6 +1827,31 @@ const apiKeys = reactive({
 
 // Filters
 const activeFilters = ref(new Set());
+
+// Claude Code State
+const showCreateForm = ref(false);
+const isConnecting = ref(false);
+const showStopAllConfirmation = ref(false);
+const newInstance = reactive({
+  name: '',
+  working_dir: '',
+  initial_prompt: '',
+  max_turns: 10,
+  cost_limit: 2.0,
+  tools: {
+    read: true,
+    write: true,
+    bash: true,
+    webfetch: false
+  }
+});
+
+const globalSettings = reactive({
+  maxInstances: 3,
+  autoSave: true,
+  globalCostLimit: 10.0,
+  sessionTimeout: 30
+});
 
 // Theme customization state
 const editableColors = reactive({
@@ -1723,16 +2055,16 @@ const updateThemeFromDOM = () => {
 const initializeEditableColors = () => {
   // Store original theme info
   originalThemeName.value = themeStore.currentTheme;
-  
+
   const currentColors = themeStore.currentThemeColors;
   editableColors.primary = currentColors.primary;
   editableColors.secondary = currentColors.secondary;
   editableColors.accent = currentColors.accent;
-  
+
   originalColors.primary = currentColors.primary;
   originalColors.secondary = currentColors.secondary;
   originalColors.accent = currentColors.accent;
-  
+
   isEditingTheme.value = false;
 };
 
@@ -1753,10 +2085,10 @@ const updateThemeColors = () => {
     isDark: themeStore.isDarkTheme(originalThemeName.value),
     isCustom: true as const
   };
-  
+
   // Save the preview theme temporarily
   themeStore.saveCustomTheme(previewTheme);
-  
+
   // Apply the preview theme if we're editing
   if (isEditingTheme.value) {
     themeStore.setTheme('__preview__');
@@ -1766,7 +2098,7 @@ const updateThemeColors = () => {
 const saveAsNewTheme = () => {
   const themeName = prompt('Enter a name for your custom theme:');
   if (!themeName) return;
-  
+
   const customTheme = {
     name: themeName,
     colors: {
@@ -1777,14 +2109,14 @@ const saveAsNewTheme = () => {
     isDark: themeStore.isDarkTheme(originalThemeName.value),
     isCustom: true as const
   };
-  
+
   // Remove preview theme
   themeStore.deleteCustomTheme('__preview__');
-  
+
   // Save the new theme
   themeStore.saveCustomTheme(customTheme);
   themeStore.setTheme(themeName);
-  
+
   isEditingTheme.value = false;
   initializeEditableColors();
 };
@@ -1793,7 +2125,7 @@ const resetColors = () => {
   editableColors.primary = originalColors.primary;
   editableColors.secondary = originalColors.secondary;
   editableColors.accent = originalColors.accent;
-  
+
   // Revert to original theme
   discardChanges();
 };
@@ -1802,10 +2134,10 @@ const discardChanges = () => {
   if (isEditingTheme.value) {
     // Remove preview theme
     themeStore.deleteCustomTheme('__preview__');
-    
+
     // Revert to original theme
     themeStore.setTheme(originalThemeName.value);
-    
+
     isEditingTheme.value = false;
   }
 };
@@ -1813,7 +2145,7 @@ const discardChanges = () => {
 const applyTheme = (themeName: string) => {
   // Discard any unsaved changes
   discardChanges();
-  
+
   themeStore.setTheme(themeName);
   initializeEditableColors();
 };
@@ -1838,8 +2170,8 @@ const mainStyle = computed(() => ({
 // Theme customization computed properties
 const hasChanges = computed(() => {
   return editableColors.primary !== originalColors.primary ||
-         editableColors.secondary !== originalColors.secondary ||
-         editableColors.accent !== originalColors.accent;
+    editableColors.secondary !== originalColors.secondary ||
+    editableColors.accent !== originalColors.accent;
 });
 
 const previewThemeName = computed(() => {
@@ -1924,6 +2256,17 @@ const displayedModels = computed(() => {
 });
 const hasMoreModels = computed(() => displayedModels.value.length < filteredModels.value.length);
 const remainingCount = computed(() => filteredModels.value.length - displayedModels.value.length);
+
+// Claude Code Computed Properties
+const claudeCodeInstances = computed(() => toolCallStore.getAllInstances);
+const claudeCodeSessions = computed(() => toolCallStore.claudeCodeSessions);
+const totalCost = computed(() => toolCallStore.getTotalCost);
+
+const canCreateInstance = computed(() => {
+  return newInstance.name.trim() &&
+    newInstance.working_dir.trim() &&
+    newInstance.initial_prompt.trim();
+});
 
 // Methods
 const isConnected = (provider) => {
@@ -2687,16 +3030,16 @@ const formatJson = (content) => {
   try {
     // Remove any leading/trailing whitespace
     const trimmed = typeof content === 'string' ? content.trim() : content;
-    
+
     // Check if it looks like JSON
     if (typeof trimmed === 'string') {
       // Check for JSON-like structure
-      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
-          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
         const parsed = JSON.parse(trimmed);
         return JSON.stringify(parsed, null, 2);
       }
-      
+
       // Check if it contains JSON embedded in text (common in LLM responses)
       const jsonMatch = trimmed.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
       if (jsonMatch) {
@@ -2712,12 +3055,12 @@ const formatJson = (content) => {
         }
       }
     }
-    
+
     // If it's an object, stringify it
     if (typeof trimmed === 'object' && trimmed !== null) {
       return JSON.stringify(trimmed, null, 2);
     }
-    
+
     // Otherwise return as-is
     return content;
   } catch (e) {
@@ -3078,7 +3421,7 @@ const runQuickTest = async () => {
 // Mock Data Generation
 const generateMockData = async () => {
   if (isGenerating.value) return;
-  
+
   isGenerating.value = true;
   mockError.value = '';
   mockSuccess.value = '';
@@ -3087,12 +3430,12 @@ const generateMockData = async () => {
     const data = await mockDataService.generateMockArchive(mockConfig);
     mockDataService.downloadAsFile(data, mockConfig.platform);
     mockSuccess.value = `Successfully generated and downloaded ${mockConfig.conversation_count} ${mockConfig.platform.toUpperCase()} conversations!`;
-    
+
     // Clear success message after 3 seconds
     setTimeout(() => {
       mockSuccess.value = '';
     }, 3000);
-    
+
   } catch (error) {
     console.error('Failed to generate mock data:', error);
     mockError.value = `Failed to generate mock data: ${error.message}`;
@@ -3176,9 +3519,19 @@ const getBaseCategoryScore = (category, model) => {
 onMounted(async () => {
   if (voices.value.length === 0) await ttsService.loadVoices();
   Object.assign(ttsSettings, ttsService.settings);
-  
+
   // Initialize theme colors
   initializeEditableColors();
+
+  // Load Claude Code data
+  await refreshInstances();
+  await refreshSessions();
+
+  // Load global settings from localStorage
+  const savedSettings = localStorage.getItem('claudeCodeGlobalSettings');
+  if (savedSettings) {
+    Object.assign(globalSettings, JSON.parse(savedSettings));
+  }
 
   // Setup theme observer
   themeObserver = new MutationObserver(() => {
@@ -3192,7 +3545,7 @@ onMounted(async () => {
 
   // Initial theme check
   updateThemeFromDOM();
-  
+
   // Watch for theme changes and reinitialize colors
   watch(() => themeStore.currentTheme, () => {
     initializeEditableColors();
@@ -3222,11 +3575,366 @@ onMounted(async () => {
   }
 });
 
+// Claude Code Methods
+async function createInstance() {
+  try {
+    // First, create a new chat/workspace for the Claude Code session
+    const chatTitle = newInstance.name || 'Claude Code Session';
+
+    const chatId = await chatStore.createChat(chatTitle);
+    if (!chatId) {
+      throw new Error('Failed to create chat workspace');
+    }
+
+    // Create a Claude Code node for this session (using same format as welcome screen)
+    const nodeData = {
+      type: 'branch',  // Use 'branch' type like welcome screen (BranchNode expects this)
+      title: 'Claude Code Session',
+      x: 200,
+      y: 200,
+      messages: [],
+      metadata: {
+        isRoot: true,
+        isClaudeCode: true,  // Critical flag for BranchNode to detect Claude Code
+        instanceConfig: {
+          name: newInstance.name,
+          working_dir: newInstance.working_dir,
+          max_turns: newInstance.max_turns
+        },
+        claudeCodeSettings: {
+          tools: newInstance.tools,
+          workingDir: newInstance.working_dir,
+          autoSave: true,
+          permissions: 'auto-allow'
+        }
+      }
+    };
+
+    const nodeId = await chatStore.addNode(chatId, nodeData);
+    if (!nodeId) {
+      throw new Error('Failed to create Claude Code node');
+    }
+
+    // Now create the Claude Code instance with the node ID
+    const config = {
+      name: newInstance.name,
+      working_dir: newInstance.working_dir,
+      initial_prompt: newInstance.initial_prompt,
+      max_turns: newInstance.max_turns,
+      node_id: node.id,  // Link the instance to the node
+      allowed_tools: Object.entries(newInstance.tools)
+        .filter(([, enabled]) => enabled)
+        .map(([tool]) => tool.charAt(0).toUpperCase() + tool.slice(1))
+    };
+
+    const instanceId = await toolCallStore.createClaudeCodeInstance(config);
+    if (instanceId) {
+      showNotification('Claude Code instance created successfully!');
+      resetForm();
+      await refreshInstances();
+
+      // Navigate to the new chat workspace
+      await router.push(`/canvas/${chatId}`);
+    }
+  } catch (error) {
+    showNotification('Failed to create instance');
+    console.error('Error creating instance:', error);
+  }
+}
+
+async function refreshInstances() {
+  await toolCallStore.fetchClaudeCodeInstances();
+}
+
+function showStopConfirmation() {
+  showStopAllConfirmation.value = true;
+}
+
+function cancelStopAll() {
+  showStopAllConfirmation.value = false;
+}
+
+async function confirmStopAll() {
+  try {
+    const instances = claudeCodeInstances.value;
+    showStopAllConfirmation.value = false;
+    
+    showNotification(`Stopping ${instances.length} instances...`);
+    
+    // Stop all instances in parallel
+    const stopPromises = instances.map(instance => 
+      toolCallStore.stopInstance(instance.instance_id)
+    );
+    
+    await Promise.all(stopPromises);
+    
+    showNotification('All instances stopped successfully!');
+    await refreshInstances();
+  } catch (error) {
+    console.error('Error stopping instances:', error);
+    showNotification('Failed to stop some instances');
+  }
+}
+
+async function refreshSessions() {
+  await toolCallStore.fetchClaudeCodeSessions();
+}
+
+async function connectCurrentSession() {
+  isConnecting.value = true;
+  try {
+    const response = await fetch('http://127.0.0.1:5050/api/claude-code/instances/register-external', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: 'Current Claude Code Session',
+        working_dir: '/Users/928546/Desktop/tangent',
+        session_id: 'current-session-' + Date.now()
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log('Successfully registered external session:', result);
+
+      // Refresh the instances list to show the new session
+      await refreshInstances();
+    } else {
+      console.error('Failed to register external session:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Error connecting current session:', error);
+  } finally {
+    isConnecting.value = false;
+  }
+}
+
+async function pauseInstance(instanceId: string) {
+  const success = await toolCallStore.pauseInstance(instanceId);
+  if (success) {
+    showNotification('Instance paused');
+    await refreshInstances();
+  }
+}
+
+async function resumeInstance(instanceId: string) {
+  const success = await toolCallStore.resumeInstance(instanceId);
+  if (success) {
+    showNotification('Instance resumed');
+    await refreshInstances();
+  }
+}
+
+async function stopInstance(instanceId: string) {
+  const success = await toolCallStore.stopInstance(instanceId);
+  if (success) {
+    showNotification('Instance stopped');
+    await refreshInstances();
+  }
+}
+
+async function resumeSession(sessionId: string) {
+  try {
+    const instanceId = await toolCallStore.resumeSession(sessionId);
+    if (instanceId) {
+      showNotification('Session resumed');
+      await refreshInstances();
+    }
+  } catch (error) {
+    showNotification('Failed to resume session');
+    console.error('Error resuming session:', error);
+  }
+}
+
+function resetForm() {
+  newInstance.name = '';
+  newInstance.working_dir = '';
+  newInstance.initial_prompt = '';
+  newInstance.max_turns = 10;
+  newInstance.cost_limit = 2.0;
+  newInstance.tools = {
+    read: true,
+    write: true,
+    bash: true,
+    webfetch: false
+  };
+  showCreateForm.value = false;
+}
+
+function instanceStatusClass(status: string) {
+  return {
+    'status-running': status === 'running',
+    'status-paused': status === 'paused',
+    'status-stopped': status === 'stopped',
+    'status-error': status === 'error'
+  };
+}
+
+function showInstanceDetails(instance: any) {
+  // TODO: Implement instance details modal
+  console.log('Show instance details:', instance);
+}
+
+async function openInWorkspace(instance: any) {
+  try {
+    if (!instance.node_id) {
+      showNotification('No workspace found for this instance');
+      return;
+    }
+
+    // Find the chat containing this node
+    const chats = chatStore.chats;
+    let targetChatId = null;
+
+    for (const chat of chats) {
+      // Check if this chat has a node with the instance's node_id
+      const nodes = chat.nodes || [];
+      const hasNode = nodes.some((node: any) => node.id === instance.node_id);
+
+      if (hasNode) {
+        targetChatId = chat.id;
+        break;
+      }
+    }
+
+    if (targetChatId) {
+      // Navigate to the chat workspace
+      await router.push(`/canvas/${targetChatId}`);
+
+      // Close the agent configurator panel
+      emit('close');
+    } else {
+      // If no chat found, create a new one with the Claude Code node
+      const chatData = {
+        title: instance.config?.name || 'Claude Code Session',
+        description: `Existing Claude Code session`,
+        is_main: false
+      };
+
+      const chat = await chatStore.createChat(chatData);
+      if (chat && chat.id) {
+        // Create a Claude Code node for this existing instance
+        const nodeData = {
+          id: instance.node_id, // Use the existing node ID
+          type: 'claude-code',
+          content: `Claude Code instance: ${instance.instance_id}`,
+          role: 'assistant',
+          metadata: {
+            instance_id: instance.instance_id,
+            instanceConfig: instance.config
+          }
+        };
+
+        await chatStore.addNode(chat.id, nodeData);
+        await router.push(`/canvas/${chat.id}`);
+        emit('close');
+      }
+    }
+  } catch (error) {
+    console.error('Error opening workspace:', error);
+    showNotification('Failed to open workspace');
+  }
+}
+
+async function createWorkspaceForInstance(instance: any) {
+  try {
+    // Create a new chat workspace with Claude Code as the main node
+    const chatTitle = instance.config?.name || 'Claude Code Session';
+
+    // Create the initial node as a Claude Code node (using same format as welcome screen)
+    const initialClaudeCodeNode = {
+      title: 'Claude Code Session',
+      type: 'branch',  // Use 'branch' type like welcome screen (BranchNode expects this)
+      x: 200,
+      y: 200,
+      messages: [],
+      metadata: {
+        isRoot: true,
+        isClaudeCode: true,  // Critical flag for BranchNode to detect Claude Code
+        instance_id: instance.instance_id,
+        session_id: instance.config?.session_id,  // Add session_id directly to metadata for resume
+        instanceConfig: instance.config,
+        attached_instance: true,
+        claudeCodeSettings: {
+          tools: {
+            Write: true,
+            Read: true,
+            Bash: true,
+            Edit: true,
+            LS: true,
+            Glob: true,
+            Grep: true
+          },
+          workingDir: instance.config?.working_dir || '/Users/928546/Desktop/tangent',
+          autoSave: true,
+          permissions: 'auto-allow'
+        }
+      }
+    };
+
+    const chatId = await chatStore.createChat(chatTitle, initialClaudeCodeNode);
+    if (!chatId) {
+      throw new Error('Failed to create chat workspace');
+    }
+
+    console.log('Created Claude Code workspace with ID:', chatId);
+
+    // Update the instance to link it to the new node
+    // This would need a backend endpoint to update the instance's node_id
+    // For now, we'll just navigate to the workspace
+
+    showNotification('Workspace created! Opening...');
+
+    // Close the agent configurator panel first
+    console.log('Closing agent configurator panel');
+    emit('close');
+
+    // Open the workspace using the same method as recent workspaces
+    console.log('Opening workspace:', chatId);
+    emit('open-workspace', chatId);
+  } catch (error) {
+    console.error('Error creating workspace:', error);
+    showNotification('Failed to create workspace');
+  }
+}
+
+function exportSession(session: any) {
+  // TODO: Implement session export
+  console.log('Export session:', session);
+}
+
+function saveGlobalSettings() {
+  // TODO: Implement global settings save
+  localStorage.setItem('claudeCodeGlobalSettings', JSON.stringify(globalSettings));
+  showNotification('Settings saved', 'success');
+}
+
+function resetGlobalSettings() {
+  globalSettings.maxInstances = 3;
+  globalSettings.autoSave = true;
+  globalSettings.globalCostLimit = 10.0;
+  globalSettings.sessionTimeout = 30;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString();
+}
+
 onBeforeUnmount(() => {
   if (themeObserver) {
     themeObserver.disconnect();
   }
-  
+
   // Clean up preview theme if component is unmounted
   discardChanges();
 });
@@ -3575,10 +4283,10 @@ onBeforeUnmount(() => {
 .left-column,
 .right-column {
   display: flex;
-    flex-direction: column;
-    max-width: 18vw;
-    gap: 16px;
-    min-height: 0;
+  flex-direction: column;
+  max-width: 18vw;
+  gap: 16px;
+  min-height: 0;
 }
 
 .section-title {
@@ -6665,19 +7373,19 @@ onBeforeUnmount(() => {
   .modal-overlay {
     padding: 10px;
   }
-  
+
   .response-modal {
     max-height: 90vh;
   }
-  
+
   .modal-header {
     padding: 12px 16px;
   }
-  
+
   .modal-body {
     padding: 16px;
   }
-  
+
   .json-content {
     font-size: 11px;
     padding: 12px;
@@ -7060,5 +7768,857 @@ onBeforeUnmount(() => {
 .btn-ghost:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Claude Code Tab Styles - Theme Adaptive with Edge Blending */
+.claude-code-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  background: transparent;
+  position: relative;
+}
+
+/* Edge Blending System - Adaptive to all themes */
+.claude-code-content::before {
+  content: '';
+  position: absolute;
+  top: -32px;
+  left: -32px;
+  right: -32px;
+  bottom: -32px;
+  background:
+    /* Top edge fade - stronger gradient */
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(var(--theme-primary-rgb), 0.01) 2%,
+      rgba(var(--theme-primary-rgb), 0.03) 8%,
+      rgba(var(--theme-primary-rgb), 0.06) 15%,
+      rgba(var(--theme-primary-rgb), 0.1) 25%,
+      rgba(var(--theme-primary-rgb), 0.15) 35%),
+    /* Left edge fade - stronger gradient */
+    linear-gradient(90deg,
+      transparent 0%,
+      rgba(var(--theme-secondary-rgb), 0.01) 2%,
+      rgba(var(--theme-secondary-rgb), 0.03) 8%,
+      rgba(var(--theme-secondary-rgb), 0.06) 15%,
+      rgba(var(--theme-secondary-rgb), 0.1) 25%,
+      rgba(var(--theme-secondary-rgb), 0.15) 35%),
+    /* Right edge fade - stronger gradient */
+    linear-gradient(270deg,
+      transparent 0%,
+      rgba(var(--theme-secondary-rgb), 0.01) 2%,
+      rgba(var(--theme-secondary-rgb), 0.03) 8%,
+      rgba(var(--theme-secondary-rgb), 0.06) 15%,
+      rgba(var(--theme-secondary-rgb), 0.1) 25%,
+      rgba(var(--theme-secondary-rgb), 0.15) 35%),
+    /* Bottom edge fade - stronger gradient */
+    linear-gradient(0deg,
+      transparent 0%,
+      rgba(var(--theme-accent-rgb), 0.01) 2%,
+      rgba(var(--theme-accent-rgb), 0.03) 8%,
+      rgba(var(--theme-accent-rgb), 0.06) 15%,
+      rgba(var(--theme-accent-rgb), 0.1) 25%,
+      rgba(var(--theme-accent-rgb), 0.15) 35%);
+  pointer-events: none;
+  z-index: -1;
+  border-radius: 32px;
+}
+
+/* Enhanced container with theme-aware background blending */
+.claude-code-content::after {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: -24px;
+  right: -24px;
+  bottom: -24px;
+  background:
+    radial-gradient(ellipse 200px 150px at top left,
+      rgba(var(--theme-primary-rgb), 0.06) 0%,
+      rgba(var(--theme-primary-rgb), 0.02) 40%,
+      transparent 70%),
+    radial-gradient(ellipse 200px 150px at top right,
+      rgba(var(--theme-secondary-rgb), 0.05) 0%,
+      rgba(var(--theme-secondary-rgb), 0.02) 40%,
+      transparent 70%),
+    radial-gradient(ellipse 200px 150px at bottom left,
+      rgba(var(--theme-accent-rgb), 0.05) 0%,
+      rgba(var(--theme-accent-rgb), 0.02) 40%,
+      transparent 70%),
+    radial-gradient(ellipse 200px 150px at bottom right,
+      rgba(var(--theme-primary-rgb), 0.06) 0%,
+      rgba(var(--theme-primary-rgb), 0.02) 40%,
+      transparent 70%);
+  pointer-events: none;
+  z-index: -2;
+  border-radius: 40px;
+}
+
+.claude-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.claude-code-stats {
+  display: flex;
+  gap: 16px;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.15), rgba(var(--theme-secondary-rgb), 0.15));
+  border: 1px solid rgba(var(--theme-primary-rgb), 0.3);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  min-width: 120px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.stat-card:hover {
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.25), rgba(var(--theme-secondary-rgb), 0.25));
+  border-color: rgba(var(--theme-primary-rgb), 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(var(--theme-primary-rgb), 0.3);
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--pc);
+  margin-bottom: 6px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: rgb(from var(--pc) r g b / 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+
+.section {
+  background: linear-gradient(135deg, rgb(from var(--b2) r g b / 0.8), rgb(from var(--b3) r g b / 0.9));
+  border: 1px solid rgb(from var(--bc) r g b / 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Section edge blending */
+.section::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background:
+    linear-gradient(135deg,
+      rgba(var(--theme-primary-rgb), 0.1) 0%,
+      transparent 30%),
+    linear-gradient(225deg,
+      rgba(var(--theme-secondary-rgb), 0.08) 0%,
+      transparent 30%),
+    linear-gradient(315deg,
+      rgba(var(--theme-accent-rgb), 0.06) 0%,
+      transparent 30%),
+    linear-gradient(45deg,
+      rgba(var(--theme-primary-rgb), 0.08) 0%,
+      transparent 30%);
+  pointer-events: none;
+  z-index: -1;
+  border-radius: 18px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--bc);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stop-all-btn {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.stop-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.4);
+}
+
+.stop-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Inline Stop Confirmation */
+.stop-confirmation {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.confirmation-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.confirmation-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.confirmation-text {
+  flex: 1;
+}
+
+.confirmation-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bc);
+  margin-bottom: 4px;
+}
+
+.confirmation-message {
+  font-size: 14px;
+  color: var(--bc-muted);
+  line-height: 1.4;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cancel-btn {
+  background: var(--base-200);
+  color: var(--bc);
+  border: 1px solid var(--base-300);
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: var(--base-300);
+}
+
+.confirm-btn {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.confirm-btn:hover {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toggle-btn,
+.refresh-btn {
+  background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(var(--theme-primary-rgb), 0.4);
+}
+
+.toggle-btn:hover,
+.refresh-btn:hover {
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.8), rgba(var(--theme-secondary-rgb), 0.8));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(var(--theme-primary-rgb), 0.6);
+}
+
+.create-instance-form {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgb(from var(--b3) r g b / 0.6), rgb(from var(--b2) r g b / 0.6));
+  border-radius: 12px;
+  border: 1px solid rgb(from var(--p) r g b / 0.2);
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Form edge blending */
+.create-instance-form::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background:
+    linear-gradient(45deg,
+      rgba(var(--theme-primary-rgb), 0.08) 0%,
+      transparent 25%),
+    linear-gradient(135deg,
+      rgba(var(--theme-secondary-rgb), 0.06) 0%,
+      transparent 25%),
+    linear-gradient(225deg,
+      rgba(var(--theme-accent-rgb), 0.05) 0%,
+      transparent 25%),
+    linear-gradient(315deg,
+      rgba(var(--theme-primary-rgb), 0.06) 0%,
+      transparent 25%);
+  pointer-events: none;
+  z-index: -1;
+  border-radius: 14px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgb(from var(--bc) r g b / 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.form-input,
+.form-textarea {
+  background: rgba(var(--theme-primary-rgb), 0.05);
+  border: 1px solid rgba(var(--theme-primary-rgb), 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: var(--bc);
+  transition: all 0.3s ease;
+  backdrop-filter: blur(5px);
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: rgba(var(--theme-primary-rgb), 0.6);
+  box-shadow: 0 0 0 3px rgba(var(--theme-primary-rgb), 0.2);
+  background: rgba(var(--theme-primary-rgb), 0.08);
+}
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+  color: rgb(from var(--bc) r g b / 0.5);
+}
+
+.tool-checkboxes {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px 16px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  background: rgb(from var(--p) r g b / 0.1);
+  border: 1px solid rgb(from var(--p) r g b / 0.2);
+  color: rgb(from var(--bc) r g b / 0.9);
+}
+
+.checkbox-label:hover {
+  background: rgb(from var(--p) r g b / 0.2);
+  border-color: rgb(from var(--p) r g b / 0.4);
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--p);
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, var(--p), var(--a));
+  color: var(--pc);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  box-shadow: 0 4px 15px rgb(from var(--p) r g b / 0.4);
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgb(from var(--p) r g b / 0.8), rgb(from var(--a) r g b / 0.8));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgb(from var(--p) r g b / 0.6);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.secondary-btn {
+  background: rgb(from var(--b2) r g b / 0.8);
+  color: rgb(from var(--bc) r g b / 0.8);
+  border: 1px solid rgb(from var(--p) r g b / 0.3);
+  border-radius: 8px;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  backdrop-filter: blur(5px);
+}
+
+.secondary-btn:hover {
+  background: rgb(from var(--b2) r g b / 0.9);
+  border-color: rgb(from var(--p) r g b / 0.5);
+  color: var(--bc);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: rgb(from var(--bc) r g b / 0.6);
+}
+
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: rgb(from var(--bc) r g b / 0.9);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.empty-description {
+  font-size: 14px;
+  color: rgb(from var(--bc) r g b / 0.6);
+}
+
+.instances-list,
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.instance-card,
+.session-card {
+  background: linear-gradient(135deg, rgb(from var(--b2) r g b / 0.7), rgb(from var(--b3) r g b / 0.8));
+  border: 1px solid rgb(from var(--p) r g b / 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.instance-card:hover,
+.session-card:hover {
+  border-color: rgb(from var(--p) r g b / 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgb(from var(--p) r g b / 0.2);
+}
+
+.instance-header,
+.session-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.instance-info,
+.session-info {
+  flex: 1;
+}
+
+.instance-name,
+.session-name {
+  font-weight: 600;
+  color: rgb(from var(--bc) r g b / 0.95);
+  margin-bottom: 8px;
+  font-size: 16px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.instance-meta,
+.session-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.status-badge.running {
+  background: linear-gradient(135deg, rgb(from var(--su) r g b / 0.3), rgb(from var(--su) r g b / 0.2));
+  color: var(--su);
+  border: 1px solid rgb(from var(--su) r g b / 0.4);
+}
+
+.status-badge.paused {
+  background: linear-gradient(135deg, rgb(from var(--wa) r g b / 0.3), rgb(from var(--wa) r g b / 0.2));
+  color: var(--wa);
+  border: 1px solid rgb(from var(--wa) r g b / 0.4);
+}
+
+.status-badge.stopped,
+.status-badge.completed {
+  background: linear-gradient(135deg, rgb(from var(--n) r g b / 0.3), rgb(from var(--n) r g b / 0.2));
+  color: var(--n);
+  border: 1px solid rgb(from var(--n) r g b / 0.4);
+}
+
+.status-badge.error {
+  background: linear-gradient(135deg, rgb(from var(--er) r g b / 0.3), rgb(from var(--er) r g b / 0.2));
+  color: var(--er);
+  border: 1px solid rgb(from var(--er) r g b / 0.4);
+}
+
+.cost,
+.duration,
+.session-date,
+.session-cost {
+  font-size: 13px;
+  color: rgb(from var(--bc) r g b / 0.7);
+  background: rgb(from var(--p) r g b / 0.15);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgb(from var(--p) r g b / 0.2);
+}
+
+.instance-actions,
+.session-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  background: rgb(from var(--b2) r g b / 0.8);
+  border: 1px solid rgb(from var(--p) r g b / 0.3);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(5px);
+}
+
+.action-btn:hover {
+  background: rgb(from var(--b2) r g b / 0.9);
+  border-color: rgb(from var(--p) r g b / 0.5);
+  transform: translateY(-1px);
+}
+
+.action-btn.pause {
+  color: var(--wa);
+}
+
+.action-btn.resume {
+  color: var(--su);
+}
+
+.action-btn.stop {
+  color: var(--er);
+}
+
+.action-btn.details,
+.action-btn.export {
+  color: var(--p);
+}
+
+.action-btn.open-workspace {
+  color: var(--theme-primary);
+  background: rgba(var(--theme-primary-rgb), 0.1);
+  border-color: rgba(var(--theme-primary-rgb), 0.3);
+}
+
+.action-btn.open-workspace:hover {
+  background: rgba(var(--theme-primary-rgb), 0.2);
+  border-color: rgba(var(--theme-primary-rgb), 0.5);
+  transform: translateY(-1px);
+}
+
+.action-btn.create-workspace {
+  color: var(--theme-accent);
+  background: rgba(var(--theme-accent-rgb), 0.1);
+  border-color: rgba(var(--theme-accent-rgb), 0.3);
+}
+
+.action-btn.create-workspace:hover {
+  background: rgba(var(--theme-accent-rgb), 0.2);
+  border-color: rgba(var(--theme-accent-rgb), 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(var(--theme-accent-rgb), 0.3);
+}
+
+.instance-details,
+.session-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  color: rgb(from var(--bc) r g b / 0.7);
+  background: rgb(from var(--b3) r g b / 0.5);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid rgb(from var(--p) r g b / 0.2);
+  backdrop-filter: blur(5px);
+}
+
+.detail-item {
+  display: flex;
+  gap: 12px;
+}
+
+.detail-item strong {
+  color: rgb(from var(--bc) r g b / 0.9);
+  min-width: 120px;
+  font-weight: 500;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.setting-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(var(--bc));
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 3rem;
+  height: 1.5rem;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgb(var(--bc) / 0.2);
+  transition: 0.4s;
+  border-radius: 1.5rem;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 1.25rem;
+  width: 1.25rem;
+  left: 0.125rem;
+  bottom: 0.125rem;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+
+input:checked+.toggle-slider {
+  background-color: rgb(var(--p));
+}
+
+input:checked+.toggle-slider:before {
+  transform: translateX(1.5rem);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+/* Connect Current Session Styles */
+.connect-session-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  background: linear-gradient(135deg, rgb(from var(--theme-primary) r g b / 0.1), rgb(from var(--theme-secondary) r g b / 0.15));
+  border: 1px solid rgb(from var(--theme-primary) r g b / 0.3);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.connect-description {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.connect-icon {
+  font-size: 32px;
+  opacity: 0.8;
+}
+
+.connect-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.connect-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bc);
+}
+
+.connect-subtitle {
+  font-size: 14px;
+  color: rgb(from var(--bc) r g b / 0.7);
+}
+
+.connect-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--theme-primary), var(--theme-accent));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 140px;
+  justify-content: center;
+}
+
+.connect-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.connect-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
 }
 </style>

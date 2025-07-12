@@ -197,6 +197,48 @@
                   transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
                 }" />
             </template>
+            
+            <!-- Tool Call Nodes -->
+            <template v-for="toolCall in getToolCallsForVisibleNodes" :key="`tool-${toolCall.id}`">
+              <ToolCallNode 
+                :tool-call="toolCall" 
+                :is-selected="isNodeFocused(toolCall.id)"
+                :position="getToolCallPosition(toolCall)"
+                @click="handleToolCallClick"
+                @double-click="handleToolCallDoubleClick"
+                @cancel="handleToolCallCancel"
+                @rerun="handleToolCallRerun"
+                @open-file="handleToolCallOpenFile"
+              />
+            </template>
+            
+            <!-- File Nodes -->
+            <template v-for="fileNode in getFileNodesForVisibleNodes" :key="`file-${fileNode.id}`">
+              <FileNode 
+                :file-node="fileNode" 
+                :is-selected="isNodeFocused(fileNode.id)"
+                :position="getFileNodePosition(fileNode)"
+                @click="handleFileNodeClick"
+                @double-click="handleFileNodeDoubleClick"
+                @open="handleFileNodeOpen"
+                @edit="handleFileNodeEdit"
+                @run="handleFileNodeRun"
+              />
+            </template>
+            
+            <!-- Execution Nodes -->
+            <template v-for="executionNode in getExecutionNodesForVisibleNodes" :key="`exec-${executionNode.id}`">
+              <ExecutionNode 
+                :execution-node="executionNode" 
+                :is-selected="isNodeFocused(executionNode.id)"
+                :position="getExecutionNodePosition(executionNode)"
+                @click="handleExecutionNodeClick"
+                @double-click="handleExecutionNodeDoubleClick"
+                @terminate="handleExecutionNodeTerminate"
+                @rerun="handleExecutionNodeRerun"
+              />
+            </template>
+            
           </div>
 
           <!-- Interaction Layer for Splines - Between SVG and Nodes -->
@@ -238,6 +280,9 @@ import {
   PropType,
 } from "vue";
 import BranchNode from "./node/BranchNode.vue";
+import ToolCallNode from "./node/ToolCallNode.vue";
+import FileNode from "./node/FileNode.vue";
+import ExecutionNode from "./node/ExecutionNode.vue";
 import emitter from '@/utils/eventBus'
 import GridWorkspaceView from "../workspace/GridWorkspaceView.vue";
 import WelcomeScreen from "../welcome/WelcomeScreen.vue";
@@ -246,6 +291,7 @@ import WebBranchNode from "./node/WebBranchNode.vue";
 import SplineConnector from "./spline/MainSplineConnector.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useToolCallStore } from "@/stores/toolCallStore";
 import { useViewportObserver } from "@/composables/useViewportObserver";
 import { useAppStore } from "@/stores/appStore";
 import { useModelStore } from "@/stores/modelStore";
@@ -259,6 +305,7 @@ const modelRegistry = ref(new Map<string, ModelInfo>());
 
 const store = useCanvasStore();
 const chatStore = useChatStore();
+const toolCallStore = useToolCallStore();
 const modelStore = useModelStore();
 const appStore = useAppStore();
 const themeStore = useThemeStore();
@@ -303,6 +350,11 @@ const perfTestPanel = ref(null);
 
 // Props
 const props = defineProps({
+  id: {
+    type: String,
+    required: false,
+    default: null,
+  },
   selectedModel: {
     type: String,
     required: true,
@@ -1558,6 +1610,14 @@ watch(() => props.rightPanelOpen, (isOpen) => {
   }, 300);
 }, { immediate: false });
 
+// Watch for workspace ID changes from route
+watch(() => props.id, async (newId) => {
+  if (newId) {
+    console.log('InfiniteCanvas: Route workspace ID changed to:', newId);
+    await handleWorkspaceSelect(newId);
+  }
+}, { immediate: true });
+
 // Handle height lock for nodes
 const handleHeightLock = () => {
   const selectedNode = store.nodes.find((n) => n.id === focusedNodeId.value);
@@ -2332,8 +2392,284 @@ const handleOpenWorkspace = async (workspaceId: string) => {
   await handleWorkspaceSelect(workspaceId);
 };
 
-const handleGenerateWorkspace = async (userInput: string, template?: any) => {
+const handleGenerateWorkspace = async (userInput: string, template?: any, claudeCodeConfig?: any) => {
   try {
+    
+    console.log('DEBUG: handleGenerateWorkspace called with:', { userInput, template, claudeCodeConfig });
+    
+    // Handle Claude Code sessions differently
+    if (claudeCodeConfig?.isClaudeCode) {
+      console.log('Creating Claude Code workspace');
+      
+      const claudeCodeNode = {
+        id: '1',
+        title: 'Claude Code Session',
+        messages: [{
+          id: `msg-${Date.now()}`,
+          role: 'user',
+          content: userInput,
+          timestamp: new Date().toISOString()
+        }],
+        x: 400,
+        y: 300,
+        type: 'branch',
+        metadata: {
+          isRoot: true,
+          isClaudeCode: true,
+          claudeCodeSettings: claudeCodeConfig.claudeCodeSettings
+        }
+      };
+      
+      const newChat = await chatStore.createChat('Claude Code Workspace', claudeCodeNode);
+      const chatId = typeof newChat === 'string' ? newChat : (newChat?.chatId || newChat?.id);
+      
+      isWelcomeScreen.value = false;
+      isWorkspaceOverview.value = false;
+      chatStore.currentChatId = chatId;
+      
+      await nextTick();
+      await store.loadChatState(chatId);
+      
+      // After loading, create Claude Code instance and send initial message
+      const loadedNodes = store.nodes;
+      if (loadedNodes.length > 0) {
+        const mainNode = loadedNodes[0];
+        console.log('Creating Claude Code instance for node:', mainNode.id);
+        
+        // Create Claude Code instance
+        const instanceConfig = {
+          initial_prompt: userInput,
+          working_dir: claudeCodeConfig.claudeCodeSettings.workingDir,
+          allowed_tools: Object.keys(claudeCodeConfig.claudeCodeSettings.tools).filter(
+            tool => claudeCodeConfig.claudeCodeSettings.tools[tool]
+          ),
+          node_id: mainNode.id
+        };
+        
+        const instanceId = await toolCallStore.createClaudeCodeInstance(instanceConfig);
+        if (instanceId) {
+          console.log('Created Claude Code instance:', instanceId);
+          
+          // Update node with instance metadata
+          await store.updateNode(mainNode.id, {
+            ...mainNode,
+            metadata: {
+              ...mainNode.metadata,
+              instance_id: instanceId,
+              attached_instance: true
+            }
+          });
+          
+          // Send initial message using streaming endpoint
+          console.log('Sending initial message to Claude Code...');
+          try {
+            const response = await fetch('http://127.0.0.1:5050/api/claude-code/send-message', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                message: userInput,
+                node_id: mainNode.id
+              })
+            });
+            
+            if (response.ok) {
+              console.log('Initial message sent, processing streaming response...');
+              
+              // Process the streaming response
+              const reader = response.body?.getReader();
+              const decoder = new TextDecoder();
+              
+              if (reader) {
+                let assistantMessage = '';
+                let sessionId = null;
+                let toolCalls = [];
+                let streamingMessageId = `msg-${Date.now()}`;
+                let hasCreatedMessage = false;
+                
+                // Helper function to update the streaming message
+                const updateStreamingMessage = async () => {
+                  const currentNode = store.nodes.find(n => n.id === mainNode.id);
+                  if (!currentNode) return;
+                  
+                  // Build current response with proper ordering
+                  let currentResponse = '';
+                  
+                  // Add initial assistant message if any
+                  if (assistantMessage.trim()) {
+                    currentResponse += assistantMessage.trim();
+                  }
+                  
+                  // Add tool calls after the initial message
+                  if (toolCalls.length > 0) {
+                    if (currentResponse) currentResponse += '\n\n';
+                    currentResponse += toolCalls.join('\n\n');
+                  }
+                  
+                  if (currentResponse.trim()) {
+                    let updatedMessages;
+                    
+                    if (!hasCreatedMessage) {
+                      // Create new streaming message
+                      updatedMessages = [...currentNode.messages, {
+                        id: streamingMessageId,
+                        role: 'assistant',
+                        content: currentResponse.trim(),
+                        timestamp: new Date().toISOString(),
+                        streaming: true
+                      }];
+                      hasCreatedMessage = true;
+                    } else {
+                      // Update existing streaming message
+                      updatedMessages = currentNode.messages.map(msg => 
+                        msg.id === streamingMessageId 
+                          ? { ...msg, content: currentResponse.trim() }
+                          : msg
+                      );
+                    }
+                    
+                    await store.updateNode(mainNode.id, {
+                      ...currentNode,
+                      messages: updatedMessages,
+                      metadata: sessionId ? {
+                        ...currentNode.metadata,
+                        session_id: sessionId
+                      } : currentNode.metadata
+                    });
+                  }
+                };
+                
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  
+                  const chunk = decoder.decode(value);
+                  const lines = chunk.split('\n');
+                  
+                  for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                      try {
+                        const data = JSON.parse(line.slice(6));
+                        console.log('Streaming data:', data);
+                        
+                        if (data.type === 'text') {
+                          assistantMessage += data.content;
+                          await updateStreamingMessage();
+                        } else if (data.type === 'tool_call') {
+                          // Add tool call with immediate feedback
+                          const toolCallIndex = toolCalls.length;
+                          toolCalls.push(`🔧 ${data.tool_name}: [executing...]`);
+                          await updateStreamingMessage();
+                          
+                          // Update with full parameters after showing immediate feedback  
+                          setTimeout(async () => {
+                            // Format tool call nicely based on tool type
+                            let formattedParams = '';
+                            const params = data.parameters;
+                            
+                            switch(data.tool_name) {
+                              case 'Write':
+                                formattedParams = `Writing to: ${params.file_path}`;
+                                if (params.content) {
+                                  const contentLength = params.content.length;
+                                  formattedParams += `\n📄 Content: ${contentLength} characters`;
+                                }
+                                break;
+                              case 'Read':
+                                formattedParams = `Reading: ${params.file_path}`;
+                                if (params.limit) formattedParams += ` (limit: ${params.limit} lines)`;
+                                break;
+                              case 'Edit':
+                              case 'MultiEdit':
+                                formattedParams = `Editing: ${params.file_path}`;
+                                break;
+                              case 'Bash':
+                                formattedParams = `Command: ${params.command}`;
+                                break;
+                              case 'LS':
+                                formattedParams = `Listing: ${params.path || 'current directory'}`;
+                                break;
+                              case 'Glob':
+                                formattedParams = `Pattern: ${params.pattern}`;
+                                if (params.path) formattedParams += ` in ${params.path}`;
+                                break;
+                              case 'Grep':
+                                formattedParams = `Searching: "${params.pattern}"`;
+                                if (params.path) formattedParams += ` in ${params.path}`;
+                                break;
+                              case 'WebFetch':
+                                formattedParams = `Fetching: ${params.url}`;
+                                break;
+                              case 'WebSearch':
+                                formattedParams = `Searching: "${params.query}"`;
+                                break;
+                              case 'TodoWrite':
+                                formattedParams = `Managing todos (${params.todos?.length || 0} items)`;
+                                break;
+                              case 'Task':
+                                formattedParams = `${params.description}: ${params.prompt?.substring(0, 100)}...`;
+                                break;
+                              default:
+                                formattedParams = JSON.stringify(params, null, 2);
+                            }
+                            
+                            toolCalls[toolCallIndex] = `🔧 ${data.tool_name}: ${formattedParams}`;
+                            await updateStreamingMessage();
+                          }, 100);
+                        } else if (data.type === 'tool_result') {
+                          // Handle tool results if available
+                          const lastToolIndex = toolCalls.length - 1;
+                          if (lastToolIndex >= 0 && data.result) {
+                            toolCalls[lastToolIndex] += `\n✓ Result: ${typeof data.result === 'string' ? data.result : JSON.stringify(data.result)}`;
+                            await updateStreamingMessage();
+                          }
+                        } else if (data.type === 'result') {
+                          // Capture session ID and finalize message
+                          sessionId = data.session_id;
+                          
+                          // Final update to remove streaming indicator
+                          if (hasCreatedMessage) {
+                            const currentNode = store.nodes.find(n => n.id === mainNode.id);
+                            if (currentNode) {
+                              const updatedMessages = currentNode.messages.map(msg => 
+                                msg.id === streamingMessageId 
+                                  ? { ...msg, streaming: false }
+                                  : msg
+                              );
+                              
+                              await store.updateNode(mainNode.id, {
+                                ...currentNode,
+                                messages: updatedMessages,
+                                metadata: {
+                                  ...currentNode.metadata,
+                                  session_id: sessionId
+                                }
+                              });
+                            }
+                          }
+                          
+                          console.log('Finalized Claude Code response with session ID:', sessionId);
+                        }
+                      } catch (e) {
+                        console.error('Error parsing streaming data:', e);
+                      }
+                    }
+                  }
+                }
+              }
+            } else {
+              console.error('Failed to send initial message:', response.statusText);
+            }
+          } catch (error) {
+            console.error('Error sending initial message:', error);
+          }
+        } else {
+          console.error('Failed to create Claude Code instance');
+        }
+      }
+      return;
+    }
     
     // Call backend to generate workspace
     const response = await fetch('http://127.0.0.1:5050/api/generate-workspace', {
@@ -2801,6 +3137,11 @@ const handleCreateBranch = async (
 const handleResend = async (nodeId: string, userMessageIndex: number) => {
   const node = store.nodes.find(n => n.id === nodeId);
   if (!node || !node.messages) return;
+
+  // Skip resend for Claude Code nodes - they handle it internally
+  if (node.type === 'claude-code') {
+    return;
+  }
 
   const userMsg = node.messages[userMessageIndex];
   if (!userMsg || userMsg.role !== "user") return;
@@ -3838,6 +4179,134 @@ onBeforeUnmount(() => {
   // Clean up body classes
   document.body.classList.remove('transition-blur');
 });
+
+// Tool Call Node Functions
+const getToolCallsForVisibleNodes = computed(() => {
+  const toolCalls = []
+  visibleNodes.value.forEach(node => {
+    const nodeToolCalls = toolCallStore.getToolCallsForNode(node.id)
+    toolCalls.push(...nodeToolCalls)
+  })
+  return toolCalls
+})
+
+const getFileNodesForVisibleNodes = computed(() => {
+  const fileNodes = []
+  visibleNodes.value.forEach(node => {
+    const nodeFileNodes = toolCallStore.getFileNodesForNode(node.id)
+    fileNodes.push(...nodeFileNodes)
+  })
+  return fileNodes
+})
+
+const getExecutionNodesForVisibleNodes = computed(() => {
+  const executionNodes = []
+  visibleNodes.value.forEach(node => {
+    const nodeExecutionNodes = toolCallStore.getExecutionNodesForNode(node.id)
+    executionNodes.push(...nodeExecutionNodes)
+  })
+  return executionNodes
+})
+
+
+// Position calculation functions
+function getToolCallPosition(toolCall) {
+  const parentNode = store.nodes.find(n => n.id === toolCall.node_id)
+  if (!parentNode) return { x: 0, y: 0 }
+  
+  return {
+    x: parentNode.x + 700, // Offset to the right of the parent node
+    y: parentNode.y + (toolCall.created_at ? new Date(toolCall.created_at).getTime() % 200 : 0)
+  }
+}
+
+function getFileNodePosition(fileNode) {
+  const parentNode = store.nodes.find(n => n.id === fileNode.node_id)
+  if (!parentNode) return { x: 0, y: 0 }
+  
+  return {
+    x: parentNode.x + 400, // Offset to the right of the parent node
+    y: parentNode.y + (fileNode.created_at ? new Date(fileNode.created_at).getTime() % 300 : 0)
+  }
+}
+
+function getExecutionNodePosition(executionNode) {
+  const parentNode = store.nodes.find(n => n.id === executionNode.node_id)
+  if (!parentNode) return { x: 0, y: 0 }
+  
+  return {
+    x: parentNode.x + 1000, // Offset to the right of the parent node
+    y: parentNode.y + (executionNode.created_at ? new Date(executionNode.created_at).getTime() % 400 : 0)
+  }
+}
+
+// Event handlers for new node types
+function handleToolCallClick(toolCall) {
+  console.log('Tool call clicked:', toolCall)
+}
+
+function handleToolCallDoubleClick(toolCall) {
+  console.log('Tool call double clicked:', toolCall)
+}
+
+function handleToolCallCancel(toolCall) {
+  console.log('Tool call cancelled:', toolCall)
+}
+
+function handleToolCallRerun(toolCall) {
+  console.log('Tool call rerun:', toolCall)
+}
+
+function handleToolCallOpenFile(toolCall) {
+  console.log('Tool call open file:', toolCall)
+}
+
+function handleFileNodeClick(fileNode) {
+  console.log('File node clicked:', fileNode)
+}
+
+function handleFileNodeDoubleClick(fileNode) {
+  console.log('File node double clicked:', fileNode)
+}
+
+function handleFileNodeOpen(fileNode) {
+  console.log('File node open:', fileNode)
+}
+
+function handleFileNodeEdit(fileNode) {
+  console.log('File node edit:', fileNode)
+}
+
+function handleFileNodeRun(fileNode) {
+  console.log('File node run:', fileNode)
+}
+
+function handleExecutionNodeClick(executionNode) {
+  console.log('Execution node clicked:', executionNode)
+}
+
+function handleExecutionNodeDoubleClick(executionNode) {
+  console.log('Execution node double clicked:', executionNode)
+}
+
+async function handleExecutionNodeTerminate(executionNode) {
+  const success = await toolCallStore.terminateExecution(executionNode.id)
+  if (success) {
+    console.log('Execution terminated:', executionNode)
+  }
+}
+
+function handleExecutionNodeRerun(executionNode) {
+  console.log('Execution node rerun:', executionNode)
+}
+
+
+// Load tool call data when nodes become visible
+watch(visibleNodes, (newNodes) => {
+  newNodes.forEach(node => {
+    toolCallStore.fetchAllForNode(node.id)
+  })
+}, { deep: true });
 </script>
 
 <style scoped>

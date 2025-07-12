@@ -23,6 +23,8 @@ from ClusteringService import ClusteringService
 from ConversationImportService import ConversationImportService
 from RelicService import RelicService
 from ThumbnailService import ThumbnailService
+from ToolCallService import ToolCallService
+from ClaudeCodeService import ClaudeCodeService
 import tempfile
 import uuid
 import subprocess
@@ -2376,6 +2378,8 @@ chat_service = ChatPersistenceService(app)
 embedding_service = EmbeddingService()
 clustering_service = ClusteringService(embedding_service, chat_service)
 import_service = ConversationImportService(chat_service, embedding_service)
+tool_call_service = ToolCallService(app)
+claude_code_service = ClaudeCodeService(app, tool_call_service)
 
 # Clustering endpoints
 @api_routes.route('/clustering/start', methods=['POST'])
@@ -3682,6 +3686,343 @@ def generate_branch_topics(concepts: list, user_input: str) -> list:
         })
     
     return branches[:5]  # Limit to 5 branches max
+
+# Tool Call Management Endpoints
+@api_routes.route('/tool-calls/node/<node_id>', methods=['GET'])
+def get_tool_calls_for_node(node_id):
+    """Get all tool calls for a specific node"""
+    try:
+        tool_calls = tool_call_service.get_tool_calls_for_node(node_id)
+        return jsonify(tool_calls)
+    except Exception as e:
+        logger.error(f"Error getting tool calls for node {node_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/tool-calls/<tool_call_id>', methods=['GET'])
+def get_tool_call_details(tool_call_id):
+    """Get detailed information about a specific tool call"""
+    try:
+        details = tool_call_service.get_tool_call_details(tool_call_id)
+        if details is None:
+            return jsonify({'error': 'Tool call not found'}), 404
+        return jsonify(details)
+    except Exception as e:
+        logger.error(f"Error getting tool call details for {tool_call_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/file-nodes/node/<node_id>', methods=['GET'])
+def get_file_nodes_for_node(node_id):
+    """Get all file nodes for a specific node"""
+    try:
+        file_nodes = tool_call_service.get_file_nodes_for_node(node_id)
+        return jsonify(file_nodes)
+    except Exception as e:
+        logger.error(f"Error getting file nodes for node {node_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/execution-nodes/node/<node_id>', methods=['GET'])
+def get_execution_nodes_for_node(node_id):
+    """Get all execution nodes for a specific node"""
+    try:
+        execution_nodes = tool_call_service.get_execution_nodes_for_node(node_id)
+        return jsonify(execution_nodes)
+    except Exception as e:
+        logger.error(f"Error getting execution nodes for node {node_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/execution-nodes/<execution_id>/terminate', methods=['POST'])
+def terminate_execution(execution_id):
+    """Terminate a running execution"""
+    try:
+        success = tool_call_service.terminate_execution(execution_id)
+        return jsonify({'success': success})
+    except Exception as e:
+        logger.error(f"Error terminating execution {execution_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Claude Code Management Endpoints
+@api_routes.route('/claude-code/instances', methods=['POST'])
+def create_claude_code_instance():
+    """Create a new Claude Code instance"""
+    try:
+        data = request.json
+        instance_id = claude_code_service.create_instance_sync(data)
+        return jsonify({'instance_id': instance_id})
+    except Exception as e:
+        logger.error(f"Error creating Claude Code instance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances', methods=['GET'])
+def get_claude_code_instances():
+    """Get all active Claude Code instances"""
+    try:
+        # Return empty list if no instances
+        if not hasattr(claude_code_service, 'active_instances'):
+            return jsonify([])
+        
+        instances = claude_code_service.get_active_instances_sync()
+        return jsonify(instances)
+    except Exception as e:
+        logger.error(f"Error getting Claude Code instances: {e}")
+        # Return empty list on error for now
+        return jsonify([])
+        # return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances/<instance_id>/status', methods=['GET'])
+def get_claude_code_instance_status(instance_id):
+    """Get status of a specific Claude Code instance"""
+    try:
+        status = claude_code_service.get_instance_status_sync(instance_id)
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error getting Claude Code instance status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances/<instance_id>/message', methods=['POST'])
+def send_claude_code_message(instance_id):
+    """Send a message to a Claude Code instance"""
+    try:
+        data = request.json
+        message = data.get('message', '')
+        success = claude_code_service.send_message_sync(instance_id, message)
+        return jsonify({'success': success})
+    except Exception as e:
+        logger.error(f"Error sending message to Claude Code instance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances/<instance_id>/pause', methods=['POST'])
+def pause_claude_code_instance(instance_id):
+    """Pause a Claude Code instance"""
+    try:
+        success = claude_code_service.pause_instance_sync(instance_id)
+        return jsonify({'success': success})
+    except Exception as e:
+        logger.error(f"Error pausing Claude Code instance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances/<instance_id>/resume', methods=['POST'])
+def resume_claude_code_instance(instance_id):
+    """Resume a paused Claude Code instance"""
+    try:
+        success = claude_code_service.resume_instance_sync(instance_id)
+        return jsonify({'success': success})
+    except Exception as e:
+        logger.error(f"Error resuming Claude Code instance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances/<instance_id>/stop', methods=['POST'])
+def stop_claude_code_instance(instance_id):
+    """Stop a Claude Code instance"""
+    try:
+        success = claude_code_service.stop_instance_sync(instance_id)
+        return jsonify({'success': success})
+    except Exception as e:
+        logger.error(f"Error stopping Claude Code instance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/sessions', methods=['GET'])
+def get_claude_code_sessions():
+    """Get historical Claude Code sessions"""
+    try:
+        sessions = claude_code_service.get_session_history()
+        return jsonify(sessions)
+    except Exception as e:
+        logger.error(f"Error getting Claude Code sessions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/sessions/<session_id>/resume', methods=['POST'])
+def resume_claude_code_session(session_id):
+    """Resume a previous Claude Code session"""
+    try:
+        data = request.json or {}
+        instance_id = claude_code_service.resume_session_sync(session_id, data)
+        return jsonify({'instance_id': instance_id})
+    except Exception as e:
+        logger.error(f"Error resuming Claude Code session: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/instances/register-external', methods=['POST'])
+def register_external_claude_code_instance():
+    """Register an external Claude Code instance that's already running"""
+    try:
+        data = request.json or {}
+        instance_id = data.get('instance_id', f'external-{uuid.uuid4()}')
+        
+        # Create a mock instance to represent the external session
+        external_instance_config = {
+            'name': data.get('name', 'External Claude Code Session'),
+            'external': True,
+            'session_id': data.get('session_id'),
+            'working_dir': data.get('working_dir', '/Users/928546/Desktop/tangent'),
+            'node_id': data.get('node_id')
+        }
+        
+        # Register with the service
+        claude_code_service.register_external_instance(instance_id, external_instance_config)
+        
+        return jsonify({
+            'success': True, 
+            'instance_id': instance_id,
+            'message': 'External instance registered successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error registering external Claude Code instance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/claude-code/send-message', methods=['GET', 'POST'])
+def send_claude_code_message_simple():
+    """Send a message to Claude Code using the SDK with streaming"""
+    try:
+        # Support both GET (for SSE) and POST requests
+        if request.method == 'GET':
+            message = request.args.get('message', '')
+            session_id = request.args.get('session_id')
+            node_id = request.args.get('node_id')
+            context = request.args.get('context', '')
+        else:
+            data = request.json or {}
+            message = data.get('message', '')
+            session_id = data.get('session_id')
+            node_id = data.get('node_id')
+            context = data.get('context', '')
+        
+        if not message:
+            if request.method == 'GET':
+                return Response('data: {"type": "error", "error": "Message is required"}\n\n', mimetype='text/event-stream')
+            return jsonify({'error': 'Message is required'}), 400
+            
+        def generate():
+            try:
+                # Prepare message with context if available
+                full_message = message
+                if context and not session_id:
+                    # For new sessions, include recent context
+                    full_message = f"Previous conversation context:\n{context}\n\nCurrent message: {message}"
+                
+                # Use Claude Code SDK to send message with streaming (following docs best practices)
+                if session_id:
+                    # Resume existing session using documented --resume flag
+                    cmd = [
+                        'claude', '-p', '--resume', session_id, full_message,
+                        '--output-format', 'stream-json',
+                        '--verbose',
+                        '--allowedTools', 'Write,Read,Edit,LS,Glob,Grep,Bash'
+                    ]
+                else:
+                    # Start new session with -p flag
+                    cmd = [
+                        'claude', '-p', full_message,
+                        '--output-format', 'stream-json',
+                        '--verbose',
+                        '--allowedTools', 'Write,Read,Edit,LS,Glob,Grep,Bash'
+                    ]
+                
+                # Set working directory to project root
+                working_dir = '/Users/928546/Desktop/tangent'
+                
+                # Run Claude Code command with streaming
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=working_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,  # Line buffered
+                    universal_newlines=True
+                )
+                
+                tool_calls = []
+                
+                # Stream the output line by line
+                for line in iter(process.stdout.readline, ''):
+                    if line.strip():
+                        try:
+                            message_data = json.loads(line.strip())
+                            
+                            # Handle different message types from Claude Code streaming
+                            if message_data.get('type') == 'text':
+                                # Text content
+                                yield f"data: {json.dumps({'type': 'text', 'content': message_data.get('content', '')})}\n\n"
+                                
+                            elif message_data.get('type') == 'thinking':
+                                # Thinking content (Claude's internal reasoning)
+                                yield f"data: {json.dumps({'type': 'text', 'content': f'🤔 {message_data.get("content", "")}'})}\n\n"
+                                
+                            elif message_data.get('type') == 'tool_call':
+                                # Tool call started
+                                tool_info = {
+                                    'tool_name': message_data.get('tool_name'),
+                                    'parameters': message_data.get('parameters', {}),
+                                    'call_id': message_data.get('call_id')
+                                }
+                                tool_calls.append(tool_info)
+                                yield f"data: {json.dumps({'type': 'tool_call', 'tool_name': tool_info['tool_name'], 'parameters': tool_info['parameters']})}\n\n"
+                                
+                            elif message_data.get('type') == 'tool_result':
+                                # Tool result returned
+                                result_data = {
+                                    'tool_name': message_data.get('tool_name'),
+                                    'result': message_data.get('result'),
+                                    'error': message_data.get('error'),
+                                    'duration_ms': message_data.get('duration_ms'),
+                                    'call_id': message_data.get('call_id')
+                                }
+                                yield f"data: {json.dumps({'type': 'tool_result', **result_data})}\n\n"
+                                
+                            elif message_data.get('type') == 'assistant':
+                                # Legacy format handling
+                                assistant_msg = message_data.get('message', {})
+                                content = assistant_msg.get('content', [])
+                                
+                                for content_block in content:
+                                    if content_block.get('type') == 'text':
+                                        yield f"data: {json.dumps({'type': 'text', 'content': content_block.get('text', '')})}\n\n"
+                                    elif content_block.get('type') == 'tool_use':
+                                        tool_info = {
+                                            'tool_name': content_block.get('name'),
+                                            'parameters': content_block.get('input', {}),
+                                            'call_id': content_block.get('id')
+                                        }
+                                        tool_calls.append(tool_info)
+                                        yield f"data: {json.dumps({'type': 'tool_call', 'tool_name': tool_info['tool_name'], 'parameters': tool_info['parameters']})}\n\n"
+                                        
+                            elif message_data.get('type') == 'result':
+                                # Final result with usage metadata
+                                result_info = {
+                                    'type': 'result',
+                                    'response': message_data.get('content', ''),
+                                    'cost_usd': message_data.get('cost_usd'),
+                                    'num_turns': message_data.get('num_turns'),
+                                    'session_id': message_data.get('session_id')
+                                }
+                                yield f"data: {json.dumps(result_info)}\n\n"
+                                
+                        except json.JSONDecodeError:
+                            # Handle non-JSON lines (shouldn't happen with stream-json)
+                            continue
+                
+                # Wait for process to complete and check return code
+                process.wait()
+                if process.returncode != 0:
+                    stderr_output = process.stderr.read()
+                    yield f"data: {json.dumps({'type': 'error', 'error': f'Claude Code failed: {stderr_output}'})}\n\n"
+                
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'  # Disable nginx buffering
+            }
+        )
+            
+    except Exception as e:
+        logger.error(f"Error setting up Claude Code streaming: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # Register the blueprint AFTER all routes are defined
 app.register_blueprint(api_routes, url_prefix='/api')

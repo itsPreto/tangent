@@ -36,12 +36,21 @@ export const useChatStore = defineStore('chat', () => {
         }
     };
     // Create new chat
-    const createChat = async (title: string, initialNode: any) => {
+    const createChat = async (title: string, initialNode: any = null) => {
         console.log('[ChatStore] Starting createChat with:', { title, initialNode });
         isLoading.value = true;
         error.value = null;
         try {
-            const requestBody = { title, initialNode };
+            // If no initialNode provided, create a default one
+            const nodeData = initialNode || {
+                title: 'Root Thread',
+                x: 100,
+                y: 100,
+                messages: [],
+                metadata: {}
+            };
+            
+            const requestBody = { title, initialNode: nodeData };
             console.log('[ChatStore] Request body:', JSON.stringify(requestBody, null, 2));
             
             const response = await fetch('http://127.0.0.1:5050/chats', {
@@ -143,15 +152,26 @@ export const useChatStore = defineStore('chat', () => {
     // Add node
     const addNode = async (chatId: string, nodeData: any) => {
         try {
+            console.log('[ChatStore] Adding node:', nodeData);
             const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}/nodes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(nodeData)
             });
+            
+            console.log('[ChatStore] Add node response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[ChatStore] Add node error:', errorText);
+                throw new Error(`Failed to add node: ${response.status} ${response.statusText}`);
+            }
+            
             const data = await response.json();
+            console.log('[ChatStore] Add node response data:', data);
             return data.nodeId;
         } catch (e) {
-            console.error(e);
+            console.error('[ChatStore] Error adding node:', e);
             return null;
         }
     };

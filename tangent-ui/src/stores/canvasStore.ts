@@ -632,7 +632,13 @@ export const useCanvasStore = defineStore('canvas', () => {
       firstUserMessage?: string;
     }
   ) => {
-    const newId = (Math.max(...nodes.value.map(n => parseInt(n.id || '0')), 0) + 1).toString(); //handle the empty nodes array for inital node
+    // Generate a unique ID - handle both numeric and UUID string IDs
+    const numericIds = nodes.value
+      .map(n => parseInt(n.id || '0'))
+      .filter(id => !isNaN(id));
+    const newId = numericIds.length > 0 
+      ? (Math.max(...numericIds, 0) + 1).toString()
+      : '1';
     const parentNode = nodes.value.find(n => n.id === parentId);
     const existingChildren = nodes.value.filter(n => n.parentId === parentId).length;
 

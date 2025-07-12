@@ -319,7 +319,7 @@
           height: '100vh', 
           borderRight: 'none'
         }"
-        @close="appStore.closeAgentConfigurator" @model-selected="handleModelSelected" @api-key-saved="handleApiKeySaved"
+        @close="appStore.closeAgentConfigurator" @model-selected="handleModelSelected" @api-key-saved="handleApiKeySaved" @open-workspace="handleOpenWorkspace"
         :current-model="selectedModel" />
     </Transition>
 
@@ -822,6 +822,19 @@ const handleApiKeySaved = ({ provider, apiKey }: { provider: string, apiKey: str
     case 'gemini':
       geminiApiKey.value = apiKey;
       break;
+  }
+};
+
+const handleOpenWorkspace = async (workspaceId: string) => {
+  console.log('App: Opening workspace from agent configurator:', workspaceId);
+  
+  // Get reference to the canvas component
+  const canvasRef = document.querySelector('.infinite-canvas');
+  if (canvasRef && canvasRef.handleWorkspaceSelect) {
+    await canvasRef.handleWorkspaceSelect(workspaceId);
+  } else {
+    // Fallback: emit the event that other components listen to
+    emitter.emit('open-workspace', workspaceId);
   }
 };
 

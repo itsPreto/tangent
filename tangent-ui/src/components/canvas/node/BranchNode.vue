@@ -263,6 +263,29 @@
           </div>
         </div>
 
+        <!-- Claude Code Section -->
+        <div v-if="isClaudeCodeNode" class="claude-code-section">
+          <!-- Claude Code Status Header -->
+          <div class="claude-code-header p-3 border-b border-base-300/50">
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-primary/10">
+                <Bot class="w-5 h-5 text-primary" />
+              </div>
+              <div class="flex-grow min-w-0">
+                <p class="font-medium text-sm text-base-content">Claude Code Session</p>
+                <div class="flex items-center gap-4 mt-1 text-xs text-base-content/60">
+                  <span class="flex items-center gap-1">
+                    <div class="w-2 h-2 rounded-full" :class="claudeCodeStatusColor"></div>
+                    {{ claudeCodeStatus }}
+                  </span>
+                  <span>Cost: ${{ claudeCodeCost.toFixed(4) }}</span>
+                  <span>Turns: {{ claudeCodeTurns }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Messages Container -->
         <div :class="[
           'messages-container transition-all duration-300 relative flex-grow',
@@ -392,13 +415,15 @@ import {
   GitBranch,
   Volume2,
   Archive,
-  Sparkles
+  Sparkles,
+  Bot
 } from 'lucide-vue-next';
 
 import MessageInput from '../../messages/MessageInput.vue';
 import CollapsedMessagesView from '../../messages/CollapsedMessagesView.vue';
 import LazyLoadMessageList from '../../messages/LazyLoadMessageList.vue';
 import { useCanvasStore } from '../../../stores/canvasStore';
+import { useToolCallStore } from '../../../stores/toolCallStore';
 import { Card } from '@/components/ui/card';
 import Badge from '../../ui/Badge.vue';
 import MessageContent from '../../messages/MessageContent.vue';
@@ -459,7 +484,8 @@ const emit = defineEmits([
   'unsnap',
   'focus-input',
   'expansion-change',
-  'update-messages'
+  'update-messages',
+  'update-node'
 ]);
 
 // Local state and refs
@@ -492,9 +518,28 @@ const expandedSectionId = ref<string | null>(null);
 const summarySectionId = ref<string | null>(null);
 const currentTokenCount = ref(0);
 
+// Claude Code permissions
+const claudeCodePermissions = ref<string>('auto-allow'); // This will be set from the workspace settings\n\n// Initialize permissions from node metadata or workspace settings\nonMounted(() => {\n  if (isClaudeCodeNode.value && props.node.metadata?.claudeCodeSettings?.permissions) {\n    claudeCodePermissions.value = props.node.metadata.claudeCodeSettings.permissions;\n  }\n});
+
 const canvasStore = useCanvasStore();
+const toolCallStore = useToolCallStore();
 const modelStore = useModelStore();
 const themeStore = useThemeStore();
+
+// Permission checking function
+const checkToolPermission = (toolName: string, parameters: any): boolean => {
+  if (claudeCodePermissions.value === 'auto-allow') return false;
+  if (claudeCodePermissions.value === 'manual') return true;
+  return false;
+};
+
+const getToolDescription = (toolName: string, parameters: any): string => {
+  return `Use ${toolName} tool`;
+};
+
+const handlePermissionResponse = (toolCallId: string, approved: boolean) => {
+  console.log('Permission response:', toolCallId, approved);
+};
 
 // Use centralized theme composable
 const { 
@@ -651,6 +696,23 @@ const isVideoMedia = computed(() => props.node.mediaContent?.mime_type?.startsWi
 const mediaUrl = computed(() => {
   if (!props.node.mediaContent) return null;
   return props.node.mediaContent.previewUrl || `http://127.0.0.1:5050/media/${props.node.mediaContent.media_id}`;
+});
+
+// Claude Code computed properties
+const isClaudeCodeNode = computed(() => props.node.metadata?.isClaudeCode === true);
+const claudeCodeInstanceData = computed(() => props.node.metadata || {});
+const claudeCodeStatus = computed(() => claudeCodeInstanceData.value.status || 'running');
+const claudeCodeCost = computed(() => claudeCodeInstanceData.value.cost_usd || 0);
+const claudeCodeTurns = computed(() => claudeCodeInstanceData.value.num_turns || 0);
+const claudeCodeStatusColor = computed(() => {
+  switch (claudeCodeStatus.value) {
+    case 'running': return 'bg-green-500';
+    case 'paused': return 'bg-yellow-500';
+    case 'completed': return 'bg-blue-500';
+    case 'error': return 'bg-red-500';
+    case 'stopped': return 'bg-gray-500';
+    default: return 'bg-gray-400';
+  }
 });
 
 const mediaProcessingStatus = computed(() => {
@@ -1801,10 +1863,10 @@ const buildBranchContext = async (node: any): Promise<string> => {
 };
 
 const handleEditMessage = async (index: number, newContent: string) => {
-  if (!node.messages || index < 0 || index >= node.messages.length) return;
+  if (!props.node.messages || index < 0 || index >= props.node.messages.length) return;
   
   // Update the message content locally
-  const updatedMessages = [...node.messages];
+  const updatedMessages = [...props.node.messages];
   updatedMessages[index] = {
     ...updatedMessages[index],
     content: newContent
@@ -1819,8 +1881,247 @@ const handleEditMessage = async (index: number, newContent: string) => {
     const messagesToKeep = updatedMessages.slice(0, index + 1);
     emit('update-messages', messagesToKeep);
     
-    // Resend the edited message
-    emit('resend', index);
+    // For Claude Code nodes, handle resending differently
+    if (isClaudeCodeNode.value) {
+      // Use Claude Code API for resending
+      await handleClaudeCodeMessage(newContent);
+    } else {
+      // Regular model resend
+      emit('resend', index);
+    }
+  }
+};
+
+// Handle Claude Code message sending with streaming support
+const handleClaudeCodeMessage = async (messageText) => {
+  try {
+    // Add user message to the conversation
+    const userMessage = {
+      role: 'user',
+      content: messageText,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Add user message to node immediately
+    const updatedMessages = [...(props.node.messages || []), userMessage];
+    emit('update-messages', updatedMessages);
+
+    // Get session ID for continuing the conversation
+    const sessionId = claudeCodeInstanceData.value.session_id;
+    console.log('Claude Code session ID:', sessionId);
+    
+    // Create a streaming assistant message that will be updated in real-time
+    const streamingMessage = {
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      claudeCode: true,
+      streaming: true
+    };
+    
+    let currentMessages = [...updatedMessages, streamingMessage];
+    emit('update-messages', currentMessages);
+    
+    // Track tool calls for visualization
+    const toolCallNodes = [];
+    let accumulatedContent = '';
+    
+    // Build recent conversation context for Claude Code
+    const recentMessages = props.node.messages?.slice(-3) || [];
+    const context = recentMessages
+      .map(msg => `${msg.role}: ${msg.content}`)
+      .join('\n');
+    
+    // Start SSE connection for streaming
+    const eventSource = new EventSource(`http://127.0.0.1:5050/api/claude-code/send-message?message=${encodeURIComponent(messageText)}&session_id=${sessionId || ''}&node_id=${props.node.id}&context=${encodeURIComponent(context)}`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Claude Code stream event:', data);
+        
+        switch (data.type) {
+          case 'text':
+            // Update streaming content
+            accumulatedContent += data.content || '';
+            streamingMessage.content = accumulatedContent;
+            
+            // Update the current messages array
+            currentMessages = [...updatedMessages, { ...streamingMessage }];
+            emit('update-messages', currentMessages);
+            break;
+            
+          case 'tool_call':
+            // Check if this tool requires permission
+            const needsPermission = checkToolPermission(data.tool_name, data.parameters);
+            
+            if (needsPermission) {
+              // Add permission request message to conversation
+              const permissionMessage = {
+                role: 'system',
+                content: '',
+                contentParts: [{
+                  type: 'permission_request',
+                  toolName: data.tool_name,
+                  parameters: data.parameters,
+                  description: getToolDescription(data.tool_name, data.parameters),
+                  toolCallId: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  status: 'pending'
+                }],
+                timestamp: new Date().toISOString(),
+                isStreaming: false
+              };
+              
+              currentMessages = [...currentMessages, permissionMessage];
+              emit('update-messages', currentMessages);
+              return; // Don't execute the tool yet
+            }
+            
+            // Create ToolCall in the toolCallStore
+            const toolCallId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const toolCallData = {
+              id: toolCallId,
+              node_id: props.node.id,
+              tool_name: data.tool_name,
+              parameters: data.parameters || {},
+              status: 'pending' as const,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            
+            toolCallNodes.push(toolCallData);
+            
+            // Add tool call to the store with proper reactivity
+            const currentToolCalls = toolCallStore.getToolCallsForNode(props.node.id);
+            const updatedToolCalls = [...currentToolCalls, toolCallData];
+            
+            // Create a new Map to trigger reactivity
+            const newMap = new Map(toolCallStore.toolCalls.value);
+            newMap.set(props.node.id, updatedToolCalls);
+            toolCallStore.toolCalls.value = newMap;
+            
+            // Add tool call mention to content
+            accumulatedContent += `\n\n🔧 Using ${data.tool_name} tool...`;
+            streamingMessage.content = accumulatedContent;
+            
+            // Update the current messages array
+            currentMessages = [...updatedMessages, { ...streamingMessage }];
+            emit('update-messages', currentMessages);
+            break;
+            
+          case 'tool_result':
+            // Find the most recent tool call for this tool that's still pending
+            const nodeToolCalls = toolCallStore.getToolCallsForNode(props.node.id);
+            const matchingToolCall = nodeToolCalls
+              .filter(tc => tc.tool_name === data.tool_name && tc.status === 'pending')
+              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+            
+            if (matchingToolCall) {
+              // Update the tool call with results
+              const updatedToolCall = {
+                ...matchingToolCall,
+                status: data.error ? 'error' as const : 'success' as const,
+                result: data.result,
+                error_message: data.error,
+                duration_ms: data.duration_ms,
+                updated_at: new Date().toISOString()
+              };
+              
+              // Update the tool calls in the store with proper reactivity
+              const allToolCalls = toolCallStore.getToolCallsForNode(props.node.id);
+              const updatedToolCalls = allToolCalls.map(tc => 
+                tc.id === matchingToolCall.id ? updatedToolCall : tc
+              );
+              
+              // Create a new Map to trigger reactivity
+              const newMap = new Map(toolCallStore.toolCalls.value);
+              newMap.set(props.node.id, updatedToolCalls);
+              toolCallStore.toolCalls.value = newMap;
+            }
+            
+            // Add tool result to content
+            if (data.error) {
+              accumulatedContent += `\n❌ Tool error: ${data.error}`;
+            } else {
+              accumulatedContent += `\n✅ Tool completed`;
+            }
+            streamingMessage.content = accumulatedContent;
+            
+            // Update the current messages array
+            currentMessages = [...updatedMessages, { ...streamingMessage }];
+            emit('update-messages', currentMessages);
+            break;
+            
+          case 'result':
+            // Final result - update usage tracking and finish streaming
+            if (data.cost_usd !== undefined || data.num_turns !== undefined || data.session_id) {
+              const updatedMetadata = {
+                ...props.node.metadata,
+                cost_usd: data.cost_usd !== null ? data.cost_usd : (props.node.metadata?.cost_usd || 0),
+                num_turns: data.num_turns !== null ? data.num_turns : ((props.node.metadata?.num_turns || 0) + 1),
+                session_id: data.session_id || props.node.metadata?.session_id
+              };
+              
+              emit('update-node', {
+                id: props.node.id,
+                metadata: updatedMetadata
+              });
+            }
+            
+            // Mark streaming as complete
+            streamingMessage.streaming = false;
+            streamingMessage.content = data.response || accumulatedContent;
+            
+            // Update the final messages array
+            currentMessages = [...updatedMessages, { ...streamingMessage }];
+            emit('update-messages', currentMessages);
+            
+            eventSource.close();
+            break;
+            
+          case 'error':
+            // Handle streaming errors
+            console.error('Claude Code streaming error:', data.error);
+            accumulatedContent += `\n\n❌ Error: ${data.error}`;
+            streamingMessage.content = accumulatedContent;
+            streamingMessage.streaming = false;
+            streamingMessage.error = true;
+            emit('update-messages', [...currentMessages]);
+            eventSource.close();
+            break;
+        }
+      } catch (parseError) {
+        console.error('Error parsing SSE data:', parseError, event.data);
+      }
+    };
+    
+    eventSource.onerror = (error) => {
+      console.error('Claude Code SSE error:', error);
+      
+      // Add error message to conversation
+      streamingMessage.content = accumulatedContent + '\n\n❌ Connection error occurred';
+      streamingMessage.streaming = false;
+      streamingMessage.error = true;
+      emit('update-messages', [...currentMessages]);
+      
+      eventSource.close();
+    };
+    
+  } catch (error) {
+    console.error('Failed to send Claude Code message:', error);
+    
+    // Add error message to conversation
+    const errorMessage = {
+      role: 'assistant',
+      content: `Error sending message to Claude Code: ${error.message}`,
+      timestamp: new Date().toISOString(),
+      error: true
+    };
+    
+    const errorMessages = [...(props.node.messages || []), errorMessage];
+    emit('update-messages', errorMessages);
+  } finally {
+    isLoading.value = false;
   }
 };
 
@@ -1836,6 +2137,15 @@ const handleMessageSend = async (messageData) => {
       pasteEntries = messageData.pasteEntries;
     } else {
       messageText = messageData;
+    }
+
+    // Handle Claude Code messages differently
+    console.log('DEBUG: isClaudeCodeNode =', isClaudeCodeNode.value);
+    console.log('DEBUG: props.node.metadata?.isClaudeCode =', props.node.metadata?.isClaudeCode);
+    console.log('DEBUG: props.node.metadata =', props.node.metadata);
+    if (isClaudeCodeNode.value) {
+      await handleClaudeCodeMessage(messageText);
+      return;
     }
 
     // 🚀 Router Service Integration - Intelligent Model Selection
