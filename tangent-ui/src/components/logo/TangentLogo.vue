@@ -5,68 +5,8 @@
   >
     <!-- Logo Section -->
 
-    <!-- Theme Label or Palette Indicator -->
-    <div 
-      class="flex items-center justify-center gap-1 mt-2 relative overflow-hidden"
-    >
-      <div class="cursor-pointer relative" 
-           @click="toggleDropdown"
-           @mouseenter="handleDotsMouseEnter"
-           @mouseleave="handleDotsMouseLeave">
-        
-        <!-- Dots and Letters Container -->
-        <div class="flex items-center justify-center relative min-w-[60px] min-h-[20px]">
-          <!-- Dots -->
-          <div 
-            v-for="(color, index) in paletteColors" 
-            :key="`dot-${index}`"
-            ref="dotsRefs"
-            class="w-2 h-2 rounded-full transition-all duration-300 hover:scale-125 dot-element absolute"
-            :style="{ 
-              backgroundColor: color, 
-              boxShadow: `0 1px 2px ${isDarkTheme ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)'}`,
-              left: `calc(50% + ${(index - 1) * 12}px - 4px)`,
-              top: '50%',
-              transform: showDotsState 
-                ? 'translateY(-50%) scale(1)' 
-                : 'translateY(-70%) scale(0.5)',
-              opacity: showDotsState ? 1 : 0,
-              transitionDelay: showDotsState ? `${(2 - index) * 50}ms` : `${index * 50}ms`
-            }"
-          />
-          
-          <!-- Theme Label Letters -->
-          <div 
-            class="flex items-center justify-center absolute inset-0"
-            :style="{
-              opacity: showDotsState ? 0 : 1,
-              transform: showDotsState ? 'translateY(20px)' : 'translateY(0px)'
-            }"
-          >
-            <span
-              v-for="(letter, index) in themeLetters"
-              :key="`letter-${index}`"
-              ref="lettersRefs"
-              class="text-sm font-medium letter-element"
-              :style="{
-                background: `linear-gradient(135deg, ${getThemeColors(currentTheme).primary}, ${getThemeColors(currentTheme).secondary}, ${getThemeColors(currentTheme).accent})`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-                transitionDelay: showDotsState ? `${index * 50}ms` : `${(themeLetters.length - 1 - index) * 50}ms`,
-                opacity: showDotsState ? 0 : 1,
-                transform: showDotsState ? 'translateY(20px) scale(0.8)' : 'translateY(0px) scale(1)'
-              }"
-            >
-              {{ letter }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Theme Dropdown (visible when clicked) -->
-    <Teleport to="body">
+        <!-- Theme Dropdown (visible when clicked) -->
+        <Teleport to="body">
       <div 
         v-if="isDropdownOpen"
         class="fixed w-64 max-h-[60vh] overflow-y-auto rounded-lg border shadow-lg theme-dropdown transition-all duration-200"
@@ -122,7 +62,7 @@
     </Teleport>
 
     <div
-      class="w-[180px] h-[36px] relative perspective-[1000px] rounded-lg overflow-hidden mt-2 cursor-pointer logo-container"
+      class="w-[180px] h-[36px] relative perspective-[1000px] rounded-lg overflow-hidden pb-2 cursor-pointer logo-container"
       @mousemove="handleMouseMove"
       @mouseleave="handleLogoMouseLeave"
     >
@@ -202,6 +142,7 @@
         </div>
       </div>
     </div>
+
 
   </div>
 </template>

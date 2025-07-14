@@ -11,13 +11,7 @@
         'both-panels-open': sidePanelOpen && rightPanelOpen
       }
     ]"
-    :style="{
-      left: sidePanelOpen ? '40vw' : '0px',
-      right: rightPanelOpen ? '40vw' : '0',
-      top: '0',
-      bottom: '0',
-      zIndex: '30',
-    }" 
+    :style="canvasPositionStyle" 
     @dragenter.prevent="handleDragEnter" 
     @dragover.prevent="handleDragOver" 
     @dragleave.prevent="handleDragLeave"
@@ -77,31 +71,6 @@
         />
       </transition>
 
-      <!-- Grid View -->
-      <transition name="fade" mode="out-in">
-        <GridWorkspaceView v-if="isWorkspaceOverview" 
-          ref="gridWorkspaceRef"
-          :workspaces="filteredWorkspaces"
-          :selected-workspace-id="selectedWorkspaceId" 
-          :search-query="searchQuery"
-          :external-controls="true"
-          :current-view-mode="externalViewMode"
-          :sort-by="externalSortBy"
-          :card-size="externalCardSize"
-          @select-workspace="handleWorkspaceSelect" 
-          @favorite-workspace="handleWorkspaceFavorite"
-          @duplicate-workspace="handleWorkspaceDuplicate" 
-          @archive-workspace="handleWorkspaceArchive"
-          @export-workspace="handleWorkspaceExport" 
-          @delete-workspace="handleWorkspaceDelete"
-          @import-completed="handleImportCompleted"
-          @update-filter-state="handleFilterStateUpdate"
-          @update-graph-stats="handleGraphStatsUpdate"
-          @update-3d-support="handle3DSupportUpdate"
-          @update-fullscreen="handleFullscreenUpdate"
-          class="grid-view absolute inset-0" />
-      </transition>
-
       <!-- Detailed Workspace View (when a workspace is selected) -->
       <div v-if="!isWelcomeScreen && !isWorkspaceOverview" ref="canvasRef"
         class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
@@ -155,7 +124,7 @@
               <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
-                :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
+                :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
@@ -185,7 +154,7 @@
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
-                :is-right-panel-open="rightPanelOpen" :supports-vision="isVisionModelSelected"
+                :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle"
                 @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
@@ -374,6 +343,10 @@ const props = defineProps({
     required: true,
   },
   rightPanelOpen: {
+    type: Boolean,
+    default: false,
+  },
+  rightSidebarExpanded: {
     type: Boolean,
     default: false,
   },
@@ -999,8 +972,8 @@ const transformStyle = computed(() => {
     return {
       transform: "none",
       transformOrigin: "0 0",
-      width: "100000px",
-      height: "100000px",
+      width: "100%",
+      height: "100%",
       transition: "none",
     };
   }
@@ -1048,6 +1021,29 @@ const gridCanvasStyle = computed(() => ({
   height: '100%',
   pointerEvents: 'none',
 }));
+
+// Canvas positioning - legacy mode uses fixed positioning, dual sidebar mode uses wrapper positioning  
+const canvasPositionStyle = computed(() => {
+  if (appStore.isDualSidebarMode) {
+    // In dual sidebar mode, positioning is handled by the canvas wrapper in App.vue
+    return {
+      top: '0',
+      left: '0',
+      right: '0',
+      bottom: '0',
+      zIndex: '30',
+    };
+  } else {
+    // Legacy mode - apply the original 40vw positioning
+    return {
+      left: sidePanelOpen ? '50vw' : '0px',
+      right: rightPanelOpen ? '50vw' : '0',
+      top: '0',
+      bottom: '0',
+      zIndex: '30',
+    };
+  }
+});
 
 // Selection rectangle style
 const selectionRectStyle = computed(() => {
@@ -2412,7 +2408,7 @@ const handleGenerateWorkspace = async (userInput: string, template?: any, claude
         }],
         x: 400,
         y: 300,
-        type: 'branch',
+        type: 'claude-code',
         metadata: {
           isRoot: true,
           isClaudeCode: true,
@@ -3139,7 +3135,7 @@ const handleResend = async (nodeId: string, userMessageIndex: number) => {
   if (!node || !node.messages) return;
 
   // Skip resend for Claude Code nodes - they handle it internally
-  if (node.type === 'claude-code') {
+  if (node.type === 'claude-code' || node.metadata?.isClaudeCode === true) {
     return;
   }
 
@@ -4610,7 +4606,9 @@ watch(visibleNodes, (newNodes) => {
 
 /* Enhanced Modern Canvas Animations */
 .enhanced-infinite-canvas {
-  @apply fixed overflow-hidden;
+  @apply absolute overflow-hidden;
+  width: 100%;
+  height: 100%;
   background: linear-gradient(135deg, 
     oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
     oklch(from oklch(var(--b2)) l c h / 0.95) 100%);

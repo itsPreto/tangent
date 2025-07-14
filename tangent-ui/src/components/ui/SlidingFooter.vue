@@ -1,10 +1,8 @@
 <template>
-  <div class="sliding-footer-container" :class="{ 'is-open': isOpen }">
+  <!-- Sliding Footer Panel -->
+  <div class="sliding-footer-panel" :class="{ 'is-open': isOpen }">
     <!-- Main Content Backdrop -->
     <div class="content-overlay" :class="{ 'visible': isOpen }" @click="$emit('close')"></div>
-
-    <!-- Sliding Footer Panel -->
-    <div class="sliding-footer-panel">
       <!-- Handle Bar -->
       <div class="handle-bar" @click="$emit('toggle')">
         <div class="handle-indicator"></div>
@@ -14,64 +12,107 @@
 
       <!-- Main Content Area -->
       <div class="footer-content">
-        <!-- WorkspaceSearchBar Section -->
-        <div class="search-section">
-          <div class="section-header">
-            <Search class="w-5 h-5 text-blue-400" />
-            <h3 class="text-lg font-semibold text-base-content">Workspace Search</h3>
-          </div>
-          <div class="search-container">
-            <WorkspaceSearchBar 
-              v-model="searchQuery" 
-              :view-mode="viewMode"
-              @toggle-view="handleViewModeToggle"
-              class="enhanced-search-bar"
-            />
-          </div>
-        </div>
-
-        <!-- Left Side - Shortcuts -->
-        <div class="side-panel left-panel">
-          <div class="panel-header">
-            <Keyboard class="w-5 h-5 text-purple-400" />
-            <h3 class="text-lg font-semibold text-base-content">Shortcuts</h3>
-          </div>
-          <div class="shortcuts-list">
-            <div v-for="(shortcut, index) in shortcuts" :key="index" class="shortcut-item">
-              <div class="shortcut-keys">
-                <kbd v-for="key in shortcut.keys" :key="key" class="glass-kbd">
-                  {{ key }}
-                </kbd>
+        <!-- Main Grid Layout -->
+        <div class="content-grid">
+          <!-- Left Column - Quick Actions & Shortcuts -->
+          <div class="left-column">
+            <!-- Quick Actions Card -->
+            <div class="quick-actions-card glass-panel">
+              <div class="panel-header">
+                <Zap class="w-5 h-5 text-yellow-400" />
+                <h3 class="text-lg font-semibold text-base-content">Quick Actions</h3>
               </div>
-              <span class="shortcut-description">{{ shortcut.description }}</span>
+              <div class="quick-actions-grid">
+                <button class="action-button">
+                  <Plus class="w-4 h-4" />
+                  <span>New Workspace</span>
+                </button>
+                <button class="action-button">
+                  <FileText class="w-4 h-4" />
+                  <span>Import ChatGPT</span>
+                </button>
+                <button class="action-button">
+                  <Settings class="w-4 h-4" />
+                  <span>Claude Code</span>
+                </button>
+                <button class="action-button">
+                  <GitBranch class="w-4 h-4" />
+                  <span>Create Branch</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Keyboard Shortcuts Card -->
+            <div class="shortcuts-card glass-panel">
+              <div class="panel-header">
+                <Keyboard class="w-5 h-5 text-purple-400" />
+                <h3 class="text-lg font-semibold text-base-content">Shortcuts</h3>
+              </div>
+              <div class="shortcuts-compact">
+                <div v-for="(shortcut, index) in shortcuts.slice(0, 6)" :key="index" class="shortcut-row">
+                  <div class="shortcut-keys">
+                    <kbd v-for="key in shortcut.keys" :key="key" class="glass-kbd-mini">
+                      {{ key }}
+                    </kbd>
+                  </div>
+                  <span class="shortcut-desc">{{ shortcut.description }}</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Right Side - Tips -->
-        <div class="side-panel right-panel">
-          <div class="panel-header">
-            <Sparkles class="w-5 h-5 text-green-400" />
-            <h3 class="text-lg font-semibold text-base-content">Tips & Tricks</h3>
-          </div>
-          <div class="tips-list">
-            <div v-for="(tip, index) in tips" :key="index" class="tip-item">
-              <div class="tip-icon">
-                <component :is="tip.icon" class="w-4 h-4" />
+          <!-- Right Column - Tips & Statistics -->
+          <div class="right-column">
+            <!-- Pro Tips Card -->
+            <div class="tips-card glass-panel">
+              <div class="panel-header">
+                <Sparkles class="w-5 h-5 text-green-400" />
+                <h3 class="text-lg font-semibold text-base-content">Pro Tips</h3>
               </div>
-              <p class="tip-text">{{ tip.text }}</p>
+              <div class="tips-carousel">
+                <div v-for="(tip, index) in tips.slice(0, 4)" :key="index" class="tip-card">
+                  <div class="tip-icon-wrapper">
+                    <component :is="tip.icon" class="w-5 h-5" />
+                  </div>
+                  <p class="tip-content">{{ tip.text }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Workspace Stats Card -->
+            <div class="stats-card glass-panel">
+              <div class="panel-header">
+                <BarChart3 class="w-5 h-5 text-cyan-400" />
+                <h3 class="text-lg font-semibold text-base-content">Workspace Stats</h3>
+              </div>
+              <div class="stats-grid">
+                <div class="stat-item">
+                  <div class="stat-number">24</div>
+                  <div class="stat-label">Total Workspaces</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-number">156</div>
+                  <div class="stat-label">Messages</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-number">7</div>
+                  <div class="stat-label">Active Today</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-number">3</div>
+                  <div class="stat-label">Favorites</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Search, Keyboard, Sparkles, MousePointer, Lightbulb, GitBranch, Zap } from 'lucide-vue-next';
-import WorkspaceSearchBar from '../workspace/WorkspaceSearchBar.vue';
+import { Keyboard, Sparkles, MousePointer, Lightbulb, GitBranch, Zap, Plus, FileText, Settings, BarChart3, Code, Terminal, Layers, Cpu } from 'lucide-vue-next';
 
 const props = defineProps<{
   isOpen: boolean
@@ -82,13 +123,7 @@ const emit = defineEmits<{
   (e: 'toggle'): void
 }>();
 
-// Search functionality
-const searchQuery = ref('');
-const viewMode = ref<'grid' | 'list'>('grid');
-
-const handleViewModeToggle = () => {
-  viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid';
-};
+// Component functionality (search functionality removed)
 
 // Shortcuts data
 const shortcuts = [
@@ -108,35 +143,24 @@ const shortcuts = [
   { keys: ['Tab'], description: 'Switch between UI elements' }
 ];
 
-// Tips data
+// Tips data - Based on actual Tangent project features
 const tips = [
-  { icon: MousePointer, text: 'Click and drag on empty space to pan the canvas' },
-  { icon: Sparkles, text: 'Double-click on messages to create branches' },
-  { icon: MousePointer, text: 'Drag nodes to rearrange them in the workspace' },
-  { icon: Lightbulb, text: 'Use different AI models for different types of tasks' },
-  { icon: MousePointer, text: 'Use mouse wheel to zoom in and out' },
-  { icon: GitBranch, text: 'Create branches to explore alternative conversation paths' },
-  { icon: Zap, text: 'Auto-compaction saves context when approaching token limits' },
-  { icon: Lightbulb, text: 'Organize your workspaces by project or topic themes' },
-  { icon: MousePointer, text: 'Hold SHIFT while dragging to constrain movement' },
-  { icon: Sparkles, text: 'Export important conversations for sharing' },
-  { icon: MousePointer, text: 'Right-click for context menus and quick actions' },
-  { icon: Lightbulb, text: 'Token counters show real-time context usage' }
+  { icon: Code, text: 'Claude Code integration lets you run development sessions directly in Tangent' },
+  { icon: GitBranch, text: 'Double-click messages to create conversation branches and explore alternative paths' },
+  { icon: Terminal, text: 'Monitor tool executions in real-time with granular tracking of bash commands and file operations' },
+  { icon: Layers, text: 'Import ChatGPT conversations to preserve your chat history and continue in Tangent' },
+  { icon: Zap, text: 'Use different AI models per branch - switch between Claude, GPT, Gemini, and local Ollama models' },
+  { icon: Cpu, text: 'Track AI costs and usage across providers with built-in budgeting and monitoring' },
+  { icon: Lightbulb, text: 'Snap to fullscreen mode for focused conversation editing by pressing S on selected nodes' },
+  { icon: MousePointer, text: 'Drag and drop files for instant AI analysis - supports images, audio, video, and documents' },
+  { icon: Sparkles, text: 'Use the 3D visualization to explore complex conversation trees and topic relationships' },
+  { icon: Settings, text: 'Configure agent personalities and specialized prompts for different types of tasks' },
+  { icon: GitBranch, text: 'Session persistence means you can pause, resume, and export your Claude Code sessions' },
+  { icon: Layers, text: 'Level-of-detail rendering keeps performance smooth even with hundreds of conversation nodes' }
 ];
 </script>
 
 <style scoped>
-.sliding-footer-container {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  pointer-events: none;
-  padding: 2rem 0;
-}
 
 .content-overlay {
   position: fixed;
@@ -160,34 +184,33 @@ const tips = [
 }
 
 .sliding-footer-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 70vh;
   background: hsl(var(--b2) / 0.95);
   backdrop-filter: blur(20px);
   border: 1px solid hsl(var(--b3));
-  border-right: none;
-  border-radius: 1.5rem 0 0 1.5rem;
-  margin: 2rem 0;
-  margin-right: 2rem;
-  box-shadow:
-    0 -10px 50px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 hsl(var(--bc) / 0.1);
+  border-bottom: none;
+  border-radius: 1.5rem 1.5rem 0 0;
+  box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.3), inset 0 1px 0 hsl(var(--bc) / 0.1);
   display: flex;
   flex-direction: column;
   transform: translateY(100%);
   transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-  opacity: 0;
+  z-index: 1000;
   pointer-events: auto;
 }
 
-.is-open .sliding-footer-panel {
+.sliding-footer-panel.is-open {
   transform: translateY(0);
-  opacity: 1;
   animation: slideUpBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes slideUpBounce {
   0% {
-    transform: translateY(100%);
+    transform: translateY(0);
     opacity: 0;
   }
   60% {
@@ -267,59 +290,246 @@ const tips = [
 
 .footer-content {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
-  grid-template-rows: auto 1fr;
-  grid-template-areas: 
-    "left search right"
-    "left search right";
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
   padding: 1rem;
   overflow: hidden;
 }
 
-.search-section {
-  grid-area: search;
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.left-column, .right-column {
   display: flex;
   flex-direction: column;
-  background: hsl(var(--b2) / 0.3);
-  border: 1px solid hsl(var(--b3));
-  border-radius: 1rem;
-  backdrop-filter: blur(12px);
-  box-shadow: inset 0 1px 0 hsl(var(--bc) / 0.1);
-  overflow: hidden;
+  gap: 1rem;
+  min-height: 0;
 }
 
-.search-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-}
 
-.enhanced-search-bar {
-  width: 100%;
-  max-width: 600px;
-}
-
-.side-panel {
+/* Glass Panel Base Styles */
+.glass-panel {
   background: hsl(var(--b2) / 0.2);
   border: 1px solid hsl(var(--b3));
   border-radius: 1rem;
   backdrop-filter: blur(12px);
   box-shadow: inset 0 1px 0 hsl(var(--bc) / 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.glass-panel:hover {
+  background: hsl(var(--b2) / 0.3);
+  transform: translateY(-2px);
+  box-shadow: 
+    inset 0 1px 0 hsl(var(--bc) / 0.1),
+    0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Quick Actions Card */
+.quick-actions-card {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
-.left-panel {
-  grid-area: left;
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 1rem;
+  flex: 1;
 }
 
-.right-panel {
-  grid-area: right;
+.action-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: hsl(var(--b2) / 0.3);
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.75rem;
+  backdrop-filter: blur(8px);
+  color: hsl(var(--bc) / 0.8);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.action-button:hover {
+  background: hsl(var(--b2) / 0.5);
+  color: hsl(var(--bc));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.action-button span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Shortcuts Card */
+.shortcuts-card {
+  flex: 1;
+  align-items: anchor-center;
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcuts-compact {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  background: hsl(var(--b2) / 0.3);
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.shortcut-row:hover {
+  background: hsl(var(--b2) / 0.5);
+  transform: translateX(2px);
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 0.25rem;
+  min-width: fit-content;
+}
+
+.glass-kbd-mini {
+  padding: 0.125rem 0.375rem;
+  background: hsl(var(--b2) / 0.6);
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: hsl(var(--bc));
+  backdrop-filter: blur(8px);
+}
+
+.shortcut-desc {
+  font-size: 0.75rem;
+  color: hsl(var(--bc) / 0.7);
+  line-height: 1.3;
+}
+
+/* Tips Card */
+.tips-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.tips-carousel {
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tip-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: hsl(var(--b2) / 0.3);
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.75rem;
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.tip-card:hover {
+  background: hsl(var(--b2) / 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.tip-icon-wrapper {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 50%;
+  color: #22c55e;
+}
+
+.tip-content {
+  font-size: 0.75rem;
+  color: hsl(var(--bc) / 0.8);
+  text-align: center;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Stats Card */
+.stats-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.stats-grid {
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  flex: 1;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem;
+  background: hsl(var(--b2) / 0.3);
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.75rem;
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.stat-item:hover {
+  background: hsl(var(--b2) / 0.5);
+  transform: scale(1.05);
+}
+
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: hsl(var(--bc));
+  margin-bottom: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.625rem;
+  color: hsl(var(--bc) / 0.6);
+  text-align: center;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .section-header,
@@ -333,150 +543,53 @@ const tips = [
   background: hsl(var(--b2) / 0.5);
 }
 
-.shortcuts-list,
-.tips-list {
-  flex: 1;
-  padding: 1rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.shortcut-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 0.75rem;
-  background: hsl(var(--b2) / 0.5);
-  border: 1px solid hsl(var(--b3));
-  border-radius: 0.5rem;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-}
-
-.shortcut-item:hover {
-  background: hsl(var(--b2) / 0.8);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.shortcut-keys {
-  display: flex;
-  gap: 0.25rem;
-  flex-wrap: wrap;
-}
-
-.glass-kbd {
-  padding: 0.25rem 0.5rem;
-  background: hsl(var(--b2) / 0.6);
-  border: 1px solid hsl(var(--b3));
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: hsl(var(--bc));
-  backdrop-filter: blur(10px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.shortcut-description {
-  color: hsl(var(--bc) / 0.8);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  text-align: center;
-}
-
-.tip-item {
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  background: hsl(var(--b2) / 0.5);
-  border: 1px solid hsl(var(--b3));
-  border-radius: 0.5rem;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-}
-
-.tip-item:hover {
-  background: hsl(var(--b2) / 0.8);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.tip-icon {
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  border-radius: 0.5rem;
-  color: #22c55e;
-  backdrop-filter: blur(10px);
-}
-
-.tip-text {
-  color: hsl(var(--bc) / 0.8);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  margin: 0;
-}
 
 /* Custom scrollbar */
-.shortcuts-list::-webkit-scrollbar,
-.tips-list::-webkit-scrollbar {
+.shortcuts-compact::-webkit-scrollbar,
+.tips-carousel::-webkit-scrollbar {
   width: 4px;
 }
 
-.shortcuts-list::-webkit-scrollbar-track,
-.tips-list::-webkit-scrollbar-track {
+.shortcuts-compact::-webkit-scrollbar-track,
+.tips-carousel::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.shortcuts-list::-webkit-scrollbar-thumb,
-.tips-list::-webkit-scrollbar-thumb {
+.shortcuts-compact::-webkit-scrollbar-thumb,
+.tips-carousel::-webkit-scrollbar-thumb {
   background: hsl(var(--bc) / 0.2);
   border-radius: 2px;
 }
 
-.shortcuts-list::-webkit-scrollbar-thumb:hover,
-.tips-list::-webkit-scrollbar-thumb:hover {
+.shortcuts-compact::-webkit-scrollbar-thumb:hover,
+.tips-carousel::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--bc) / 0.3);
 }
 
 /* Responsive design */
-@media (max-width: 1200px) {
-  .footer-content {
-    grid-template-columns: 1fr 2fr 1fr;
-  }
-}
-
 @media (max-width: 1024px) {
-  .footer-content {
+  .content-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-    grid-template-areas: 
-      "search"
-      "left"
-      "right";
+    gap: 0.75rem;
   }
   
-  .side-panel {
-    max-height: 200px;
+  .quick-actions-grid,
+  .tips-carousel,
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
   }
   
-  .shortcuts-list,
-  .tips-list {
+  .shortcuts-compact {
     max-height: 150px;
   }
 }
 
 @media (max-width: 768px) {
   .footer-content {
-    padding: 0.5rem;
+    padding: 0.75rem;
+  }
+  
+  .content-grid {
     gap: 0.5rem;
   }
   
@@ -485,9 +598,41 @@ const tips = [
     padding: 0.75rem 1rem;
   }
   
-  .shortcuts-list,
-  .tips-list {
-    padding: 0.5rem;
+  .quick-actions-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .tips-carousel {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  
+  .action-button,
+  .tip-card,
+  .stat-item {
+    padding: 0.75rem;
+  }
+  
+  .stat-number {
+    font-size: 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .shortcut-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
   }
 }
 </style>

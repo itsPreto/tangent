@@ -94,7 +94,7 @@ export const useThemeStore = defineStore('theme', {
      * Check if a theme is a dark theme
      */
     isDarkTheme: (state) => (theme: ThemeName): boolean => {
-      const darkThemes = ['dark', 'synthwave', 'cyberpunk', 'valentine', 
+      const darkThemes = ['dark', 'synthwave', 'cyberpunk', 
         'halloween', 'forest', 'aqua', 'black', 'luxury', 'neon', 'dracula', 
         'business', 'acid', 'night', 'coffee'];
       return darkThemes.includes(theme);

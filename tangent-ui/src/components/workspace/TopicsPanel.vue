@@ -172,6 +172,7 @@ import {
 } from 'lucide-vue-next';
 import * as d3 from 'd3';
 import type { ClusteringStatus } from '@/services/clusteringService';
+import { useThemeColors } from '@/composables/useThemeColors';
 
 interface Props {
   clusteringStatus: ClusteringStatus;

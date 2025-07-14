@@ -1,6 +1,6 @@
 <template>
   <div class="pointer-events-auto absolute transition-all duration-300 branch-node" ref="nodeElement"
-    :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :class="[
+    :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :data-right-sidebar-expanded="isRightSidebarExpanded" :class="[
       'theme-' + currentTheme,
       {
         'selected': isSelected,
@@ -467,6 +467,7 @@ interface BranchNodeProps {  // Use a dedicated interface
   modelRegistry: Map<string, ModelInfo>;
   isSidePanelOpen: boolean;
   isRightPanelOpen?: boolean;
+  isRightSidebarExpanded?: boolean;
   supportsVision?: boolean;
 }
 
@@ -699,7 +700,9 @@ const mediaUrl = computed(() => {
 });
 
 // Claude Code computed properties
-const isClaudeCodeNode = computed(() => props.node.metadata?.isClaudeCode === true);
+const isClaudeCodeNode = computed(() => 
+  props.node.type === 'claude-code' || props.node.metadata?.isClaudeCode === true
+);
 const claudeCodeInstanceData = computed(() => props.node.metadata || {});
 const claudeCodeStatus = computed(() => claudeCodeInstanceData.value.status || 'running');
 const claudeCodeCost = computed(() => claudeCodeInstanceData.value.cost_usd || 0);
@@ -1212,8 +1215,23 @@ const calculateSnappedPosition = () => {
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const sidePanelWidth = props.isSidePanelOpen ? vw * 0.4 : 0;
-  const rightPanelWidth = props.isRightPanelOpen ? vw * 0.4 : 0;
+  
+  // Calculate actual sidebar widths for dual sidebar mode
+  let sidePanelWidth = 0;
+  let rightPanelWidth = 0;
+  
+  if (props.isSidePanelOpen) {
+    sidePanelWidth = 260; // Left sidebar expanded width in dual mode
+  } else {
+    sidePanelWidth = 60; // Left sidebar collapsed width in dual mode
+  }
+  
+  if (props.isRightPanelOpen) {
+    rightPanelWidth = 60 + (vw * 0.35); // Right sidebar (60px) + content panel (35vw)
+  } else {
+    rightPanelWidth = 60; // Just the right sidebar
+  }
+  
   const availableWidth = vw - sidePanelWidth - rightPanelWidth;
 
   // Get the current node's position and dimensions
@@ -1248,8 +1266,23 @@ const calculateAndUpdateSnappedPosition = () => {
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const sidePanelWidth = props.isSidePanelOpen ? vw * 0.4 : 0;
-  const rightPanelWidth = props.isRightPanelOpen ? vw * 0.4 : 0;
+  
+  // Calculate actual sidebar widths for dual sidebar mode
+  let sidePanelWidth = 0;
+  let rightPanelWidth = 0;
+  
+  if (props.isSidePanelOpen) {
+    sidePanelWidth = 260; // Left sidebar expanded width in dual mode
+  } else {
+    sidePanelWidth = 60; // Left sidebar collapsed width in dual mode
+  }
+  
+  if (props.isRightPanelOpen) {
+    rightPanelWidth = 60 + (vw * 0.35); // Right sidebar (60px) + content panel (35vw)
+  } else {
+    rightPanelWidth = 60; // Just the right sidebar
+  }
+  
   const availableWidth = vw - sidePanelWidth - rightPanelWidth;
   const availableHeight = vh;
 
@@ -1907,7 +1940,7 @@ const handleClaudeCodeMessage = async (messageText) => {
     emit('update-messages', updatedMessages);
 
     // Get session ID for continuing the conversation
-    const sessionId = claudeCodeInstanceData.value.session_id;
+    const sessionId = props.node.metadata?.session_id;
     console.log('Claude Code session ID:', sessionId);
     
     // Create a streaming assistant message that will be updated in real-time
@@ -3171,7 +3204,8 @@ onBeforeUnmount(() => {
   width: 100vw;
   height: 100vh;
   z-index: 1000;
-  padding: 4rem 2rem 2rem;
+  padding-top: 1rem;
+  padding-bottom: 2rem;
   pointer-events: auto;
   transform: scale(1) !important;
   display: flex;
@@ -3198,23 +3232,33 @@ onBeforeUnmount(() => {
   transition: opacity 0.3s ease-out;
 }
 
-/* Adjust width based on side panel */
-.branch-node.snapped[data-side-panel-open="true"] {
-  width: 60vw;
+/* Adjust width based on sidebar states in dual mode */
+.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="false"][data-right-sidebar-expanded="false"] {
+  width: 87vw; /* Left sidebar expanded, right sidebar compact */
 }
 
-.branch-node.snapped[data-side-panel-open="false"] {
-  width: 100vw;
+.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="false"][data-right-sidebar-expanded="true"] {
+  width: 81vw; /* Left sidebar expanded, right sidebar expanded (showing labels) */
 }
 
-/* Adjust width based on right panel */
-.branch-node.snapped[data-right-panel-open="true"] {
-  width: 60vw;
+.branch-node.snapped[data-side-panel-open="false"][data-right-panel-open="false"][data-right-sidebar-expanded="false"] {
+  width: 94vw; /* Both sidebars collapsed */
 }
 
-/* Combined panel states - both panels open */
-.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="true"] {
-  width: 20vw;
+.branch-node.snapped[data-side-panel-open="false"][data-right-panel-open="false"][data-right-sidebar-expanded="true"] {
+  width: 94vw; /* Left sidebar collapsed, right sidebar expanded (showing labels) */
+}
+
+.branch-node.snapped[data-right-panel-open="true"][data-right-sidebar-expanded="false"] {
+  width: 51vw; /* Right content panel open, sidebar compact */
+}
+
+.branch-node.snapped[data-right-panel-open="true"][data-right-sidebar-expanded="true"] {
+  width: 56vw; /* Right content panel open, sidebar expanded (showing labels) */
+}
+
+.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="true"][data-right-sidebar-expanded="true"] {
+  width: 46vw; /* Both sidebars open, right content panel open, right sidebar expanded (showing labels) */
 }
 
 /* Snapped card styling */
@@ -3472,10 +3516,6 @@ onBeforeUnmount(() => {
 
   .ai-message .branch-btn {
     left: -2rem;
-  }
-
-  .branch-node.snapped {
-    padding: 2rem 1rem 1rem;
   }
 
   .snapped-card {

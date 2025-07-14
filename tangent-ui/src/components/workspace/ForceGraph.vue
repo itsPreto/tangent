@@ -7,13 +7,7 @@
         <span class="stat-badge">Workspaces: {{ totalWorkspaces }}</span>
       </div>
       
-      <div class="d3-actions">
-        <div class="interaction-hint">
-          <span class="hint-text">
-            {{ is3DSupported ? 'Mouse to rotate • Click nodes • Scroll to zoom' : 'Drag to pan • Scroll to zoom • Drag nodes • Click workspaces to open' }}
-          </span>
-        </div>
-        
+      <div class="d3-actions">        
         <!-- Layout Switcher -->
         <select v-model="currentLayout" @change="switchLayout" class="layout-select">
           <option value="radial">Radial</option>

@@ -1,7 +1,46 @@
 <template>
   <div class="min-h-screen bg-background app-container" :class="['theme-' + currentTheme]">
 
-    <!-- Side Panel with smooth slide animation -->
+    <!-- Dual Sidebar Mode -->
+    <template v-if="appStore.isDualSidebarMode">
+      <!-- Left Navigation Sidebar -->
+      <LeftNavigationSidebar 
+        :is-expanded="appStore.isLeftSidebarExpanded"
+        @toggle-expanded="appStore.toggleLeftSidebar"
+        @nav-item-clicked="handleLeftNavItemClick" />
+      
+      <!-- Right Feature Sidebar -->
+      <RightFeatureSidebar 
+        @feature-clicked="handleRightFeatureClick" />
+      
+      <!-- Feature Content Panel -->
+      <FeatureContentPanel 
+        :is-open="appStore.isRightContentPanelOpen"
+        :active-feature="appStore.activeRightFeature"
+        :node-id="currentNodeId"
+        @close="appStore.closeRightFeature"
+        @panel-opened="handleFeaturePanelOpened"
+        @panel-closed="handleFeaturePanelClosed"
+        @document-selected="handleDocumentSelected"
+        @document-dragged="handleDocumentDragged" />
+        
+      <!-- Canvas Container Wrapper -->
+      <div class="transition-all duration-300 canvas-wrapper" :class="'theme-' + currentTheme"
+        :style="getCanvasWrapperStyle">
+        <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
+          :model-type="modelType" :side-panel-open="effectiveSidePanelOpen"
+          :right-panel-open="effectiveRightPanelOpen" :right-sidebar-expanded="appStore.isRightSidebarExpanded" :gesture-mode="gestureMode" v-model:zoom="canvasZoom"
+          v-model:auto-zoom-enabled="canvasAutoZoom" v-model:is-height-locked="isHeightLocked"
+          :viewport-height="windowSize.innerHeight" :viewport-width="windowSize.innerWidth"
+          @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
+          @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
+          @update-fullscreen="handleFullscreenUpdate" />
+      </div>
+    </template>
+
+    <!-- Legacy Mode (keeping for backward compatibility) -->
+    <template v-else>
+      <!-- Side Panel with smooth slide animation -->
     <Transition 
       name="slide-panel-left"
       appear
@@ -15,7 +54,7 @@
         style="border-color: #334155; border-width: 1px; height: 100vh; border-left: none;"
         :node-id="currentNodeId" @panel-opened="appStore.openSidePanel" @panel-closed="appStore.closeSidePanel" />
     </Transition>
-
+    </template>
 
     <!-- Top Controls Container -->
     <div class="fixed transition-all duration-300 top-controls relative" style="z-index: 60;"
@@ -93,11 +132,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Absolutely Centered Logo -->
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style="z-index: 10;">
-          <TangentLogo class="scale-75" />
-        </div>
       </template>
 
       <!-- Normal and compact layouts -->
@@ -108,8 +142,8 @@
 
             <!-- Primary Actions -->
             <div class="flex items-center gap-1" :class="{ 'gap-1': isCompactMode, 'gap-2': !isCompactMode }">
-              <!-- IDE Panel Toggle -->
-              <button @click="appStore.toggleSidePanel()"
+              <!-- IDE Panel Toggle (only in legacy mode) -->
+              <button v-if="!appStore.isDualSidebarMode" @click="appStore.toggleSidePanel()"
                 class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
                 :class="[compactButtonClasses, { 'btn-primary': appStore.isSidePanelOpen }]" 
                 :style="buttonStyles" 
@@ -148,10 +182,6 @@
 
           <!-- Right Controls Section -->
           <div class="flex items-center gap-2 right-controls">
-            
-
-            <!-- <ThemeToggle v-if="!isCompactMode" /> -->
-
             <!-- Model Badge - collapsible with hover scroll -->
             <div v-if="selectedModel && !isCompactMode" class="relative model-badge-container">
               <Badge @click.stop="appStore.openAgentConfigurator()" @mouseenter="startHoverScrolling"
@@ -182,8 +212,8 @@
                 </div>
               </div>
             </div>
-            <!-- Agent Configurator Panel Toggle -->
-            <button @click="appStore.toggleAgentConfigurator()"
+            <!-- Agent Configurator Panel Toggle (only in legacy mode) -->
+            <button v-if="!appStore.isDualSidebarMode" @click="appStore.toggleAgentConfigurator()"
               class="btn btn-sm btn-ghost transition-all duration-300 shadow-md theme-btn flex items-center justify-center"
               :class="[compactButtonClasses, { 'btn-primary': appStore.isAgentConfiguratorOpen }]" 
               :style="buttonStyles" 
@@ -191,14 +221,7 @@
               <Settings v-if="!appStore.isAgentConfiguratorOpen" :class="iconSizeClasses" />
               <X v-else :class="iconSizeClasses" />
             </button>
-
-
           </div>
-        </div>
-
-        <!-- Absolutely Centered Logo -->
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 center-controls" style="z-index: 10;">
-          <TangentLogo :class="{ 'scale-75': isCompactMode }" />
         </div>
       </template>
     </div>
@@ -229,30 +252,30 @@
     />
 
     <!-- Bottom Controls Container -->
-    <div class="fixed bottom-0 flex justify-start pointer-events-none" 
+    <!-- <div class="fixed bottom-0 flex justify-start pointer-events-none" 
          style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
          :style="{
            zIndex: 50,
-           left: (!isInOverview && appStore.isSidePanelOpen) ? '40vw' : '1rem',
-           right: (!isInOverview && appStore.isAgentConfiguratorOpen) ? 'calc(40vw + 20rem)' : 'auto',
+           left: (!isInOverview) ? effectiveLeftMargin : '1rem',
+           right: (!isInOverview && effectiveRightPanelOpen) ? effectiveRightMargin : 'auto',
            marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
          }">
-      <div class="flex flex-col px-4 space-y-2 md:flex-row md:items-center md:space-y-0 md:space-x-4 mb-4 pointer-events-auto">
-        <button v-if="!isInOverview && !isOnWelcomeScreen" @click="handleBackToWorkspaces" class="btn btn-sm back-to-workspaces-btn hover:bg-base-300/90"
-          :style="controlButtonStyle">
-          <ArrowLeft class="w-4 h-4" />
-          <span class="text-md"></span>
-        </button>
-      </div>
-    </div>
+      
+    </div> -->
 
     <!-- Canvas Controls -->
-    <div v-if="!isInOverview" class="fixed bottom-4 z-50 flex items-center gap-2"
+    <div v-if="!isInOverview && !isOnWelcomeScreen" class="fixed bottom-4 z-50 flex items-center gap-2"
       style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
       :style="{ 
-        right: appStore.isAgentConfiguratorOpen ? 'calc(40vw + 1rem)' : '1rem',
+        right: `calc(${effectiveRightMargin} + 1rem)`,
         marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
       }">
+        <!-- UI Mode Toggle for Testing -->
+    <div class="h-8 px-3 z-50 hover:bg-base-300/90" :style="controlButtonStyle">
+      <button @click="appStore.toggleUIMode()" class="btn btn-sm btn-primary">
+        {{ appStore.isDualSidebarMode ? 'Legacy Mode' : 'Dual Sidebar Mode' }}
+      </button>
+    </div>
       <button class="h-8 px-3 canvas-control-btn hover:bg-base-300/90" :style="controlButtonStyle"
         @click="toggleAutoZoom">
         <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
@@ -269,25 +292,13 @@
       </div>
     </div>
 
-    <!-- Canvas Container Wrapper -->
-    <div class="transition-all duration-300 canvas-wrapper" :class="'theme-' + currentTheme"
-      :style="canvasWrapperStyle">
-      <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
-        :model-type="modelType" :side-panel-open="appStore.isSidePanelOpen"
-        :right-panel-open="appStore.isAgentConfiguratorOpen" :gesture-mode="gestureMode" v-model:zoom="canvasZoom"
-        v-model:auto-zoom-enabled="canvasAutoZoom" v-model:is-height-locked="isHeightLocked"
-        :viewport-height="windowSize.innerHeight" :viewport-width="windowSize.innerWidth"
-        @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
-        @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
-        @update-fullscreen="handleFullscreenUpdate" />
-    </div>
 
     <!-- Workspace Overview Title -->
     <div v-if="!isInOverview" class="fixed bottom-4 z-50 w-full text-center"
       style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
       :style="{ 
-        left: appStore.isSidePanelOpen ? '40vw' : '0', 
-        right: appStore.isAgentConfiguratorOpen ? '40vw' : '0',
+        left: effectiveLeftMargin, 
+        right: effectiveRightMargin,
         marginBottom: appStore.isRAGPanelOpen ? '4rem' : '0'
       }">
       <div v-if="showOverviewTitle"
@@ -334,14 +345,11 @@
       </div>
     </div>
 
-    <!-- RAG Document Panel -->
-    <RAGDocumentPanel
-      :is-open="appStore.isRAGPanelOpen"
-      @close="appStore.closeRAGPanel"
-      @toggle="appStore.toggleRAGPanel"
-      @document-selected="handleDocumentSelected"
-      @document-dragged="handleDocumentDragged"
-    />
+    <!-- Sliding Footer -->
+    <SlidingFooter 
+      :is-open="appStore.isSlidingFooterOpen"
+      @close="appStore.closeSlidingFooter"
+      @toggle="appStore.toggleSlidingFooter" />
 
   </div>
 </template>
@@ -352,11 +360,13 @@ import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCirc
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import ThemeToggle from './components/theme/ThemeToggle.vue';
-import TangentLogo from './components/logo/TangentLogo.vue';
 import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
 import SidePanel from './components/sidebar/SandPackSidePanel.vue';
+import LeftNavigationSidebar from './components/sidebar/LeftNavigationSidebar.vue';
+import RightFeatureSidebar from './components/sidebar/RightFeatureSidebar.vue';
+import FeatureContentPanel from './components/sidebar/FeatureContentPanel.vue';
+import SlidingFooter from './components/ui/SlidingFooter.vue';
 import AgentConfiguratorSidePanel from './components/settings/AgentConfiguratorSidePanel.vue';
-import RAGDocumentPanel from './components/ui/RAGDocumentPanel.vue';
 import Badge from './components/ui/Badge.vue';
 import WorkspaceControlsDock from './components/workspace/WorkspaceControlsDock.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -374,6 +384,70 @@ const anthropicApiKey = ref(localStorage.getItem('anthropicApiKey') || '');
 
 // Canvas and workspace state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
+
+// Computed props for InfiniteCanvas that adapt to the current UI mode
+const effectiveSidePanelOpen = computed(() => {
+  if (appStore.isDualSidebarMode) {
+    // In dual sidebar mode, consider left sidebar expanded OR right content panel open as "side panel open"
+    return appStore.isLeftSidebarExpanded || appStore.isRightContentPanelOpen;
+  } else {
+    // Legacy mode
+    return appStore.isSidePanelOpen;
+  }
+});
+
+const effectiveRightPanelOpen = computed(() => {
+  if (appStore.isDualSidebarMode) {
+    // In dual sidebar mode, only the content panel affects main layout, not sidebar hover
+    return appStore.isRightContentPanelOpen;
+  } else {
+    // Legacy mode
+    return appStore.isAgentConfiguratorOpen;
+  }
+});
+
+// Computed positioning for UI elements that adapt to the current mode
+const effectiveLeftMargin = computed(() => {
+  if (appStore.isDualSidebarMode) {
+    return appStore.isLeftSidebarExpanded ? '260px' : '60px';
+  } else {
+    return appStore.isSidePanelOpen ? '40vw' : '0';
+  }
+});
+
+const effectiveRightMargin = computed(() => {
+  if (appStore.isDualSidebarMode) {
+    // For UI elements, respond to both content panel and sidebar hover expansion
+    if (appStore.isRightContentPanelOpen) {
+      return 'calc(60px + 35vw)';
+    } else if (appStore.isRightSidebarExpanded) {
+      return '180px';
+    } else {
+      return '60px';
+    }
+  } else {
+    return appStore.isAgentConfiguratorOpen ? '40vw' : '0';
+  }
+});
+
+// Dual sidebar event handlers
+const handleLeftNavItemClick = (item: any) => {
+  console.log('Left nav item clicked:', item);
+  // Navigation logic is handled in the LeftNavigationSidebar component
+};
+
+const handleRightFeatureClick = (feature: any) => {
+  console.log('Right feature clicked:', feature);
+  appStore.toggleRightFeature(feature.id);
+};
+
+const handleFeaturePanelOpened = () => {
+  console.log('Feature panel opened');
+};
+
+const handleFeaturePanelClosed = () => {
+  console.log('Feature panel closed');
+};
 provide('canvasRef', canvasRef);
 const canvasZoom = ref(1);
 const canvasAutoZoom = ref(true);
@@ -482,15 +556,34 @@ const isOnWelcomeScreen = computed(() => {
 
 // Responsive breakpoints based on available space
 const availableWidth = computed(() => {
-  const leftPanelOpen = appStore.isSidePanelOpen;
-  const rightPanelOpen = appStore.isAgentConfiguratorOpen;
-
-  if (leftPanelOpen && rightPanelOpen) {
-    return 20; // 20vw when both panels are open
-  } else if (leftPanelOpen || rightPanelOpen) {
-    return 60; // 60vw when one panel is open
+  if (appStore.isDualSidebarMode) {
+    // Dual sidebar mode calculations
+    const leftSidebarExpanded = appStore.isLeftSidebarExpanded;
+    const rightContentPanelOpen = appStore.isRightContentPanelOpen;
+    
+    // Calculate remaining space as percentage
+    const leftWidth = leftSidebarExpanded ? 260 : 60; // px
+    const rightWidth = 60; // right sidebar is always 60px
+    const contentPanelWidth = rightContentPanelOpen ? 35 : 0; // vw
+    
+    // Rough calculation: convert to percentage of viewport
+    const fixedWidthPx = leftWidth + rightWidth; // Fixed pixel widths
+    const viewportWidthPx = window.innerWidth || 1200; // Fallback for SSR
+    const fixedWidthPercent = (fixedWidthPx / viewportWidthPx) * 100;
+    
+    return Math.max(20, 100 - fixedWidthPercent - contentPanelWidth);
   } else {
-    return 100; // 100vw when no panels are open
+    // Legacy mode calculations
+    const leftPanelOpen = appStore.isSidePanelOpen;
+    const rightPanelOpen = appStore.isAgentConfiguratorOpen;
+
+    if (leftPanelOpen && rightPanelOpen) {
+      return 20; // 20vw when both panels are open
+    } else if (leftPanelOpen || rightPanelOpen) {
+      return 60; // 60vw when one panel is open
+    } else {
+      return 100; // 100vw when no panels are open
+    }
   }
 });
 
@@ -589,6 +682,87 @@ const toggleButtonStyle = computed(() => {
   return styles;
 });
 
+// Canvas wrapper style that supports both modes - copy the exact legacy approach
+const getCanvasWrapperStyle = computed(() => {
+  console.log('Canvas wrapper recalculating...', {
+    isDualSidebarMode: appStore.isDualSidebarMode,
+    isLeftSidebarExpanded: appStore.isLeftSidebarExpanded,
+    isRightContentPanelOpen: appStore.isRightContentPanelOpen
+  });
+  
+  if (appStore.isDualSidebarMode) {
+    // Dual sidebar mode - use SAME approach as legacy but with different sidebar states
+    const leftSidebarOpen = appStore.isLeftSidebarExpanded;
+    const rightSidebarExpanded = appStore.isRightSidebarExpanded;
+    const rightContentPanelOpen = appStore.isRightContentPanelOpen;
+    const ragPanelOpen = appStore.isRAGPanelOpen;
+
+    let width = '100vw';
+    let marginLeft = '0';
+    let marginRight = '0';
+    let height = '100vh';
+    let marginBottom = '0';
+    let paddingTop = '3rem';
+
+    // Calculate margins - respond to both content panel and sidebar hover expansion
+    if (leftSidebarOpen && rightContentPanelOpen) {
+      // Both left and content panel open
+      marginLeft = '260px';
+      marginRight = 'calc(60px + 35vw)';
+    } else if (leftSidebarOpen && rightSidebarExpanded) {
+      // Left sidebar expanded + right sidebar hover (showing labels)
+      marginLeft = '260px';
+      marginRight = '180px';
+    } else if (leftSidebarOpen) {
+      // Only left sidebar expanded
+      marginLeft = '260px';
+      marginRight = '60px';
+    } else if (rightContentPanelOpen) {
+      // Only right content panel open
+      marginLeft = '60px';
+      marginRight = 'calc(60px + 35vw)';
+    } else if (rightSidebarExpanded) {
+      // Only right sidebar hover (showing labels)
+      marginLeft = '60px';
+      marginRight = '180px';
+    } else {
+      // Both collapsed
+      marginLeft = '60px';
+      marginRight = '60px';
+    }
+    
+    // Width is automatic - no need to calculate it manually
+    width = 'auto';
+
+    // Account for RAG panel height
+    if (ragPanelOpen) {
+      height = '80vh';
+      marginBottom = '20vh';
+    }
+
+    // Extra padding when workspace controls dock is visible
+    if (isInOverview.value) {
+      paddingTop = '7rem';
+    }
+
+    const result = {
+      width,
+      marginLeft,
+      marginRight,
+      height,
+      marginBottom,
+      paddingTop,
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+    };
+    
+    console.log('Canvas wrapper style result:', result);
+    return result;
+  } else {
+    // Legacy mode
+    return canvasWrapperStyle.value;
+  }
+});
+
 const canvasWrapperStyle = computed(() => {
   const leftPanelOpen = appStore.isSidePanelOpen;
   const rightPanelOpen = appStore.isAgentConfiguratorOpen;
@@ -635,22 +809,53 @@ const canvasWrapperStyle = computed(() => {
 });
 
 const topControlsContainerStyle = computed(() => {
-  const leftPanelOpen = appStore.isSidePanelOpen;
-  const rightPanelOpen = appStore.isAgentConfiguratorOpen;
+  if (appStore.isDualSidebarMode) {
+    // Dual sidebar mode - account for both sidebars
+    const leftSidebarOpen = appStore.isLeftSidebarExpanded;
+    const rightSidebarExpanded = appStore.isRightSidebarExpanded;
+    const rightContentPanelOpen = appStore.isRightContentPanelOpen;
 
-  return {
-    left: leftPanelOpen ? '40vw' : '0',
-    right: rightPanelOpen ? '40vw' : '0',
-    width: leftPanelOpen && rightPanelOpen ? '20vw' :
-      leftPanelOpen || rightPanelOpen ? '60vw' : '100vw',
-    backdropFilter: 'blur(4px)',
-    borderBottom: isDarkTheme.value ? '1px solid rgba(80, 80, 80, 0.3)' : '1px solid rgba(200, 200, 200, 0.3)',
-    padding: isUltraCompact.value ? '0.5rem' : '1rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: isCompactMode.value ? '0.5rem' : '1rem'
-  };
+    let leftMargin = leftSidebarOpen ? '260px' : '60px';
+    let rightMargin = '60px'; // Right sidebar is always 60px
+    
+    // If content panel is open, add its width
+    if (rightContentPanelOpen) {
+      rightMargin = 'calc(60px + 35vw)';
+    } else if (rightSidebarExpanded) {
+      rightMargin = '180px';
+    }
+
+    return {
+      left: leftMargin,
+      right: rightMargin,
+      width: 'auto',
+      backdropFilter: 'blur(4px)',
+      borderBottom: isDarkTheme.value ? '1px solid rgba(80, 80, 80, 0.3)' : '1px solid rgba(200, 200, 200, 0.3)',
+      padding: isUltraCompact.value ? '0.5rem' : '1rem',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: isCompactMode.value ? '0.5rem' : '1rem'
+    };
+  } else {
+    // Legacy mode
+    const leftPanelOpen = appStore.isSidePanelOpen;
+    const rightPanelOpen = appStore.isAgentConfiguratorOpen;
+
+    return {
+      left: leftPanelOpen ? '40vw' : '0',
+      right: rightPanelOpen ? '40vw' : '0',
+      width: leftPanelOpen && rightPanelOpen ? '20vw' :
+        leftPanelOpen || rightPanelOpen ? '60vw' : '100vw',
+      backdropFilter: 'blur(4px)',
+      borderBottom: isDarkTheme.value ? '1px solid rgba(80, 80, 80, 0.3)' : '1px solid rgba(200, 200, 200, 0.3)',
+      padding: isUltraCompact.value ? '0.5rem' : '1rem',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: isCompactMode.value ? '0.5rem' : '1rem'
+    };
+  }
 });
 
 const dropdownStyle = computed(() => {
@@ -1404,6 +1609,10 @@ onMounted(async () => {
   // Use nextTick to ensure DOM is fully rendered before showing UI
   await nextTick();
   
+  // Enable dual sidebar mode by default for testing
+  // Comment this out to keep legacy mode as default
+  appStore.enableDualSidebarMode();
+  
   emitter.on('navigate-to-code-bubble', handleNavigateToCodeBubble);
 
   // Theme is now managed by the theme store, no need for DOM observation
@@ -1438,11 +1647,7 @@ onBeforeUnmount(() => {
   transition: background-color 0.3s ease, color 0.3s ease;
   overflow: hidden;
   height: 100vh;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  /* Removed fixed positioning to allow margin-based content pushing */
 }
 
 .app-container.theme-acid {
@@ -1451,6 +1656,7 @@ onBeforeUnmount(() => {
 
 /* Canvas wrapper positioning to avoid header overlap */
 .canvas-wrapper {
+  position: relative;
   height: 100vh;
   overflow: hidden;
 }
@@ -1891,5 +2097,32 @@ onBeforeUnmount(() => {
 
 .slide-panel-right-leave-to {
   transform: translateX(100%) !important;
+}
+
+/* Dual Sidebar Layout */
+.dual-sidebar-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+.main-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* Allow shrinking */
+  overflow: hidden;
+}
+
+.right-sidebar-container {
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* Canvas wrapper for dual sidebar mode */
+.dual-sidebar-layout .canvas-wrapper {
+  flex: 1;
+  height: 100vh;
+  overflow: hidden;
 }
 </style>

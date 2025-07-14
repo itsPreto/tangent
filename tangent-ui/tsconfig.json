@@ -27,6 +27,6 @@
     },
     "types": ["prismjs",  "@tresjs/core", "sandpack-vue3/global"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "src/components/editor/MonacoEditor.js"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
   "exclude": ["node_modules"]
 }

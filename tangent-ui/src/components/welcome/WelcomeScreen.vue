@@ -4,13 +4,18 @@
     @dragleave.prevent="handleDragLeave" @drop.prevent="handleDrop">
 
     <!-- Main Welcome Content -->
-    <div class="welcome-content" :class="{ 'templates-expanded': isExpanded }">
+    <div ref="welcomeContentRef" class="welcome-content" :class="{ 
+      'templates-expanded': isExpanded,
+      'narrow-layout': isNarrowLayout,
+      'very-narrow-layout': isVeryNarrowLayout,
+      'extremely-narrow-layout': isExtremelyNarrowLayout
+    }">
       <!-- Hero Section -->
       <div class="hero-section">
         <div class="hero-icon">
           <Sparkles :size="48" class="sparkle-icon" />
         </div>
-        <h1 class="hero-title">Welcome to Tangent</h1>
+        <h1 class="hero-title">Welcome back, Marco!</h1>
       </div>
 
       <!-- Main Input Section -->
@@ -74,7 +79,7 @@
             <button @click="generateWorkspace" :disabled="!userInput.trim() || isGenerating" class="generate-btn"
               :class="{ 'claude-code-btn': isClaudeCodeMode }">
               <span v-if="isGenerating" class="loading loading-spinner loading-sm"></span>
-              <span v-else>{{ isClaudeCodeMode ? 'Start Session' : 'Generate' }}</span>
+              <span v-else>{{ isClaudeCodeMode ? 'Begin' : 'Generate' }}</span>
               <ArrowRight :size="16" />
             </button>
           </div>
@@ -92,7 +97,7 @@
           <div class="templates-container" :class="{ 'horizontal': isExpanded }"
             @mouseenter="activateTemplatesUnderline" @mouseleave="deactivateTemplatesUnderline">
             <div class="templates-grid" :class="{ 'horizontal-grid': isExpanded }">
-              <div v-for="template in (isExpanded ? allTemplates : featuredTemplates)" :key="template.id"
+              <div v-for="template in (isExpanded ? allTemplates : featuredTemplates).slice(0, maxTemplatesCount)" :key="template.id"
                 @click="selectTemplate(template)" class="template-card"
                 :class="{ 'selected': selectedTemplate?.id === template.id }">
                 <div class="template-icon">
@@ -109,12 +114,12 @@
         <div v-if="recentWorkspaces.length" class="recent-section"
           :class="{ 'side-by-side': !isExpanded, 'expanded': isExpanded }">
           <h2 class="section-title">
-            <span class="hover-underline" ref="workspacesTitle">Recent workspaces:</span>
+            <span class="hover-underline" ref="workspacesTitle">workspaces:</span>
           </h2>
 
           <div class="recent-grid" :class="{ 'vertical-layout': !isExpanded, 'horizontal-grid': isExpanded }"
             @mouseenter="activateWorkspacesUnderline" @mouseleave="deactivateWorkspacesUnderline">
-            <div v-for="workspace in recentWorkspaces.slice(0, isExpanded ? 12 : 6)" :key="workspace.id"
+            <div v-for="workspace in recentWorkspaces.slice(0, maxWorkspacesCount)" :key="workspace.id"
               @click="$emit('open-workspace', workspace.id)" class="recent-card">
               <div class="recent-preview">
                 <div class="workspace-nodes">
@@ -198,6 +203,32 @@ const isExpanded = ref(false)
 const isFocused = ref(false)
 const isDragOver = ref(false)
 const isDragActive = ref(false)
+
+// Responsive layout state
+const containerWidth = ref(0)
+const welcomeContentRef = ref<HTMLElement>()
+
+// Computed responsive layout classes
+const isNarrowLayout = computed(() => containerWidth.value < 900)
+const isVeryNarrowLayout = computed(() => containerWidth.value < 600)
+const isExtremelyNarrowLayout = computed(() => containerWidth.value < 400)
+
+// Dynamic template and workspace counts based on layout
+const maxTemplatesCount = computed(() => {
+  if (isExpanded.value) return allTemplates.value.length
+  if (isExtremelyNarrowLayout.value) return 1
+  if (isVeryNarrowLayout.value) return 2
+  if (isNarrowLayout.value) return 4
+  return 6 // Default 3x2 grid
+})
+
+const maxWorkspacesCount = computed(() => {
+  if (isExpanded.value) return 12
+  if (isExtremelyNarrowLayout.value) return 1
+  if (isVeryNarrowLayout.value) return 2
+  if (isNarrowLayout.value) return 4
+  return 6 // Default 3x2 grid
+})
 
 // Claude Code mode state
 const isClaudeCodeMode = ref(false)
@@ -693,17 +724,36 @@ const handleDrop = async (e: DragEvent) => {
   }
 }
 
+// Resize observer to monitor container width
+const setupResizeObserver = () => {
+  if (!welcomeContentRef.value) return
+  
+  const resizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      containerWidth.value = entry.contentRect.width
+    }
+  })
+  
+  resizeObserver.observe(welcomeContentRef.value)
+  
+  return () => {
+    resizeObserver.disconnect()
+  }
+}
+
 // Focus input on mount
 onMounted(() => {
   nextTick(() => {
     inputRef.value?.focus()
+    setupResizeObserver()
   })
 })
 </script>
 
 <style scoped>
 .welcome-screen {
-  min-height: 100vh;
+  min-height: 100%;
+  height: 100%;
   background: linear-gradient(135deg, hsl(var(--b1)), hsl(var(--b2)));
   display: flex;
   flex-direction: column;
@@ -798,6 +848,8 @@ onMounted(() => {
   justify-content: flex-start;
   align-items: stretch;
   min-height: 0;
+  container-type: inline-size;
+  container-name: welcome-content;
 }
 
 /* Hero Section */
@@ -1113,6 +1165,7 @@ onMounted(() => {
 .templates-section {
   flex: 1;
   width: 50%;
+  min-width: 0;
 }
 
 .templates-section.expanded {
@@ -1150,6 +1203,7 @@ onMounted(() => {
 .recent-section {
   flex: 1;
   width: 50%;
+  min-width: 0;
 }
 
 .recent-section.side-by-side {
@@ -1244,6 +1298,7 @@ onMounted(() => {
   grid-template-rows: repeat(2, 1fr);
   gap: 2rem;
   margin-bottom: 2rem;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   height: 380px;
   padding: 1.5rem;
   overflow: visible;
@@ -1256,6 +1311,7 @@ onMounted(() => {
   height: 380px;
   padding: 1.5rem;
   overflow: visible;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .recent-grid.horizontal-grid {
@@ -1297,6 +1353,8 @@ onMounted(() => {
   justify-content: center;
   align-items: flex-start;
   animation: cardFallIn 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  min-height: 160px;
+  min-width: 180px;
 }
 
 /* Staggered animation delays */
@@ -1651,6 +1709,166 @@ onMounted(() => {
   gap: 1rem;
 }
 
+/* Container-based responsive design for narrow content areas */
+/* Fallback for browsers without container query support */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1200px) {
+    .side-by-side-container {
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .templates-section,
+    .recent-section {
+      width: 100%;
+      flex: none;
+    }
+    
+    .templates-grid,
+    .recent-grid {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      height: auto;
+      padding: 1rem;
+    }
+  }
+}
+
+/* JavaScript-based responsive layout classes */
+.welcome-content.narrow-layout .templates-grid,
+.welcome-content.narrow-layout .recent-grid {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 1rem;
+  height: 320px;
+  padding: 1rem;
+}
+
+.welcome-content.narrow-layout .template-card,
+.welcome-content.narrow-layout .recent-card {
+  min-height: 140px;
+  min-width: 160px;
+}
+
+.welcome-content.very-narrow-layout .hero-title {
+  font-size: 2rem;
+}
+
+.welcome-content.very-narrow-layout .templates-grid,
+.welcome-content.very-narrow-layout .recent-grid {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(1, 1fr);
+  gap: 0.75rem;
+  height: 160px;
+  padding: 0.75rem;
+}
+
+.welcome-content.very-narrow-layout .template-card,
+.welcome-content.very-narrow-layout .recent-card {
+  min-height: 120px;
+  min-width: 140px;
+  padding: 1rem;
+}
+
+.welcome-content.very-narrow-layout .templates-section,
+.welcome-content.very-narrow-layout .recent-section {
+  padding: 1.5rem;
+}
+
+.welcome-content.extremely-narrow-layout .templates-grid,
+.welcome-content.extremely-narrow-layout .recent-grid {
+  grid-template-columns: repeat(1, 1fr);
+  grid-template-rows: repeat(1, 1fr);
+  gap: 0.5rem;
+  height: 120px;
+}
+
+.welcome-content.extremely-narrow-layout .template-card,
+.welcome-content.extremely-narrow-layout .recent-card {
+  min-height: 100px;
+  min-width: 120px;
+  padding: 0.75rem;
+}
+
+.welcome-content.extremely-narrow-layout .template-title,
+.welcome-content.extremely-narrow-layout .recent-title {
+  font-size: 1rem;
+}
+
+.welcome-content.extremely-narrow-layout .template-description {
+  font-size: 0.75rem;
+}
+
+@container welcome-content (max-width: 900px) {
+  .templates-grid,
+  .recent-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 1rem;
+    height: 320px;
+    padding: 1rem;
+  }
+  
+  .template-card,
+  .recent-card {
+    min-height: 140px;
+    min-width: 160px;
+  }
+}
+
+@container welcome-content (max-width: 600px) {
+  .hero-title {
+    font-size: 2rem;
+  }
+  
+  .templates-grid,
+  .recent-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(1, 1fr);
+    gap: 0.75rem;
+    height: 160px;
+    padding: 0.75rem;
+  }
+  
+  .template-card,
+  .recent-card {
+    min-height: 120px;
+    min-width: 140px;
+    padding: 1rem;
+  }
+  
+  .templates-section,
+  .recent-section {
+    padding: 1.5rem;
+  }
+}
+
+@container welcome-content (max-width: 400px) {
+  .templates-grid,
+  .recent-grid {
+    grid-template-columns: repeat(1, 1fr);
+    grid-template-rows: repeat(1, 1fr);
+    gap: 0.5rem;
+    height: 120px;
+  }
+  
+  .template-card,
+  .recent-card {
+    min-height: 100px;
+    min-width: 120px;
+    padding: 0.75rem;
+  }
+  
+  .template-title,
+  .recent-title {
+    font-size: 1rem;
+  }
+  
+  .template-description {
+    font-size: 0.75rem;
+  }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .welcome-content {
@@ -1968,6 +2186,7 @@ onMounted(() => {
   max-height: 400px;
   transition: max-height 0.3s ease;
 }
+
 
 .claude-code-label {
   position: absolute;

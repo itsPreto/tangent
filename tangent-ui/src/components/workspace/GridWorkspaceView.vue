@@ -2,7 +2,10 @@
   <div 
     class="enhanced-grid-view" 
     ref="containerRef"
-    :class="{ 'drag-over': isDragOver }"
+    :class="[
+      'theme-' + currentTheme,
+      { 'drag-over': isDragOver }
+    ]"
     @dragover="handleDragOver"
     @dragenter="handleDragEnter"
     @dragleave="handleDragLeave"
@@ -46,11 +49,6 @@
             <span v-if="hasActiveFilters" class="filter-count">{{ activeFilterCount }}</span>
           </button>
 
-          <!-- Auto-clustering hint when in graph mode -->
-          <div v-if="currentViewMode === 'graph'" class="graph-info">
-            <Network :size="16" />
-            <span>Graph view with topic clustering</span>
-          </div>
         </div>
       </div>
 
@@ -153,54 +151,12 @@
       </div>
     </Transition>
 
-    <!-- Graph Mode Loading State -->
-    <div v-if="currentViewMode === 'graph' && (!clusteringEnabled || isLoadingClusters)" class="graph-loading-container">
-      <div class="graph-loading-content">
-        <div class="loading-spinner"></div>
-        <h3>Cluster(ing) ya chats</h3>
-        <p v-if="!clusteringEnabled">Starting topic clustering analysis...</p>
-        <p v-else-if="isLoadingClusters">Analyzing workspace relationships...</p>
-        <div class="loading-progress">
-          <div class="progress-bar" :style="{ width: clusteringStatus.progress * 100 + '%' }"></div>
-        </div>
-      </div>
-    </div>
 
     <!-- Grid Container or D3 Visualization -->
     <div v-if="!isInitializing && !isLoadingClusters" class="content-container">
-      <!-- D3 Visualization with Topics Sidebar -->
-      <div v-if="currentViewMode === 'graph' && clusteringEnabled" class="d3-layout">
-        <TopicsPanel
-          :clustering-status="clusteringStatus"
-          :selected-cluster="selectedTopicCluster"
-          @select-topic="handleTopicSelect"
-          @select-workspace="handleSelectWorkspace"
-          class="topics-sidebar"
-        />
-        <ForceGraph 
-          v-if="clusteringStatus.clusters && clusteringStatus.clusters.length > 0"
-          ref="d3GraphRef"
-          :clustering-status="clusteringStatus"
-          :external-controls="externalControls"
-          @select-workspace="handleSelectWorkspace"
-          @update-stats="handleGraphStatsUpdate"
-          @update3-d-support="handle3DSupportUpdate"
-          @update-fullscreen="handleFullscreenUpdate"
-          class="d3-main"
-        />
-        <div v-else class="d3-placeholder">
-          <div class="placeholder-content">
-            <h3>No Graph Data Available</h3>
-            <p>Clustering analysis is needed to generate the graph visualization.</p>
-            <button @click="toggleClustering" class="retry-btn">
-              Start Clustering Analysis
-            </button>
-          </div>
-        </div>
-      </div>
       
       <!-- Regular Grid View -->
-      <div v-else class="grid-wrapper" :style="{ '--card-size': cardSize + 'px' }">
+      <div class="grid-wrapper" :style="{ '--card-size': cardSize + 'px' }">
         <VueDraggable
           v-model="workspaceItems"
           :animation="300"
@@ -211,7 +167,7 @@
           :drag-class="'workspace-card-drag'"
           :group="{ name: 'workspaces', pull: false, put: false }"
           :sort="true"
-          :disabled="currentViewMode === 'graph'"
+          :disabled="false"
           @start="onDragStart"
           @end="onDragEnd"
           @change="onDragChange"
@@ -641,15 +597,14 @@ import { VueDraggable } from 'vue-draggable-plus';
 import { 
   Grid, List, LayoutGrid, Filter, FolderOpen, Expand, Star, MoreHorizontal, 
   MessageSquare, Clock, Users, Play, Copy, Share, Archive, Download, Trash2,
-  FileText, Image, Video, Bot, Code, Database, X, Upload, Network, Eye,
+  FileText, Image, Video, Bot, Code, Database, X, Upload, Eye,
   Layers, FolderMinus
 } from 'lucide-vue-next';
 import { clusteringService, type ClusteringStatus } from '@/services/clusteringService';
 import { conversationImportService, type ImportStatus } from '@/services/conversationImportService';
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
-import ForceGraph from './ForceGraph.vue';
-import TopicsPanel from './TopicsPanel.vue';
 import CanvasPreview from './CanvasPreview.vue';
+import { useThemeColors } from '@/composables/useThemeColors';
 
 // Props
 const props = defineProps({
@@ -687,16 +642,20 @@ const emit = defineEmits([
   'delete-workspace',
   'import-completed',
   'update-filter-state',
-  'update-graph-stats',
-  'update-3d-support',
-  'update-fullscreen',
   'workspace-reorder'
 ]);
 
 // Refs
 const containerRef = ref<HTMLElement>();
 const localFavorites = ref<Set<string>>(new Set());
-const d3GraphRef = ref<any>();
+
+// Theme composable
+const {
+  currentTheme,
+  isDarkTheme,
+  themeColors,
+  getTextColor
+} = useThemeColors();
 
 // View Controls (use props when external controls are enabled)
 const currentViewMode = computed(() => props.externalControls ? props.currentViewMode : internalViewMode.value);
@@ -709,10 +668,8 @@ const internalCardSize = ref(240);
 const internalSortBy = ref('recent');
 const showFilters = ref(false);
 const clusteringEnabled = ref(false);
-const visualizationMode = ref('folder'); // 'folder' or 'd3'
-const selectedTopicCluster = ref<number | null>(null);
-const isInitializing = ref(true);
 const isLoadingClusters = ref(false);
+const isInitializing = ref(true);
 const loadingStartTime = ref(0);
 const MINIMUM_LOADING_TIME = 1000; // 1 second minimum
 
@@ -738,6 +695,7 @@ const clusteringStatus = reactive<ClusteringStatus>({
   processed_workspaces: 0,
   clusters: []
 });
+
 
 // Import status and drag-and-drop
 const importStatus = reactive<ImportStatus>({
@@ -778,8 +736,7 @@ const contextMenu = ref({
 const viewModes = [
   { id: 'grid', label: 'Grid', icon: Grid },
   { id: 'compact', label: 'Compact', icon: List },
-  { id: 'detailed', label: 'Detailed', icon: LayoutGrid },
-  { id: 'graph', label: 'Graph', icon: Network }
+  { id: 'detailed', label: 'Detailed', icon: LayoutGrid }
 ];
 
 // Mock data for demo
@@ -814,37 +771,9 @@ const toggleFilters = () => {
   showFilters.value = !showFilters.value;
 };
 
-// Graph control methods for external controls
-const updateGraphLayout = (layout: string) => {
-  if (d3GraphRef.value) {
-    d3GraphRef.value.updateLayout(layout);
-  }
-};
-
-const toggleGraphControls = () => {
-  if (d3GraphRef.value) {
-    d3GraphRef.value.updateShowControls(!d3GraphRef.value.showControls);
-  }
-};
-
-const resetGraph = () => {
-  if (d3GraphRef.value) {
-    d3GraphRef.value.resetGraph();
-  }
-};
-
-const toggleFullscreen = () => {
-  if (d3GraphRef.value) {
-    d3GraphRef.value.toggleFullscreen();
-  }
-};
 
 defineExpose({
   toggleFilters,
-  updateGraphLayout,
-  toggleGraphControls,
-  resetGraph,
-  toggleFullscreen
 });
 
 // Watch filter state and emit to parent when using external controls
@@ -1193,6 +1122,21 @@ const toggleFavorite = (id: string) => {
   }
   localFavorites.value = new Set(localFavorites.value);
   emit('favorite-workspace', id);
+};
+
+// Workspace action methods
+const openWorkspace = (id: string) => {
+  // Navigate to the workspace by emitting an event that the parent can handle
+  emit('select-workspace', id);
+};
+
+const duplicateWorkspace = (id: string) => {
+  emit('duplicate-workspace', id);
+};
+
+const shareWorkspace = (id: string) => {
+  // Handle workspace sharing logic
+  console.log('Share workspace:', id);
 };
 
 const showContextMenu = (workspace: any, event: MouseEvent) => {
@@ -3645,6 +3589,183 @@ onBeforeUnmount(() => {
   
   .import-stats {
     @apply self-end;
+  }
+}
+
+/* Theme-specific overrides for better text contrast */
+:deep(.enhanced-grid-view) {
+  /* Light themes need dark text for better contrast */
+  --text-primary: oklch(from oklch(var(--bc)) l c h);
+  --text-secondary: oklch(from oklch(var(--bc)) l c h / 0.6);
+  --text-muted: oklch(from oklch(var(--bc)) l c h / 0.4);
+}
+
+/* Light theme specific overrides */
+.theme-light,
+.theme-cupcake,
+.theme-bumblebee,
+.theme-emerald,
+.theme-corporate,
+.theme-retro,
+.theme-valentine,
+.theme-garden,
+.theme-pastel,
+.theme-wireframe,
+.theme-cmyk,
+.theme-lemonade,
+.theme-winter,
+.theme-lofi,
+.theme-fantasy,
+.theme-autumn {
+  
+  .workspace-title {
+    color: rgba(0, 0, 0, 0.9) !important;
+    font-weight: 600;
+  }
+  
+  .workspace-subtitle {
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+  
+  .stat-item {
+    color: rgba(0, 0, 0, 0.6) !important;
+  }
+  
+  .type-indicator {
+    background: rgba(0, 0, 0, 0.1) !important;
+    color: rgba(0, 0, 0, 0.8) !important;
+  }
+  
+  .action-btn {
+    background: rgba(0, 0, 0, 0.1) !important;
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+  
+  .action-btn:hover {
+    background: rgba(0, 0, 0, 0.15) !important;
+    color: rgba(0, 0, 0, 0.9) !important;
+  }
+  
+  .folder-title {
+    color: rgba(0, 0, 0, 0.9) !important;
+    font-weight: 600;
+  }
+  
+  .folder-count {
+    color: rgba(0, 0, 0, 0.6) !important;
+  }
+  
+  .modal-workspace-card h3 {
+    color: rgba(0, 0, 0, 0.9) !important;
+  }
+  
+  .modal-workspace-card p {
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+  
+  .workspace-date {
+    color: rgba(0, 0, 0, 0.5) !important;
+  }
+  
+  .control-label {
+    color: rgba(0, 0, 0, 0.8) !important;
+  }
+  
+  .view-mode-btn {
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+  
+  .view-mode-btn.active {
+    color: rgba(0, 0, 0, 0.9) !important;
+  }
+  
+  .filter-btn {
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+  
+  .sort-select {
+    color: rgba(0, 0, 0, 0.8) !important;
+  }
+  
+  .filter-label {
+    color: rgba(0, 0, 0, 0.8) !important;
+  }
+  
+  .tag-filter {
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+  
+  .status-filter {
+    color: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
+/* Dark theme specific overrides (for themes that should definitely use light text) */
+.theme-dark,
+.theme-synthwave,
+.theme-cyberpunk,
+.theme-halloween,
+.theme-forest,
+.theme-aqua,
+.theme-black,
+.theme-luxury,
+.theme-neon,
+.theme-dracula,
+.theme-business,
+.theme-acid,
+.theme-night,
+.theme-coffee {
+  
+  .workspace-title {
+    color: rgba(255, 255, 255, 0.95) !important;
+  }
+  
+  .workspace-subtitle {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+  
+  .stat-item {
+    color: rgba(255, 255, 255, 0.6) !important;
+  }
+  
+  .folder-title {
+    color: rgba(255, 255, 255, 0.95) !important;
+  }
+  
+  .folder-count {
+    color: rgba(255, 255, 255, 0.6) !important;
+  }
+  
+  .control-label {
+    color: rgba(255, 255, 255, 0.8) !important;
+  }
+  
+  .view-mode-btn {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+  
+  .view-mode-btn.active {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+  
+  .filter-btn {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+  
+  .sort-select {
+    color: rgba(255, 255, 255, 0.8) !important;
+  }
+  
+  .filter-label {
+    color: rgba(255, 255, 255, 0.8) !important;
+  }
+  
+  .tag-filter {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+  
+  .status-filter {
+    color: rgba(255, 255, 255, 0.7) !important;
   }
 }
 </style>
