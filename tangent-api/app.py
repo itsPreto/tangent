@@ -1,6 +1,9 @@
 import tiktoken
 import os
 from pathlib import Path
+
+# Disable ChromaDB telemetry
+os.environ['ANONYMIZED_TELEMETRY'] = 'false'
 import re
 import time
 from typing import Dict, List, Tuple, Optional
@@ -23,11 +26,14 @@ from ClusteringService import ClusteringService
 from ConversationImportService import ConversationImportService
 from RelicService import RelicService
 from ThumbnailService import ThumbnailService
+from SessionService import SessionService
+from SlashCommandService import SlashCommandService
 from ToolCallService import ToolCallService
 from ClaudeCodeService import ClaudeCodeService
 import tempfile
 import uuid
 import subprocess
+from functools import wraps
 import shutil
 import soundfile as sf
 import numpy as np
@@ -1008,6 +1014,25 @@ def count_tokens():
 @app.route('/chats', methods=['POST'])
 def create_chat():
     try:
+        # Check if user is authenticated
+        auth_header = request.headers.get('Authorization')
+        if auth_header:
+            try:
+                token = auth_header.split(' ')[1]
+                user_id = user_service.verify_token(token)
+                if user_id:
+                    # User is authenticated, check workspace limits
+                    user = user_service.get_user_by_id(user_id)
+                    if user and not user['trial_status']['can_create_workspace']:
+                        return jsonify({'error': 'Workspace limit reached. Please upgrade to create more workspaces.'}), 403
+                    
+                    # Increment workspace count
+                    result, error = user_service.increment_workspace_count(user_id)
+                    if error:
+                        return jsonify({'error': error}), 400
+            except:
+                pass  # If token verification fails, continue without auth (for now)
+        
         data = request.json
         if not data or 'title' not in data or 'initialNode' not in data:
             return jsonify({'error': 'Missing required data'}), 400
@@ -3879,12 +3904,15 @@ def send_claude_code_message_simple():
             session_id = request.args.get('session_id')
             node_id = request.args.get('node_id')
             context = request.args.get('context', '')
+            allowed_tools_str = request.args.get('allowed_tools', 'Write,Read,Edit,LS,Glob,Grep,Bash')
+            allowed_tools = [tool.strip() for tool in allowed_tools_str.split(',')]
         else:
             data = request.json or {}
             message = data.get('message', '')
             session_id = data.get('session_id')
             node_id = data.get('node_id')
             context = data.get('context', '')
+            allowed_tools = data.get('allowed_tools', ['Write', 'Read', 'Edit', 'LS', 'Glob', 'Grep', 'Bash'])
         
         if not message:
             if request.method == 'GET':
@@ -3906,16 +3934,16 @@ def send_claude_code_message_simple():
                         'claude', '-p', '--resume', session_id, full_message,
                         '--output-format', 'stream-json',
                         '--verbose',
-                        '--allowedTools', 'Write,Read,Edit,LS,Glob,Grep,Bash'
-                    ]
+                        '--allowedTools'
+                    ] + allowed_tools
                 else:
                     # Start new session with -p flag
                     cmd = [
                         'claude', '-p', full_message,
                         '--output-format', 'stream-json',
                         '--verbose',
-                        '--allowedTools', 'Write,Read,Edit,LS,Glob,Grep,Bash'
-                    ]
+                        '--allowedTools'
+                    ] + allowed_tools
                 
                 # Set working directory to project root
                 working_dir = '/Users/928546/Desktop/tangent'
@@ -3927,79 +3955,115 @@ def send_claude_code_message_simple():
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    bufsize=1,  # Line buffered
+                    bufsize=0,  # Unbuffered for real-time streaming
                     universal_newlines=True
                 )
                 
                 tool_calls = []
+                buffer = ""
+                last_yield_time = time.time()
                 
-                # Stream the output line by line
+                # Line-by-line streaming for Claude Code SDK stream-json format
+                buffer = ""
+                
+                # Read line by line for proper JSON parsing
                 for line in iter(process.stdout.readline, ''):
-                    if line.strip():
-                        try:
-                            message_data = json.loads(line.strip())
+                    if not line:  # Process ended
+                        break
+                    
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    try:
+                        # Parse Claude Code SDK message format
+                        sdk_message = json.loads(line)
+                        
+                        # Handle different SDK message types according to documentation
+                        if sdk_message.get('type') == 'system':
+                            # System initialization message
+                            if sdk_message.get('subtype') == 'init':
+                                yield f"data: {json.dumps({
+                                    'type': 'system',
+                                    'subtype': 'init',
+                                    'session_id': sdk_message.get('session_id'),
+                                    'model': sdk_message.get('model'),
+                                    'tools': sdk_message.get('tools', []),
+                                    'mcp_servers': sdk_message.get('mcp_servers', []),
+                                    'cwd': sdk_message.get('cwd'),
+                                    'permission_mode': sdk_message.get('permissionMode', 'default')
+                                })}\n\n"
+                        
+                        elif sdk_message.get('type') == 'assistant':
+                            # Assistant message with content
+                            assistant_msg = sdk_message.get('message', {})
+                            content = assistant_msg.get('content', [])
                             
-                            # Handle different message types from Claude Code streaming
-                            if message_data.get('type') == 'text':
-                                # Text content
-                                yield f"data: {json.dumps({'type': 'text', 'content': message_data.get('content', '')})}\n\n"
+                            # Process each content block
+                            for content_block in content:
+                                if content_block.get('type') == 'text':
+                                    # Stream text content
+                                    yield f"data: {json.dumps({
+                                        'type': 'text',
+                                        'content': content_block.get('text', ''),
+                                        'session_id': sdk_message.get('session_id')
+                                    })}\n\n"
                                 
-                            elif message_data.get('type') == 'thinking':
-                                # Thinking content (Claude's internal reasoning)
-                                yield f"data: {json.dumps({'type': 'text', 'content': f'🤔 {message_data.get("content", "")}'})}\n\n"
-                                
-                            elif message_data.get('type') == 'tool_call':
-                                # Tool call started
-                                tool_info = {
-                                    'tool_name': message_data.get('tool_name'),
-                                    'parameters': message_data.get('parameters', {}),
-                                    'call_id': message_data.get('call_id')
-                                }
-                                tool_calls.append(tool_info)
-                                yield f"data: {json.dumps({'type': 'tool_call', 'tool_name': tool_info['tool_name'], 'parameters': tool_info['parameters']})}\n\n"
-                                
-                            elif message_data.get('type') == 'tool_result':
-                                # Tool result returned
-                                result_data = {
-                                    'tool_name': message_data.get('tool_name'),
-                                    'result': message_data.get('result'),
-                                    'error': message_data.get('error'),
-                                    'duration_ms': message_data.get('duration_ms'),
-                                    'call_id': message_data.get('call_id')
-                                }
-                                yield f"data: {json.dumps({'type': 'tool_result', **result_data})}\n\n"
-                                
-                            elif message_data.get('type') == 'assistant':
-                                # Legacy format handling
-                                assistant_msg = message_data.get('message', {})
-                                content = assistant_msg.get('content', [])
-                                
-                                for content_block in content:
-                                    if content_block.get('type') == 'text':
-                                        yield f"data: {json.dumps({'type': 'text', 'content': content_block.get('text', '')})}\n\n"
-                                    elif content_block.get('type') == 'tool_use':
-                                        tool_info = {
-                                            'tool_name': content_block.get('name'),
-                                            'parameters': content_block.get('input', {}),
-                                            'call_id': content_block.get('id')
-                                        }
-                                        tool_calls.append(tool_info)
-                                        yield f"data: {json.dumps({'type': 'tool_call', 'tool_name': tool_info['tool_name'], 'parameters': tool_info['parameters']})}\n\n"
-                                        
-                            elif message_data.get('type') == 'result':
-                                # Final result with usage metadata
-                                result_info = {
-                                    'type': 'result',
-                                    'response': message_data.get('content', ''),
-                                    'cost_usd': message_data.get('cost_usd'),
-                                    'num_turns': message_data.get('num_turns'),
-                                    'session_id': message_data.get('session_id')
-                                }
-                                yield f"data: {json.dumps(result_info)}\n\n"
-                                
-                        except json.JSONDecodeError:
-                            # Handle non-JSON lines (shouldn't happen with stream-json)
-                            continue
+                                elif content_block.get('type') == 'tool_use':
+                                    # Tool use block
+                                    tool_info = {
+                                        'type': 'tool_use',
+                                        'tool_name': content_block.get('name'),
+                                        'tool_id': content_block.get('id'),
+                                        'parameters': content_block.get('input', {}),
+                                        'session_id': sdk_message.get('session_id')
+                                    }
+                                    tool_calls.append(tool_info)
+                                    yield f"data: {json.dumps(tool_info)}\n\n"
+                        
+                        elif sdk_message.get('type') == 'user':
+                            # User message (for multi-turn conversations)
+                            user_msg = sdk_message.get('message', {})
+                            yield f"data: {json.dumps({
+                                'type': 'user',
+                                'content': user_msg.get('content', ''),
+                                'session_id': sdk_message.get('session_id')
+                            })}\n\n"
+                        
+                        elif sdk_message.get('type') == 'result':
+                            # Final result message
+                            subtype = sdk_message.get('subtype', 'success')
+                            result_data = {
+                                'type': 'result',
+                                'subtype': subtype,
+                                'session_id': sdk_message.get('session_id'),
+                                'duration_ms': sdk_message.get('duration_ms'),
+                                'duration_api_ms': sdk_message.get('duration_api_ms'),
+                                'num_turns': sdk_message.get('num_turns'),
+                                'total_cost_usd': sdk_message.get('total_cost_usd', 0.0),
+                                'is_error': sdk_message.get('is_error', False)
+                            }
+                            
+                            # Add result content for success
+                            if subtype == 'success':
+                                result_data['result'] = sdk_message.get('result', '')
+                            
+                            yield f"data: {json.dumps(result_data)}\n\n"
+                        
+                        else:
+                            # Unknown message type, log and pass through
+                            yield f"data: {json.dumps({
+                                'type': 'unknown',
+                                'raw_message': sdk_message
+                            })}\n\n"
+                            
+                    except json.JSONDecodeError as e:
+                        # Handle non-JSON output (shouldn't happen with stream-json but just in case)
+                        yield f"data: {json.dumps({
+                            'type': 'raw_output',
+                            'content': line,
+                            'parse_error': str(e)
+                        })}\n\n"
                 
                 # Wait for process to complete and check return code
                 process.wait()

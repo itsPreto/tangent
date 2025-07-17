@@ -3,7 +3,7 @@
     <!-- Wrapper around RAGDocumentPanel adapted for sidebar -->
     <div class="documents-content">
       <!-- Header Section -->
-      <div class="documents-header" :style="headerStyle">
+      <div class="documents-header section-top" :style="headerStyle">
         <div class="header-section">
           <FileText class="w-5 h-5 text-blue-400" />
           <span class="header-text">Document Library</span>
@@ -19,7 +19,7 @@
       </div>
 
       <!-- Search Section -->
-      <div class="search-section" :style="sectionStyle">
+      <div class="search-section section-middle" :style="sectionStyle">
         <div class="search-container">
           <Search class="w-4 h-4 text-base-content/60" />
           <input
@@ -42,7 +42,7 @@
       </div>
 
       <!-- Results Section -->
-      <div class="results-section">
+      <div class="results-section section-bottom">
         <div class="results-header" :style="sectionStyle">
           <span class="results-count">{{ filteredDocuments.length }} of {{ documents.length }} documents</span>
         </div>
@@ -128,6 +128,9 @@ const {
   getTextColor
 } = useThemeColors();
 
+// For use in v-bind styles
+const { themeColors, isDarkTheme } = useThemeColors();
+
 // Reactive state
 const searchQuery = ref('');
 const filterType = ref('all');
@@ -135,8 +138,6 @@ const documents = ref([]); // This would be loaded from a store or API
 
 // Theme reactivity
 const currentTheme = computed(() => themeStore.currentTheme);
-const isDarkTheme = computed(() => themeStore.isDarkTheme(currentTheme.value));
-const themeColors = computed(() => themeStore.getThemeColors(currentTheme.value));
 
 // Computed
 const filteredDocuments = computed(() => {
@@ -274,18 +275,22 @@ const ctaButtonStyle = computed(() => {
 });
 
 const getDocumentIconStyle = (doc: any) => {
-  const colors = {
-    pdf: '#ef4444',
-    text: '#3b82f6',
-    image: '#10b981',
-    code: '#8b5cf6',
-    markdown: '#f59e0b'
+  // Use theme colors in a rotating pattern
+  const typeToThemeColor = {
+    pdf: themeColorsRef.value.primary,
+    text: themeColorsRef.value.secondary,
+    image: themeColorsRef.value.accent,
+    code: themeColorsRef.value.primary,
+    markdown: themeColorsRef.value.secondary
   };
   
-  const color = colors[doc.type] || '#6b7280';
+  const color = typeToThemeColor[doc.type] || themeColorsRef.value.accent;
   return {
-    backgroundColor: `${color}20`,
-    color: color
+    background: `linear-gradient(135deg, 
+      color-mix(in srgb, ${color} 15%, transparent),
+      color-mix(in srgb, ${color} 10%, transparent))`,
+    color: color,
+    border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`
   };
 };
 </script>
@@ -295,6 +300,8 @@ const getDocumentIconStyle = (doc: any) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding: 0.75rem;
+  gap: 0.75rem;
 }
 
 .documents-content {
@@ -302,34 +309,88 @@ const getDocumentIconStyle = (doc: any) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 5%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1));
+  border-radius: 12px;
+  position: relative;
+  box-shadow: 
+    0 4px 20px color-mix(in srgb, v-bind(themeColors.primary) 10%, transparent),
+    0 1px 3px color-mix(in srgb, v-bind(themeColors.secondary) 8%, transparent);
+}
+
+.documents-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary), 
+    v-bind(themeColors.accent));
+  border-radius: 12px 12px 0 0;
 }
 
 .documents-header {
-  padding: 16px;
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  position: relative;
+  overflow: hidden;
+}
+
+.documents-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 5%, transparent),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, transparent),
+    color-mix(in srgb, v-bind(themeColors.accent) 4%, transparent));
+  pointer-events: none;
 }
 
 .header-section {
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.header-section .w-5 {
+  color: v-bind(themeColors.primary);
 }
 
 .header-text {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 0.875rem;
+  color: hsl(var(--bc));
+  text-shadow: 0 1px 2px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
 }
 
 .document-count {
-  background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent),
+    color-mix(in srgb, v-bind(themeColors.secondary) 15%, transparent));
+  color: v-bind(themeColors.primary);
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
 }
 
 .header-controls {
@@ -339,21 +400,36 @@ const getDocumentIconStyle = (doc: any) => {
 
 .upload-btn, .action-btn {
   padding: 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
+  color: hsl(var(--bc));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  position: relative;
+  z-index: 1;
 }
 
 .upload-btn:hover, .action-btn:hover {
-  opacity: 0.8;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 12%, hsl(var(--b2))));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
 }
 
 .search-section {
-  padding: 16px;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex-shrink: 0;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 4%, hsl(var(--b2))));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
 }
 
 .search-container {
@@ -361,6 +437,16 @@ const getDocumentIconStyle = (doc: any) => {
   align-items: center;
   gap: 8px;
   position: relative;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 6%, hsl(var(--b2))));
+  border-radius: 8px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+}
+
+.search-container .w-4 {
+  color: v-bind(themeColors.accent);
 }
 
 .search-input {
@@ -369,11 +455,18 @@ const getDocumentIconStyle = (doc: any) => {
   border-radius: 6px;
   font-size: 14px;
   transition: all 0.2s ease;
+  background: transparent;
+  border: none;
+  color: hsl(var(--bc));
 }
 
 .search-input:focus {
   outline: none;
-  ring: 2px solid rgba(59, 130, 246, 0.5);
+}
+
+.search-container:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
+  border-color: v-bind(themeColors.primary);
 }
 
 .search-controls {
@@ -384,9 +477,28 @@ const getDocumentIconStyle = (doc: any) => {
 
 .filter-select {
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   cursor: pointer;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.secondary) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.accent) 8%, hsl(var(--b2))));
+  color: hsl(var(--bc));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.secondary) 25%, hsl(var(--bc) / 0.1));
+  transition: all 0.2s ease;
+}
+
+.filter-select:hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.secondary) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.accent) 12%, hsl(var(--b2))));
+  box-shadow: 0 2px 8px color-mix(in srgb, v-bind(themeColors.secondary) 15%, transparent);
+}
+
+.filter-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, v-bind(themeColors.secondary) 30%, transparent);
+  border-color: v-bind(themeColors.secondary);
 }
 
 .results-section {
@@ -418,15 +530,34 @@ const getDocumentIconStyle = (doc: any) => {
   gap: 12px;
   padding: 12px;
   margin-bottom: 8px;
-  border: 1px solid;
-  border-radius: 8px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 4%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--bc) / 0.1));
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.document-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 80% 20%, 
+    color-mix(in srgb, v-bind(themeColors.accent) 6%, transparent) 0%, 
+    transparent 50%);
+  pointer-events: none;
 }
 
 .document-item:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
+  border-color: v-bind(themeColors.primary);
 }
 
 .document-icon {
@@ -479,12 +610,37 @@ const getDocumentIconStyle = (doc: any) => {
   justify-content: center;
   text-align: center;
   padding: 40px 20px;
+  position: relative;
+}
+
+.empty-state::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, 
+    color-mix(in srgb, v-bind(themeColors.primary) 5%, transparent),
+    transparent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.empty-state .w-12 {
+  color: v-bind(themeColors.accent);
+  position: relative;
+  z-index: 1;
 }
 
 .empty-state h3 {
   font-size: 18px;
   font-weight: 600;
   margin: 16px 0 8px;
+  color: hsl(var(--bc));
+  position: relative;
+  z-index: 1;
 }
 
 .empty-state p {
@@ -492,6 +648,9 @@ const getDocumentIconStyle = (doc: any) => {
   font-size: 14px;
   margin-bottom: 24px;
   max-width: 280px;
+  color: hsl(var(--bc) / 0.8);
+  position: relative;
+  z-index: 1;
 }
 
 .upload-cta-btn {
@@ -499,14 +658,26 @@ const getDocumentIconStyle = (doc: any) => {
   align-items: center;
   gap: 8px;
   padding: 12px 20px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
+  background: linear-gradient(135deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary));
+  color: white;
+  border: none;
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
+  position: relative;
+  z-index: 1;
 }
 
 .upload-cta-btn:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 90%, black), 
+    color-mix(in srgb, v-bind(themeColors.secondary) 90%, black));
 }
 
 /* Theme-specific text contrast overrides */

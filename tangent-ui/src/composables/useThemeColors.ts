@@ -65,9 +65,16 @@ export function useThemeColors() {
   );
   
   /**
-   * Get text color based on theme and background
+   * Get text color based on theme and background with theme-specific overrides
    */
   const getTextColor = (backgroundColor?: string): string => {
+    // Handle specific themes that need manual text color override
+    const lightThemesWithDarkText = ['retro', 'cupcake', 'bumblebee', 'emerald', 'corporate', 'garden', 'pastel', 'valentine', 'lemonade', 'winter', 'lofi', 'fantasy', 'autumn'];
+    
+    if (lightThemesWithDarkText.includes(currentTheme.value)) {
+      return 'rgba(0, 0, 0, 0.85)'; // Dark text for light themes
+    }
+    
     if (forceLightText.value) {
       return 'rgba(255, 255, 255, 0.95)';
     }

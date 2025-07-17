@@ -1,21 +1,24 @@
 <template>
   <div class="tool-call-message">
     <div class="tool-header">
-      <span class="tool-name">{{ message.data.tool_name }}</span>
-      <span class="tool-status" :class="statusClass">{{ message.data.status }}</span>
+      <span class="tool-icon">🛠️</span>
+      <span class="tool-name">{{ toolData.tool_name }}</span>
+      <span class="tool-id">{{ toolData.tool_id }}</span>
     </div>
     <div class="tool-content">
-      <div v-if="message.data.parameters" class="tool-parameters">
-        <strong>Parameters:</strong>
-        <pre>{{ JSON.stringify(message.data.parameters, null, 2) }}</pre>
+      <div v-if="toolData.parameters" class="tool-parameters">
+        <div class="param-header">
+          <strong>Parameters:</strong>
+        </div>
+        <div class="param-list">
+          <div v-for="(value, key) in toolData.parameters" :key="key" class="param-item">
+            <span class="param-key">{{ key }}:</span>
+            <span class="param-value">{{ formatParamValue(value) }}</span>
+          </div>
+        </div>
       </div>
-      <div v-if="message.data.result" class="tool-result">
-        <strong>Result:</strong>
-        <pre>{{ JSON.stringify(message.data.result, null, 2) }}</pre>
-      </div>
-      <div v-if="message.data.error" class="tool-error">
-        <strong>Error:</strong>
-        <pre>{{ message.data.error }}</pre>
+      <div v-if="rawData" class="tool-raw">
+        <pre>{{ rawData }}</pre>
       </div>
     </div>
   </div>
@@ -23,26 +26,40 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { ClaudeCodeToolUseMessage } from '../../../utils/ClaudeCodeMessageParser'
 
 interface Props {
   message: {
-    data: {
-      tool_name: string
-      status: string
-      parameters?: any
-      result?: any
-      error?: string
-    }
+    data: ClaudeCodeToolUseMessage | any
   }
 }
 
 const props = defineProps<Props>()
 
-const statusClass = computed(() => ({
-  'status-success': props.message.data.status === 'success',
-  'status-error': props.message.data.status === 'error',
-  'status-pending': props.message.data.status === 'pending'
-}))
+const toolData = computed(() => {
+  const data = props.message.data
+  if (data?.type === 'tool_use') {
+    return data as ClaudeCodeToolUseMessage
+  }
+  // Fallback for old format
+  return {
+    tool_name: data.tool_name || 'Unknown',
+    tool_id: data.tool_id || data.call_id || 'unknown',
+    parameters: data.parameters || {}
+  }
+})
+
+const rawData = computed(() => {
+  if (toolData.value.tool_name && toolData.value.tool_name !== 'Unknown') return null
+  return JSON.stringify(props.message.data, null, 2)
+})
+
+function formatParamValue(value: any): string {
+  if (typeof value === 'string') {
+    return value.length > 100 ? value.substring(0, 100) + '...' : value
+  }
+  return JSON.stringify(value)
+}
 </script>
 
 <style scoped>
@@ -52,61 +69,83 @@ const statusClass = computed(() => ({
 
 .tool-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
+  background: #fef3c7;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border-left: 3px solid #f59e0b;
+}
+
+.tool-icon {
+  font-size: 14px;
 }
 
 .tool-name {
   font-weight: 600;
-  color: #1e293b;
-}
-
-.tool-status {
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 500;
-}
-
-.status-success {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.status-error {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.status-pending {
-  background: #fef3c7;
   color: #92400e;
+  font-size: 12px;
+}
+
+.tool-id {
+  font-size: 10px;
+  color: #78716c;
+  font-family: monospace;
+  background: #fffbeb;
+  padding: 2px 4px;
+  border-radius: 2px;
 }
 
 .tool-content {
   font-size: 11px;
 }
 
-.tool-parameters,
-.tool-result,
-.tool-error {
+.tool-parameters {
   margin-bottom: 8px;
 }
 
-.tool-parameters pre,
-.tool-result pre,
-.tool-error pre {
+.param-header {
+  margin-bottom: 4px;
+  color: #6b7280;
+  font-size: 10px;
+}
+
+.param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.param-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 4px;
+  background: #f9fafb;
+  border-radius: 2px;
+  font-size: 10px;
+}
+
+.param-key {
+  font-weight: 500;
+  color: #4b5563;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.param-value {
+  color: #1f2937;
+  word-break: break-word;
+  font-family: monospace;
+}
+
+.tool-raw pre {
   background: #f8fafc;
   padding: 4px;
   border-radius: 2px;
   margin-top: 4px;
   max-height: 100px;
   overflow-y: auto;
-}
-
-.tool-error pre {
-  background: #fef2f2;
-  color: #dc2626;
 }
 </style>

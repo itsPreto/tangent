@@ -62,7 +62,7 @@
     </Teleport>
 
     <div
-      class="w-[180px] h-[36px] relative perspective-[1000px] rounded-lg overflow-hidden pb-2 cursor-pointer logo-container"
+      class="w-[180px] h-[36px] relative perspective-[1000px] rounded-lg overflow-hidden cursor-pointer logo-container"
       @mousemove="handleMouseMove"
       @mouseleave="handleLogoMouseLeave"
     >
@@ -605,6 +605,10 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 50;
   transform: translateY(2px); /* Adjust logo position slightly down */
+}
+
+.logo-container {
+  margin-top: -8px;
 }
 
 .theme-dropdown {

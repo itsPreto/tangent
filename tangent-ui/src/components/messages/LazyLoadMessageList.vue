@@ -121,7 +121,9 @@
                   <div class="message-content-wrapper">
                     <MessageContent v-if="editingMessageIndex !== startIndex + index" :content="message.content"
                       :is-streaming="message.isStreaming" :node-id="nodeId" :content-parts="message.contentParts"
-                      :message-index="startIndex + index" :data-message-idx="startIndex + index" />
+                      :message-index="startIndex + index" :data-message-idx="startIndex + index"
+                      @approve-permission="(toolCallId, toolName, parameters) => $emit('approve-permission', toolCallId, toolName, parameters)"
+                      @deny-permission="(toolCallId, toolName, parameters) => $emit('deny-permission', toolCallId, toolName, parameters)" />
                     <textarea v-else v-model="editingContent"
                       class="w-full p-2 bg-base-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                       :rows="Math.max(3, editingContent.split('\n').length)" @keydown.escape="cancelEditing" />
@@ -141,7 +143,9 @@
                     <div class="message-content-wrapper">
                       <MessageContent :content="message.content" :is-streaming="message.isStreaming" :node-id="nodeId"
                         :content-parts="message.contentParts" :message-index="startIndex + index"
-                        :data-message-idx="startIndex + index" />
+                        :data-message-idx="startIndex + index"
+                        @approve-permission="(toolCallId, toolName, parameters) => $emit('approve-permission', toolCallId, toolName, parameters)"
+                        @deny-permission="(toolCallId, toolName, parameters) => $emit('deny-permission', toolCallId, toolName, parameters)" />
                     </div>
                   </div>
                   <!-- Removed bottom timestamp since it's now in header -->
@@ -316,6 +320,8 @@ const emit = defineEmits<{
   'create-branch': [index: number, direction: 'left' | 'right'];
   'wheel': [event: WheelEvent];
   'edit-message': [index: number, newContent: string];
+  'approve-permission': [toolCallId: string, toolName: string, parameters: any];
+  'deny-permission': [toolCallId: string, toolName: string, parameters: any];
 }>();
 
 // Helper function to format time

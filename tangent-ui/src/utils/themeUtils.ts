@@ -159,9 +159,9 @@ export function generateGradient(colors: string[], angle: number = 135): string 
  * List of themes that should always use light text regardless of contrast calculation
  */
 export const FORCE_LIGHT_TEXT_THEMES = [
-  'dark', 'synthwave', 'retro', 'cyberpunk', 'halloween',
+  'dark', 'synthwave', 'cyberpunk', 'halloween',
   'forest', 'aqua', 'black', 'luxury', 'dracula', 'cmyk',
-  'autumn', 'business', 'acid', 'night', 'coffee'
+  'business', 'acid', 'night', 'coffee'
 ];
 
 /**

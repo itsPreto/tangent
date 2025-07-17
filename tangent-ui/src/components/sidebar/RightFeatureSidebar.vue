@@ -104,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { 
   Settings, 
   Code, 
@@ -120,6 +120,10 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useAppStore } from '@/stores/appStore';
 import { useThemeColors } from '@/composables/useThemeColors';
 import { adjustColorLightness, getContrastTextColor } from '@/utils/themeUtils';
+
+const props = defineProps<{
+  activeFeature?: string | null;
+}>();
 
 const emit = defineEmits<{
   'feature-clicked': [feature: any];
@@ -139,8 +143,8 @@ const {
   forceLightText
 } = useThemeColors();
 
-// Reactive state
-const activeFeature = ref<string | null>(null);
+// Reactive state - use prop value if provided, otherwise local state
+const activeFeature = computed(() => props.activeFeature ?? null);
 const isExpanded = ref(false);
 const hoverTimeout = ref<number | null>(null);
 
@@ -184,67 +188,76 @@ const selectTheme = (theme: string) => {
 };
 
 // Feature definitions - reactive for drag and drop reordering
-const defaultFeatures = [
+const defaultFeatures = computed(() => [
   { 
     id: 'model-selector', 
     icon: Settings, 
     label: 'Models', 
-    color: '#8b5cf6',
+    color: themeColors.value.primary,
     description: 'Model selector and agent configuration'
   },
   { 
     id: 'sandpack', 
     icon: Code, 
     label: 'Code Editor', 
-    color: '#3b82f6',
+    color: themeColors.value.primary,
     description: 'Code editor + preview + relic manager'
   },
   { 
     id: 'claude-code', 
     icon: Bot, 
     label: 'Claude Code', 
-    color: '#f59e0b',
+    color: themeColors.value.primary,
     description: 'Claude Code instance management'
   },
   { 
     id: 'testing', 
     icon: TestTube, 
     label: 'Testing', 
-    color: '#22c55e',
+    color: themeColors.value.primary,
     description: 'Model testing and evaluation suite'
   },
   { 
     id: 'mock-data', 
     icon: Database, 
     label: 'Mock Data', 
-    color: '#ec4899',
+    color: themeColors.value.primary,
     description: 'Generate mock conversation archives'
   },
   { 
     id: 'force-graph', 
     icon: GitBranch, 
     label: 'Force Graph', 
-    color: '#10b981',
+    color: themeColors.value.primary,
     description: 'Interactive workspace relationships graph'
   },
   { 
     id: 'documents', 
     icon: FileText, 
     label: 'Documents', 
-    color: '#f59e0b',
+    color: themeColors.value.primary,
     description: 'RAG document panel and management'
   },
   { 
     id: 'themes', 
     icon: Palette, 
     label: 'Themes', 
-    color: '#f59e0b',
+    color: themeColors.value.primary,
     description: 'Switch between 23 beautiful themes'
   }
-];
+]);
 
 // Reactive features array for drag and drop
-const features = ref([...defaultFeatures]);
+const features = ref([...defaultFeatures.value]);
+
+// Watch for theme changes and update feature colors
+watch(themeColors, () => {
+  // Update colors for all features while preserving their order
+  features.value = features.value.map(feature => ({
+    ...feature,
+    color: themeColors.value.primary
+  }));
+}, { deep: true });
 
 // Methods
 const handleFeatureClick = (feature: any, event: MouseEvent) => {
@@ -264,16 +277,14 @@ const handleFeatureClick = (feature: any, event: MouseEvent) => {
   }
   
   // Regular feature handling
-  // Toggle feature - close if already active, open if different
-  if (activeFeature.value === feature.id) {
-    activeFeature.value = null;
-  } else {
-    activeFeature.value = feature.id;
-  }
+  // The activeFeature state is now managed by the parent component
+  // Just emit the event and let the parent handle the logic
   
   // Collapse sidebar after clicking (except for themes)
   isExpanded.value = false;
   clearHoverTimeout();
+  // Update app store immediately so feature panel positions correctly
+  appStore.collapseRightSidebar();
   
   // Hide themes if showing
   showThemes.value = false;
@@ -471,8 +482,8 @@ const loadFeatureOrder = () => {
       const order = JSON.parse(savedOrder);
       
       // Reorder draggable features based on saved order (exclude themes)
-      const draggableFeatures = defaultFeatures.filter(f => f.id !== 'themes');
-      const themesFeature = defaultFeatures.find(f => f.id === 'themes');
+      const draggableFeatures = defaultFeatures.value.filter(f => f.id !== 'themes');
+      const themesFeature = defaultFeatures.value.find(f => f.id === 'themes');
       
       const orderedFeatures = order.map((id: string) => 
         draggableFeatures.find(f => f.id === id)
@@ -487,7 +498,7 @@ const loadFeatureOrder = () => {
     }
   } catch (error) {
     console.error('Failed to load feature order:', error);
-    features.value = [...defaultFeatures];
+    features.value = [...defaultFeatures.value];
   }
 };
 
@@ -504,9 +515,12 @@ const sidebarStyle = computed(() => {
   } else if (currentTheme.value === 'synthwave') {
     backgroundColor = 'rgba(30, 10, 50, 0.95)';
     borderColor = `${themeColors.value.secondary}50`;
+  } else if (currentTheme.value === 'cmyk') {
+    backgroundColor = 'rgba(15, 15, 20, 0.95)';
+    borderColor = `${themeColors.value.primary}40`;
   } else if (currentTheme.value === 'lofi') {
-    backgroundColor = 'rgba(60, 59, 59, 0.95)';
-    borderColor = 'rgba(100, 100, 100, 0.3)';
+    backgroundColor = 'rgba(85, 82, 82, 0.95)';
+    borderColor = 'rgba(130, 125, 125, 0.4)';
   } else if (currentTheme.value === 'garden') {
     backgroundColor = isDarkTheme.value ? 'rgba(20, 30, 25, 0.95)' : 'rgba(245, 250, 247, 0.95)';
     borderColor = `${themeColors.value.primary}30`;
@@ -518,11 +532,13 @@ const sidebarStyle = computed(() => {
   return {
     backgroundColor,
     borderColor,
-    color: getTextColor(),
+    color: forceLightText.value ? 'rgba(255, 255, 255, 0.95)' : getTextColor(),
     backdropFilter: 'blur(10px)',
     borderLeft: `1px solid ${borderColor}`,
+    borderTopLeftRadius: (activeFeature.value && activeFeature.value !== 'themes') ? '0px' : '16px',
+    borderBottomLeftRadius: (activeFeature.value && activeFeature.value !== 'themes') ? '0px' : '16px',
     width: isExpanded.value ? '180px' : '60px',
-    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease, color 0.3s ease'
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
   };
 });
 
@@ -536,7 +552,7 @@ const headerStyle = computed(() => {
 const getFeatureItemStyle = (feature: any) => {
   const isActive = activeFeature.value === feature.id;
   let backgroundColor = 'transparent';
-  let color = getTextColor();
+  let color = forceLightText.value ? 'rgba(255, 255, 255, 0.95)' : getTextColor();
   let borderColor = 'transparent';
   let boxShadow = 'none';
   
@@ -546,7 +562,7 @@ const getFeatureItemStyle = (feature: any) => {
       ? feature.color 
       : adjustColorLightness(feature.color, -25);
     
-    if (isDarkTheme.value) {
+    if (isDarkTheme.value || forceLightText.value) {
       backgroundColor = 'rgba(255, 255, 255, 0.15)';
       color = feature.color;
       borderColor = `${feature.color}60`;
@@ -568,6 +584,11 @@ const getFeatureItemStyle = (feature: any) => {
     backgroundColor = `${feature.color}25`;
     color = feature.color;
     boxShadow = `0 0 8px ${feature.color}40`;
+  } else if (currentTheme.value === 'cmyk' && isActive) {
+    backgroundColor = `${feature.color}25`;
+    color = feature.color;
+    borderColor = `${feature.color}70`;
+    boxShadow = `0 0 8px ${feature.color}50`;
   } else if (['garden', 'emerald', 'cupcake', 'corporate', 'pastel'].includes(currentTheme.value) && isActive) {
     // Extra contrast for light themes that need it
     const extraDarkened = adjustColorLightness(feature.color, -35);
@@ -611,7 +632,7 @@ onMounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: visible; /* Allow themes to overlay */
   z-index: 999;
   /* Sidebar pushes content instead of overlaying */
@@ -622,7 +643,7 @@ onMounted(() => {
 }
 
 .right-feature-sidebar.expanded {
-  width: 200px;
+  width: 180px;
 }
 
 .sidebar-header {
@@ -666,7 +687,7 @@ onMounted(() => {
   cursor: pointer;
   border-radius: 8px;
   min-height: 44px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative; /* For absolute positioning of themes grid */
   user-select: none; /* Prevent text selection during drag */
 }
@@ -742,7 +763,7 @@ onMounted(() => {
   justify-content: center;
   border-radius: 8px;
   flex-shrink: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .expanded .feature-icon {
@@ -764,21 +785,21 @@ onMounted(() => {
 
 /* Smooth transition animations */
 .fade-slide-enter-active {
-  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .fade-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity 0.15s ease-out, transform 0.2s cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 .fade-slide-enter-from {
   opacity: 0;
-  transform: translateX(16px);
+  transform: translateX(10px);
 }
 
 .fade-slide-leave-to {
   opacity: 0;
-  transform: translateX(16px);
+  transform: translateX(10px);
 }
 
 /* Inline Themes Grid - Below the themes feature button */
@@ -899,7 +920,8 @@ onMounted(() => {
 .theme-name {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
+  color: inherit;
+  opacity: 0.8;
   flex: 1;
 }
 
@@ -957,7 +979,6 @@ onMounted(() => {
 .theme-garden,
 .theme-pastel,
 .theme-wireframe,
-.theme-cmyk,
 .theme-lemonade,
 .theme-winter,
 .theme-lofi,
@@ -1032,6 +1053,7 @@ onMounted(() => {
 .theme-luxury,
 .theme-neon,
 .theme-dracula,
+.theme-cmyk,
 .theme-business,
 .theme-acid,
 .theme-night,
@@ -1039,7 +1061,8 @@ onMounted(() => {
   .feature-list,
   .feature-item,
   .feature-label,
-  .current-theme-name {
+  .current-theme-name,
+  .theme-name {
     color: rgba(255, 255, 255, 0.95) !important;
   }
   
@@ -1061,6 +1084,7 @@ onMounted(() => {
   .themes-inline-grid {
     background: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.95);
   }
   
   .theme-search-input {
@@ -1083,6 +1107,25 @@ onMounted(() => {
   
   .theme-option:hover {
     background: rgba(255, 255, 255, 0.08);
+  }
+  
+  .current-theme {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.95);
+  }
+  
+  .theme-item {
+    color: rgba(255, 255, 255, 0.95);
+  }
+  
+  .theme-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  .theme-item.active {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
   }
   
   .themes-list-expanded::-webkit-scrollbar-thumb {

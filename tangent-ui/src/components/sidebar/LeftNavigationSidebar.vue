@@ -1,16 +1,33 @@
 <template>
-  <div class="left-navigation-sidebar" :class="[
-    'theme-' + currentTheme,
-    { 'expanded': isExpanded, 'compact': !isExpanded }
-  ]" :style="sidebarStyle">
-
+  <div
+    class="left-navigation-sidebar"
+    :class="[
+      'theme-' + currentTheme,
+      { expanded: isExpanded, compact: !isExpanded }
+    ]"
+    :style="sidebarStyle"
+  >
     <!-- Header Area with Toggle -->
     <div class="header-area">
-      <button class="toggle-button" @click="toggleSidebar" :style="toggleButtonStyle">
-        <ChevronLeft v-if="isExpanded" class="toggle-icon" :size="20" />
+      <button
+        class="toggle-button"
+        @click="toggleSidebar"
+        :style="toggleButtonStyle"
+      >
+        <ChevronLeft
+          v-if="isExpanded"
+          class="toggle-icon"
+          :size="20"
+        />
         <div v-else class="sidebar-toggle-container">
-          <PanelLeft class="toggle-icon sidebar-icon" :size="20" />
-          <ChevronRight class="toggle-icon chevron-icon" :size="20" />
+          <PanelLeft
+            class="toggle-icon sidebar-icon"
+            :size="20"
+          />
+          <ChevronRight
+            class="toggle-icon chevron-icon"
+            :size="20"
+          />
         </div>
       </button>
 
@@ -25,108 +42,114 @@
     <div class="nav-section">
       <!-- Primary Navigation Group -->
       <div class="nav-group">
-        <div v-for="item in primaryNavItems" :key="item.id" class="nav-item" :class="{
-          'active': activeItem === item.id,
-          'primary': item.isPrimary
-        }" @click="handleNavItemClick(item)" :style="getNavItemStyle(item)">
-
+        <div
+          v-for="item in primaryNavItems"
+          :key="item.id"
+          class="nav-item"
+          :class="{ active: activeItem===item.id, primary: item.isPrimary }"
+          @click="handleNavItemClick(item)"
+          :style="getNavItemStyle(item)"
+        >
           <div class="nav-icon">
             <component :is="item.icon" :size="20" />
           </div>
-
           <Transition name="fade-slide" mode="out-in">
-            <span v-if="isExpanded" class="nav-label">{{ item.label }}</span>
+            <span v-if="isExpanded" class="nav-label"
+              >{{ item.label }}</span
+            >
           </Transition>
-
-          <!-- Tooltip for compact mode -->
           <div v-if="!isExpanded" class="tooltip">{{ item.label }}</div>
         </div>
       </div>
 
-      <!-- Chat History Content (only when expanded via nav item) -->
-      <div v-if="isExpanded && isChatHistoryExpanded" class="chat-history-content-direct" :style="chatHistoryContentStyle">
-        <!-- Search -->
-        <div class="chat-search">
-          <input 
-            v-model="searchQuery"
-            type="text" 
-            placeholder="Search chats..."
-            class="search-input"
-          />
-        </div>
-        
-        <!-- Sort Options -->
-        <div class="sort-options">
-          <button 
-            v-for="option in sortOptions"
-            :key="option.value"
-            @click="sortBy = option.value"
-            class="sort-btn"
-            :class="{ 'active': sortBy === option.value }"
+      <!-- Chat History Panel -->
+      <Transition name="fade-slide">
+        <div
+          v-if="isExpanded && isChatHistoryExpanded"
+          class="chat-history-content-direct"
+          :style="chatHistoryContentStyle"
+        >
+          <!-- Search -->
+          <div class="chat-search">
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search chats..."
+              class="search-input"
+            />
+          </div>
+
+          <!-- Sort Options -->
+          <div class="sort-options">
+            <button
+              v-for="option in sortOptions"
+              :key="option.value"
+              @click="sortBy = option.value"
+              class="sort-btn"
+              :class="{ active: sortBy===option.value }"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+
+          <!-- Chat List -->
+          <transition-group
+            name="cascade"
+            tag="div"
+            class="chat-list"
           >
-            {{ option.label }}
-          </button>
-        </div>
-        
-        <!-- Chat List -->
-        <div class="chat-list">
-          <div 
-            v-for="chat in filteredChats" 
-            :key="chat.id"
-            class="chat-item"
-            :class="{ 'active': chat.id === currentWorkspaceId }"
-            @click="loadWorkspace(chat.id)"
-          >
-            <div class="chat-title">{{ chat.title }}</div>
-            <div class="chat-meta">
-              {{ formatChatInfo(chat) }}
+            <div
+              v-for="(chat, idx) in filteredChats"
+              :key="chat.id"
+              class="chat-item"
+              :class="{ active: chat.id===currentWorkspaceId, template: chat.isTemplate }"
+              @click="chat.isTemplate ? handleTemplateClick(chat) : loadWorkspace(chat.id)"
+              :style="{ transitionDelay: `${idx * 50}ms` }"
+            >
+              <div class="chat-title">
+                {{ chat.title }}
+                <span
+                  v-if="chat.isTemplate"
+                  class="template-indicator"
+                  >✨</span
+                >
+              </div>
+              <div class="chat-meta">
+                {{ chat.isTemplate
+                  ? 'Choose workspace type...'
+                  : formatChatInfo(chat) }}
+              </div>
             </div>
-          </div>
-          
-          <div v-if="filteredChats.length === 0" class="no-chats">
-            No chats found
-          </div>
-        </div>
-        
-        <!-- Help Section -->
-        <div class="help-section">
-          <div class="nav-item help-item" @click="handleNavItemClick({ id: 'help', icon: HelpCircle, label: 'Help' })">
-            <div class="nav-icon">
-              <HelpCircle :size="20" />
+            <div
+              v-if="filteredChats.length===0"
+              class="no-chats"
+            >
+              No chats found
             </div>
-            <Transition name="fade-slide" mode="out-in">
-              <span class="nav-label">Help</span>
-            </Transition>
-          </div>
+          </transition-group>
         </div>
-      </div>
+      </Transition>
     </div>
 
-    <!-- Help Button Section (always visible) -->
+    <!-- Help Button Section -->
     <div class="help-button-section">
-      <div class="nav-item help-button" :class="{ 'active': activeItem === 'help' }" 
-           @click="handleNavItemClick({ id: 'help', icon: HelpCircle, label: 'Help' })" 
-           :style="getNavItemStyle({ id: 'help', icon: HelpCircle, label: 'Help' })">
-        
-        <div class="nav-icon">
-          <HelpCircle :size="20" />
-        </div>
-        
+      <div
+        class="nav-item help-button"
+        :class="{ active: activeItem==='help' }"
+        @click="handleNavItemClick({ id:'help', icon:HelpCircle, label:'Help' })"
+        :style="getNavItemStyle({ id:'help', icon:HelpCircle, label:'Help' })"
+      >
+        <div class="nav-icon"><HelpCircle :size="20" /></div>
         <Transition name="fade-slide" mode="out-in">
           <span v-if="isExpanded" class="nav-label">Help</span>
         </Transition>
-        
-        <!-- Tooltip for compact mode -->
         <div v-if="!isExpanded" class="tooltip">Help</div>
       </div>
     </div>
 
     <!-- User Profile Section -->
     <div class="user-profile" :style="userProfileStyle">
-      <div class="user-avatar">
-        <User :size="20" />
-      </div>
-
+      <div class="user-avatar"><User :size="20" /></div>
       <Transition name="fade-slide" mode="out-in">
         <div v-if="isExpanded" class="user-info">
           <div class="user-name">User</div>
@@ -221,7 +244,7 @@ const currentWorkspaceId = computed(() => canvasStore.lastSavedWorkspaceId);
 
 const sortedChats = computed(() => {
   let chats = [...chatStore.chats];
-  
+
   switch (sortBy.value) {
     case 'alphabetical':
       chats.sort((a, b) => a.title.localeCompare(b.title));
@@ -234,7 +257,7 @@ const sortedChats = computed(() => {
       chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       break;
   }
-  
+
   return chats;
 });
 
@@ -242,9 +265,9 @@ const filteredChats = computed(() => {
   if (!searchQuery.value.trim()) {
     return sortedChats.value.slice(0, 10); // Limit to 10 for sidebar
   }
-  
+
   const query = searchQuery.value.toLowerCase().trim();
-  return sortedChats.value.filter(chat => 
+  return sortedChats.value.filter(chat =>
     chat.title.toLowerCase().includes(query)
   ).slice(0, 10);
 });
@@ -325,14 +348,33 @@ const handleNavItemClick = (item: any) => {
 };
 
 const handleNewWorkspace = async () => {
-  // Clear current workspace and create new one
-  await canvasStore.clearCurrentWorkspace();
-  const newWorkspaceId = await canvasStore.createNewWorkspace();
+  // Check if user is on welcome screen
+  const isOnWelcomeScreen = canvasRef?.value?.isWelcomeScreen ?? true;
 
-  if (newWorkspaceId) {
-    // Refresh chats and load new workspace
-    await chatStore.loadChats();
-    await canvasStore.loadChatState(newWorkspaceId);
+  if (isOnWelcomeScreen) {
+    // If on welcome screen, focus the input container
+    const welcomeInputRef = canvasRef?.value?.getWelcomeInputRef?.();
+    if (welcomeInputRef) {
+      welcomeInputRef.focus();
+    }
+  } else {
+    // Create a template chat that shows in sidebar and navigate to welcome screen
+    const templateChat = await chatStore.createTemplateChat();
+    if (templateChat) {
+      await chatStore.loadChats();
+
+      // Navigate back to welcome screen
+      if (canvasRef?.value) {
+        canvasRef.value.isWelcomeScreen = true;
+        canvasRef.value.isWorkspaceOverview = false;
+
+        // Focus the input
+        const welcomeInputRef = canvasRef.value.getWelcomeInputRef?.();
+        if (welcomeInputRef) {
+          welcomeInputRef.focus();
+        }
+      }
+    }
   }
 };
 
@@ -356,6 +398,20 @@ const handleShowAllWorkspaces = () => {
   }
 };
 
+const handleTemplateClick = (templateChat: any) => {
+  // For template chats, navigate to welcome screen to show workspace type selection
+  if (canvasRef?.value) {
+    canvasRef.value.isWelcomeScreen = true;
+    canvasRef.value.isWorkspaceOverview = false;
+
+    // Focus the input and potentially prefill with template info
+    const welcomeInputRef = canvasRef.value.getWelcomeInputRef?.();
+    if (welcomeInputRef) {
+      welcomeInputRef.focus();
+    }
+  }
+};
+
 
 // Left sidebar only expands/collapses on click, not hover
 
@@ -372,9 +428,12 @@ const sidebarStyle = computed(() => {
   } else if (currentTheme.value === 'synthwave') {
     backgroundColor = 'rgba(30, 10, 50, 0.95)';
     borderColor = `${themeColors.value.secondary}50`;
+  } else if (currentTheme.value === 'cmyk') {
+    backgroundColor = 'rgba(15, 15, 20, 0.95)';
+    borderColor = `${themeColors.value.primary}40`;
   } else if (currentTheme.value === 'lofi') {
-    backgroundColor = 'rgba(60, 59, 59, 0.95)';
-    borderColor = 'rgba(100, 100, 100, 0.3)';
+    backgroundColor = 'rgba(85, 82, 82, 0.95)';
+    borderColor = 'rgba(130, 125, 125, 0.4)';
   } else if (currentTheme.value === 'garden') {
     backgroundColor = isDarkTheme.value ? 'rgba(20, 30, 25, 0.95)' : 'rgba(245, 250, 247, 0.95)';
     borderColor = `${themeColors.value.primary}30`;
@@ -386,11 +445,13 @@ const sidebarStyle = computed(() => {
   return {
     backgroundColor,
     borderColor,
-    color: getTextColor(),
+    color: forceLightText.value ? 'rgba(255, 255, 255, 0.95)' : getTextColor(),
     backdropFilter: 'blur(10px)',
     borderRight: `1px solid ${borderColor}`,
+    borderTopRightRadius: '16px',
+    borderBottomRightRadius: '16px',
     width: isExpanded.value ? '260px' : '60px',
-    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease, color 0.3s ease'
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
   };
 });
 
@@ -410,24 +471,27 @@ const userProfileStyle = computed(() => {
 });
 
 const chatHistoryContentStyle = computed(() => {
-  let backgroundColor = isDarkTheme.value ? 'rgba(15, 15, 15, 0.8)' : 'rgba(250, 250, 250, 0.8)';
+  let backgroundColor = isDarkTheme.value ? 'rgba(8, 8, 8, 0.9)' : 'rgba(250, 250, 250, 0.8)';
   let borderColor = isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)';
 
   // Theme-specific chat history backgrounds
   if (currentTheme.value === 'cyberpunk') {
-    backgroundColor = 'rgba(10, 10, 20, 0.9)';
+    backgroundColor = 'rgba(5, 5, 15, 0.95)';
     borderColor = `${themeColors.value.primary}40`;
   } else if (currentTheme.value === 'synthwave') {
-    backgroundColor = 'rgba(20, 5, 30, 0.9)';
+    backgroundColor = 'rgba(15, 2, 25, 0.95)';
     borderColor = `${themeColors.value.secondary}40`;
+  } else if (currentTheme.value === 'cmyk') {
+    backgroundColor = 'rgba(5, 5, 10, 0.95)';
+    borderColor = `${themeColors.value.primary}40`;
   } else if (currentTheme.value === 'lofi') {
-    backgroundColor = 'rgba(50, 49, 49, 0.9)';
-    borderColor = 'rgba(90, 90, 90, 0.4)';
+    backgroundColor = 'rgba(65, 62, 62, 0.95)';
+    borderColor = 'rgba(120, 115, 115, 0.4)';
   } else if (currentTheme.value === 'garden') {
-    backgroundColor = isDarkTheme.value ? 'rgba(15, 25, 20, 0.9)' : 'rgba(240, 248, 242, 0.9)';
+    backgroundColor = isDarkTheme.value ? 'rgba(10, 20, 15, 0.95)' : 'rgba(240, 248, 242, 0.9)';
     borderColor = `${themeColors.value.primary}35`;
   } else if (currentTheme.value === 'pastel') {
-    backgroundColor = isDarkTheme.value ? 'rgba(25, 20, 25, 0.9)' : 'rgba(248, 246, 250, 0.9)';
+    backgroundColor = isDarkTheme.value ? 'rgba(20, 15, 20, 0.95)' : 'rgba(248, 246, 250, 0.9)';
     borderColor = `${themeColors.value.primary}30`;
   }
 
@@ -436,6 +500,7 @@ const chatHistoryContentStyle = computed(() => {
     borderColor,
     color: getTextColor(),
     border: `1px solid ${borderColor}`,
+    maxHeight: "80vh",
     backdropFilter: 'blur(10px)'
   };
 });
@@ -452,10 +517,10 @@ const getNavItemStyle = (item: any) => {
     color = getContrastTextColor(themeColors.value.primary);
   } else if (isActive) {
     // Enhanced contrast for light themes
-    const darkenedPrimary = isDarkTheme.value 
-      ? themeColors.value.primary 
+    const darkenedPrimary = isDarkTheme.value
+      ? themeColors.value.primary
       : adjustColorLightness(themeColors.value.primary, -25);
-    
+
     if (isDarkTheme.value) {
       backgroundColor = 'rgba(255, 255, 255, 0.15)';
       color = themeColors.value.primary;
@@ -478,6 +543,16 @@ const getNavItemStyle = (item: any) => {
     backgroundColor = `${themeColors.value.secondary}25`;
     color = themeColors.value.secondary;
     boxShadow = `0 0 8px ${themeColors.value.secondary}40`;
+  } else if (currentTheme.value === 'cmyk' && isActive) {
+    backgroundColor = `${themeColors.value.primary}25`;
+    color = themeColors.value.primary;
+    borderColor = `${themeColors.value.primary}70`;
+    boxShadow = `0 0 8px ${themeColors.value.primary}50`;
+  } else if (currentTheme.value === 'cmyk' && item.isPrimary) {
+    backgroundColor = themeColors.value.primary;
+    color = '#000000';
+    borderColor = `${themeColors.value.primary}80`;
+    boxShadow = `0 2px 8px ${themeColors.value.primary}60`;
   } else if (['garden', 'emerald', 'cupcake', 'corporate', 'pastel'].includes(currentTheme.value) && isActive) {
     // Extra contrast for light themes that need it
     const extraDarkened = adjustColorLightness(themeColors.value.primary, -35);
@@ -710,7 +785,7 @@ onMounted(async () => {
   margin-top: auto;
   display: flex;
   padding-top: 15px;
-  padding-right: 0px;
+  padding-right: 0;
   padding-bottom: 15px;
   padding-left: 10px;
   align-items: center;
@@ -887,8 +962,8 @@ onMounted(async () => {
 .theme-fantasy .chat-item.active,
 .theme-autumn .chat-item.active {
   background: var(--theme-primary) !important;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 
-              inset 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
 }
 
 .chat-title {
@@ -972,188 +1047,21 @@ onMounted(async () => {
   transform: translateX(-16px);
 }
 
-/* Light theme specific overrides for better contrast */
-.theme-light,
-.theme-cupcake,
-.theme-bumblebee,
-.theme-emerald,
-.theme-corporate,
-.theme-retro,
-.theme-valentine,
-.theme-garden,
-.theme-pastel,
-.theme-wireframe,
-.theme-cmyk,
-.theme-lemonade,
-.theme-winter,
-.theme-lofi,
-.theme-fantasy,
-.theme-autumn {
-  .nav-section,
-  .chat-history-content-direct,
-  .nav-item,
-  .nav-label,
-  .user-profile,
-  .user-name,
-  .user-email {
-    color: rgba(0, 0, 0, 0.87) !important;
-  }
-  
-  .nav-item:not(.primary) {
-    background-color: transparent !important;
-    color: rgba(0, 0, 0, 0.87) !important;
-    border-color: transparent !important;
-  }
-  
-  .search-input {
-    background: rgba(0, 0, 0, 0.05);
-    border-color: rgba(0, 0, 0, 0.2);
-    color: rgba(0, 0, 0, 0.87);
-  }
-  
-  .search-input:focus {
-    border-color: rgba(0, 0, 0, 0.4);
-  }
-  
-  .search-input::placeholder {
-    color: rgba(0, 0, 0, 0.5);
-  }
-  
-  .sort-btn {
-    border-color: rgba(0, 0, 0, 0.2);
-    color: rgba(0, 0, 0, 0.7);
-  }
-  
-  .sort-btn:hover {
-    background: rgba(0, 0, 0, 0.08);
-    color: rgba(0, 0, 0, 0.9);
-  }
-  
-  .nav-item:hover {
-    background: rgba(0, 0, 0, 0.08) !important;
-  }
-  
-  .chat-item:hover {
-    background: rgba(0, 0, 0, 0.05);
-  }
-  
-  .user-profile:hover {
-    background: rgba(0, 0, 0, 0.05) !important;
-  }
-  
-  .toggle-button:hover {
-    background: rgba(0, 0, 0, 0.08);
-  }
-  
-  .header-area {
-    border-bottom-color: rgba(0, 0, 0, 0.1);
-  }
-  
-  .nav-group:not(:first-child) {
-    border-top-color: rgba(0, 0, 0, 0.1);
-  }
-  
-  .nav-section::-webkit-scrollbar-thumb,
-  .chat-list::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-  }
+/* Cascade animation (top-down) */
+.cascade-enter-active,
+.cascade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
-/* Extra dark text for very light themes */
-.theme-cupcake,
-.theme-valentine,
-.theme-pastel,
-.theme-lemonade,
-.theme-winter {
-  .chat-title,
-  .nav-label,
-  .user-name {
-    font-weight: 600;
-  }
+.cascade-enter-from,
+.cascade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
-/* Dark theme specific overrides for proper light text */
-.theme-dark,
-.theme-synthwave,
-.theme-cyberpunk,
-.theme-halloween,
-.theme-forest,
-.theme-aqua,
-.theme-black,
-.theme-luxury,
-.theme-neon,
-.theme-dracula,
-.theme-business,
-.theme-acid,
-.theme-night,
-.theme-coffee {
-  .nav-section,
-  .chat-history-content-direct,
-  .nav-item,
-  .nav-label,
-  .user-profile,
-  .user-name,
-  .user-email {
-    color: rgba(255, 255, 255, 0.95) !important;
-  }
-  
-  .nav-item:not(.primary) {
-    background-color: transparent !important;
-    color: rgba(255, 255, 255, 0.95) !important;
-    border-color: transparent !important;
-  }
-  
-  .search-input {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.9);
-  }
-  
-  .search-input:focus {
-    border-color: rgba(255, 255, 255, 0.4);
-  }
-  
-  .search-input::placeholder {
-    color: rgba(255, 255, 255, 0.5);
-  }
-  
-  .sort-btn {
-    border-color: rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.7);
-  }
-  
-  .sort-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.9);
-  }
-  
-  .nav-item:hover {
-    background: rgba(255, 255, 255, 0.1) !important;
-  }
-  
-  .chat-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-  
-  .user-profile:hover {
-    background: rgba(255, 255, 255, 0.05) !important;
-  }
-  
-  .toggle-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  
-  .header-area {
-    border-bottom-color: rgba(255, 255, 255, 0.1);
-  }
-  
-  .nav-group:not(:first-child) {
-    border-top-color: rgba(255, 255, 255, 0.1);
-  }
-  
-  .nav-section::-webkit-scrollbar-thumb,
-  .chat-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-  }
+.cascade-enter-to,
+.cascade-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>

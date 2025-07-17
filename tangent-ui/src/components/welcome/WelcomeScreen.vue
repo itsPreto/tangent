@@ -3,150 +3,196 @@
     :style="dynamicThemeStyles" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver"
     @dragleave.prevent="handleDragLeave" @drop.prevent="handleDrop">
 
-    <!-- Main Welcome Content -->
-    <div ref="welcomeContentRef" class="welcome-content" :class="{ 
-      'templates-expanded': isExpanded,
-      'narrow-layout': isNarrowLayout,
-      'very-narrow-layout': isVeryNarrowLayout,
-      'extremely-narrow-layout': isExtremelyNarrowLayout
-    }">
-      <!-- Hero Section -->
-      <div class="hero-section">
-        <div class="hero-icon">
-          <Sparkles :size="48" class="sparkle-icon" />
-        </div>
-        <h1 class="hero-title">Welcome back, Marco!</h1>
-      </div>
+    <!-- Scrolling Layout Container -->
+    <div class="scroll-container" ref="scrollContainer">
+      <!-- Section 1: Main Welcome Content -->
+      <section class="welcome-section" ref="welcomeContentRef">
+        <div class="welcome-content" :class="{ 
+          'templates-expanded': isExpanded,
+          'narrow-layout': isNarrowLayout && !isExpanded,
+          'very-narrow-layout': isVeryNarrowLayout && !isExpanded,
+          'extremely-narrow-layout': isExtremelyNarrowLayout && !isExpanded
+        }">
+          <!-- Hero Section -->
+          <div class="hero-section">
+            <div class="hero-icon">
+              <Sparkles :size="48" class="sparkle-icon sparkle-large" ref="sparkleIconRef" />
+              <Sparkles :size="32" class="sparkle-icon sparkle-medium" ref="sparkleIconMediumRef" />
+              <Sparkles :size="20" class="sparkle-icon sparkle-small" ref="sparkleIconSmallRef" />
+            </div>
+            <h1 class="hero-title">Welcome back, Marco!</h1>
+          </div>
 
-      <!-- Main Input Section -->
-      <div class="input-section" :class="{ 'collapsed': isExpanded }">
-        <!-- Claude Code Corner Label (outside container) -->
-        <div v-if="isClaudeCodeMode" class="claude-code-label">
-          <span class="text-xs font-semibold tracking-wider">CLAUDE CODE</span>
-        </div>
+          <!-- Main Input Section -->
+          <div class="input-section" :class="{ 'collapsed': isExpanded }">
+            <!-- Claude Code Corner Label (outside container) -->
+            <div v-if="isClaudeCodeMode" class="claude-code-label">
+              <span class="text-xs font-semibold tracking-wider">CLAUDE CODE</span>
+            </div>
 
-        <div class="input-container" :class="{ 'claude-code-mode': isClaudeCodeMode }">
+            <div class="input-container" :class="{ 'claude-code-mode': isClaudeCodeMode, 'animate-entrance': true }">
 
-          <textarea v-model="userInput" ref="inputRef" class="main-input"
-            :placeholder="isClaudeCodeMode ? 'Describe your task or goal...' : 'What would you like to explore or work on today?'"
-            :rows="inputRows" @input="handleInputChange" @keydown="handleKeyDown" @focus="handleInputFocus"
-            @blur="handleInputBlur" />
+              <textarea v-model="userInput" ref="inputRef" class="main-input"
+                :placeholder="isClaudeCodeMode ? 'Describe your task or goal...' : 'What would you like to explore or work on today?'"
+                :rows="inputRows" @input="handleInputChange" @keydown="handleKeyDown" @focus="handleInputFocus"
+                @blur="handleInputBlur" />
+              
 
-          <!-- Claude Code Settings Panel (just tools) -->
-          <div v-if="isClaudeCodeMode" class="claude-code-settings">
-            <div class="tools-section">
-              <div class="tools-compact">
-                <label v-for="(enabled, tool) in claudeCodeSettings.tools" :key="tool" class="tool-toggle-compact">
-                  <input type="checkbox" v-model="claudeCodeSettings.tools[tool]" class="checkbox checkbox-xs" />
-                  <span class="tool-name-compact">{{ tool }}</span>
-                </label>
+              <!-- Claude Code Settings Panel (just tools) -->
+              <div v-if="isClaudeCodeMode" class="claude-code-settings">
+                <div class="tools-section">
+                  <div class="tools-compact">
+                    <label v-for="(enabled, tool) in claudeCodeSettings.tools" :key="tool" class="tool-toggle-compact">
+                      <input type="checkbox" v-model="claudeCodeSettings.tools[tool]" class="checkbox checkbox-xs" />
+                      <span class="tool-name-compact">{{ tool }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="input-footer">
+                <div class="input-tools">
+                  <button class="tool-btn" title="Add attachment">
+                    <Plus :size="16" />
+                  </button>
+                  <button class="tool-btn" title="Voice input">
+                    <Mic :size="16" />
+                  </button>
+                  <button @click="toggleClaudeCodeMode" class="tool-btn claude-code-toggle" 
+                    title="Toggle Claude Code mode"
+                    :class="{ 'active': isClaudeCodeMode }">
+                    <Terminal :size="16" />
+                  </button>
+                  <button @click="isExpanded = !isExpanded" class="tool-btn" title="Browse templates"
+                    :class="{ 'active': isExpanded }">
+                    <Search :size="16" />
+                  </button>
+                </div>
+
+                <!-- Claude Code Config Controls -->
+                <div v-if="isClaudeCodeMode" class="claude-config-controls">
+                  <div class="config-item">
+                    <span class="config-label">Dir:</span>
+                    <input type="text" v-model="claudeCodeSettings.workingDir" class="setting-input-compact"
+                      placeholder="/project/path" />
+                  </div>
+                  <label class="toggle-compact">
+                    <input type="checkbox" v-model="claudeCodeSettings.autoSave" class="checkbox checkbox-xs" />
+                    <span>Auto-save</span>
+                  </label>
+                  <select v-model="claudeCodeSettings.permissions" class="select-compact">
+                    <option value="auto-allow">Auto-allow</option>
+                    <option value="prompt">Prompt</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </div>
+
+                <button @click="generateWorkspace" :disabled="!userInput.trim() || isGenerating" class="generate-btn"
+                  :class="{ 'claude-code-btn': isClaudeCodeMode }">
+                  <span v-if="isGenerating" class="loading loading-spinner loading-sm"></span>
+                  <span v-else>{{ isClaudeCodeMode ? 'Begin' : 'Generate' }}</span>
+                  <ArrowRight :size="16" />
+                </button>
               </div>
             </div>
           </div>
 
-          <div class="input-footer">
-            <div class="input-tools">
-              <button class="tool-btn" title="Add attachment">
-                <Plus :size="16" />
-              </button>
-              <button class="tool-btn" title="Voice input">
-                <Mic :size="16" />
-              </button>
-              <button @click="isExpanded = !isExpanded" class="tool-btn" title="Browse templates"
-                :class="{ 'active': isExpanded }">
-                <Search :size="16" />
-              </button>
-            </div>
+          <!-- Side by Side Layout -->
+          <div class="side-by-side-container" :class="{ 'expanded-layout': isExpanded }">
+            <!-- Templates Section -->
+            <div class="templates-section" :class="{ 'expanded': isExpanded }">
+              <h2 class="section-title" v-if="!isExpanded">
+                <span class="hover-underline" ref="templatesTitle">templates:</span>
+              </h2>
 
-            <!-- Claude Code Config Controls -->
-            <div v-if="isClaudeCodeMode" class="claude-config-controls">
-              <div class="config-item">
-                <span class="config-label">Dir:</span>
-                <input type="text" v-model="claudeCodeSettings.workingDir" class="setting-input-compact"
-                  placeholder="/project/path" />
+              <!-- Expanded Templates Browser -->
+              <div v-if="isExpanded" class="templates-browser" ref="templatesBrowser">
+                <div class="templates-browser-header">
+                  <h2 class="browser-title" ref="browserTitle" :style="titleStyle">Browse All Templates</h2>
+                  <button @click="isExpanded = false" class="close-browser-btn">
+                    <X :size="20" />
+                    Close
+                  </button>
+                </div>
+                
+                <div class="templates-browser-scroll" ref="templatesScroll" @scroll="handleTemplateScroll">
+                  <div class="templates-browser-grid">
+                    <div v-for="template in allTemplates" :key="template.id"
+                      @click="selectTemplate(template)" class="template-card-browser"
+                      :class="{ 'selected': selectedTemplate?.id === template.id }">
+                      <div class="template-icon">
+                        <component :is="getTemplateIcon(template.icon)" :size="24" />
+                      </div>
+                      <h3 class="template-title">{{ template.name }}</h3>
+                      <p class="template-description">{{ template.description }}</p>
+                    </div>
+                  </div>
+                  <!-- Debug scroll area -->
+                  <div style="height: 500px; background: rgba(255,0,0,0.1); margin-top: 20px; display: flex; align-items: center; justify-content: center;">
+                    <p>Debug: This should be scrollable area</p>
+                  </div>
+                </div>
               </div>
-              <label class="toggle-compact">
-                <input type="checkbox" v-model="claudeCodeSettings.autoSave" class="checkbox checkbox-xs" />
-                <span>Auto-save</span>
-              </label>
-              <select v-model="claudeCodeSettings.permissions" class="select-compact">
-                <option value="auto-allow">Auto-allow</option>
-                <option value="prompt">Prompt</option>
-                <option value="manual">Manual</option>
-              </select>
+
+              <!-- Normal Templates Grid -->
+              <div v-else class="templates-container"
+                @mouseenter="activateTemplatesUnderline" @mouseleave="deactivateTemplatesUnderline">
+                <div class="templates-grid">
+                  <div v-for="template in featuredTemplates.slice(0, maxTemplatesCount)" :key="template.id"
+                    @click="selectTemplate(template)" class="template-card"
+                    :class="{ 'selected': selectedTemplate?.id === template.id }">
+                    <div class="template-icon">
+                      <component :is="getTemplateIcon(template.icon)" :size="24" />
+                    </div>
+                    <h3 class="template-title">{{ template.name }}</h3>
+                    <p class="template-description">{{ template.description }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <button @click="generateWorkspace" :disabled="!userInput.trim() || isGenerating" class="generate-btn"
-              :class="{ 'claude-code-btn': isClaudeCodeMode }">
-              <span v-if="isGenerating" class="loading loading-spinner loading-sm"></span>
-              <span v-else>{{ isClaudeCodeMode ? 'Begin' : 'Generate' }}</span>
-              <ArrowRight :size="16" />
+            <!-- Recent Workspaces (only show when not expanded) -->
+            <div v-if="recentWorkspaces.length && !isExpanded" class="recent-section">
+              <h2 class="section-title">
+                <span class="hover-underline" ref="workspacesTitle">workspaces:</span>
+              </h2>
+
+              <div class="recent-grid"
+                @mouseenter="activateWorkspacesUnderline" @mouseleave="deactivateWorkspacesUnderline">
+                <div v-for="workspace in recentWorkspaces.slice(0, maxWorkspacesCount)" :key="workspace.id"
+                  @click="$emit('open-workspace', workspace.id)" class="recent-card">
+                  <div class="recent-preview">
+                    <div class="workspace-nodes">
+                      <div v-for="i in Math.min(workspace.nodeCount || 3, 5)" :key="i" class="mini-node" :style="{
+                        left: `${(i - 1) * 15}px`,
+                        zIndex: 5 - i
+                      }" />
+                    </div>
+                  </div>
+                  <h3 class="recent-title">{{ workspace.title }}</h3>
+                  <p class="recent-meta">{{ formatDate(workspace.lastModified) }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="template-actions" v-if="!isExpanded">
+            <button @click="expandTemplates" class="secondary-btn">
+              <Grid :size="16" />
+              Browse All Templates
+            </button>
+            <button @click="$emit('import-workspace')" class="secondary-btn">
+              <Upload :size="16" />
+              Import Existing
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Side by Side Layout -->
-      <div class="side-by-side-container" :class="{ 'expanded-layout': isExpanded }">
-        <!-- Templates Section -->
-        <div class="templates-section" :class="{ 'expanded': isExpanded }">
-          <h2 class="section-title" v-if="!isExpanded">
-            <span class="hover-underline" ref="templatesTitle">templates:</span>
-          </h2>
-
-          <div class="templates-container" :class="{ 'horizontal': isExpanded }"
-            @mouseenter="activateTemplatesUnderline" @mouseleave="deactivateTemplatesUnderline">
-            <div class="templates-grid" :class="{ 'horizontal-grid': isExpanded }">
-              <div v-for="template in (isExpanded ? allTemplates : featuredTemplates).slice(0, maxTemplatesCount)" :key="template.id"
-                @click="selectTemplate(template)" class="template-card"
-                :class="{ 'selected': selectedTemplate?.id === template.id }">
-                <div class="template-icon">
-                  <component :is="getTemplateIcon(template.icon)" :size="24" />
-                </div>
-                <h3 class="template-title">{{ template.name }}</h3>
-                <p class="template-description">{{ template.description }}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Recent Workspaces -->
-        <div v-if="recentWorkspaces.length" class="recent-section"
-          :class="{ 'side-by-side': !isExpanded, 'expanded': isExpanded }">
-          <h2 class="section-title">
-            <span class="hover-underline" ref="workspacesTitle">workspaces:</span>
-          </h2>
-
-          <div class="recent-grid" :class="{ 'vertical-layout': !isExpanded, 'horizontal-grid': isExpanded }"
-            @mouseenter="activateWorkspacesUnderline" @mouseleave="deactivateWorkspacesUnderline">
-            <div v-for="workspace in recentWorkspaces.slice(0, maxWorkspacesCount)" :key="workspace.id"
-              @click="$emit('open-workspace', workspace.id)" class="recent-card">
-              <div class="recent-preview">
-                <div class="workspace-nodes">
-                  <div v-for="i in Math.min(workspace.nodeCount || 3, 5)" :key="i" class="mini-node" :style="{
-                    left: `${(i - 1) * 15}px`,
-                    zIndex: 5 - i
-                  }" />
-                </div>
-              </div>
-              <h3 class="recent-title">{{ workspace.title }}</h3>
-              <p class="recent-meta">{{ formatDate(workspace.lastModified) }}</p>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-
-    <div class="template-actions" v-if="!isExpanded">
-      <button @click="isExpanded = true" class="secondary-btn">
-        <Grid :size="16" />
-        Browse All Templates
-      </button>
-      <button @click="$emit('import-workspace')" class="secondary-btn">
-        <Upload :size="16" />
-        Import Existing
-      </button>
+      <!-- Section 2: Subscription Plans (only show if user is on trial) -->
+      <section v-if="isOnTrial && !isExpanded" class="subscription-section">
+        <SubscriptionPlans />
+      </section>
     </div>
   </div>
 </template>
@@ -171,12 +217,34 @@ import {
   Briefcase,
   Palette,
   GraduationCap,
-  Code
+  Code,
+  Terminal,
+  Globe,
+  Smartphone,
+  BarChart,
+  Megaphone,
+  FileText,
+  Rocket,
+  Cpu,
+  Link,
+  Brain,
+  Video,
+  ShoppingCart,
+  Activity,
+  TrendingUp,
+  Calendar,
+  Heart,
+  Camera,
+  Music,
+  Home,
+  Map,
+  DollarSign
 } from 'lucide-vue-next'
 
-import TangentLogo from '@/components/logo/TangentLogo.vue'
+import SubscriptionPlans from '@/components/subscription/SubscriptionPlans.vue'
 import { useThemeStore } from '@/stores/themeStore'
 import { useChatStore } from '@/stores/chatStore'
+import { useUserStore } from '@/stores/userStore'
 
 // Props & Emits
 const emit = defineEmits<{
@@ -189,10 +257,14 @@ const emit = defineEmits<{
 // Stores
 const themeStore = useThemeStore()
 const chatStore = useChatStore()
+const userStore = useUserStore()
 
 // Reactive state
 const userInput = ref('')
 const inputRef = ref<HTMLTextAreaElement>()
+const sparkleIconRef = ref<HTMLElement>()
+const sparkleIconMediumRef = ref<HTMLElement>()
+const sparkleIconSmallRef = ref<HTMLElement>()
 const selectedTemplate = ref<WorkspaceTemplate | null>(null)
 const isGenerating = ref(false)
 const showAllTemplates = ref(false)
@@ -204,6 +276,14 @@ const isFocused = ref(false)
 const isDragOver = ref(false)
 const isDragActive = ref(false)
 
+// Templates browser refs and state
+const templatesBrowser = ref<HTMLElement>()
+const browserTitle = ref<HTMLElement>()
+const templatesScroll = ref<HTMLElement>()
+const scrollY = ref(0)
+const titleTranslateX = ref(0)
+const isScrollLocked = ref(false)
+
 // Responsive layout state
 const containerWidth = ref(0)
 const welcomeContentRef = ref<HTMLElement>()
@@ -212,6 +292,9 @@ const welcomeContentRef = ref<HTMLElement>()
 const isNarrowLayout = computed(() => containerWidth.value < 900)
 const isVeryNarrowLayout = computed(() => containerWidth.value < 600)
 const isExtremelyNarrowLayout = computed(() => containerWidth.value < 400)
+
+// User state
+const isOnTrial = computed(() => userStore.isOnTrial)
 
 // Dynamic template and workspace counts based on layout
 const maxTemplatesCount = computed(() => {
@@ -227,7 +310,7 @@ const maxWorkspacesCount = computed(() => {
   if (isExtremelyNarrowLayout.value) return 1
   if (isVeryNarrowLayout.value) return 2
   if (isNarrowLayout.value) return 4
-  return 6 // Default 3x2 grid
+  return 4 // Default 2x2 grid
 })
 
 // Claude Code mode state
@@ -246,6 +329,7 @@ const claudeCodeSettings = ref({
   autoSave: true,
   permissions: 'auto-allow'
 })
+
 
 // Theme
 const currentTheme = computed(() => themeStore.currentTheme)
@@ -359,6 +443,30 @@ const generateWorkspace = async () => {
   }
 }
 
+const toggleClaudeCodeMode = () => {
+  if (isClaudeCodeMode.value) {
+    // Remove 'claude' prefix if it exists
+    userInput.value = userInput.value.replace(/^claude\s*/i, '')
+  } else {
+    // Add 'claude' prefix
+    userInput.value = 'claude ' + userInput.value
+  }
+  
+  nextTick(() => {
+    inputRef.value?.focus()
+    // Move cursor to end of input
+    if (inputRef.value) {
+      inputRef.value.setSelectionRange(inputRef.value.value.length, inputRef.value.value.length)
+      // Manually trigger input event to update Claude Code mode detection
+      inputRef.value.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  })
+}
+
+const expandTemplates = () => {
+  isExpanded.value = true
+}
+
 const selectTemplate = (template: WorkspaceTemplate) => {
   selectedTemplate.value = template
   userInput.value = template.suggestedPrompt || ''
@@ -367,6 +475,64 @@ const selectTemplate = (template: WorkspaceTemplate) => {
     inputRef.value?.focus()
   })
 }
+
+// Templates browser scroll handler
+const handleTemplateScroll = () => {
+  if (!templatesScroll.value || !browserTitle.value) return
+  
+  const scrollTop = templatesScroll.value.scrollTop
+  const scrollHeight = templatesScroll.value.scrollHeight
+  const clientHeight = templatesScroll.value.clientHeight
+  
+  // Debug logging
+  console.log('Scroll:', { scrollTop, scrollHeight, clientHeight, canScroll: scrollHeight > clientHeight })
+  
+  const headerHeight = 80 // Approximate header height
+  const maxScroll = headerHeight
+  
+  // Calculate scroll progress (0 to 1)
+  const scrollProgress = Math.min(scrollTop / maxScroll, 1)
+  
+  // Calculate title translation - move toward center as we scroll
+  const initialOffset = -100 // Start offset from center
+  const targetOffset = 0 // End at center
+  titleTranslateX.value = initialOffset + (targetOffset - initialOffset) * scrollProgress
+  
+  // Store scroll position
+  scrollY.value = scrollTop
+}
+
+// Reset scroll state when expanding/collapsing
+watch(isExpanded, (newValue) => {
+  if (newValue) {
+    // Reset scroll state when opening
+    nextTick(() => {
+      scrollY.value = 0
+      titleTranslateX.value = -100
+      isScrollLocked.value = false
+      if (templatesScroll.value) {
+        templatesScroll.value.scrollTop = 0
+        templatesScroll.value.style.overflowY = 'auto'
+        
+        // Debug logging
+        console.log('Templates scroll container:', {
+          element: templatesScroll.value,
+          scrollHeight: templatesScroll.value.scrollHeight,
+          clientHeight: templatesScroll.value.clientHeight,
+          canScroll: templatesScroll.value.scrollHeight > templatesScroll.value.clientHeight,
+          overflowY: getComputedStyle(templatesScroll.value).overflowY
+        })
+      }
+    })
+  }
+})
+
+// Computed style for title animation
+const titleStyle = computed(() => ({
+  transform: `translateX(${titleTranslateX.value}px)`,
+  transition: 'transform 0.1s ease-out'
+}))
+
 
 // Template system
 interface WorkspaceTemplate {
@@ -489,54 +655,6 @@ const featuredTemplates = ref<WorkspaceTemplate[]>([
         { from: 'Writing & Drafting', to: 'Revision & Polish', label: 'draft' }
       ]
     }
-  },
-  {
-    id: 'science',
-    name: 'Science',
-    description: 'Research & experiment',
-    icon: 'flask',
-    category: 'Research',
-    suggestedPrompt: 'Help me design and conduct a scientific investigation',
-    structure: {
-      mainTopic: 'Scientific Investigation',
-      branches: [
-        { title: 'Hypothesis', starterMessage: 'Let\'s formulate a testable hypothesis based on observations.', position: { x: 0, y: 0 } },
-        { title: 'Methodology', starterMessage: 'Now let\'s design a rigorous experimental methodology.', position: { x: 400, y: 0 } },
-        { title: 'Data Collection', starterMessage: 'Time to plan and execute our data collection process.', position: { x: 0, y: 300 } },
-        { title: 'Analysis', starterMessage: 'Let\'s analyze our data and look for patterns and significance.', position: { x: 400, y: 300 } },
-        { title: 'Conclusions', starterMessage: 'Finally, let\'s interpret results and draw scientific conclusions.', position: { x: 200, y: 500 } }
-      ],
-      connections: [
-        { from: 'Hypothesis', to: 'Methodology', label: 'testing approach' },
-        { from: 'Methodology', to: 'Data Collection', label: 'procedure' },
-        { from: 'Data Collection', to: 'Analysis', label: 'raw data' },
-        { from: 'Analysis', to: 'Conclusions', label: 'results' }
-      ]
-    }
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    description: 'Strategy & planning',
-    icon: 'briefcase',
-    category: 'Business',
-    suggestedPrompt: 'Help me develop a comprehensive business strategy',
-    structure: {
-      mainTopic: 'Business Strategy',
-      branches: [
-        { title: 'Market Analysis', starterMessage: 'Let\'s analyze your target market and competitive landscape.', position: { x: 0, y: 0 } },
-        { title: 'Value Proposition', starterMessage: 'Now let\'s define your unique value proposition and positioning.', position: { x: 400, y: 0 } },
-        { title: 'Business Model', starterMessage: 'Time to design a sustainable and scalable business model.', position: { x: 0, y: 300 } },
-        { title: 'Financial Planning', starterMessage: 'Let\'s create financial projections and funding strategies.', position: { x: 400, y: 300 } },
-        { title: 'Go-to-Market', starterMessage: 'Finally, let\'s plan your market entry and growth strategy.', position: { x: 200, y: 500 } }
-      ],
-      connections: [
-        { from: 'Market Analysis', to: 'Value Proposition', label: 'insights' },
-        { from: 'Value Proposition', to: 'Business Model', label: 'positioning' },
-        { from: 'Business Model', to: 'Financial Planning', label: 'structure' },
-        { from: 'Financial Planning', to: 'Go-to-Market', label: 'resources' }
-      ]
-    }
   }
 ])
 
@@ -589,6 +707,631 @@ const allTemplates = ref<WorkspaceTemplate[]>([
         { from: 'Active Learning', to: 'Assessment', label: 'experience' }
       ]
     }
+  },
+  {
+    id: 'business-plan',
+    name: 'Business Plan',
+    description: 'Create comprehensive business plans',
+    icon: 'briefcase',
+    category: 'Business',
+    suggestedPrompt: 'Help me create a detailed business plan for my startup',
+    structure: {
+      mainTopic: 'Business Plan Development',
+      branches: [
+        { title: 'Market Research', starterMessage: 'Let\'s analyze your target market and competition.', position: { x: 0, y: 0 } },
+        { title: 'Business Model', starterMessage: 'Now let\'s define your value proposition and revenue model.', position: { x: 400, y: 0 } },
+        { title: 'Financial Projections', starterMessage: 'Time to create realistic financial forecasts and budgets.', position: { x: 0, y: 300 } },
+        { title: 'Marketing Strategy', starterMessage: 'Let\'s develop your go-to-market and customer acquisition strategy.', position: { x: 400, y: 300 } }
+      ],
+      connections: [
+        { from: 'Market Research', to: 'Business Model', label: 'insights' },
+        { from: 'Business Model', to: 'Financial Projections', label: 'structure' },
+        { from: 'Market Research', to: 'Marketing Strategy', label: 'audience' },
+        { from: 'Financial Projections', to: 'Marketing Strategy', label: 'budget' }
+      ]
+    }
+  },
+  {
+    id: 'web-development',
+    name: 'Web Development',
+    description: 'Build websites and web apps',
+    icon: 'globe',
+    category: 'Technical',
+    suggestedPrompt: 'Help me plan and build a web application from scratch',
+    structure: {
+      mainTopic: 'Web Development Project',
+      branches: [
+        { title: 'Requirements', starterMessage: 'Let\'s define the features and technical requirements.', position: { x: 0, y: 0 } },
+        { title: 'Architecture', starterMessage: 'Now let\'s design the system architecture and tech stack.', position: { x: 400, y: 0 } },
+        { title: 'Frontend', starterMessage: 'Time to build the user interface and user experience.', position: { x: 0, y: 300 } },
+        { title: 'Backend', starterMessage: 'Let\'s develop the server-side logic and database.', position: { x: 400, y: 300 } },
+        { title: 'Deployment', starterMessage: 'Finally, let\'s deploy and optimize your application.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Requirements', to: 'Architecture', label: 'specifications' },
+        { from: 'Architecture', to: 'Frontend', label: 'design' },
+        { from: 'Architecture', to: 'Backend', label: 'structure' },
+        { from: 'Frontend', to: 'Deployment', label: 'interface' },
+        { from: 'Backend', to: 'Deployment', label: 'services' }
+      ]
+    }
+  },
+  {
+    id: 'mobile-app',
+    name: 'Mobile App',
+    description: 'Design and develop mobile applications',
+    icon: 'smartphone',
+    category: 'Technical',
+    suggestedPrompt: 'Help me create a mobile app from concept to app store',
+    structure: {
+      mainTopic: 'Mobile App Development',
+      branches: [
+        { title: 'App Concept', starterMessage: 'Let\'s define your app\'s core purpose and target users.', position: { x: 0, y: 0 } },
+        { title: 'UX/UI Design', starterMessage: 'Now let\'s design intuitive user flows and interfaces.', position: { x: 400, y: 0 } },
+        { title: 'Development', starterMessage: 'Time to build your app with the right framework and tools.', position: { x: 0, y: 300 } },
+        { title: 'Testing', starterMessage: 'Let\'s ensure your app works perfectly across devices.', position: { x: 400, y: 300 } },
+        { title: 'Launch', starterMessage: 'Finally, let\'s publish your app and plan your launch strategy.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'App Concept', to: 'UX/UI Design', label: 'requirements' },
+        { from: 'UX/UI Design', to: 'Development', label: 'designs' },
+        { from: 'Development', to: 'Testing', label: 'build' },
+        { from: 'Testing', to: 'Launch', label: 'validated app' }
+      ]
+    }
+  },
+  {
+    id: 'data-analysis',
+    name: 'Data Analysis',
+    description: 'Analyze and visualize data insights',
+    icon: 'bar-chart',
+    category: 'Technical',
+    suggestedPrompt: 'Help me analyze data and create meaningful insights',
+    structure: {
+      mainTopic: 'Data Analysis Project',
+      branches: [
+        { title: 'Data Collection', starterMessage: 'Let\'s identify and gather the right data sources.', position: { x: 0, y: 0 } },
+        { title: 'Data Cleaning', starterMessage: 'Now let\'s clean and prepare your data for analysis.', position: { x: 400, y: 0 } },
+        { title: 'Analysis', starterMessage: 'Time to explore patterns and extract meaningful insights.', position: { x: 0, y: 300 } },
+        { title: 'Visualization', starterMessage: 'Let\'s create compelling charts and dashboards.', position: { x: 400, y: 300 } },
+        { title: 'Reporting', starterMessage: 'Finally, let\'s compile findings into actionable reports.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Data Collection', to: 'Data Cleaning', label: 'raw data' },
+        { from: 'Data Cleaning', to: 'Analysis', label: 'clean data' },
+        { from: 'Analysis', to: 'Visualization', label: 'insights' },
+        { from: 'Visualization', to: 'Reporting', label: 'charts' }
+      ]
+    }
+  },
+  {
+    id: 'marketing-campaign',
+    name: 'Marketing Campaign',
+    description: 'Plan and execute marketing campaigns',
+    icon: 'megaphone',
+    category: 'Business',
+    suggestedPrompt: 'Help me create and launch a successful marketing campaign',
+    structure: {
+      mainTopic: 'Marketing Campaign',
+      branches: [
+        { title: 'Campaign Strategy', starterMessage: 'Let\'s define your campaign goals and target audience.', position: { x: 0, y: 0 } },
+        { title: 'Content Creation', starterMessage: 'Now let\'s create compelling content and messaging.', position: { x: 400, y: 0 } },
+        { title: 'Channel Selection', starterMessage: 'Time to choose the right marketing channels and platforms.', position: { x: 0, y: 300 } },
+        { title: 'Execution', starterMessage: 'Let\'s launch your campaign and monitor performance.', position: { x: 400, y: 300 } },
+        { title: 'Optimization', starterMessage: 'Finally, let\'s analyze results and optimize for better performance.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Campaign Strategy', to: 'Content Creation', label: 'direction' },
+        { from: 'Campaign Strategy', to: 'Channel Selection', label: 'audience' },
+        { from: 'Content Creation', to: 'Execution', label: 'assets' },
+        { from: 'Channel Selection', to: 'Execution', label: 'platforms' },
+        { from: 'Execution', to: 'Optimization', label: 'performance data' }
+      ]
+    }
+  },
+  {
+    id: 'content-strategy',
+    name: 'Content Strategy',
+    description: 'Develop comprehensive content strategies',
+    icon: 'file-text',
+    category: 'Business',
+    suggestedPrompt: 'Help me create a content strategy that drives engagement',
+    structure: {
+      mainTopic: 'Content Strategy',
+      branches: [
+        { title: 'Content Audit', starterMessage: 'Let\'s analyze your existing content and identify gaps.', position: { x: 0, y: 0 } },
+        { title: 'Content Calendar', starterMessage: 'Now let\'s plan your content schedule and themes.', position: { x: 400, y: 0 } },
+        { title: 'Content Creation', starterMessage: 'Time to produce high-quality, engaging content.', position: { x: 0, y: 300 } },
+        { title: 'Distribution', starterMessage: 'Let\'s optimize content distribution across channels.', position: { x: 400, y: 300 } },
+        { title: 'Performance', starterMessage: 'Finally, let\'s measure and improve content performance.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Content Audit', to: 'Content Calendar', label: 'insights' },
+        { from: 'Content Calendar', to: 'Content Creation', label: 'schedule' },
+        { from: 'Content Creation', to: 'Distribution', label: 'content' },
+        { from: 'Distribution', to: 'Performance', label: 'metrics' }
+      ]
+    }
+  },
+  {
+    id: 'product-launch',
+    name: 'Product Launch',
+    description: 'Launch products successfully',
+    icon: 'rocket',
+    category: 'Business',
+    suggestedPrompt: 'Help me plan and execute a successful product launch',
+    structure: {
+      mainTopic: 'Product Launch',
+      branches: [
+        { title: 'Pre-Launch', starterMessage: 'Let\'s prepare everything for a successful launch.', position: { x: 0, y: 0 } },
+        { title: 'Launch Strategy', starterMessage: 'Now let\'s plan your launch timeline and tactics.', position: { x: 400, y: 0 } },
+        { title: 'Launch Day', starterMessage: 'Time to execute your launch plan flawlessly.', position: { x: 0, y: 300 } },
+        { title: 'Post-Launch', starterMessage: 'Let\'s maintain momentum and gather feedback.', position: { x: 400, y: 300 } }
+      ],
+      connections: [
+        { from: 'Pre-Launch', to: 'Launch Strategy', label: 'preparation' },
+        { from: 'Launch Strategy', to: 'Launch Day', label: 'plan' },
+        { from: 'Launch Day', to: 'Post-Launch', label: 'results' }
+      ]
+    }
+  },
+  {
+    id: 'ai-integration',
+    name: 'AI Integration',
+    description: 'Integrate AI into your projects',
+    icon: 'cpu',
+    category: 'Technical',
+    suggestedPrompt: 'Help me integrate AI capabilities into my application',
+    structure: {
+      mainTopic: 'AI Integration Project',
+      branches: [
+        { title: 'AI Requirements', starterMessage: 'Let\'s define what AI capabilities you need.', position: { x: 0, y: 0 } },
+        { title: 'Model Selection', starterMessage: 'Now let\'s choose the right AI models and APIs.', position: { x: 400, y: 0 } },
+        { title: 'Implementation', starterMessage: 'Time to integrate AI into your application.', position: { x: 0, y: 300 } },
+        { title: 'Optimization', starterMessage: 'Let\'s optimize performance and accuracy.', position: { x: 400, y: 300 } },
+        { title: 'Monitoring', starterMessage: 'Finally, let\'s set up monitoring and maintenance.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'AI Requirements', to: 'Model Selection', label: 'specifications' },
+        { from: 'Model Selection', to: 'Implementation', label: 'chosen models' },
+        { from: 'Implementation', to: 'Optimization', label: 'initial version' },
+        { from: 'Optimization', to: 'Monitoring', label: 'optimized system' }
+      ]
+    }
+  },
+  {
+    id: 'blockchain-project',
+    name: 'Blockchain Project',
+    description: 'Build decentralized applications',
+    icon: 'link',
+    category: 'Technical',
+    suggestedPrompt: 'Help me create a blockchain-based application',
+    structure: {
+      mainTopic: 'Blockchain Development',
+      branches: [
+        { title: 'Blockchain Design', starterMessage: 'Let\'s design your blockchain architecture and consensus.', position: { x: 0, y: 0 } },
+        { title: 'Smart Contracts', starterMessage: 'Now let\'s develop secure smart contracts.', position: { x: 400, y: 0 } },
+        { title: 'DApp Frontend', starterMessage: 'Time to build the user interface for your DApp.', position: { x: 0, y: 300 } },
+        { title: 'Testing', starterMessage: 'Let\'s thoroughly test your blockchain application.', position: { x: 400, y: 300 } },
+        { title: 'Deployment', starterMessage: 'Finally, let\'s deploy to the blockchain network.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Blockchain Design', to: 'Smart Contracts', label: 'architecture' },
+        { from: 'Smart Contracts', to: 'DApp Frontend', label: 'contracts' },
+        { from: 'DApp Frontend', to: 'Testing', label: 'application' },
+        { from: 'Testing', to: 'Deployment', label: 'validated app' }
+      ]
+    }
+  },
+  {
+    id: 'machine-learning',
+    name: 'Machine Learning',
+    description: 'Build ML models and systems',
+    icon: 'brain',
+    category: 'Technical',
+    suggestedPrompt: 'Help me build a machine learning model to solve a specific problem',
+    structure: {
+      mainTopic: 'Machine Learning Project',
+      branches: [
+        { title: 'Problem Definition', starterMessage: 'Let\'s clearly define the ML problem and success metrics.', position: { x: 0, y: 0 } },
+        { title: 'Data Preparation', starterMessage: 'Now let\'s collect and prepare your training data.', position: { x: 400, y: 0 } },
+        { title: 'Model Training', starterMessage: 'Time to train and tune your machine learning models.', position: { x: 0, y: 300 } },
+        { title: 'Evaluation', starterMessage: 'Let\'s evaluate model performance and accuracy.', position: { x: 400, y: 300 } },
+        { title: 'Deployment', starterMessage: 'Finally, let\'s deploy your model to production.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Problem Definition', to: 'Data Preparation', label: 'requirements' },
+        { from: 'Data Preparation', to: 'Model Training', label: 'clean data' },
+        { from: 'Model Training', to: 'Evaluation', label: 'trained model' },
+        { from: 'Evaluation', to: 'Deployment', label: 'validated model' }
+      ]
+    }
+  },
+  {
+    id: 'podcast-creation',
+    name: 'Podcast Creation',
+    description: 'Launch and grow a podcast',
+    icon: 'mic',
+    category: 'Creative',
+    suggestedPrompt: 'Help me create and launch a successful podcast',
+    structure: {
+      mainTopic: 'Podcast Creation',
+      branches: [
+        { title: 'Podcast Concept', starterMessage: 'Let\'s develop your podcast concept and format.', position: { x: 0, y: 0 } },
+        { title: 'Content Planning', starterMessage: 'Now let\'s plan your episodes and content strategy.', position: { x: 400, y: 0 } },
+        { title: 'Recording Setup', starterMessage: 'Time to set up your recording equipment and environment.', position: { x: 0, y: 300 } },
+        { title: 'Production', starterMessage: 'Let\'s record, edit, and produce your episodes.', position: { x: 400, y: 300 } },
+        { title: 'Distribution', starterMessage: 'Finally, let\'s publish and promote your podcast.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Podcast Concept', to: 'Content Planning', label: 'format' },
+        { from: 'Content Planning', to: 'Recording Setup', label: 'episodes' },
+        { from: 'Recording Setup', to: 'Production', label: 'setup' },
+        { from: 'Production', to: 'Distribution', label: 'episodes' }
+      ]
+    }
+  },
+  {
+    id: 'youtube-channel',
+    name: 'YouTube Channel',
+    description: 'Build a successful YouTube channel',
+    icon: 'video',
+    category: 'Creative',
+    suggestedPrompt: 'Help me create and grow a YouTube channel',
+    structure: {
+      mainTopic: 'YouTube Channel',
+      branches: [
+        { title: 'Channel Strategy', starterMessage: 'Let\'s define your niche and target audience.', position: { x: 0, y: 0 } },
+        { title: 'Content Creation', starterMessage: 'Now let\'s plan and create engaging video content.', position: { x: 400, y: 0 } },
+        { title: 'Video Production', starterMessage: 'Time to film, edit, and optimize your videos.', position: { x: 0, y: 300 } },
+        { title: 'Channel Growth', starterMessage: 'Let\'s implement strategies to grow your audience.', position: { x: 400, y: 300 } },
+        { title: 'Monetization', starterMessage: 'Finally, let\'s explore ways to monetize your channel.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Channel Strategy', to: 'Content Creation', label: 'direction' },
+        { from: 'Content Creation', to: 'Video Production', label: 'scripts' },
+        { from: 'Video Production', to: 'Channel Growth', label: 'videos' },
+        { from: 'Channel Growth', to: 'Monetization', label: 'audience' }
+      ]
+    }
+  },
+  {
+    id: 'e-commerce',
+    name: 'E-commerce Store',
+    description: 'Launch an online store',
+    icon: 'shopping-cart',
+    category: 'Business',
+    suggestedPrompt: 'Help me create and launch an e-commerce store',
+    structure: {
+      mainTopic: 'E-commerce Store',
+      branches: [
+        { title: 'Store Setup', starterMessage: 'Let\'s set up your online store platform and design.', position: { x: 0, y: 0 } },
+        { title: 'Product Catalog', starterMessage: 'Now let\'s create your product listings and inventory.', position: { x: 400, y: 0 } },
+        { title: 'Payment & Shipping', starterMessage: 'Time to configure payment and shipping options.', position: { x: 0, y: 300 } },
+        { title: 'Marketing', starterMessage: 'Let\'s drive traffic and sales to your store.', position: { x: 400, y: 300 } },
+        { title: 'Operations', starterMessage: 'Finally, let\'s optimize operations and customer service.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Store Setup', to: 'Product Catalog', label: 'platform' },
+        { from: 'Product Catalog', to: 'Payment & Shipping', label: 'products' },
+        { from: 'Payment & Shipping', to: 'Marketing', label: 'complete store' },
+        { from: 'Marketing', to: 'Operations', label: 'customers' }
+      ]
+    }
+  },
+  {
+    id: 'fitness-program',
+    name: 'Fitness Program',
+    description: 'Design personalized fitness plans',
+    icon: 'activity',
+    category: 'Health',
+    suggestedPrompt: 'Help me create a comprehensive fitness and wellness program',
+    structure: {
+      mainTopic: 'Fitness Program',
+      branches: [
+        { title: 'Assessment', starterMessage: 'Let\'s assess your current fitness level and goals.', position: { x: 0, y: 0 } },
+        { title: 'Program Design', starterMessage: 'Now let\'s create a personalized workout plan.', position: { x: 400, y: 0 } },
+        { title: 'Nutrition Plan', starterMessage: 'Time to develop a nutrition strategy to support your goals.', position: { x: 0, y: 300 } },
+        { title: 'Progress Tracking', starterMessage: 'Let\'s set up systems to track your progress.', position: { x: 400, y: 300 } },
+        { title: 'Adjustments', starterMessage: 'Finally, let\'s adapt your program as you progress.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Assessment', to: 'Program Design', label: 'baseline' },
+        { from: 'Assessment', to: 'Nutrition Plan', label: 'needs' },
+        { from: 'Program Design', to: 'Progress Tracking', label: 'workouts' },
+        { from: 'Nutrition Plan', to: 'Progress Tracking', label: 'diet' },
+        { from: 'Progress Tracking', to: 'Adjustments', label: 'data' }
+      ]
+    }
+  },
+  {
+    id: 'book-writing',
+    name: 'Book Writing',
+    description: 'Write and publish a book',
+    icon: 'book',
+    category: 'Creative',
+    suggestedPrompt: 'Help me write and publish a book from concept to completion',
+    structure: {
+      mainTopic: 'Book Writing Project',
+      branches: [
+        { title: 'Book Concept', starterMessage: 'Let\'s develop your book idea and target audience.', position: { x: 0, y: 0 } },
+        { title: 'Outline', starterMessage: 'Now let\'s create a detailed outline and structure.', position: { x: 400, y: 0 } },
+        { title: 'Writing', starterMessage: 'Time to write your manuscript chapter by chapter.', position: { x: 0, y: 300 } },
+        { title: 'Editing', starterMessage: 'Let\'s revise and polish your manuscript.', position: { x: 400, y: 300 } },
+        { title: 'Publishing', starterMessage: 'Finally, let\'s publish and promote your book.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Book Concept', to: 'Outline', label: 'idea' },
+        { from: 'Outline', to: 'Writing', label: 'structure' },
+        { from: 'Writing', to: 'Editing', label: 'manuscript' },
+        { from: 'Editing', to: 'Publishing', label: 'final draft' }
+      ]
+    }
+  },
+  {
+    id: 'investment-strategy',
+    name: 'Investment Strategy',
+    description: 'Develop investment portfolios',
+    icon: 'trending-up',
+    category: 'Finance',
+    suggestedPrompt: 'Help me create a personalized investment strategy',
+    structure: {
+      mainTopic: 'Investment Strategy',
+      branches: [
+        { title: 'Risk Assessment', starterMessage: 'Let\'s assess your risk tolerance and investment goals.', position: { x: 0, y: 0 } },
+        { title: 'Portfolio Design', starterMessage: 'Now let\'s design a diversified investment portfolio.', position: { x: 400, y: 0 } },
+        { title: 'Asset Selection', starterMessage: 'Time to choose specific investments for your portfolio.', position: { x: 0, y: 300 } },
+        { title: 'Monitoring', starterMessage: 'Let\'s set up systems to monitor your investments.', position: { x: 400, y: 300 } },
+        { title: 'Rebalancing', starterMessage: 'Finally, let\'s plan regular portfolio rebalancing.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Risk Assessment', to: 'Portfolio Design', label: 'profile' },
+        { from: 'Portfolio Design', to: 'Asset Selection', label: 'allocation' },
+        { from: 'Asset Selection', to: 'Monitoring', label: 'investments' },
+        { from: 'Monitoring', to: 'Rebalancing', label: 'performance' }
+      ]
+    }
+  },
+  {
+    id: 'event-planning',
+    name: 'Event Planning',
+    description: 'Plan and execute successful events',
+    icon: 'calendar',
+    category: 'Business',
+    suggestedPrompt: 'Help me plan and execute a memorable event',
+    structure: {
+      mainTopic: 'Event Planning',
+      branches: [
+        { title: 'Event Concept', starterMessage: 'Let\'s define your event vision and objectives.', position: { x: 0, y: 0 } },
+        { title: 'Planning', starterMessage: 'Now let\'s plan all the logistics and details.', position: { x: 400, y: 0 } },
+        { title: 'Vendor Management', starterMessage: 'Time to coordinate with vendors and suppliers.', position: { x: 0, y: 300 } },
+        { title: 'Execution', starterMessage: 'Let\'s execute your event flawlessly.', position: { x: 400, y: 300 } },
+        { title: 'Follow-up', starterMessage: 'Finally, let\'s handle post-event activities and feedback.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Event Concept', to: 'Planning', label: 'vision' },
+        { from: 'Planning', to: 'Vendor Management', label: 'requirements' },
+        { from: 'Vendor Management', to: 'Execution', label: 'resources' },
+        { from: 'Execution', to: 'Follow-up', label: 'results' }
+      ]
+    }
+  },
+  {
+    id: 'nonprofit-startup',
+    name: 'Nonprofit Startup',
+    description: 'Start a nonprofit organization',
+    icon: 'heart',
+    category: 'Social',
+    suggestedPrompt: 'Help me start a nonprofit organization to make a positive impact',
+    structure: {
+      mainTopic: 'Nonprofit Startup',
+      branches: [
+        { title: 'Mission & Vision', starterMessage: 'Let\'s define your nonprofit\'s mission and impact goals.', position: { x: 0, y: 0 } },
+        { title: 'Legal Setup', starterMessage: 'Now let\'s handle incorporation and tax-exempt status.', position: { x: 400, y: 0 } },
+        { title: 'Fundraising', starterMessage: 'Time to develop sustainable funding strategies.', position: { x: 0, y: 300 } },
+        { title: 'Operations', starterMessage: 'Let\'s set up effective operations and programs.', position: { x: 400, y: 300 } },
+        { title: 'Impact Measurement', starterMessage: 'Finally, let\'s measure and communicate your impact.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Mission & Vision', to: 'Legal Setup', label: 'purpose' },
+        { from: 'Legal Setup', to: 'Fundraising', label: 'structure' },
+        { from: 'Fundraising', to: 'Operations', label: 'resources' },
+        { from: 'Operations', to: 'Impact Measurement', label: 'programs' }
+      ]
+    }
+  },
+  {
+    id: 'language-learning',
+    name: 'Language Learning',
+    description: 'Master a new language effectively',
+    icon: 'globe',
+    category: 'Learning',
+    suggestedPrompt: 'Help me create a comprehensive language learning plan',
+    structure: {
+      mainTopic: 'Language Learning Journey',
+      branches: [
+        { title: 'Assessment', starterMessage: 'Let\'s assess your current level and learning goals.', position: { x: 0, y: 0 } },
+        { title: 'Learning Plan', starterMessage: 'Now let\'s create a structured learning curriculum.', position: { x: 400, y: 0 } },
+        { title: 'Practice Methods', starterMessage: 'Time to explore various practice techniques and tools.', position: { x: 0, y: 300 } },
+        { title: 'Immersion', starterMessage: 'Let\'s create immersive learning experiences.', position: { x: 400, y: 300 } },
+        { title: 'Proficiency', starterMessage: 'Finally, let\'s work toward fluency and certification.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Assessment', to: 'Learning Plan', label: 'baseline' },
+        { from: 'Learning Plan', to: 'Practice Methods', label: 'curriculum' },
+        { from: 'Practice Methods', to: 'Immersion', label: 'skills' },
+        { from: 'Immersion', to: 'Proficiency', label: 'fluency' }
+      ]
+    }
+  },
+  {
+    id: 'photography',
+    name: 'Photography',
+    description: 'Develop photography skills and portfolio',
+    icon: 'camera',
+    category: 'Creative',
+    suggestedPrompt: 'Help me improve my photography skills and build a portfolio',
+    structure: {
+      mainTopic: 'Photography Development',
+      branches: [
+        { title: 'Technical Skills', starterMessage: 'Let\'s master camera settings and technical fundamentals.', position: { x: 0, y: 0 } },
+        { title: 'Composition', starterMessage: 'Now let\'s learn composition rules and creative techniques.', position: { x: 400, y: 0 } },
+        { title: 'Post-Processing', starterMessage: 'Time to master photo editing and enhancement.', position: { x: 0, y: 300 } },
+        { title: 'Portfolio', starterMessage: 'Let\'s build a compelling photography portfolio.', position: { x: 400, y: 300 } },
+        { title: 'Business', starterMessage: 'Finally, let\'s explore monetizing your photography.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Technical Skills', to: 'Composition', label: 'fundamentals' },
+        { from: 'Composition', to: 'Post-Processing', label: 'raw images' },
+        { from: 'Post-Processing', to: 'Portfolio', label: 'final images' },
+        { from: 'Portfolio', to: 'Business', label: 'showcase' }
+      ]
+    }
+  },
+  {
+    id: 'music-production',
+    name: 'Music Production',
+    description: 'Create and produce music',
+    icon: 'music',
+    category: 'Creative',
+    suggestedPrompt: 'Help me learn music production and create professional tracks',
+    structure: {
+      mainTopic: 'Music Production',
+      branches: [
+        { title: 'Studio Setup', starterMessage: 'Let\'s set up your home studio and equipment.', position: { x: 0, y: 0 } },
+        { title: 'Music Theory', starterMessage: 'Now let\'s learn essential music theory concepts.', position: { x: 400, y: 0 } },
+        { title: 'Recording', starterMessage: 'Time to master recording techniques and workflows.', position: { x: 0, y: 300 } },
+        { title: 'Mixing & Mastering', starterMessage: 'Let\'s polish your tracks with professional mixing.', position: { x: 400, y: 300 } },
+        { title: 'Distribution', starterMessage: 'Finally, let\'s distribute your music to the world.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Studio Setup', to: 'Music Theory', label: 'tools' },
+        { from: 'Music Theory', to: 'Recording', label: 'knowledge' },
+        { from: 'Recording', to: 'Mixing & Mastering', label: 'raw tracks' },
+        { from: 'Mixing & Mastering', to: 'Distribution', label: 'finished songs' }
+      ]
+    }
+  },
+  {
+    id: 'home-renovation',
+    name: 'Home Renovation',
+    description: 'Plan and execute home improvements',
+    icon: 'home',
+    category: 'Lifestyle',
+    suggestedPrompt: 'Help me plan and execute a home renovation project',
+    structure: {
+      mainTopic: 'Home Renovation',
+      branches: [
+        { title: 'Planning', starterMessage: 'Let\'s plan your renovation goals and budget.', position: { x: 0, y: 0 } },
+        { title: 'Design', starterMessage: 'Now let\'s create detailed designs and layouts.', position: { x: 400, y: 0 } },
+        { title: 'Permits', starterMessage: 'Time to handle permits and contractor selection.', position: { x: 0, y: 300 } },
+        { title: 'Construction', starterMessage: 'Let\'s manage the construction process.', position: { x: 400, y: 300 } },
+        { title: 'Completion', starterMessage: 'Finally, let\'s finish and enjoy your new space.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Planning', to: 'Design', label: 'requirements' },
+        { from: 'Design', to: 'Permits', label: 'plans' },
+        { from: 'Permits', to: 'Construction', label: 'approvals' },
+        { from: 'Construction', to: 'Completion', label: 'finished work' }
+      ]
+    }
+  },
+  {
+    id: 'travel-planning',
+    name: 'Travel Planning',
+    description: 'Plan amazing trips and adventures',
+    icon: 'map',
+    category: 'Lifestyle',
+    suggestedPrompt: 'Help me plan the perfect trip from start to finish',
+    structure: {
+      mainTopic: 'Travel Planning',
+      branches: [
+        { title: 'Destination', starterMessage: 'Let\'s choose the perfect destination for your trip.', position: { x: 0, y: 0 } },
+        { title: 'Itinerary', starterMessage: 'Now let\'s create a detailed travel itinerary.', position: { x: 400, y: 0 } },
+        { title: 'Bookings', starterMessage: 'Time to book flights, hotels, and activities.', position: { x: 0, y: 300 } },
+        { title: 'Preparation', starterMessage: 'Let\'s prepare everything for your departure.', position: { x: 400, y: 300 } },
+        { title: 'Travel Tips', starterMessage: 'Finally, let\'s share tips for an amazing trip.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Destination', to: 'Itinerary', label: 'location' },
+        { from: 'Itinerary', to: 'Bookings', label: 'schedule' },
+        { from: 'Bookings', to: 'Preparation', label: 'reservations' },
+        { from: 'Preparation', to: 'Travel Tips', label: 'ready to go' }
+      ]
+    }
+  },
+  {
+    id: 'personal-finance',
+    name: 'Personal Finance',
+    description: 'Manage money and build wealth',
+    icon: 'dollar-sign',
+    category: 'Finance',
+    suggestedPrompt: 'Help me create a comprehensive personal finance plan',
+    structure: {
+      mainTopic: 'Personal Finance',
+      branches: [
+        { title: 'Budget', starterMessage: 'Let\'s create a realistic budget and track expenses.', position: { x: 0, y: 0 } },
+        { title: 'Debt Management', starterMessage: 'Now let\'s tackle debt and improve credit.', position: { x: 400, y: 0 } },
+        { title: 'Emergency Fund', starterMessage: 'Time to build your emergency savings fund.', position: { x: 0, y: 300 } },
+        { title: 'Investing', starterMessage: 'Let\'s start investing for long-term wealth.', position: { x: 400, y: 300 } },
+        { title: 'Financial Goals', starterMessage: 'Finally, let\'s plan for major financial goals.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Budget', to: 'Debt Management', label: 'cash flow' },
+        { from: 'Debt Management', to: 'Emergency Fund', label: 'freed up money' },
+        { from: 'Emergency Fund', to: 'Investing', label: 'security' },
+        { from: 'Investing', to: 'Financial Goals', label: 'wealth growth' }
+      ]
+    }
+  },
+  {
+    id: 'career-change',
+    name: 'Career Change',
+    description: 'Navigate career transitions successfully',
+    icon: 'briefcase',
+    category: 'Career',
+    suggestedPrompt: 'Help me plan and execute a successful career change',
+    structure: {
+      mainTopic: 'Career Change',
+      branches: [
+        { title: 'Self Assessment', starterMessage: 'Let\'s explore your skills, interests, and values.', position: { x: 0, y: 0 } },
+        { title: 'Career Research', starterMessage: 'Now let\'s research potential career paths.', position: { x: 400, y: 0 } },
+        { title: 'Skill Development', starterMessage: 'Time to develop skills for your new career.', position: { x: 0, y: 300 } },
+        { title: 'Job Search', starterMessage: 'Let\'s create a strategic job search plan.', position: { x: 400, y: 300 } },
+        { title: 'Transition', starterMessage: 'Finally, let\'s make the transition smoothly.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Self Assessment', to: 'Career Research', label: 'profile' },
+        { from: 'Career Research', to: 'Skill Development', label: 'requirements' },
+        { from: 'Skill Development', to: 'Job Search', label: 'qualifications' },
+        { from: 'Job Search', to: 'Transition', label: 'opportunities' }
+      ]
+    }
+  },
+  {
+    id: 'wellness-program',
+    name: 'Wellness Program',
+    description: 'Create holistic wellness routines',
+    icon: 'heart',
+    category: 'Health',
+    suggestedPrompt: 'Help me create a comprehensive wellness program for mind and body',
+    structure: {
+      mainTopic: 'Wellness Program',
+      branches: [
+        { title: 'Health Assessment', starterMessage: 'Let\'s assess your current health and wellness status.', position: { x: 0, y: 0 } },
+        { title: 'Physical Wellness', starterMessage: 'Now let\'s focus on physical health and fitness.', position: { x: 400, y: 0 } },
+        { title: 'Mental Wellness', starterMessage: 'Time to address mental health and stress management.', position: { x: 0, y: 300 } },
+        { title: 'Lifestyle Changes', starterMessage: 'Let\'s implement sustainable lifestyle changes.', position: { x: 400, y: 300 } },
+        { title: 'Maintenance', starterMessage: 'Finally, let\'s maintain your wellness long-term.', position: { x: 200, y: 500 } }
+      ],
+      connections: [
+        { from: 'Health Assessment', to: 'Physical Wellness', label: 'baseline' },
+        { from: 'Health Assessment', to: 'Mental Wellness', label: 'needs' },
+        { from: 'Physical Wellness', to: 'Lifestyle Changes', label: 'habits' },
+        { from: 'Mental Wellness', to: 'Lifestyle Changes', label: 'mindset' },
+        { from: 'Lifestyle Changes', to: 'Maintenance', label: 'routine' }
+      ]
+    }
   }
 ])
 
@@ -614,7 +1357,28 @@ const iconMap: Record<string, any> = {
   'flask': TestTube,
   'briefcase': Briefcase,
   'palette': Palette,
-  'graduation-cap': GraduationCap
+  'graduation-cap': GraduationCap,
+  'globe': Globe,
+  'smartphone': Smartphone,
+  'bar-chart': BarChart,
+  'megaphone': Megaphone,
+  'file-text': FileText,
+  'rocket': Rocket,
+  'cpu': Cpu,
+  'link': Link,
+  'brain': Brain,
+  'mic': Mic,
+  'video': Video,
+  'shopping-cart': ShoppingCart,
+  'activity': Activity,
+  'trending-up': TrendingUp,
+  'calendar': Calendar,
+  'heart': Heart,
+  'camera': Camera,
+  'music': Music,
+  'home': Home,
+  'map': Map,
+  'dollar-sign': DollarSign
 }
 
 const getTemplateIcon = (iconName: string) => {
@@ -746,7 +1510,79 @@ onMounted(() => {
   nextTick(() => {
     inputRef.value?.focus()
     setupResizeObserver()
+    
+    // Handle sparkle icon animation completion for all three stars
+    if (sparkleIconRef.value) {
+      sparkleIconRef.value.addEventListener('animationend', (e) => {
+        if (e.animationName === 'heroIconParabolicEntry') {
+          // Force the final transform state and switch to sparkle animation
+          if (sparkleIconRef.value) {
+            sparkleIconRef.value.style.transform = 'scale(1.5)'
+            sparkleIconRef.value.style.animation = 'sparkleGlow 3s ease-in-out infinite'
+          }
+        }
+      })
+    }
+    
+    if (sparkleIconMediumRef.value) {
+      sparkleIconMediumRef.value.addEventListener('animationend', (e) => {
+        if (e.animationName === 'heroIconParabolicEntryMedium') {
+          if (sparkleIconMediumRef.value) {
+            sparkleIconMediumRef.value.style.transform = 'translate(0, 0) scale(1.2)'
+            sparkleIconMediumRef.value.style.animation = 'sparkleGlow 3.5s ease-in-out infinite'
+          }
+        }
+      })
+    }
+    
+    if (sparkleIconSmallRef.value) {
+      sparkleIconSmallRef.value.addEventListener('animationend', (e) => {
+        if (e.animationName === 'heroIconParabolicEntrySmall') {
+          if (sparkleIconSmallRef.value) {
+            sparkleIconSmallRef.value.style.transform = 'translate(0, 0) scale(1.0)'
+            sparkleIconSmallRef.value.style.animation = 'sparkleGlow 4s ease-in-out infinite'
+          }
+        }
+      })
+    }
   })
+})
+
+// Watch for expansion state changes to control sparkle animation for all three stars
+watch(isExpanded, (newValue) => {
+  if (newValue) {
+    // Stop sparkle when expanding and let exit animation take over
+    if (sparkleIconRef.value) {
+      sparkleIconRef.value.style.animation = 'heroIconParabolicExit 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards'
+    }
+    if (sparkleIconMediumRef.value) {
+      sparkleIconMediumRef.value.style.animation = 'heroIconParabolicExitMedium 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards'
+      sparkleIconMediumRef.value.style.animationDelay = '0.1s'
+    }
+    if (sparkleIconSmallRef.value) {
+      sparkleIconSmallRef.value.style.animation = 'heroIconParabolicExitSmall 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards'
+      sparkleIconSmallRef.value.style.animationDelay = '0.2s'
+    }
+  } else {
+    // Restart entry animation when collapsing
+    if (sparkleIconRef.value) {
+      sparkleIconRef.value.style.animation = 'heroIconParabolicEntry 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards'
+      sparkleIconRef.value.style.animationDelay = '0s'
+    }
+    if (sparkleIconMediumRef.value) {
+      sparkleIconMediumRef.value.style.animation = 'heroIconParabolicEntryMedium 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards'
+      sparkleIconMediumRef.value.style.animationDelay = '0.3s'
+    }
+    if (sparkleIconSmallRef.value) {
+      sparkleIconSmallRef.value.style.animation = 'heroIconParabolicEntrySmall 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards'
+      sparkleIconSmallRef.value.style.animationDelay = '0.6s'
+    }
+  }
+})
+
+// Expose inputRef for parent components
+defineExpose({
+  inputRef
 })
 </script>
 
@@ -852,6 +1688,16 @@ onMounted(() => {
   container-name: welcome-content;
 }
 
+.welcome-content.templates-expanded {
+  max-width: 100vw;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+  /* Force layout */
+  display: flex !important;
+  flex-direction: column !important;
+}
+
 /* Hero Section */
 .hero-section {
   text-align: center;
@@ -867,27 +1713,129 @@ onMounted(() => {
   transform: scale(0.85);
 }
 
+.welcome-content.templates-expanded .sparkle-icon {
+  animation: heroIconParabolicExit 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  animation-delay: 0s;
+}
+
 .hero-icon {
   padding-top: 5.5rem;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 80px;
 }
 
 .sparkle-icon {
+  position: absolute;
   color: var(--theme-primary);
   filter: drop-shadow(0 0 12px color-mix(in srgb, var(--theme-primary) 40%, transparent));
-  animation: sparkle 3s ease-in-out infinite;
+  opacity: 0;
+  transform: translate(calc(-50vw), calc(-100vh)) scale(0.5);
 }
 
-@keyframes sparkle {
+.sparkle-large {
+  animation: heroIconParabolicEntry 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  animation-delay: 0s;
+  z-index: 3;
+  left: -20px;
+  top: 100px;
+}
+
+.sparkle-medium {
+  animation: heroIconParabolicEntryMedium 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  animation-delay: 0.3s;
+  z-index: 2;
+  right: 20px;
+  top: 168px;
+}
+
+.sparkle-small {
+  animation: heroIconParabolicEntrySmall 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  animation-delay: 0.6s;
+  z-index: 1;
+  right: 40px;
+  top: 200px;
+}
+
+
+@keyframes sparkleGlow {
 
   0%,
   100% {
-    transform: scale(1) rotate(0deg);
     filter: drop-shadow(0 0 8px hsl(var(--p) / 0.3));
   }
 
   50% {
-    transform: scale(1.15) rotate(10deg);
     filter: drop-shadow(0 0 16px hsl(var(--p) / 0.5));
+  }
+}
+
+@keyframes heroIconParabolicEntry {
+  0% {
+    transform: translate(calc(-50vw), calc(-100vh)) scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(0, 0) scale(1.5);
+    opacity: 1;
+  }
+}
+
+@keyframes heroIconParabolicEntryMedium {
+  0% {
+    transform: translate(calc(50vw), calc(-100vh)) scale(0.4);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(0, 0) scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+@keyframes heroIconParabolicEntrySmall {
+  0% {
+    transform: translate(calc(50vw), calc(-100vh)) scale(0.3);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(0, 0) scale(1.0);
+    opacity: 0.6;
+  }
+}
+
+@keyframes heroIconParabolicExit {
+  0% {
+    transform: translate(0, 0) scale(1.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(50vw), calc(-100vh)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+@keyframes heroIconParabolicExitMedium {
+  0% {
+    transform: translate(0, 0) scale(1.2);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(calc(50vw), calc(-100vh)) scale(0.4);
+    opacity: 0;
+  }
+}
+
+@keyframes heroIconParabolicExitSmall {
+  0% {
+    transform: translate(0, 0) scale(1.0);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(calc(50vw), calc(-100vh)) scale(0.3);
+    opacity: 0;
   }
 }
 
@@ -902,7 +1850,8 @@ onMounted(() => {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   background-size: 200% 200%;
-  animation: gradientShift-30399362 4s ease-in-out infinite;
+  animation: gradientShift-30399362 4s ease-in-out infinite, heroTitleFlyDown 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  animation-delay: 0s, 0s;
   letter-spacing: -0.02em;
 }
 
@@ -953,18 +1902,24 @@ onMounted(() => {
   border: 2px solid color-mix(in srgb, var(--theme-primary) 20%, transparent);
   border-radius: 1.5rem;
   overflow: hidden;
-  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    padding 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    background 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: max-height 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background 1.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow:
     0 8px 32px color-mix(in srgb, var(--theme-primary) 8%, transparent),
     0 1px 0px hsl(var(--b1)),
     inset 0 1px 0px hsl(var(--b2));
   backdrop-filter: blur(12px);
   max-height: 300px;
+}
+
+.input-container.animate-entrance {
+  /* Start slightly above, no opacity change */
+  animation: inputFlyDown 1.0s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  animation-delay: 0.2s;
 }
 
 .input-container:focus-within {
@@ -1032,9 +1987,9 @@ onMounted(() => {
   font-weight: 400;
   position: relative;
   z-index: 2;
-  transition: min-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-    padding 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-    font-size 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: min-height 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 1.3s cubic-bezier(0.4, 0, 0.2, 1),
+    font-size 1.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .main-input::placeholder {
@@ -1091,6 +2046,56 @@ onMounted(() => {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-primary) 20%, transparent);
 }
 
+.claude-code-toggle {
+  position: relative;
+}
+
+.claude-code-toggle.active {
+  background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+  color: #00ff88;
+  border-color: #00ff88;
+  box-shadow: 
+    0 0 0 3px color-mix(in srgb, #00ff88 20%, transparent),
+    0 0 12px color-mix(in srgb, #00ff88 30%, transparent);
+  animation: claudeCodePulse 2s ease-in-out infinite;
+}
+
+.claude-code-toggle.active::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, #00ff88, #00ccff, #00ff88);
+  border-radius: 0.5rem;
+  z-index: -1;
+  background-size: 200% 200%;
+  animation: claudeCodeGlow 3s ease-in-out infinite;
+}
+
+@keyframes claudeCodePulse {
+  0%, 100% {
+    box-shadow: 
+      0 0 0 3px color-mix(in srgb, #00ff88 20%, transparent),
+      0 0 12px color-mix(in srgb, #00ff88 30%, transparent);
+  }
+  50% {
+    box-shadow: 
+      0 0 0 3px color-mix(in srgb, #00ff88 35%, transparent),
+      0 0 20px color-mix(in srgb, #00ff88 50%, transparent);
+  }
+}
+
+@keyframes claudeCodeGlow {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
 .generate-btn {
   display: flex;
   align-items: center;
@@ -1102,7 +2107,7 @@ onMounted(() => {
   border-radius: 0.75rem;
   font-weight: 600;
   font-size: 1rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 1.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   box-shadow:
     0 4px 12px color-mix(in srgb, var(--theme-primary) 30%, transparent),
@@ -1141,6 +2146,10 @@ onMounted(() => {
 .side-by-side-container.expanded-layout {
   flex-direction: column;
   gap: 1rem;
+  /* Ensure no overflow constraints */
+  overflow: visible !important;
+  height: 100vh;
+  max-height: 100vh;
 }
 
 /* Templates Section */
@@ -1173,6 +2182,201 @@ onMounted(() => {
   margin-bottom: 1rem;
   width: 100%;
   flex: none;
+  /* Ensure no overflow constraints */
+  overflow: visible !important;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Templates Browser (expanded view) */
+.templates-browser {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Optimize for scrolling performance */
+  contain: layout style;
+}
+
+.templates-browser-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid hsl(var(--b3) / 0.3);
+  background: hsl(var(--b1));
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.browser-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: hsl(var(--bc));
+  margin: 0;
+  transform-origin: center;
+}
+
+.close-browser-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: hsl(var(--b3) / 0.3);
+  border: 1px solid hsl(var(--b3) / 0.5);
+  border-radius: 0.5rem;
+  color: hsl(var(--bc) / 0.7);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.close-browser-btn:hover {
+  background: hsl(var(--b3) / 0.5);
+  color: hsl(var(--bc));
+  transform: translateY(-1px);
+}
+
+.templates-browser-scroll {
+  flex: 1;
+  overflow-y: scroll !important;
+  overflow-x: hidden;
+  padding: 2rem;
+  /* Keep it simple */
+  max-height: calc(100vh - 80px);
+  height: calc(100vh - 80px);
+}
+
+.templates-browser-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.templates-browser-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.templates-browser-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--b3) / 0.4);
+  border-radius: 4px;
+}
+
+.templates-browser-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--b3) / 0.6);
+}
+
+.templates-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  padding-bottom: 2rem;
+  /* Force a large height to ensure scrolling */
+  min-height: 2000px;
+  height: auto;
+}
+
+/* Responsive grid adjustments */
+@media (min-width: 1400px) {
+  .templates-browser-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .templates-browser-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  
+  .templates-browser-scroll {
+    padding: 1.5rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .templates-browser-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+  }
+  
+  .templates-browser-scroll {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .templates-browser-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+  }
+  
+  .templates-browser-scroll {
+    padding: 0.75rem;
+  }
+  
+  .templates-browser-header {
+    padding: 1rem;
+  }
+  
+  .browser-title {
+    font-size: 1.25rem;
+  }
+}
+
+.template-card-browser {
+  background: linear-gradient(135deg, hsl(var(--b1)), hsl(var(--b2)));
+  border: 1px solid hsl(var(--b3) / 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  position: relative;
+  overflow: hidden;
+}
+
+.template-card-browser:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  border-color: var(--theme-primary);
+}
+
+.template-card-browser.selected {
+  border-color: var(--theme-primary);
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, var(--theme-primary) 10%, hsl(var(--b1))), 
+    color-mix(in srgb, var(--theme-primary) 5%, hsl(var(--b2))));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-primary) 30%, transparent);
+}
+
+.template-card-browser::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent, var(--theme-primary));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.template-card-browser:hover::after {
+  opacity: 0.05;
+}
+
+.template-card-browser.selected::after {
+  opacity: 0.1;
 }
 
 .recent-section.expanded {
@@ -1222,6 +2426,10 @@ onMounted(() => {
   margin-bottom: 2rem;
   text-align: center;
   position: relative;
+  /* Start invisible */
+  opacity: 0;
+  animation: labelFadeIn 0.8s ease-out forwards;
+  animation-delay: 1.7s;
 }
 
 
@@ -1264,7 +2472,7 @@ onMounted(() => {
 
 .templates-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 2rem;
   margin-bottom: 2rem;
@@ -1294,7 +2502,7 @@ onMounted(() => {
 
 .recent-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 2rem;
   margin-bottom: 2rem;
@@ -1305,7 +2513,7 @@ onMounted(() => {
 }
 
 .recent-grid.vertical-layout {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 2rem;
   height: 380px;
@@ -1338,6 +2546,7 @@ onMounted(() => {
 .recent-card {
   background: linear-gradient(135deg, hsl(var(--b1)), hsl(var(--b2)));
   border: none;
+  align-items: anchor-center;
   border-radius: 0.5rem;
   padding: 1.5rem;
   text-align: left;
@@ -1351,59 +2560,69 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: flex-start;
-  animation: cardFallIn 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  animation: cardSlideInLeft 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
   min-height: 160px;
   min-width: 180px;
+  /* Start off-screen left */
+  transform: translateX(-100vw) rotate(-15deg) skew(15deg) rotateY(45deg);
+  opacity: 0;
 }
 
-/* Staggered animation delays */
+/* Staggered animation delays - template cards from left */
 .template-card:nth-child(1) {
   animation-delay: 0s;
 }
 
 .template-card:nth-child(2) {
-  animation-delay: 0.08s;
+  animation-delay: 0.1s;
 }
 
 .template-card:nth-child(3) {
-  animation-delay: 0.16s;
+  animation-delay: 0.2s;
 }
 
 .template-card:nth-child(4) {
-  animation-delay: 0.24s;
+  animation-delay: 0.3s;
 }
 
 .template-card:nth-child(5) {
-  animation-delay: 0.32s;
-}
-
-.template-card:nth-child(6) {
   animation-delay: 0.4s;
 }
 
+.template-card:nth-child(6) {
+  animation-delay: 0.5s;
+}
+
+/* Recent cards use different animation and timing to finish synchronously */
+.recent-card {
+  animation: cardSlideInRight 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  /* Start off-screen right */
+  transform: translateX(100vw) rotate(-15deg) skew(15deg) rotateY(-45deg);
+  opacity: 0;
+}
+
 .recent-card:nth-child(1) {
-  animation-delay: 0.48s;
+  animation-delay: 0.5s;
 }
 
 .recent-card:nth-child(2) {
-  animation-delay: 0.56s;
+  animation-delay: 0.4s;
 }
 
 .recent-card:nth-child(3) {
-  animation-delay: 0.64s;
+  animation-delay: 0.3s;
 }
 
 .recent-card:nth-child(4) {
-  animation-delay: 0.72s;
+  animation-delay: 0.2s;
 }
 
 .recent-card:nth-child(5) {
-  animation-delay: 0.8s;
+  animation-delay: 0.1s;
 }
 
 .recent-card:nth-child(6) {
-  animation-delay: 0.88s;
+  animation-delay: 0s;
 }
 
 .template-card::before {
@@ -1559,6 +2778,7 @@ onMounted(() => {
 
 .workspace-nodes {
   position: relative;
+  margin-left: 40%;
   width: 100px;
   height: 40px;
 }
@@ -1582,6 +2802,11 @@ onMounted(() => {
   gap: 1rem;
   justify-content: center;
   flex-wrap: wrap;
+  /* Start invisible and positioned below screen */
+  opacity: 0;
+  transform: translateY(100px);
+  animation: diveInFromBottom 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  animation-delay: 0.9s;
 }
 
 .secondary-btn,
@@ -1805,7 +3030,6 @@ onMounted(() => {
     grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(2, 1fr);
     gap: 1rem;
-    height: 320px;
     padding: 1rem;
   }
   
@@ -1935,6 +3159,123 @@ onMounted(() => {
 }
 
 /* Waterfall Animation Keyframes */
+@keyframes cardSlideInLeft {
+  0% {
+    transform: translateX(-100vw) rotate(-15deg) skew(15deg) rotateY(45deg);
+    opacity: 0;
+    box-shadow: -15px 15px 15px rgba(0, 0, 0, 0);
+  }
+
+  60% {
+    transform: translateX(20px) rotate(-15deg) skew(15deg) rotateY(-5deg);
+    opacity: 0.8;
+    box-shadow: -18px 18px 18px rgba(0, 0, 0, 0.2);
+  }
+
+  80% {
+    transform: translateX(-5px) rotate(-15deg) skew(15deg) rotateY(2deg);
+    opacity: 0.95;
+    box-shadow: -12px 12px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  100% {
+    transform: translateX(0) rotate(-15deg) skew(15deg) rotateY(0deg);
+    opacity: 1;
+    box-shadow: -15px 15px 15px rgba(0, 0, 0, 0.3);
+  }
+}
+
+@keyframes cardSlideInRight {
+  0% {
+    transform: translateX(100vw) rotate(-15deg) skew(15deg) rotateY(-45deg);
+    opacity: 0;
+    box-shadow: -15px 15px 15px rgba(0, 0, 0, 0);
+  }
+
+  60% {
+    transform: translateX(-20px) rotate(-15deg) skew(15deg) rotateY(5deg);
+    opacity: 0.8;
+    box-shadow: -18px 18px 18px rgba(0, 0, 0, 0.2);
+  }
+
+  80% {
+    transform: translateX(5px) rotate(-15deg) skew(15deg) rotateY(-2deg);
+    opacity: 0.95;
+    box-shadow: -12px 12px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  100% {
+    transform: translateX(0) rotate(-15deg) skew(15deg) rotateY(0deg);
+    opacity: 1;
+    box-shadow: -15px 15px 15px rgba(0, 0, 0, 0.3);
+  }
+}
+
+@keyframes heroTitleFlyDown {
+  0% {
+    transform: translateY(-80px);
+  }
+
+  60% {
+    transform: translateY(12px);
+  }
+
+  80% {
+    transform: translateY(-4px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes inputFlyDown {
+  0% {
+    transform: translateY(-50px);
+  }
+
+  60% {
+    transform: translateY(8px);
+  }
+
+  80% {
+    transform: translateY(-2px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes labelFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes diveInFromBottom {
+  0% {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+  
+  60% {
+    opacity: 0.8;
+    transform: translateY(-10px);
+  }
+  
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes cardFallIn {
   0% {
     transform: translateY(-100vh) rotate(-15deg) skew(15deg) rotateX(90deg);
@@ -1968,6 +3309,11 @@ onMounted(() => {
   .recent-card {
     animation: cardFadeIn 0.6s ease-out both;
   }
+  
+  .template-actions {
+    animation: simpleFadeIn 0.6s ease-out forwards;
+    animation-delay: 1.5s;
+  }
 
   @keyframes cardFadeIn {
     0% {
@@ -1978,6 +3324,16 @@ onMounted(() => {
     100% {
       opacity: 1;
       transform: rotate(-15deg) skew(15deg) translateY(0);
+    }
+  }
+  
+  @keyframes simpleFadeIn {
+    0% {
+      opacity: 0;
+    }
+    
+    100% {
+      opacity: 1;
     }
   }
 }
@@ -2185,8 +3541,23 @@ onMounted(() => {
     0 8px 32px color-mix(in srgb, var(--theme-accent) 15%, transparent);
   max-height: 400px;
   transition: max-height 0.3s ease;
+  animation: cascadeContainer 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
+@keyframes cascadeContainer {
+  from {
+    transform: scale(0.98);
+    box-shadow: 
+      0 0 0 0px color-mix(in srgb, var(--theme-accent) 0%, transparent),
+      0 4px 16px color-mix(in srgb, var(--theme-accent) 0%, transparent);
+  }
+  to {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--theme-accent) 20%, transparent),
+      0 8px 32px color-mix(in srgb, var(--theme-accent) 15%, transparent);
+  }
+}
 
 .claude-code-label {
   position: absolute;
@@ -2200,36 +3571,51 @@ onMounted(() => {
   font-weight: 700;
   letter-spacing: 0.5px;
   z-index: 15;
-  animation: slideInLabel 0.3s ease-out;
+  animation: cascadeLabel 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: 0.1s;
+  opacity: 0;
+  transform: translateY(-20px) scale(0.8);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-primary) 30%, transparent);
 }
 
-@keyframes slideInLabel {
-  from {
+@keyframes cascadeLabel {
+  0% {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-20px) scale(0.8) rotate(-5deg);
   }
-
-  to {
+  60% {
+    opacity: 0.8;
+    transform: translateY(2px) scale(1.05) rotate(0deg);
+  }
+  100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1) rotate(0deg);
   }
 }
 
 .claude-code-settings {
   border-top: 1px solid hsl(var(--b3) / 0.2);
   background: linear-gradient(135deg, hsl(var(--b2) / 0.3), hsl(var(--b3) / 0.2));
-  animation: slideInSettings 0.3s ease-out;
+  animation: cascadeSettings 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: 0.25s;
+  opacity: 0;
+  transform: translateY(-15px);
+  max-height: 0;
+  overflow: hidden;
 }
 
-@keyframes slideInSettings {
-  from {
+@keyframes cascadeSettings {
+  0% {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-15px);
     max-height: 0;
   }
-
-  to {
+  50% {
+    opacity: 0.7;
+    transform: translateY(-3px);
+    max-height: 60px;
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
     max-height: 120px;
@@ -2279,6 +3665,29 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 0.75rem;
+  animation: cascadeTool 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.9);
+}
+
+/* Staggered delays for individual tools */
+.tool-toggle-compact:nth-child(1) { animation-delay: 0.35s; }
+.tool-toggle-compact:nth-child(2) { animation-delay: 0.4s; }
+.tool-toggle-compact:nth-child(3) { animation-delay: 0.45s; }
+.tool-toggle-compact:nth-child(4) { animation-delay: 0.5s; }
+.tool-toggle-compact:nth-child(5) { animation-delay: 0.55s; }
+.tool-toggle-compact:nth-child(6) { animation-delay: 0.6s; }
+.tool-toggle-compact:nth-child(7) { animation-delay: 0.65s; }
+
+@keyframes cascadeTool {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .tool-toggle-compact:hover {
@@ -2338,6 +3747,21 @@ onMounted(() => {
 .claude-config-controls {
   display: flex;
   gap: 8px;
+  animation: cascadeControls 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: 0.45s;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+@keyframes cascadeControls {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .toggle-compact {
@@ -2371,6 +3795,21 @@ onMounted(() => {
   box-shadow:
     0 4px 12px color-mix(in srgb, var(--theme-accent) 30%, transparent),
     0 1px 0px var(--theme-accent);
+  animation: cascadeButton 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: 0.6s;
+  transform: scale(0.9);
+}
+
+@keyframes cascadeButton {
+  0% {
+    transform: scale(0.9) translateY(5px);
+  }
+  60% {
+    transform: scale(1.02) translateY(-2px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
 }
 
 .generate-btn.claude-code-btn:hover:not(:disabled) {
@@ -2394,5 +3833,64 @@ onMounted(() => {
     align-items: flex-start;
     gap: 0.5rem;
   }
+  
+  .templates-browser-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+  }
+  
+  .template-card-browser {
+    min-height: 140px;
+  }
+  
+  .templates-browser-header {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+    padding: 1rem;
+  }
+  
+  .templates-browser-scroll {
+    padding: 1rem;
+  }
 }
+
+/* Scrolling Layout Styles */
+.scroll-container {
+  height: 100vh;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.welcome-section {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.subscription-section {
+  min-height: 100vh;
+  background: linear-gradient(135deg, hsl(var(--b2) / 0.5), hsl(var(--b1) / 0.8));
+  backdrop-filter: blur(10px);
+  border-top: 1px solid hsl(var(--bc) / 0.1);
+}
+
+/* Smooth transitions between sections */
+.welcome-section,
+.subscription-section {
+  transition: all 0.3s ease;
+}
+
+/* Hide scrollbar but keep functionality */
+.scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 </style>

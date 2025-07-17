@@ -88,34 +88,15 @@
 
           <!-- Permission Request -->
           <div v-else-if="part.type === 'permission_request'" class="permission-request-wrapper">
-            <div class="permission-request-container p-4 my-2 border rounded-lg" :style="{
-              borderColor: 'var(--theme-warning)',
-              backgroundColor: 'color-mix(in srgb, var(--theme-warning) 10%, transparent)'
-            }">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: 'var(--theme-warning)' }"></div>
-                <span class="font-semibold text-sm">Permission Required</span>
-              </div>
-              <p class="text-sm mb-3 text-base-content/80">{{ part.description }}</p>
-              <div v-if="part.status === 'pending'" class="flex gap-2">
-                <button 
-                  class="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-                  @click="emit('approve-permission', part.toolCallId, part.toolName, part.parameters)">
-                  Allow
-                </button>
-                <button 
-                  class="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-                  @click="emit('deny-permission', part.toolCallId, part.toolName, part.parameters)">
-                  Deny
-                </button>
-              </div>
-              <div v-else class="text-xs font-medium" :class="{
-                'text-green-600': part.status === 'approved',
-                'text-red-600': part.status === 'denied'
-              }">
-                {{ part.status === 'approved' ? '✓ Approved' : '✗ Denied' }}
-              </div>
-            </div>
+            <PermissionRequest
+              :tool-name="part.toolName"
+              :parameters="part.parameters"
+              :description="part.description"
+              :tool-call-id="part.toolCallId"
+              :status="part.status"
+              @approve="(toolCallId, toolName, parameters) => emit('approve-permission', toolCallId, toolName, parameters)"
+              @deny="(toolCallId, toolName, parameters) => emit('deny-permission', toolCallId, toolName, parameters)"
+            />
           </div>
 
           <!-- Compacted conversation summaries -->
@@ -148,6 +129,7 @@ import emitter, { Events } from '@/utils/eventBus'
 import CodePreview from './CodePreview.vue'
 import CompactedMessageView from './CompactedMessageView.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
+import PermissionRequest from './PermissionRequest.vue'
 import type { ContentPart } from '@/types/message'
 import { useAppStore } from '@/stores/appStore'
 import { useChatStore } from "@/stores/chatStore";

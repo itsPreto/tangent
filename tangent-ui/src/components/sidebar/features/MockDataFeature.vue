@@ -1,12 +1,14 @@
 <template>
   <div class="mock-data-feature">
-    <div class="section-title">Mock Archive Generator</div>
-    <p class="section-description">
-      Generate mock conversation archives for testing your upload and processing flow.
-    </p>
+    <div class="section-top">
+      <div class="section-title">Mock Archive Generator</div>
+      <p class="section-description">
+        Generate mock conversation archives for testing your upload and processing flow.
+      </p>
+    </div>
 
     <!-- Configuration Form -->
-    <div class="mock-config-grid">
+    <div class="mock-config-grid section-middle">
       <div class="config-group">
         <label class="config-label">Platform</label>
         <select v-model="mockConfig.platform" class="config-select">
@@ -113,7 +115,7 @@
     </div>
 
     <!-- Action Buttons -->
-    <div class="mock-actions">
+    <div class="mock-actions section-bottom">
       <button @click="generateMockData" :disabled="isGenerating" class="btn-primary mock-generate-btn">
         <Loader v-if="isGenerating" class="w-4 h-4 animate-spin" />
         <span v-if="isGenerating">Generating...</span>

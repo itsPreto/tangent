@@ -79,6 +79,7 @@ import SystemMessage from './streaming/SystemMessage.vue'
 import AssistantMessage from './streaming/AssistantMessage.vue'
 import ErrorMessage from './streaming/ErrorMessage.vue'
 import RawMessage from './streaming/RawMessage.vue'
+import { ClaudeCodeMessageParser, type ParsedStreamingMessage } from '../../utils/ClaudeCodeMessageParser'
 
 interface StreamingMessage {
   id: string
@@ -88,6 +89,7 @@ interface StreamingMessage {
   timestamp: Date
   type: 'system' | 'assistant' | 'tool_call' | 'raw_output' | 'error'
   read: boolean
+  parsedMessage?: ParsedStreamingMessage
 }
 
 interface Props {
@@ -117,6 +119,7 @@ const feedContent = ref<HTMLElement>()
 const websocket = ref<WebSocket | null>(null)
 const reconnectAttempts = ref(0)
 const maxReconnectAttempts = 5
+const messageParser = new ClaudeCodeMessageParser()
 
 // Computed
 const statusClass = computed(() => ({
@@ -140,73 +143,74 @@ const hasMessages = computed(() => messages.value.length > 0)
 
 // Methods
 function connect() {
-  if (websocket.value) return
+  // For now, we'll implement a simple connection status
+  // The actual streaming is handled by individual components
+  // This component acts as a monitoring overlay
+  isConnected.value = true
+  reconnectAttempts.value = 0
+}
+
+function connectToStream(message: string, sessionId?: string, nodeId?: string) {
+  const url = `http://127.0.0.1:5050/api/claude-code/send-message?message=${encodeURIComponent(message)}&session_id=${sessionId || ''}&node_id=${nodeId || ''}`
   
-  try {
-    // Connect to WebSocket endpoint
-    websocket.value = new WebSocket('ws://127.0.0.1:5050/ws/claude-code')
-    
-    websocket.value.onopen = () => {
-      isConnected.value = true
-      reconnectAttempts.value = 0
-      
-      // Subscribe to instances
-      props.instances.forEach(instanceId => {
-        websocket.value?.send(JSON.stringify({
-          type: 'subscribe',
-          instanceId
-        }))
+  const eventSource = new EventSource(url)
+  
+  eventSource.onopen = () => {
+    isConnected.value = true
+    reconnectAttempts.value = 0
+  }
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      handleMessage(data)
+    } catch (error) {
+      console.error('Error parsing SSE message:', error)
+      // Handle raw message
+      handleMessage({
+        type: 'raw_output',
+        content: event.data
       })
     }
-    
-    websocket.value.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        handleMessage(data)
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error)
-      }
-    }
-    
-    websocket.value.onclose = () => {
-      isConnected.value = false
-      websocket.value = null
-      
-      // Attempt to reconnect
-      if (reconnectAttempts.value < maxReconnectAttempts) {
-        reconnectAttempts.value++
-        setTimeout(() => connect(), 2000 * reconnectAttempts.value)
-      }
-    }
-    
-    websocket.value.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      emit('error', new Error('WebSocket connection failed'))
-    }
-    
-  } catch (error) {
-    console.error('Failed to connect:', error)
-    emit('error', error as Error)
   }
+  
+  eventSource.onerror = (error) => {
+    console.error('SSE error:', error)
+    isConnected.value = false
+    eventSource.close()
+    
+    // Attempt to reconnect
+    if (reconnectAttempts.value < maxReconnectAttempts) {
+      reconnectAttempts.value++
+      setTimeout(() => connectToStream(message, sessionId, nodeId), 2000 * reconnectAttempts.value)
+    }
+  }
+  
+  return eventSource
 }
 
 function disconnect() {
-  if (websocket.value) {
-    websocket.value.close()
-    websocket.value = null
-  }
   isConnected.value = false
 }
 
 function handleMessage(data: any) {
+  // Parse the message using Claude Code SDK parser
+  const parsedMessage = messageParser.parseMessage(JSON.stringify(data))
+  
+  if (!parsedMessage) {
+    console.warn('Failed to parse message:', data)
+    return
+  }
+  
   const message: StreamingMessage = {
-    id: `${Date.now()}-${Math.random()}`,
-    instanceId: data.instance_id,
-    eventType: data.event_type,
-    data: data.data,
-    timestamp: new Date(data.timestamp),
-    type: getMessageType(data.event_type),
-    read: false
+    id: parsedMessage.id,
+    instanceId: data.instance_id || 'unknown',
+    eventType: parsedMessage.message.type,
+    data: parsedMessage.message,
+    timestamp: parsedMessage.timestamp,
+    type: getMessageType(parsedMessage.message.type),
+    read: false,
+    parsedMessage
   }
   
   messages.value.push(message)
@@ -222,7 +226,7 @@ function handleMessage(data: any) {
     hasNewMessages.value = true
     
     // Auto-show feed for important messages
-    if (message.type === 'error' || message.eventType === 'tool_call') {
+    if (message.type === 'error' || message.eventType === 'tool_use') {
       showFeed.value = true
     }
   }
@@ -237,16 +241,18 @@ function handleMessage(data: any) {
 
 function getMessageType(eventType: string): StreamingMessage['type'] {
   switch (eventType) {
-    case 'init':
+    case 'system':
     case 'result':
       return 'system'
-    case 'message':
+    case 'text':
       return 'assistant'
-    case 'tool_call':
+    case 'tool_use':
       return 'tool_call'
+    case 'user':
+      return 'assistant'
     case 'raw_output':
       return 'raw_output'
-    case 'error':
+    case 'unknown':
       return 'error'
     default:
       return 'system'

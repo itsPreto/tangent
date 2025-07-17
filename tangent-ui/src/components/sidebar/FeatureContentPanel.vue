@@ -78,6 +78,7 @@ import { computed } from 'vue';
 import { X, Settings, Code, Bot, TestTube, Database, FileText, GitBranch, LayoutGrid, MessageSquare, Palette } from 'lucide-vue-next';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAppStore } from '@/stores/appStore';
+import { useThemeColors } from '@/composables/useThemeColors';
 
 // AgentConfigurator extracted features
 import ModelSelectorFeature from './features/ModelSelectorFeature.vue';
@@ -109,22 +110,19 @@ const emit = defineEmits<{
 const themeStore = useThemeStore();
 const appStore = useAppStore();
 
-
-// Theme reactivity
-const currentTheme = computed(() => themeStore.currentTheme);
-const isDarkTheme = computed(() => themeStore.isDarkTheme(currentTheme.value));
-const themeColors = computed(() => themeStore.getThemeColors(currentTheme.value));
+// Theme composable
+const { currentTheme, isDarkTheme, themeColors, forceLightText, getTextColor } = useThemeColors();
 
 // Feature configurations matching the new feature IDs
 const featureConfigs = {
   'model-selector': { 
     icon: Settings, 
-    label: 'Models', 
+    label: 'Configs', 
     color: '#8b5cf6' 
   },
   'sandpack': { 
     icon: Code, 
-    label: 'Code Editor', 
+    label: 'IDE', 
     color: '#3b82f6' 
   },
   'claude-code': { 
@@ -144,7 +142,7 @@ const featureConfigs = {
   },
   'force-graph': { 
     icon: GitBranch, 
-    label: 'Force Graph', 
+    label: 'Clusters', 
     color: '#10b981' 
   },
   'documents': { 
@@ -170,24 +168,24 @@ const handleClose = () => {
 
 // Computed styles
 const panelStyle = computed(() => {
-  let backgroundColor = isDarkTheme.value ? 'rgba(15, 15, 15, 0.95)' : 'rgba(250, 250, 250, 0.95)';
+  let backgroundColor = isDarkTheme.value ? 'rgba(15, 15, 15, 1)' : 'rgba(250, 250, 250, 1)';
   let borderColor = isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)';
   
   // Theme-specific adjustments
   if (currentTheme.value === 'cyberpunk') {
-    backgroundColor = 'rgba(10, 10, 20, 0.95)';
+    backgroundColor = 'rgba(10, 10, 20, 1)';
     borderColor = `${themeColors.value.primary}40`;
   } else if (currentTheme.value === 'synthwave') {
-    backgroundColor = 'rgba(20, 5, 30, 0.95)';
+    backgroundColor = 'rgba(20, 5, 30, 1)';
     borderColor = `${themeColors.value.secondary}40`;
+  } else if (currentTheme.value === 'cmyk') {
+    backgroundColor = 'rgba(8, 8, 15, 1)';
+    borderColor = `${themeColors.value.primary}40`;
   }
 
   return {
-    backgroundColor,
-    borderColor,
-    backdropFilter: 'blur(10px)',
-    borderLeft: `1px solid ${borderColor}`,
-    transition: 'background-color 0.3s ease'
+    color: forceLightText.value ? 'rgba(255, 255, 255, 0.95)' : getTextColor(),
+    transition: 'background-color 0.3s ease, color 0.3s ease'
   };
 });
 
@@ -201,7 +199,7 @@ const headerStyle = computed(() => {
 const closeButtonStyle = computed(() => {
   return {
     backgroundColor: 'transparent',
-    color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)',
+    color: forceLightText.value ? 'rgba(255, 255, 255, 0.7)' : (isDarkTheme.value ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'),
     border: 'none',
     transition: 'all 0.2s ease'
   };
@@ -227,14 +225,75 @@ const panelPositionStyle = computed(() => {
 <style scoped>
 .feature-content-panel {
   position: fixed;
+  border-bottom-left-radius: 16px;
+  border-top-left-radius: 16px;
   top: 0;
   height: 100vh;
   width: 35vw;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  z-index: 998;
-  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  /* Remove transition on right property to avoid conflicts with slide animation */
+}
+
+/* Ensure text is readable in all themes */
+.feature-content-panel .panel-title,
+.feature-content-panel .fallback-message h3 {
+  color: inherit;
+}
+
+/* Force light text for dark themes */
+.feature-content-panel.theme-dark,
+.feature-content-panel.theme-synthwave,
+.feature-content-panel.theme-cyberpunk,
+.feature-content-panel.theme-halloween,
+.feature-content-panel.theme-forest,
+.feature-content-panel.theme-aqua,
+.feature-content-panel.theme-black,
+.feature-content-panel.theme-luxury,
+.feature-content-panel.theme-neon,
+.feature-content-panel.theme-dracula,
+.feature-content-panel.theme-cmyk,
+.feature-content-panel.theme-business,
+.feature-content-panel.theme-acid,
+.feature-content-panel.theme-night,
+.feature-content-panel.theme-coffee {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.feature-content-panel.theme-dark .panel-title,
+.feature-content-panel.theme-synthwave .panel-title,
+.feature-content-panel.theme-cyberpunk .panel-title,
+.feature-content-panel.theme-halloween .panel-title,
+.feature-content-panel.theme-forest .panel-title,
+.feature-content-panel.theme-aqua .panel-title,
+.feature-content-panel.theme-black .panel-title,
+.feature-content-panel.theme-luxury .panel-title,
+.feature-content-panel.theme-neon .panel-title,
+.feature-content-panel.theme-dracula .panel-title,
+.feature-content-panel.theme-cmyk .panel-title,
+.feature-content-panel.theme-business .panel-title,
+.feature-content-panel.theme-acid .panel-title,
+.feature-content-panel.theme-night .panel-title,
+.feature-content-panel.theme-coffee .panel-title,
+.feature-content-panel.theme-dark .fallback-message h3,
+.feature-content-panel.theme-synthwave .fallback-message h3,
+.feature-content-panel.theme-cyberpunk .fallback-message h3,
+.feature-content-panel.theme-halloween .fallback-message h3,
+.feature-content-panel.theme-forest .fallback-message h3,
+.feature-content-panel.theme-aqua .fallback-message h3,
+.feature-content-panel.theme-black .fallback-message h3,
+.feature-content-panel.theme-luxury .fallback-message h3,
+.feature-content-panel.theme-neon .fallback-message h3,
+.feature-content-panel.theme-dracula .fallback-message h3,
+.feature-content-panel.theme-cmyk .fallback-message h3,
+.feature-content-panel.theme-business .fallback-message h3,
+.feature-content-panel.theme-acid .fallback-message h3,
+.feature-content-panel.theme-night .fallback-message h3,
+.feature-content-panel.theme-coffee .fallback-message h3 {
+  color: rgba(255, 255, 255, 0.95) !important;
 }
 
 .panel-header {
@@ -354,22 +413,240 @@ const panelPositionStyle = computed(() => {
 
 /* Smooth slide panel transitions */
 .slide-content-panel-enter-active {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform, opacity;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
 }
 
 .slide-content-panel-leave-active {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.6, 1);
-  will-change: transform, opacity;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.2s ease-out;
 }
 
 .slide-content-panel-enter-from {
-  transform: translateX(100%) scale(0.95);
+  transform: translateX(105%);
   opacity: 0;
 }
 
 .slide-content-panel-leave-to {
-  transform: translateX(100%) scale(0.95);
+  transform: translateX(105%);
   opacity: 0;
+}
+
+/* Universal Feature Panel Gradient System */
+/* This creates a 3-section vertical gradient layout for all features */
+
+/* Section 1: Top (Primary color dominant) */
+.feature-content-panel :deep(.section-top),
+.feature-content-panel :deep(.overview-panel),
+.feature-content-panel :deep(.header-section),
+.feature-content-panel :deep(.stats-section),
+.feature-content-panel :deep(.agents-header-row),
+.feature-content-panel :deep(.documents-header) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 25%, hsl(var(--bc) / 0.1));
+  position: relative;
+}
+
+.feature-content-panel :deep(.section-top)::after,
+.feature-content-panel :deep(.overview-panel)::after,
+.feature-content-panel :deep(.header-section)::after,
+.feature-content-panel :deep(.stats-section)::after,
+.feature-content-panel :deep(.agents-header-row)::after,
+.feature-content-panel :deep(.documents-header)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary), 
+    v-bind(themeColors.accent));
+}
+
+/* Section 2: Middle (Secondary color dominant) */
+.feature-content-panel :deep(.section-middle),
+.feature-content-panel :deep(.sessions-panel),
+.feature-content-panel :deep(.main-section),
+.feature-content-panel :deep(.content-section),
+.feature-content-panel :deep(.main-columns),
+.feature-content-panel :deep(.search-section),
+.feature-content-panel :deep(.results-section) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.secondary) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.accent) 6%, hsl(var(--b2))));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.secondary) 25%, hsl(var(--bc) / 0.1));
+}
+
+/* Section 3: Bottom (Accent color dominant) */
+.feature-content-panel :deep(.section-bottom),
+.feature-content-panel :deep(.actions-panel),
+.feature-content-panel :deep(.footer-section),
+.feature-content-panel :deep(.controls-section),
+.feature-content-panel :deep(.config-section) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.accent) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b2))));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+}
+
+/* Universal Button Styles with Gradient */
+.feature-content-panel :deep(.btn-primary),
+.feature-content-panel :deep(.primary-btn),
+.feature-content-panel :deep(.action-btn-primary) {
+  background: linear-gradient(135deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary)) !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 0.5rem 1rem !important;
+  font-weight: 500 !important;
+  transition: all 0.2s ease !important;
+}
+
+.feature-content-panel :deep(.btn-primary):hover,
+.feature-content-panel :deep(.primary-btn):hover,
+.feature-content-panel :deep(.action-btn-primary):hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 90%, black), 
+    color-mix(in srgb, v-bind(themeColors.secondary) 90%, black)) !important;
+  transform: translateY(-1px) !important;
+}
+
+.feature-content-panel :deep(.btn-secondary),
+.feature-content-panel :deep(.secondary-btn),
+.feature-content-panel :deep(.action-btn-secondary) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.accent) 12%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b2)))) !important;
+  color: hsl(var(--bc)) !important;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1)) !important;
+  border-radius: 8px !important;
+  padding: 0.5rem 1rem !important;
+  font-weight: 500 !important;
+  transition: all 0.2s ease !important;
+}
+
+.feature-content-panel :deep(.btn-secondary):hover,
+.feature-content-panel :deep(.secondary-btn):hover,
+.feature-content-panel :deep(.action-btn-secondary):hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.accent) 18%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b2)))) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Universal Icon Button Styles */
+.feature-content-panel :deep(.icon-btn),
+.feature-content-panel :deep(.action-btn) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 6%, hsl(var(--b2)))) !important;
+  color: hsl(var(--bc)) !important;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1)) !important;
+  border-radius: 8px !important;
+  padding: 0.5rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.feature-content-panel :deep(.icon-btn):hover,
+.feature-content-panel :deep(.action-btn):hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 9%, hsl(var(--b2)))) !important;
+  transform: translateY(-1px) !important;
+}
+
+.feature-content-panel :deep(.icon-btn.active),
+.feature-content-panel :deep(.action-btn.active) {
+  background: linear-gradient(135deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary)) !important;
+  color: white !important;
+}
+
+/* Universal Card Styles */
+.feature-content-panel :deep(.card),
+.feature-content-panel :deep(.stat-box),
+.feature-content-panel :deep(.info-card),
+.feature-content-panel :deep(.session-card),
+.feature-content-panel :deep(.document-card),
+.feature-content-panel :deep(.model-card) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 4%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2)))) !important;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--bc) / 0.1)) !important;
+  border-radius: 10px !important;
+  padding: 1rem !important;
+  transition: all 0.2s ease !important;
+  position: relative !important;
+}
+
+.feature-content-panel :deep(.card):hover,
+.feature-content-panel :deep(.stat-box):hover,
+.feature-content-panel :deep(.info-card):hover,
+.feature-content-panel :deep(.session-card):hover,
+.feature-content-panel :deep(.document-card):hover,
+.feature-content-panel :deep(.model-card):hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
+}
+
+.feature-content-panel :deep(.card)::after,
+.feature-content-panel :deep(.stat-box)::after,
+.feature-content-panel :deep(.info-card)::after,
+.feature-content-panel :deep(.session-card)::after,
+.feature-content-panel :deep(.document-card)::after,
+.feature-content-panel :deep(.model-card)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: radial-gradient(circle at 50% 0%, 
+    color-mix(in srgb, v-bind(themeColors.accent) 8%, transparent) 0%, 
+    transparent 70%);
+  pointer-events: none;
+}
+
+/* Universal Input Styles */
+.feature-content-panel :deep(.form-field),
+.feature-content-panel :deep(.search-input),
+.feature-content-panel :deep(.filter-select),
+.feature-content-panel :deep(input),
+.feature-content-panel :deep(textarea),
+.feature-content-panel :deep(select) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 3%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 2%, hsl(var(--b2)))) !important;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1)) !important;
+  border-radius: 8px !important;
+  padding: 0.5rem !important;
+  color: hsl(var(--bc)) !important;
+  transition: all 0.2s ease !important;
+}
+
+.feature-content-panel :deep(.form-field):focus,
+.feature-content-panel :deep(.search-input):focus,
+.feature-content-panel :deep(.filter-select):focus,
+.feature-content-panel :deep(input):focus,
+.feature-content-panel :deep(textarea):focus,
+.feature-content-panel :deep(select):focus {
+  border-color: v-bind(themeColors.primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent) !important;
+  outline: none !important;
+}
+
+/* Special gradient highlight for active/selected items */
+.feature-content-panel :deep(.selected),
+.feature-content-panel :deep(.active),
+.feature-content-panel :deep(.highlighted) {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 12%, hsl(var(--b2)))) !important;
+  border-color: v-bind(themeColors.primary) !important;
 }
 </style>

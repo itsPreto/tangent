@@ -53,6 +53,14 @@ export interface ClaudeCodeInstance {
   working_dir: string
   node_id?: string
   config: Record<string, any>
+  // Auto-detection fields
+  pid?: number
+  memory_mb?: number
+  cpu_percent?: number
+  allowed_tools?: string[]
+  command_line?: string
+  is_detected?: boolean
+  created_at?: string
 }
 
 export interface ClaudeCodeSession {
@@ -405,6 +413,14 @@ export const useToolCallStore = defineStore('toolCall', () => {
     error.value = null
   }
 
+  function setDetectedInstances(instances: ClaudeCodeInstance[]) {
+    // Clear existing instances and add detected ones
+    claudeCodeInstances.value.clear()
+    instances.forEach((instance: ClaudeCodeInstance) => {
+      claudeCodeInstances.value.set(instance.instance_id, instance)
+    })
+  }
+
   function clearAllData() {
     toolCalls.value.clear()
     fileNodes.value.clear()
@@ -446,6 +462,7 @@ export const useToolCallStore = defineStore('toolCall', () => {
     stopInstance,
     fetchClaudeCodeSessions,
     resumeSession,
+    setDetectedInstances,
     clearError,
     clearAllData
   }

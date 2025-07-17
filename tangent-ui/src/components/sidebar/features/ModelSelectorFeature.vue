@@ -1,7 +1,7 @@
 <template>
   <div class="tab-content">
     <!-- Stats and API Status Row -->
-    <div class="agents-header-row">
+    <div class="agents-header-row section-top">
       <!-- Stats Mini Cards -->
       <div class="stats-row">
         <div class="mini-stat">
@@ -29,7 +29,7 @@
     </div>
 
     <!-- Two Column Layout -->
-    <div class="main-columns">
+    <div class="main-columns section-middle">
       <!-- Left Column: Agents, System Messages, TTS, Whisper -->
       <div class="left-column">
         <div class="section-title">Active Agents</div>

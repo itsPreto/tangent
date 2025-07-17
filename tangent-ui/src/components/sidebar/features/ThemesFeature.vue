@@ -2,7 +2,7 @@
   <div class="themes-feature" :class="'theme-' + currentTheme">
     <div class="themes-content">
       <!-- Themes Header -->
-      <div class="themes-header" :style="headerStyle">
+      <div class="themes-header section-top" :style="headerStyle">
         <div class="header-section">
           <Palette class="w-5 h-5 text-pink-400" />
           <span class="header-text">Themes</span>
@@ -15,7 +15,7 @@
       </div>
 
       <!-- Current Theme Info -->
-      <div class="current-theme" :style="sectionStyle">
+      <div class="current-theme section-middle" :style="sectionStyle">
         <div class="theme-preview" :style="getCurrentThemePreviewStyle()">
           <div class="preview-content">
             <div class="preview-circle primary"></div>
@@ -45,7 +45,7 @@
       </div>
 
       <!-- Theme Grid -->
-      <div class="theme-grid-container">
+      <div class="theme-grid-container section-bottom">
         <div class="theme-grid">
           <div
             v-for="theme in filteredThemes"

@@ -21,4 +21,5 @@ export interface ChatSummary {
   tags: string[];
   color: string;
   isFavorite: boolean;
+  isTemplate?: boolean;
 }

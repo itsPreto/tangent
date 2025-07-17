@@ -146,6 +146,71 @@ class ExecutionNode(db.Model):
         db.Index('idx_execution_nodes_started_by', 'started_by'),
     )
 
+class ClaudeCodeSession(db.Model):
+    """Enhanced Claude Code session management"""
+    __tablename__ = 'claude_code_sessions'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    instance_id = db.Column(db.String(36), db.ForeignKey('claude_code_instances.id'), nullable=True)  # Reference to ClaudeCodeInstance if applicable
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_active = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    message_count = db.Column(db.Integer, default=0)
+    total_cost = db.Column(db.Float, default=0.0)
+    session_data = db.Column(db.JSON, nullable=True)  # JSON storage for session state
+    working_dir = db.Column(db.String(500), nullable=True)
+    status = db.Column(db.String(20), default='active')  # 'active', 'paused', 'completed', 'error'
+    
+    # Relationships
+    conversations = db.relationship('ClaudeCodeConversation', backref='session', cascade='all, delete-orphan')
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_claude_code_sessions_instance_id', 'instance_id'),
+        db.Index('idx_claude_code_sessions_status', 'status'),
+        db.Index('idx_claude_code_sessions_created', 'created_at'),
+        db.Index('idx_claude_code_sessions_last_active', 'last_active'),
+    )
+
+class ClaudeCodeConversation(db.Model):
+    """Individual conversation turns within a Claude Code session"""
+    __tablename__ = 'claude_code_conversations'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = db.Column(db.String(36), db.ForeignKey('claude_code_sessions.id'), nullable=False)
+    turn_number = db.Column(db.Integer, nullable=False)
+    role = db.Column(db.String(20), nullable=False)  # 'user' or 'assistant'
+    content = db.Column(db.Text, nullable=False)
+    conversation_metadata = db.Column(db.JSON, nullable=True)  # Tool calls, costs, etc.
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_claude_code_conversations_session_id', 'session_id'),
+        db.Index('idx_claude_code_conversations_turn', 'session_id', 'turn_number'),
+        db.Index('idx_claude_code_conversations_role', 'role'),
+        db.Index('idx_claude_code_conversations_timestamp', 'timestamp'),
+    )
+
+class ClaudeCodeInstance(db.Model):
+    """Claude Code instance tracking for the service"""
+    __tablename__ = 'claude_code_instances'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    instance_name = db.Column(db.String(100), nullable=False)
+    config = db.Column(db.JSON, nullable=True)  # Instance configuration
+    pid = db.Column(db.Integer, nullable=True)  # Process ID if running
+    status = db.Column(db.String(20), default='stopped')  # 'running', 'stopped', 'error'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_heartbeat = db.Column(db.DateTime, nullable=True)
+    working_dir = db.Column(db.String(500), nullable=True)
+    
+    # Relationships
+    sessions = db.relationship('ClaudeCodeSession', backref='instance', cascade='all, delete-orphan')
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_claude_code_instances_status', 'status'),
+        db.Index('idx_claude_code_instances_pid', 'pid'),
+        db.Index('idx_claude_code_instances_heartbeat', 'last_heartbeat'),
+    )
+
 class ChatPersistenceService:
     def __init__(self, app):
         self.app = app  # Store reference to Flask app

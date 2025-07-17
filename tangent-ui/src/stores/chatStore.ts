@@ -80,6 +80,27 @@ export const useChatStore = defineStore('chat', () => {
             isLoading.value = false;
         }
     }
+    
+    const createTemplateChat = async () => {
+        const templateId = `template-${Date.now()}`;
+        const templateChat: ChatSummary = {
+            id: templateId,
+            title: 'New Chat',
+            createdAt: new Date().toISOString(),
+            lastModified: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            nodeCount: 0,
+            isTemplate: true,
+            status: 'active'
+        };
+        
+        // Add template chat to local state
+        chats.value = [templateChat, ...chats.value];
+        triggerRef(chats);
+        
+        return templateChat;
+    };
+    
     const updateChatMetadata = async (chatId: string, metadata: Partial<ChatSummary>) => {
         try {
             const response = await fetch(`http://127.0.0.1:5050/chats/${chatId}`, {
@@ -276,6 +297,7 @@ export const useChatStore = defineStore('chat', () => {
         recentWorkspaces,
         loadChats,
         createChat,
+        createTemplateChat,
         loadChat,
         deleteChat,
         addNode,

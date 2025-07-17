@@ -509,7 +509,7 @@ const lastModel = ref<ModelInfo | undefined>(undefined);
 const wasRecentlyDragging = ref(false);
 const isSnapped = ref(false);
 const isTransitioningSnap = ref(false);
-const originalPosition = ref<{ x: number; y: number; left?: number; top?: number }>({ x: 0, y: 0 });
+// Original position not needed in simplified version
 const autoTTSEnabled = ref(false);
 const isRegeneratingTitle = ref(false);
 
@@ -1210,97 +1210,61 @@ const shouldGlow = computed(() => {
   return (props.isSelected || props.isMultiSelected) && props.zoom < 1.5;
 });
 
-const calculateSnappedPosition = () => {
-  if (!isSnapped.value || !nodeElement.value) return null;
+const calculateSnappedDimensions = () => {
+  if (!isSnapped.value) return null;
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   
-  // Calculate actual sidebar widths for dual sidebar mode
-  let sidePanelWidth = 0;
-  let rightPanelWidth = 0;
+  // Calculate sidebar widths based on actual sidebar states
+  let leftSidebarWidth = 0;
+  let rightSidebarWidth = 0;
   
   if (props.isSidePanelOpen) {
-    sidePanelWidth = 260; // Left sidebar expanded width in dual mode
+    leftSidebarWidth = 260; // Left sidebar expanded width
   } else {
-    sidePanelWidth = 60; // Left sidebar collapsed width in dual mode
+    leftSidebarWidth = 60; // Left sidebar collapsed width
   }
   
   if (props.isRightPanelOpen) {
-    rightPanelWidth = 60 + (vw * 0.35); // Right sidebar (60px) + content panel (35vw)
+    // Right content panel is open - need to account for both content panel AND potential sidebar expansion
+    const contentPanelWidth = vw * 0.35;
+    const sidebarWidth = props.isRightSidebarExpanded ? 180 : 60; // Sidebar can expand even when content panel is open
+    rightSidebarWidth = contentPanelWidth + sidebarWidth;
   } else {
-    rightPanelWidth = 60; // Just the right sidebar
+    rightSidebarWidth = props.isRightSidebarExpanded ? 180 : 60; // Right sidebar expanded (180px) or collapsed (60px)
   }
   
-  const availableWidth = vw - sidePanelWidth - rightPanelWidth;
-
-  // Get the current node's position and dimensions
-  const nodeRect = nodeElement.value.getBoundingClientRect();
-  const card = nodeElement.value.querySelector('.node-card');
-  if (!card) return null;
-
-  const cardRect = card.getBoundingClientRect();
-
-  // Calculate the scale needed to fit the card
-  const scaleX = (availableWidth * 0.9) / cardRect.width;
-  const scaleY = (vh * 0.9) / cardRect.height;
-  const scale = Math.min(scaleX, scaleY, 1);
-
-  // Calculate the center position for the snapped state
-  // Add vertical offset to position node lower on the screen
-  const targetLeft = sidePanelWidth + (availableWidth - cardRect.width * scale) / 2;
-  const targetTop = (vh - cardRect.height * scale) / 2 + (vh * 0.08); // Add 8% of viewport height as offset
+  // Calculate available space - node should fill from left sidebar to right sidebar
+  const availableWidth = vw - leftSidebarWidth - rightSidebarWidth;
+  const availableHeight = vh;
+  
+  // Node should take up the full available space
+  const width = availableWidth;
+  const height = availableHeight;
+  
+  // Position at the edge of left sidebar
+  const left = leftSidebarWidth;
+  const top = 0;
 
   return {
-    targetLeft,
-    targetTop,
-    scale,
-    currentLeft: nodeRect.left,
-    currentTop: nodeRect.top,
-    currentScale: props.zoom
+    width: `${width}px`,
+    height: `${height}px`,
+    left: `${left}px`,
+    top: `${top}px`
   };
 };
 
-const calculateAndUpdateSnappedPosition = () => {
+// Force re-computation of snapped dimensions when sidebars change
+const updateSnappedDimensions = () => {
   if (!isSnapped.value) return;
-
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
   
-  // Calculate actual sidebar widths for dual sidebar mode
-  let sidePanelWidth = 0;
-  let rightPanelWidth = 0;
-  
-  if (props.isSidePanelOpen) {
-    sidePanelWidth = 260; // Left sidebar expanded width in dual mode
-  } else {
-    sidePanelWidth = 60; // Left sidebar collapsed width in dual mode
-  }
-  
-  if (props.isRightPanelOpen) {
-    rightPanelWidth = 60 + (vw * 0.35); // Right sidebar (60px) + content panel (35vw)
-  } else {
-    rightPanelWidth = 60; // Just the right sidebar
-  }
-  
-  const availableWidth = vw - sidePanelWidth - rightPanelWidth;
-  const availableHeight = vh;
-
+  // Force reactive update by touching the computed property
   nextTick(() => {
-    if (nodeElement.value) {
-      const card = nodeElement.value.querySelector('.snapped-card') as HTMLElement;
-      if (card) {
-        const cardWidth = card.offsetWidth;
-        const cardHeight = card.offsetHeight;
-        const scaleX = (availableWidth * 0.9) / cardWidth;
-        const scaleY = (availableHeight * 0.9) / cardHeight;
-        const scale = Math.min(scaleX, scaleY, 1);
-        const left = sidePanelWidth + (availableWidth - cardWidth * scale) / 2;
-        // Position node lower on the screen by adding a vertical offset
-        const top = (availableHeight - cardHeight * scale) / 2 + (availableHeight * 0.08); // Add 8% of viewport height
-        nodeElement.value.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
-        nodeElement.value.style.transformOrigin = 'top left';
-      }
+    const dimensions = calculateSnappedDimensions();
+    if (dimensions && nodeElement.value) {
+      // Apply dimensions directly to ensure immediate update
+      Object.assign(nodeElement.value.style, dimensions);
     }
   });
 };
@@ -1339,31 +1303,22 @@ const handleNodeClick = (e: MouseEvent) => {
 };
 
 const nodePositionStyle = computed(() => {
-  if (isSnapped.value && !isTransitioningSnap.value) {
-    // Only apply final snapped position when transition is complete
-    const snappedPosition = calculateSnappedPosition();
-    if (!snappedPosition) return {};
-
+  if (isSnapped.value) {
+    const dimensions = calculateSnappedDimensions();
+    if (!dimensions) return {};
+    
     return {
       position: 'fixed',
-      transform: `translate3d(${snappedPosition.targetLeft}px, ${snappedPosition.targetTop}px, 0) scale(${snappedPosition.scale})`,
-      transformOrigin: '0 0',
-      transition: 'none'
-    };
-  }
-
-  if (isTransitioningSnap.value) {
-    // During transition, let manual transforms handle the animation
-    return {
-      transition: isSnapped.value ? 
-        'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' : 
-        'transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19)'
+      ...dimensions,
+      zIndex: 1000,
+      transition: isTransitioningSnap.value ? 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)' : 'none'
     };
   }
 
   // Normal positioning
   return {
-    transform: `translate(${props.node.x}px, ${props.node.y}px)`,
+    transform: `translate3d(${props.node.x}px, ${props.node.y}px, 0) scale(${props.zoom})`,
+    transformOrigin: '0 0',
     transition: 'none'
   };
 });
@@ -1374,93 +1329,39 @@ const toggleSnap = async () => {
   try {
     if (!isSnapped.value) {
       console.log('Snapping node:', props.node.id);
-      // Store original position before snapping
-      const currentRect = nodeElement.value?.getBoundingClientRect();
-      originalPosition.value = {
-        x: props.node.x,
-        y: props.node.y,
-        left: currentRect?.left || 0,
-        top: currentRect?.top || 0
-      };
-
-      // Calculate animation origin points for enhanced bezier effect
-      if (nodeElement.value && currentRect) {
-        const targetSnappedPos = calculateSnappedPosition();
-        if (targetSnappedPos) {
-          // Set CSS variables for origin-based animation
-          const startX = currentRect.left - targetSnappedPos.targetLeft;
-          const startY = currentRect.top - targetSnappedPos.targetTop;
-          const startScale = props.zoom / targetSnappedPos.scale;
-          
-          nodeElement.value.style.setProperty('--snap-start-x', `${startX}px`);
-          nodeElement.value.style.setProperty('--snap-start-y', `${startY}px`);
-          nodeElement.value.style.setProperty('--snap-start-scale', startScale.toString());
-        }
-        
-        // Set initial position with fixed positioning
-        nodeElement.value.style.position = 'fixed';
-        nodeElement.value.style.transform = `translate3d(${currentRect.left}px, ${currentRect.top}px, 0) scale(${props.zoom})`;
-        nodeElement.value.style.transformOrigin = '0 0';
-      }
-
-      // Enable transition and snap
-      isTransitioningSnap.value = true;
-      await nextTick();
-
-      // Wait a frame to ensure the initial position is rendered
-      await new Promise(resolve => requestAnimationFrame(resolve));
       
-      // Now trigger the snap animation by setting isSnapped after a short delay
-      setTimeout(() => {
-        emit('snap', {
-          nodeId: props.node.id,
-          originalPosition: originalPosition.value
-        });
+      // Simple snap: just set the state and let CSS handle the transition
+      isTransitioningSnap.value = true;
+      
+      emit('snap', {
+        nodeId: props.node.id,
+        originalPosition: { x: props.node.x, y: props.node.y }
+      });
 
-        document.body.classList.add('has-snapped-node');
-        isSnapped.value = true;
-        canvasStore.snapNode(props.node.id);
-      }, 50);
+      document.body.classList.add('has-snapped-node');
+      isSnapped.value = true;
+      canvasStore.snapNode(props.node.id);
 
-      // Disable transition after animation completes (longer for bouncy animation)
+      // Clear transition state after animation
       setTimeout(() => {
         isTransitioningSnap.value = false;
-      }, 450);
+      }, 300);
     } else {
       console.log('Unsnapping node:', props.node.id);
-      // Enable transition for unsnapping
+      
+      // Simple unsnap: just set the state and let CSS handle the transition
       isTransitioningSnap.value = true;
-
-      // Set initial position to current snapped position and prepare unsnap animation
-      const snappedPosition = calculateSnappedPosition();
-      if (snappedPosition && nodeElement.value && originalPosition.value) {
-        // Calculate unsnap target position
-        const targetX = originalPosition.value.left;
-        const targetY = originalPosition.value.top;
-        const deltaX = snappedPosition.targetLeft - targetX;
-        const deltaY = snappedPosition.targetTop - targetY;
-        const scaleRatio = snappedPosition.scale / props.zoom;
-        
-        // Set CSS variables for unsnap animation
-        nodeElement.value.style.setProperty('--unsnap-delta-x', `${deltaX}px`);
-        nodeElement.value.style.setProperty('--unsnap-delta-y', `${deltaY}px`);
-        nodeElement.value.style.setProperty('--unsnap-scale-ratio', scaleRatio.toString());
-        
-        nodeElement.value.style.transform = `translate3d(${snappedPosition.currentLeft}px, ${snappedPosition.currentTop}px, 0) scale(${snappedPosition.currentScale})`;
-      }
-
-      await nextTick();
 
       emit('unsnap', {
         nodeId: props.node.id,
-        originalPosition: originalPosition.value
+        originalPosition: { x: props.node.x, y: props.node.y }
       });
 
       document.body.classList.remove('has-snapped-node');
       isSnapped.value = false;
       canvasStore.unsnapNode(props.node.id);
 
-      // Disable transition after animation completes
+      // Clear transition state after animation
       setTimeout(() => {
         isTransitioningSnap.value = false;
       }, 300);
@@ -1471,7 +1372,6 @@ const toggleSnap = async () => {
     isTransitioningSnap.value = false;
     document.body.classList.remove('has-snapped-node');
 
-    // Try to restore to a safe state
     if (isSnapped.value) {
       isSnapped.value = false;
       canvasStore.unsnapNode(props.node.id);
@@ -2497,13 +2397,19 @@ watch(() => props.node.title, (newTitle) => {
 
 watch(() => props.isSidePanelOpen, () => {
   if (isSnapped.value) {
-    calculateAndUpdateSnappedPosition();
+    updateSnappedDimensions();
   }
 }, { immediate: true });
 
 watch(() => props.isRightPanelOpen, () => {
   if (isSnapped.value) {
-    calculateAndUpdateSnappedPosition();
+    updateSnappedDimensions();
+  }
+}, { immediate: true });
+
+watch(() => props.isRightSidebarExpanded, () => {
+  if (isSnapped.value) {
+    updateSnappedDimensions();
   }
 }, { immediate: true });
 
@@ -2757,7 +2663,7 @@ onMounted(() => {
         requestAnimationFrame(updateScrollButtonsVisibility);
       });
     }
-    calculateAndUpdateSnappedPosition();
+    updateSnappedDimensions();
     
     // Emit initial message positions
     nextTick(() => {
@@ -3232,34 +3138,7 @@ onBeforeUnmount(() => {
   transition: opacity 0.3s ease-out;
 }
 
-/* Adjust width based on sidebar states in dual mode */
-.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="false"][data-right-sidebar-expanded="false"] {
-  width: 87vw; /* Left sidebar expanded, right sidebar compact */
-}
-
-.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="false"][data-right-sidebar-expanded="true"] {
-  width: 81vw; /* Left sidebar expanded, right sidebar expanded (showing labels) */
-}
-
-.branch-node.snapped[data-side-panel-open="false"][data-right-panel-open="false"][data-right-sidebar-expanded="false"] {
-  width: 94vw; /* Both sidebars collapsed */
-}
-
-.branch-node.snapped[data-side-panel-open="false"][data-right-panel-open="false"][data-right-sidebar-expanded="true"] {
-  width: 94vw; /* Left sidebar collapsed, right sidebar expanded (showing labels) */
-}
-
-.branch-node.snapped[data-right-panel-open="true"][data-right-sidebar-expanded="false"] {
-  width: 51vw; /* Right content panel open, sidebar compact */
-}
-
-.branch-node.snapped[data-right-panel-open="true"][data-right-sidebar-expanded="true"] {
-  width: 56vw; /* Right content panel open, sidebar expanded (showing labels) */
-}
-
-.branch-node.snapped[data-side-panel-open="true"][data-right-panel-open="true"][data-right-sidebar-expanded="true"] {
-  width: 46vw; /* Both sidebars open, right content panel open, right sidebar expanded (showing labels) */
-}
+/* Simplified: All width/height calculations now handled by calculateSnappedDimensions() */
 
 /* Snapped card styling */
 .snapped-card {
@@ -3350,40 +3229,11 @@ onBeforeUnmount(() => {
   background-color: var(--node-color);
 }
 
-.transition-snap {
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-}
+/* Removed old transition classes - now handled by nodePositionStyle */
 
-.transition-unsnap {
-  transition: transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) !important;
-}
-
-/* Enhanced keyframe animations for origin-based snapping */
-@keyframes nodeSnapToCenter {
-  from {
-    transform: translate3d(var(--snap-start-x, 0), var(--snap-start-y, 0), 0) scale(var(--snap-start-scale, 1));
-  }
-  to {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-@keyframes nodeUnsnapToOrigin {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(var(--unsnap-delta-x, 0), var(--unsnap-delta-y, 0), 0) scale(var(--unsnap-scale-ratio, 1));
-  }
-}
-
-/* Enhanced snap animations with overshoot */
-.snapping {
-  animation: nodeSnapToCenter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.unsnapping {
-  animation: nodeUnsnapToOrigin 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+/* Simplified snap animations using CSS transitions */
+.branch-node.transition-snap {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .relative.group {

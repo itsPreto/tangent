@@ -35,7 +35,7 @@
 
 
     <!-- Force Controls Panel -->
-    <div v-if="showControls" class="controls-panel" :class="{ 'external-controls': externalControls }">
+    <div v-if="showControls && !externalControls" class="controls-panel">
       <div class="controls-header">
         <h3 class="controls-title">Force Controls</h3>
         <div class="controls-actions">
@@ -1246,6 +1246,12 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
           const workspace = cluster.workspaces[d.workspaceIndex];
           emit('selectWorkspace', workspace.id);
         }
+      } else if (d.type === 'topic') {
+        // Toggle workspace labels for this topic's cluster
+        const relatedWorkspaceLabels = label.filter(n => n.type === 'workspace' && n.clusterId === d.clusterId);
+        const isVisible = relatedWorkspaceLabels.style('opacity') === '1';
+        
+        relatedWorkspaceLabels.style('opacity', isVisible ? 0 : 1);
       }
     })
     .on('mouseover', (event, d) => {
@@ -1260,6 +1266,53 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
   // Add titles for accessibility
   node.append('title')
     .text(d => d.name || '');
+
+  // Add visible labels
+  const label = g.append('g')
+    .attr('class', 'labels-group')
+    .selectAll('text')
+    .data(nodes)
+    .join('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', '0.35em')
+    .attr('font-size', d => d.type === 'topic' ? '12px' : '10px')
+    .attr('font-weight', d => d.type === 'topic' ? 'bold' : 'normal')
+    .attr('fill', d => {
+      if (d.type === 'topic') {
+        return colors.topicColors[d.clusterId % colors.topicColors.length];
+      } else {
+        return colors.backgroundColor === '#ffffff' ? '#333333' : '#ffffff';
+      }
+    })
+    .attr('stroke', d => {
+      if (d.type === 'topic') {
+        return colors.backgroundColor;
+      } else {
+        return 'none';
+      }
+    })
+    .attr('stroke-width', d => d.type === 'topic' ? 3 : 0)
+    .attr('paint-order', 'stroke')
+    .style('cursor', 'pointer')
+    .style('opacity', d => d.type === 'topic' ? 1 : 0) // Topics always visible, workspaces hidden initially
+    .text(d => d.name || '')
+    .call(drag(simulation))
+    .on('click', (event, d) => {
+      if (d.type === 'workspace' && d.workspaceIndex !== undefined) {
+        // Handle workspace selection
+        const cluster = props.clusteringStatus.clusters[d.clusterId];
+        if (cluster && cluster.workspaces[d.workspaceIndex]) {
+          const workspace = cluster.workspaces[d.workspaceIndex];
+          emit('selectWorkspace', workspace.id);
+        }
+      } else if (d.type === 'topic') {
+        // Toggle workspace labels for this topic's cluster
+        const relatedWorkspaceLabels = label.filter(n => n.type === 'workspace' && n.clusterId === d.clusterId);
+        const isVisible = relatedWorkspaceLabels.style('opacity') === '1';
+        
+        relatedWorkspaceLabels.style('opacity', isVisible ? 0 : 1);
+      }
+    });
 
   // Helper function to calculate link endpoints that stop at circle edges
   function linkArc(d) {
@@ -1313,6 +1366,10 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
     node
       .attr('cx', d => d.x || 0)
       .attr('cy', d => d.y || 0);
+
+    label
+      .attr('x', d => d.x || 0)
+      .attr('y', d => (d.y || 0) + (d.type === 'topic' ? 20 : 15)); // Position labels below nodes
   });
 
   // Drag behavior
@@ -1495,12 +1552,45 @@ const resetGraph = () => {
   resetZoom();
 };
 
+// Update force settings from external controls
+const updateForceSettings = (newSettings: any) => {
+  Object.assign(forceSettings.value, newSettings);
+  
+  // Update the force simulation if it exists
+  if (simulation) {
+    applyLayoutForces();
+    
+    // Update visual elements
+    if (svg) {
+      // Update link stroke width
+      svg.select('.links-group')
+        .selectAll('line')
+        .attr('stroke-width', forceSettings.value.linkWidth);
+      
+      // Update node sizes
+      svg.select('.nodes-group')
+        .selectAll('circle')
+        .attr('r', d => d.type === 'topic' ? forceSettings.value.topicNodeSize : forceSettings.value.workspaceNodeSize);
+    }
+    
+    // Restart simulation with new settings
+    simulation.alpha(0.3).restart();
+  }
+};
+
+// Get current force settings
+const getForceSettings = () => {
+  return { ...forceSettings.value };
+};
+
 // Expose methods for parent component
 defineExpose({
   updateLayout,
   updateShowControls,
   resetGraph,
-  toggleFullscreen
+  toggleFullscreen,
+  updateForceSettings,
+  getForceSettings
 });
 
 // Initialize Three.js if available

@@ -1,274 +1,219 @@
 <template>
-  <div class="claude-code-feature">
-    <!-- Header with Stats -->
-    <div class="claude-code-header">
-      <div class="section-title">Claude Code Instances</div>
-      <div class="claude-code-stats">
-        <div class="stat-card">
-          <div class="stat-value">{{ claudeCodeInstances.length }}</div>
-          <div class="stat-label">Active Instances</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${{ totalCost.toFixed(2) }}</div>
-          <div class="stat-label">Total Cost</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{{ claudeCodeSessions.length }}</div>
-          <div class="stat-label">Sessions</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Create New Instance -->
-    <div class="section">
-      <div class="section-header">
-        <h3>Create New Instance</h3>
-        <button @click="showCreateForm = !showCreateForm" class="toggle-btn">
-          {{ showCreateForm ? 'Cancel' : 'New Instance' }}
-        </button>
-      </div>
-      <div v-if="showCreateForm" class="create-instance-form">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Instance Name</label>
-            <input v-model="newInstance.name" type="text" placeholder="e.g., Frontend Development"
-              class="form-input" />
-          </div>
-          <div class="form-group">
-            <label>Working Directory</label>
-            <input v-model="newInstance.working_dir" type="text" placeholder="/Users/dev/project"
-              class="form-input" />
-          </div>
-          <div class="form-group full-width">
-            <label>Initial Prompt</label>
-            <textarea v-model="newInstance.initial_prompt"
-              placeholder="Describe what you want Claude Code to do..." class="form-textarea"
-              rows="3"></textarea>
-          </div>
-          <div class="form-group">
-            <label>Max Turns</label>
-            <input v-model.number="newInstance.max_turns" type="number" min="1" max="50" class="form-input" />
-          </div>
-          <div class="form-group">
-            <label>Cost Limit ($)</label>
-            <input v-model.number="newInstance.cost_limit" type="number" step="0.10" min="0.10" max="50"
-              class="form-input" />
-          </div>
-          <div class="form-group full-width">
-            <label>Allowed Tools</label>
-            <div class="tool-checkboxes">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="newInstance.tools.read" />
-                <span>Read</span>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="newInstance.tools.write" />
-                <span>Write</span>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="newInstance.tools.bash" />
-                <span>Bash</span>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="newInstance.tools.webfetch" />
-                <span>WebFetch</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button @click="createInstance" class="primary-btn" :disabled="!canCreateInstance">
-            Create & Start
-          </button>
-          <button @click="resetForm" class="secondary-btn">Reset</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Connect Current Session -->
-    <div class="section">
-      <div class="section-header">
-        <h3>Connect Current Session</h3>
-      </div>
-      <div class="connect-session-content">
-        <div class="connect-description">
-          <div class="connect-icon">🔗</div>
-          <div class="connect-text">
-            <div class="connect-title">Register this Claude Code session</div>
-            <div class="connect-subtitle">Make this session visible in the active instances panel</div>
-          </div>
-        </div>
-        <button @click="connectCurrentSession" class="connect-btn" :disabled="isConnecting">
-          <component :is="isConnecting ? 'Loader' : 'ExternalLink'" class="w-4 h-4"
-            :class="{ 'animate-spin': isConnecting }" />
-          {{ isConnecting ? 'Connecting...' : 'Connect Session' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Active Instances -->
-    <div class="section">
-      <div class="section-header">
-        <h3>Active Instances</h3>
-        <div class="header-actions">
-          <button @click="showStopConfirmation" class="stop-all-btn" :disabled="claudeCodeInstances.length === 0" title="Stop all running instances">
-            <Square class="w-4 h-4" />
-            Stop All
-          </button>
-          <button @click="refreshInstances" class="refresh-btn">
+  <div class="claude-code-management">
+    <!-- Overview Panel -->
+    <div class="panel overview-panel">
+      <div class="panel-header">
+        <h3 class="panel-title">Claude Code Overview</h3>
+        <div class="panel-actions">
+          <button @click="refreshInstances" class="icon-btn" title="Refresh">
             <RotateCcw class="w-4 h-4" />
           </button>
         </div>
       </div>
-
-      <!-- Inline Stop Confirmation -->
-      <div v-if="showStopAllConfirmation" class="stop-confirmation">
-        <div class="confirmation-content">
-          <div class="confirmation-icon">⚠️</div>
-          <div class="confirmation-text">
-            <div class="confirmation-title">Stop All Instances</div>
-            <div class="confirmation-message">This will stop all {{ claudeCodeInstances.length }} running Claude Code instances. This action cannot be undone.</div>
+      <div class="panel-content">
+        <div class="overview-stats">
+          <div class="stat-box">
+            <div class="stat-number">{{ claudeCodeInstances.length }}</div>
+            <div class="stat-label">Active Sessions</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number">${{ totalCost.toFixed(2) }}</div>
+            <div class="stat-label">Total Cost</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number">{{ totalMemoryUsage }}</div>
+            <div class="stat-label">Memory Used</div>
           </div>
         </div>
-        <div class="confirmation-actions">
-          <button @click="cancelStopAll" class="cancel-btn">Cancel</button>
-          <button @click="confirmStopAll" class="confirm-btn">
-            <Square class="w-4 h-4" />
-            Stop All
+      </div>
+    </div>
+
+    <!-- Active Sessions Panel -->
+    <div class="panel sessions-panel">
+      <div class="panel-header">
+        <h3 class="panel-title">Active Sessions</h3>
+        <div class="panel-actions">
+          <button @click="showCreateForm = !showCreateForm" class="icon-btn" :class="{ active: showCreateForm }" title="New Session">
+            <Plus class="w-4 h-4" />
           </button>
         </div>
       </div>
-
-      <div v-if="claudeCodeInstances.length === 0" class="empty-state">
-        <div class="empty-icon">🤖</div>
-        <div class="empty-title">No Active Instances</div>
-        <div class="empty-description">Create a new Claude Code instance to get started</div>
+      
+      <!-- Create Form - Fixed Position Overlay -->
+      <div v-if="showCreateForm" class="create-form-overlay">
+        <div class="create-form">
+          <div class="form-grid">
+            <input v-model="newInstance.name" placeholder="Session name" class="form-field" />
+            <input v-model="newInstance.working_dir" placeholder="Working directory" class="form-field" />
+          </div>
+          <textarea v-model="newInstance.initial_prompt" placeholder="Initial prompt..." class="form-field form-textarea" rows="2"></textarea>
+          <div class="form-actions">
+            <button @click="createInstance" class="btn-primary" :disabled="!canCreateInstance">
+              Create Session
+            </button>
+            <button @click="showCreateForm = false" class="btn-secondary">
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div v-else class="instances-list">
-        <div v-for="instance in claudeCodeInstances" :key="instance.instance_id" class="instance-card"
-          :class="instanceStatusClass(instance.status)">
-          <div class="instance-header">
-            <div class="instance-info">
-              <div class="instance-name">{{ instance.config?.name || `Instance ${instance.instance_id.substring(0, 8)}` }}</div>
-              <div class="instance-meta">
-                <span class="status-badge" :class="instance.status">{{ instance.status }}</span>
-                <span class="cost">${{ (instance.cost_usd || 0).toFixed(3) }}</span>
-                <span class="duration">{{ formatDuration(instance.duration_ms || 0) }}</span>
+      <div class="panel-content">
+        <div v-if="claudeCodeInstances.length === 0" class="empty-state">
+          <div class="empty-icon">🤖</div>
+          <div class="empty-message">No active sessions</div>
+          <div class="empty-hint">Create a new session to get started</div>
+        </div>
+        
+        <div v-else class="sessions-list">
+          <div v-for="instance in claudeCodeInstances" :key="instance.instance_id" class="session-card">
+            <div class="session-header">
+              <div class="session-info">
+                <div class="session-name">{{ instance.config?.name || `Process ${instance.pid}` }}</div>
+                <div class="session-meta">
+                  <span class="status-dot" :class="instance.status"></span>
+                  <span class="status-text">{{ instance.status }}</span>
+                  <span class="session-separator">•</span>
+                  <span class="session-duration">{{ formatDuration(instance.duration_ms || 0) }}</span>
+                </div>
+              </div>
+              <div class="session-actions">
+                <button v-if="instance.status === 'running'" @click="pauseInstance(instance.instance_id)" 
+                        class="action-btn pause" title="Pause">
+                  <Pause class="w-3 h-3" />
+                </button>
+                <button v-if="instance.status === 'paused'" @click="resumeInstance(instance.instance_id)"
+                        class="action-btn resume" title="Resume">
+                  <Play class="w-3 h-3" />
+                </button>
+                <button @click="stopInstance(instance.instance_id)" class="action-btn stop" title="Stop">
+                  <Square class="w-3 h-3" />
+                </button>
               </div>
             </div>
-            <div class="instance-actions">
-              <button v-if="instance.status === 'running'" @click="pauseInstance(instance.instance_id)"
-                class="action-btn pause" title="Pause">
-                <Pause class="w-4 h-4" />
-              </button>
-              <button v-if="instance.status === 'paused'" @click="resumeInstance(instance.instance_id)"
-                class="action-btn resume" title="Resume">
-                <Play class="w-4 h-4" />
-              </button>
-              <button @click="stopInstance(instance.instance_id)" class="action-btn stop" title="Stop">
-                <Square class="w-4 h-4" />
-              </button>
-              <button @click="showInstanceDetails(instance)" class="action-btn details" title="Details">
-                <Info class="w-4 h-4" />
-              </button>
-              <button v-if="instance.node_id" @click="openInWorkspace(instance)"
-                class="action-btn open-workspace" title="Open in Workspace">
-                <ExternalLink class="w-4 h-4" />
-              </button>
-              <button v-else @click="createWorkspaceForInstance(instance)" class="action-btn create-workspace"
-                title="Create Workspace">
-                <Plus class="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          <div class="instance-details">
-            <div class="detail-item">
-              <strong>Working Dir:</strong> {{ instance.working_dir }}
-            </div>
-            <div class="detail-item">
-              <strong>Turns:</strong> {{ instance.num_turns }} / {{ instance.config?.max_turns || '∞' }}
-            </div>
-            <div v-if="instance.session_id" class="detail-item">
-              <strong>Session:</strong> {{ instance.session_id.substring(0, 12) }}...
+            
+            <div class="session-details">
+              <div class="detail-row">
+                <span class="detail-label">Directory</span>
+                <span class="detail-value">{{ instance.working_dir.split('/').pop() || 'Unknown' }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Memory</span>
+                <span class="detail-value">{{ instance.memory_mb ? instance.memory_mb.toFixed(0) + 'MB' : 'N/A' }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Cost</span>
+                <span class="detail-value">${{ (instance.cost_usd || 0).toFixed(3) }}</span>
+              </div>
+              <div v-if="instance.is_detected" class="detail-row">
+                <span class="detail-label">Source</span>
+                <span class="detail-value detected">🔍 Auto-detected</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Session History -->
-    <div class="section">
-      <div class="section-header">
-        <h3>Session History</h3>
-        <button @click="refreshSessions" class="refresh-btn">
-          <RefreshCw class="w-4 h-4" />
-        </button>
+    <!-- System Info Panel -->
+    <div class="panel system-panel">
+      <div class="panel-header">
+        <h3 class="panel-title">System Information</h3>
+        <div class="panel-actions">
+          <button @click="showSystemInfo = !showSystemInfo" class="icon-btn" :class="{ active: showSystemInfo }" title="Toggle System Info">
+            <Info class="w-4 h-4" />
+          </button>
+        </div>
       </div>
-      <div v-if="claudeCodeSessions.length === 0" class="empty-state">
-        <div class="empty-icon">📜</div>
-        <div class="empty-title">No Sessions</div>
-        <div class="empty-description">Completed sessions will appear here</div>
-      </div>
-      <div v-else class="sessions-list">
-        <div v-for="session in claudeCodeSessions" :key="session.session_id" class="session-card">
-          <div class="session-header">
-            <div class="session-info">
-              <div class="session-name">{{ session.config?.name || 'Unnamed Session' }}</div>
-              <div class="session-meta">
-                <span class="session-date">{{ formatDate(session.created_at) }}</span>
-                <span class="session-cost">${{ (session.cost_usd || 0).toFixed(3) }}</span>
-                <span class="session-status" :class="session.final_status">{{ session.final_status }}</span>
-              </div>
-            </div>
-            <div class="session-actions">
-              <button @click="resumeSession(session.session_id)" class="action-btn resume"
-                title="Resume Session">
-                <PlayCircle class="w-4 h-4" />
-              </button>
-              <button @click="exportSession(session)" class="action-btn export" title="Export">
-                <Download class="w-4 h-4" />
-              </button>
-            </div>
+      
+      <div v-if="showSystemInfo" class="panel-content">
+        <div class="system-grid">
+          <div class="system-item">
+            <div class="system-label">Platform</div>
+            <div class="system-value">{{ systemInfo.platform }}</div>
           </div>
-          <div class="session-details">
-            <div class="detail-item">
-              <strong>Working Dir:</strong> {{ session.working_dir }}
-            </div>
-            <div class="detail-item">
-              <strong>Turns:</strong> {{ session.num_turns }}
-            </div>
-            <div class="detail-item">
-              <strong>Session ID:</strong> {{ session.session_id.substring(0, 20) }}...
-            </div>
+          <div class="system-item">
+            <div class="system-label">Memory</div>
+            <div class="system-value">{{ systemInfo.availableMemory }} / {{ systemInfo.totalMemory }}</div>
+          </div>
+          <div class="system-item">
+            <div class="system-label">CPU Cores</div>
+            <div class="system-value">{{ systemInfo.cpuCount }}</div>
+          </div>
+          <div class="system-item">
+            <div class="system-label">Last Update</div>
+            <div class="system-value">{{ formatTime(lastUpdateTime) }}</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Global Settings -->
-    <div class="section">
-      <div class="section-header">
-        <h3>Global Settings</h3>
+    <!-- Tools & Permissions Panel -->
+    <div class="panel tools-panel">
+      <div class="panel-header">
+        <h3 class="panel-title">Tools & Permissions</h3>
       </div>
-      <div class="global-settings">
-        <div class="setting-item">
-          <label class="setting-label">Max Instances</label>
-          <input v-model.number="globalSettings.maxInstances" type="number" min="1" max="10" class="setting-input" />
+      <div class="panel-content">
+        <div class="tools-section">
+          <div class="tools-header">Available Tools</div>
+          <div class="tools-grid">
+            <span class="tool-chip">Read</span>
+            <span class="tool-chip">Write</span>
+            <span class="tool-chip">Edit</span>
+            <span class="tool-chip">Bash</span>
+            <span class="tool-chip">WebFetch</span>
+            <span class="tool-chip">Grep</span>
+          </div>
         </div>
-        <div class="setting-item">
-          <label class="setting-label">Global Cost Limit ($)</label>
-          <input v-model.number="globalSettings.globalCostLimit" type="number" step="1.0" min="1" max="100" class="setting-input" />
+        <div class="permission-section">
+          <div class="permission-header">Permission Mode</div>
+          <div class="permission-status">
+            <div class="permission-indicator default"></div>
+            <span class="permission-text">Default (Prompts for approval)</span>
+          </div>
         </div>
-        <div class="setting-item">
-          <label class="setting-label">Session Timeout (min)</label>
-          <input v-model.number="globalSettings.sessionTimeout" type="number" min="5" max="120" class="setting-input" />
+      </div>
+    </div>
+
+    <!-- Actions Panel -->
+    <div class="panel actions-panel">
+      <div class="panel-header">
+        <h3 class="panel-title">Quick Actions</h3>
+      </div>
+      <div class="panel-content">
+        <div class="actions-grid">
+          <button @click="openClaudeCodeDocs" class="action-card">
+            <Info class="w-5 h-5" />
+            <span class="action-label">Documentation</span>
+          </button>
+          <button @click="exportInstances" class="action-card">
+            <Download class="w-5 h-5" />
+            <span class="action-label">Export Data</span>
+          </button>
+          <button @click="clearAllSessions" class="action-card danger">
+            <Square class="w-5 h-5" />
+            <span class="action-label">Clear All</span>
+          </button>
         </div>
-        <div class="setting-item">
-          <label class="setting-toggle">
-            <input type="checkbox" v-model="globalSettings.autoSave" />
-            <span>Auto-save sessions</span>
-          </label>
+      </div>
+    </div>
+
+    <!-- Recent Sessions Panel (if any exist) -->
+    <div v-if="claudeCodeSessions.length > 0" class="panel history-panel">
+      <div class="panel-header">
+        <h3 class="panel-title">Recent Sessions</h3>
+      </div>
+      <div class="panel-content">
+        <div class="history-list">
+          <div v-for="session in claudeCodeSessions.slice(0, 3)" :key="session.session_id" class="history-item">
+            <div class="history-info">
+              <div class="history-name">{{ session.config?.name || 'Unnamed Session' }}</div>
+              <div class="history-meta">${{ (session.cost_usd || 0).toFixed(3) }} • {{ session.num_turns }} turns</div>
+            </div>
+            <button @click="resumeSession(session.session_id)" class="history-action" title="Resume">
+              <PlayCircle class="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -282,6 +227,7 @@ import {
 } from 'lucide-vue-next';
 import { useToolCallStore } from '@/stores/toolCallStore';
 import { useRouter } from 'vue-router';
+import { useThemeColors } from '@/composables/useThemeColors';
 
 const props = defineProps<{
   nodeId?: string;
@@ -294,11 +240,12 @@ const emit = defineEmits<{
 // Stores and router
 const toolCallStore = useToolCallStore();
 const router = useRouter();
+const { themeColors, isDarkTheme, getTextColor, commonStyles } = useThemeColors();
 
 // State
 const showCreateForm = ref(false);
-const isConnecting = ref(false);
-const showStopAllConfirmation = ref(false);
+const showSystemInfo = ref(false);
+const lastUpdateTime = ref(new Date());
 
 // New Instance Form
 const newInstance = reactive({
@@ -315,14 +262,6 @@ const newInstance = reactive({
   }
 });
 
-// Global Settings
-const globalSettings = reactive({
-  maxInstances: 3,
-  autoSave: true,
-  globalCostLimit: 10.0,
-  sessionTimeout: 30
-});
-
 // Computed properties
 const claudeCodeInstances = computed(() => toolCallStore.getAllInstances);
 const claudeCodeSessions = computed(() => toolCallStore.claudeCodeSessions);
@@ -334,16 +273,21 @@ const canCreateInstance = computed(() => {
     newInstance.initial_prompt.trim();
 });
 
-// Methods
-const instanceStatusClass = (status: string) => {
-  return {
-    'status-running': status === 'running',
-    'status-paused': status === 'paused',
-    'status-stopped': status === 'stopped',
-    'status-error': status === 'error'
-  };
-};
+// System and stats computed properties
+const systemInfo = computed(() => ({
+  platform: 'macOS',
+  totalMemory: '32 GB',
+  availableMemory: '18 GB', 
+  cpuCount: '8 cores'
+}));
 
+const totalMemoryUsage = computed(() => {
+  const totalMb = claudeCodeInstances.value.reduce((sum, instance) => 
+    sum + (instance.memory_mb || 0), 0);
+  return totalMb > 0 ? `${totalMb.toFixed(0)}MB` : 'N/A';
+});
+
+// Methods
 const formatDuration = (ms: number) => {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -352,24 +296,65 @@ const formatDuration = (ms: number) => {
   if (hours > 0) {
     return `${hours}h ${minutes % 60}m`;
   } else if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
+    return `${minutes}m`;
   } else {
     return `${seconds}s`;
   }
 };
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+const formatTime = (date: Date) => {
+  return date.toLocaleTimeString();
+};
+
+const openClaudeCodeDocs = () => {
+  window.open('https://docs.anthropic.com/en/docs/claude-code', '_blank');
+};
+
+const exportInstances = () => {
+  const data = {
+    instances: claudeCodeInstances.value,
+    sessions: claudeCodeSessions.value,
+    exportedAt: new Date().toISOString(),
+    totalCost: totalCost.value
+  };
+  
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `claude-code-export-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showNotification('Export completed');
+};
+
+const clearAllSessions = async () => {
+  if (confirm('Are you sure you want to clear all session data? This cannot be undone.')) {
+    try {
+      // Stop all running instances first
+      const stopPromises = claudeCodeInstances.value
+        .filter(instance => instance.status === 'running')
+        .map(instance => toolCallStore.stopInstance(instance.instance_id));
+      
+      await Promise.all(stopPromises);
+      
+      // Clear store data
+      toolCallStore.clearAllData();
+      
+      showNotification('All sessions cleared');
+    } catch (error) {
+      console.error('Error clearing sessions:', error);
+      showNotification('Failed to clear all sessions');
+    }
+  }
 };
 
 const createInstance = async () => {
   try {
-    const instance = await toolCallStore.createInstance(newInstance);
+    const instance = await toolCallStore.createClaudeCodeInstance(newInstance);
     if (instance) {
       showNotification('Instance created successfully');
       resetForm();
@@ -396,74 +381,11 @@ const resetForm = () => {
   };
 };
 
-const connectCurrentSession = async () => {
-  isConnecting.value = true;
-  try {
-    const response = await fetch('http://127.0.0.1:5050/api/claude-code/instances/register-external', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: 'Current Claude Code Session',
-        working_dir: '/Users/928546/Desktop/tangent',
-        session_id: 'current-session-' + Date.now()
-      })
-    });
-    
-    if (response.ok) {
-      const result = await response.json();
-      console.log('Successfully registered external session:', result);
-      await refreshInstances();
-      showNotification('Session connected successfully');
-    } else {
-      console.error('Failed to register external session:', response.statusText);
-      showNotification('Failed to connect session');
-    }
-  } catch (error) {
-    console.error('Error connecting current session:', error);
-    showNotification('Error connecting session');
-  } finally {
-    isConnecting.value = false;
-  }
-};
-
-const showStopConfirmation = () => {
-  showStopAllConfirmation.value = true;
-};
-
-const cancelStopAll = () => {
-  showStopAllConfirmation.value = false;
-};
-
-const confirmStopAll = async () => {
-  try {
-    const instances = claudeCodeInstances.value;
-    showStopAllConfirmation.value = false;
-    
-    showNotification(`Stopping ${instances.length} instances...`);
-    
-    const stopPromises = instances.map(instance => 
-      toolCallStore.stopInstance(instance.instance_id)
-    );
-    
-    await Promise.all(stopPromises);
-    
-    showNotification('All instances stopped successfully!');
-    await refreshInstances();
-  } catch (error) {
-    console.error('Error stopping instances:', error);
-    showNotification('Failed to stop some instances');
-  }
-};
-
 const refreshInstances = async () => {
   await toolCallStore.fetchClaudeCodeInstances();
+  lastUpdateTime.value = new Date();
 };
 
-const refreshSessions = async () => {
-  await toolCallStore.fetchClaudeCodeSessions();
-};
 
 const pauseInstance = async (instanceId: string) => {
   const success = await toolCallStore.pauseInstance(instanceId);
@@ -489,20 +411,6 @@ const stopInstance = async (instanceId: string) => {
   }
 };
 
-const showInstanceDetails = (instance: any) => {
-  // TODO: Implement instance details modal
-  console.log('Show instance details:', instance);
-};
-
-const openInWorkspace = (instance: any) => {
-  emit('open-workspace', instance);
-};
-
-const createWorkspaceForInstance = async (instance: any) => {
-  // TODO: Implement workspace creation for instance
-  console.log('Create workspace for instance:', instance);
-};
-
 const resumeSession = async (sessionId: string) => {
   try {
     const instanceId = await toolCallStore.resumeSession(sessionId);
@@ -516,227 +424,273 @@ const resumeSession = async (sessionId: string) => {
   }
 };
 
-const exportSession = (session: any) => {
-  // TODO: Implement session export
-  console.log('Export session:', session);
-  showNotification('Session export not yet implemented');
-};
-
 // Utility function for notifications
 const showNotification = (message: string) => {
-  // TODO: Integrate with notification system
   console.log('Notification:', message);
 };
 
 // Initialize data
 onMounted(() => {
   refreshInstances();
-  refreshSessions();
+  toolCallStore.fetchClaudeCodeSessions();
 });
+
+// Auto-refresh every 10 seconds to keep instances up to date
+setInterval(() => {
+  toolCallStore.fetchClaudeCodeInstances();
+}, 10000);
 </script>
 
 <style scoped>
-.claude-code-feature {
-  padding: 1rem;
+.claude-code-management {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
+  position: relative;
 }
 
-/* Header */
-.claude-code-header {
+/* Panel Base Styles */
+.panel {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 5%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1));
+  border-radius: 12px;
+  overflow: hidden;
+  backdrop-filter: blur(15px);
+  box-shadow: 
+    0 4px 20px color-mix(in srgb, v-bind(themeColors.primary) 10%, transparent),
+    0 1px 3px color-mix(in srgb, v-bind(themeColors.secondary) 8%, transparent);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary), 
+    v-bind(themeColors.accent));
+  border-radius: 12px 12px 0 0;
+}
+
+.panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  background: rgba(var(--theme-primary-rgb), 0.05);
-  border-radius: 12px;
-  border: 1px solid rgba(var(--theme-primary-rgb), 0.1);
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  min-height: 48px;
+  position: relative;
+  overflow: hidden;
 }
 
-.section-title {
-  font-size: 1.125rem;
+.panel-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 5%, transparent),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, transparent),
+    color-mix(in srgb, v-bind(themeColors.accent) 4%, transparent));
+  pointer-events: none;
+}
+
+.panel-title {
+  font-size: 0.875rem;
   font-weight: 600;
-  color: var(--theme-text-primary);
+  color: hsl(var(--bc));
+  margin: 0;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 2px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
 }
 
-.claude-code-stats {
+.panel-actions {
   display: flex;
+  gap: 0.5rem;
+}
+
+.panel-content {
+  padding: 0.75rem;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Icon Button */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
+  color: hsl(var(--bc));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  position: relative;
+  z-index: 1;
+}
+
+.icon-btn:hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 12%, hsl(var(--b2))));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
+}
+
+.icon-btn.active {
+  background: linear-gradient(135deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary));
+  color: white;
+  border-color: v-bind(themeColors.primary);
+  box-shadow: 0 4px 15px color-mix(in srgb, v-bind(themeColors.primary) 40%, transparent);
+}
+
+/* Overview Panel */
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
 }
 
-.stat-card {
-  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.15), rgba(var(--theme-secondary-rgb), 0.15));
-  border: 1px solid rgba(var(--theme-primary-rgb), 0.3);
-  border-radius: 12px;
-  padding: 1rem;
+.stat-box {
   text-align: center;
-  min-width: 80px;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 4%, hsl(var(--b2))));
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+  position: relative;
+  overflow: hidden;
   transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
 }
 
-.stat-value {
-  display: block;
+.stat-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 50% 0%, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, transparent) 0%, 
+    transparent 70%);
+  pointer-events: none;
+}
+
+.stat-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
+}
+
+.stat-box:nth-child(1) .stat-number {
+  color: v-bind(themeColors.primary);
+}
+
+.stat-box:nth-child(2) .stat-number {
+  color: v-bind(themeColors.secondary);
+}
+
+.stat-box:nth-child(3) .stat-number {
+  color: v-bind(themeColors.accent);
+}
+
+.stat-number {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--theme-primary);
   margin-bottom: 0.25rem;
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 3px color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
 }
 
 .stat-label {
   font-size: 0.75rem;
-  color: var(--theme-text-secondary);
+  color: hsl(var(--bc) / 0.7);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  position: relative;
+  z-index: 1;
 }
 
-/* Sections */
-.section {
-  margin-bottom: 2rem;
+/* Create Form Overlay */
+.create-form-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
   padding: 1rem;
-  background: rgba(var(--theme-background-rgb), 0.5);
-  border-radius: 12px;
-  border: 1px solid rgba(var(--theme-border-rgb), 0.2);
 }
 
-.section-header {
+.create-form {
+  background: var(--theme-background);
+  border-radius: 8px;
+  padding: 1.5rem;
+  border: 1px solid var(--theme-border);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.section-header h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--theme-text-primary);
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-/* Buttons */
-.toggle-btn,
-.connect-btn,
-.primary-btn,
-.secondary-btn,
-.action-btn,
-.refresh-btn,
-.stop-all-btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.toggle-btn {
-  background: var(--theme-primary);
-  color: white;
-}
-
-.connect-btn {
-  background: var(--theme-secondary);
-  color: white;
-}
-
-.primary-btn {
-  background: var(--theme-primary);
-  color: white;
-}
-
-.secondary-btn {
-  background: transparent;
-  color: var(--theme-text-primary);
-  border: 1px solid rgba(var(--theme-border-rgb), 0.3);
-}
-
-.refresh-btn {
-  background: transparent;
-  color: var(--theme-text-secondary);
-  padding: 0.5rem;
-}
-
-.stop-all-btn {
-  background: #ef4444;
-  color: white;
-}
-
-.action-btn {
-  padding: 0.25rem;
-  background: rgba(var(--theme-primary-rgb), 0.1);
-  color: var(--theme-primary);
-}
-
-.action-btn.pause {
-  background: rgba(251, 191, 36, 0.1);
-  color: #f59e0b;
-}
-
-.action-btn.resume {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-}
-
-.action-btn.stop {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-/* Form */
-.create-instance-form {
-  margin-top: 1rem;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 0.75rem;
 }
 
-.form-group.full-width {
-  grid-column: 1 / -1;
-}
-
-.form-group label {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--theme-text-primary);
-  margin-bottom: 0.5rem;
-}
-
-.form-input,
-.form-textarea {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid rgba(var(--theme-border-rgb), 0.3);
+.form-field {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--theme-border);
   border-radius: 6px;
-  background: var(--theme-background);
-  color: var(--theme-text-primary);
+  background: var(--theme-surface);
+  color: var(--theme-text);
   font-size: 0.875rem;
+  transition: border-color 0.2s ease;
 }
 
-.tool-checkboxes {
-  display: flex;
-  gap: 1rem;
+.form-field:focus {
+  outline: none;
+  border-color: var(--theme-primary);
 }
 
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
+.form-textarea {
+  grid-column: 1 / -1;
+  resize: none;
 }
 
 .form-actions {
@@ -744,236 +698,512 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
-/* Connect Session */
-.connect-session-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  background: rgba(var(--theme-secondary-rgb), 0.05);
-  border-radius: 8px;
-  border: 1px solid rgba(var(--theme-secondary-rgb), 0.1);
-}
-
-.connect-description {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.connect-icon {
-  font-size: 1.5rem;
-}
-
-.connect-title {
-  font-weight: 600;
-  color: var(--theme-text-primary);
-}
-
-.connect-subtitle {
-  font-size: 0.875rem;
-  color: var(--theme-text-secondary);
-}
-
-/* Stop Confirmation */
-.stop-confirmation {
-  padding: 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.confirmation-content {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.confirmation-icon {
-  font-size: 1.5rem;
-}
-
-.confirmation-title {
-  font-weight: 600;
-  color: #dc2626;
-}
-
-.confirmation-message {
-  font-size: 0.875rem;
-  color: var(--theme-text-secondary);
-}
-
-.confirmation-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.cancel-btn {
-  padding: 0.5rem 1rem;
-  background: transparent;
-  border: 1px solid rgba(var(--theme-border-rgb), 0.3);
-  border-radius: 6px;
-  color: var(--theme-text-primary);
-  cursor: pointer;
-}
-
-.confirm-btn {
-  padding: 0.5rem 1rem;
-  background: #ef4444;
-  border: none;
-  border-radius: 6px;
+.btn-primary {
+  flex: 1;
+  padding: 0.625rem 1rem;
+  background: linear-gradient(135deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary));
   color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 90%, black), 
+    color-mix(in srgb, v-bind(themeColors.secondary) 90%, black));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-secondary {
+  padding: 0.625rem 1rem;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.accent) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b2))));
+  color: hsl(var(--bc));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b2))));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.accent) 20%, transparent);
 }
 
 /* Empty State */
 .empty-state {
   text-align: center;
-  padding: 2rem;
-  color: var(--theme-text-secondary);
+  padding: 2rem 1rem;
+  color: var(--theme-text-muted);
 }
 
 .empty-icon {
-  font-size: 3rem;
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.empty-message {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--theme-text);
   margin-bottom: 0.5rem;
 }
 
-.empty-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-  color: var(--theme-text-primary);
-}
-
-.empty-description {
+.empty-hint {
   font-size: 0.875rem;
 }
 
-/* Instance Cards */
-.instances-list,
+/* Sessions List */
 .sessions-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-.instance-card,
 .session-card {
-  padding: 1rem;
-  background: rgba(var(--theme-background-rgb), 0.8);
-  border: 1px solid rgba(var(--theme-border-rgb), 0.2);
-  border-radius: 8px;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 4%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--bc) / 0.1));
+  border-radius: 10px;
   transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.instance-header,
+.session-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 80% 20%, 
+    color-mix(in srgb, v-bind(themeColors.accent) 6%, transparent) 0%, 
+    transparent 50%);
+  pointer-events: none;
+}
+
+.session-card:hover {
+  border-color: v-bind(themeColors.primary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
+}
+
 .session-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 0.75rem;
 }
 
-.instance-name,
-.session-name {
-  font-weight: 600;
-  color: var(--theme-text-primary);
+.session-info {
+  flex: 1;
 }
 
-.instance-meta,
+.session-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--theme-text);
+  margin-bottom: 0.25rem;
+}
+
 .session-meta {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
-  margin-top: 0.25rem;
-}
-
-.status-badge {
-  padding: 0.125rem 0.5rem;
-  border-radius: 12px;
   font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
+  color: var(--theme-text-muted);
 }
 
-.status-badge.running {
-  background: rgba(34, 197, 94, 0.2);
-  color: #15803d;
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 
-.status-badge.paused {
-  background: rgba(251, 191, 36, 0.2);
-  color: #d97706;
+.status-dot.running {
+  background: var(--theme-success);
 }
 
-.status-badge.stopped {
-  background: rgba(107, 114, 128, 0.2);
-  color: #4b5563;
+.status-dot.paused {
+  background: var(--theme-warning);
 }
 
-.cost {
-  font-size: 0.875rem;
-  color: var(--theme-text-secondary);
+.status-dot.stopped {
+  background: var(--theme-text-muted);
 }
 
-.duration {
-  font-size: 0.875rem;
-  color: var(--theme-text-secondary);
+.session-separator {
+  color: var(--theme-text-muted);
 }
 
-.instance-actions,
 .session-actions {
   display: flex;
   gap: 0.25rem;
 }
 
-.instance-details,
+.action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.action-btn.pause {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, #f59e0b 15%, hsl(var(--b1))),
+    color-mix(in srgb, #d97706 10%, hsl(var(--b2))));
+  color: #f59e0b;
+  border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+}
+
+.action-btn.resume {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, #10b981 15%, hsl(var(--b1))),
+    color-mix(in srgb, #059669 10%, hsl(var(--b2))));
+  color: #10b981;
+  border: 1px solid color-mix(in srgb, #10b981 25%, transparent);
+}
+
+.action-btn.stop {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, #ef4444 15%, hsl(var(--b1))),
+    color-mix(in srgb, #dc2626 10%, hsl(var(--b2))));
+  color: #ef4444;
+  border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+}
+
+.action-btn:hover {
+  transform: scale(1.1);
+}
+
+/* Session Details */
 .session-details {
-  font-size: 0.875rem;
-  color: var(--theme-text-secondary);
-}
-
-.detail-item {
-  margin-bottom: 0.25rem;
-}
-
-/* Global Settings */
-.global-settings {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
-.setting-item {
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.detail-label {
+  color: var(--theme-text-muted);
+  font-weight: 500;
+}
+
+.detail-value {
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+.detail-value.detected {
+  color: var(--theme-success);
+  font-size: 0.6875rem;
+}
+
+/* System Panel */
+.system-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.system-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.system-label {
+  font-size: 0.75rem;
+  color: var(--theme-text-muted);
+  font-weight: 500;
+}
+
+.system-value {
+  font-size: 0.875rem;
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+/* Tools Panel */
+.tools-section {
+  margin-bottom: 1rem;
+}
+
+.tools-header {
+  font-size: 0.75rem;
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tools-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.tool-chip {
+  padding: 0.25rem 0.5rem;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 6%, hsl(var(--b2))));
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.tool-chip:nth-child(1) {
+  color: v-bind(themeColors.primary);
+}
+
+.tool-chip:nth-child(2) {
+  color: v-bind(themeColors.secondary);
+}
+
+.tool-chip:nth-child(3) {
+  color: v-bind(themeColors.accent);
+}
+
+.tool-chip:nth-child(4) {
+  color: v-bind(themeColors.primary);
+}
+
+.tool-chip:nth-child(5) {
+  color: v-bind(themeColors.secondary);
+}
+
+.tool-chip:nth-child(6) {
+  color: v-bind(themeColors.accent);
+}
+
+.tool-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
+}
+
+.permission-section {
+  border-top: 1px solid var(--theme-border);
+  padding-top: 1rem;
+}
+
+.permission-header {
+  font-size: 0.75rem;
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.permission-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.permission-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.permission-indicator.default {
+  background: var(--theme-success);
+}
+
+.permission-text {
+  font-size: 0.75rem;
+  color: var(--theme-text);
+  font-weight: 500;
+}
+
+/* Actions Panel */
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.action-card {
+  padding: 1rem;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 4%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: hsl(var(--bc));
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.action-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 50% 0%, 
+    color-mix(in srgb, v-bind(themeColors.accent) 5%, transparent) 0%, 
+    transparent 70%);
+  pointer-events: none;
+}
+
+.action-card:nth-child(1) {
+  border-top: 2px solid v-bind(themeColors.primary);
+}
+
+.action-card:nth-child(2) {
+  border-top: 2px solid v-bind(themeColors.secondary);
+}
+
+.action-card:nth-child(3) {
+  border-top: 2px solid v-bind(themeColors.accent);
+}
+
+.action-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
+  border-color: v-bind(themeColors.primary);
+}
+
+.action-card.danger {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, #ef4444 8%, hsl(var(--b1))),
+    color-mix(in srgb, #dc2626 6%, hsl(var(--b2))));
+  border-color: #ef4444;
+  color: #ef4444;
+  border-top: 2px solid #ef4444;
+}
+
+.action-card.danger:hover {
+  border-color: #dc2626;
+  box-shadow: 0 8px 25px color-mix(in srgb, #ef4444 20%, transparent);
+}
+
+.action-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* History Panel */
+.history-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.setting-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--theme-text-primary);
-}
-
-.setting-input {
-  padding: 0.5rem;
-  border: 1px solid rgba(var(--theme-border-rgb), 0.3);
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
   border-radius: 6px;
-  background: var(--theme-background);
-  color: var(--theme-text-primary);
-  font-size: 0.875rem;
+  transition: all 0.2s ease;
 }
 
-.setting-toggle {
+.history-item:hover {
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-primary);
+}
+
+.history-info {
+  flex: 1;
+}
+
+.history-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--theme-text);
+  margin-bottom: 0.125rem;
+}
+
+.history-meta {
+  font-size: 0.6875rem;
+  color: var(--theme-text-muted);
+}
+
+.history-action {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: var(--theme-surface);
+  color: var(--theme-primary);
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: var(--theme-text-primary);
+  justify-content: center;
+  transition: all 0.2s ease;
+  border: 1px solid var(--theme-border);
+}
+
+.history-action:hover {
+  background: var(--theme-surface-hover);
+  transform: scale(1.1);
+}
+
+/* Responsive Layout Improvements */
+.sessions-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.overview-panel,
+.system-panel,
+.tools-panel,
+.actions-panel,
+.history-panel {
+  flex-shrink: 0;
 }
 </style>

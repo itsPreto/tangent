@@ -457,6 +457,14 @@ const handleBlur = () => {
 const handleInput = () => {
   if (editableRef.value) {
     inputText.value = editableRef.value.textContent || '';
+    
+    // Auto-adjust height based on content
+    const el = editableRef.value;
+    el.style.height = 'auto'; // Reset height to calculate new height
+    
+    // Calculate the scroll height but limit to 4 lines (6rem)
+    const newHeight = Math.min(el.scrollHeight, 96); // 96px = 6rem = 4 lines
+    el.style.height = newHeight + 'px';
   }
 };
 
@@ -641,8 +649,26 @@ onUnmounted(() => {
   }
 });
 
+// Method to insert text into the input
+const insertText = (text) => {
+  if (editableRef.value) {
+    const currentText = editableRef.value.textContent || '';
+    editableRef.value.textContent = currentText + text;
+    handleInput();
+    // Focus and place cursor at the end
+    editableRef.value.focus();
+    const range = document.createRange();
+    const sel = window.getSelection();
+    range.selectNodeContents(editableRef.value);
+    range.collapse(false);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+};
+
 defineExpose({
-  isFocused: () => isFocused.value
+  isFocused: () => isFocused.value,
+  insertText
 });
 </script>
 
@@ -762,8 +788,8 @@ defineExpose({
 
 .input-core {
   flex: 1;
-  min-height: 3rem;
-  padding: 0.75rem 1rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -771,13 +797,15 @@ defineExpose({
 
 .input-text {
   min-height: 1.5rem;
-  max-height: 12rem;
+  max-height: 6rem; /* 4 lines max (1.5rem * 4) */
   overflow-y: auto;
   outline: none;
   color: var(--input-text);
   font-size: 0.875rem;
   line-height: 1.5;
   word-wrap: break-word;
+  resize: none;
+  transition: height 0.2s ease;
 }
 
 .input-text:empty:before {
@@ -788,8 +816,8 @@ defineExpose({
 
 .control-panel {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   padding: 0.5rem;
   gap: 0.5rem;
   min-width: 3rem;
@@ -799,6 +827,8 @@ defineExpose({
 .control-panel.expanded {
   min-width: 12rem;
   background: linear-gradient(135deg, var(--control-bg), var(--control-bg-secondary));
+  flex-direction: row;
+  justify-content: flex-end;
   border-left: 1px solid var(--input-border);
   border-radius: 0 1.25rem 1.25rem 0;
 }
@@ -806,10 +836,10 @@ defineExpose({
 /* Voice Section */
 .voice-section {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 0.75rem;
-  width: 100%;
+  width: auto;
 }
 
 .voice-main-button {
@@ -939,7 +969,7 @@ defineExpose({
 .voice-mode-selector {
   display: flex;
   gap: 0.5rem;
-  width: 100%;
+  width: auto;
 }
 
 .mode-option {
@@ -978,9 +1008,9 @@ defineExpose({
 }
 
 .voice-settings {
-  width: 100%;
+  width: auto;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.75rem;
   padding: 0.75rem;
   background: rgba(249, 250, 251, 0.6);
@@ -990,8 +1020,10 @@ defineExpose({
 
 .setting-item {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
 }
 
 .setting-item label {

@@ -30,7 +30,7 @@
         <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
           :model-type="modelType" :side-panel-open="effectiveSidePanelOpen"
           :right-panel-open="effectiveRightPanelOpen" :right-sidebar-expanded="appStore.isRightSidebarExpanded" :gesture-mode="gestureMode" v-model:zoom="canvasZoom"
-          v-model:auto-zoom-enabled="canvasAutoZoom" v-model:is-height-locked="isHeightLocked"
+          v-model:is-height-locked="isHeightLocked"
           :viewport-height="windowSize.innerHeight" :viewport-width="windowSize.innerWidth"
           @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
           @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
@@ -270,26 +270,12 @@
         right: `calc(${effectiveRightMargin} + 1rem)`,
         marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
       }">
-        <!-- UI Mode Toggle for Testing -->
-    <div class="h-8 px-3 z-50 hover:bg-base-300/90" :style="controlButtonStyle">
-      <button @click="appStore.toggleUIMode()" class="btn btn-sm btn-primary">
-        {{ appStore.isDualSidebarMode ? 'Legacy Mode' : 'Dual Sidebar Mode' }}
-      </button>
-    </div>
-      <button class="h-8 px-3 canvas-control-btn hover:bg-base-300/90" :style="controlButtonStyle"
-        @click="toggleAutoZoom">
-        <span class="text-sm">{{ canvasAutoZoom ? 'Auto-fit On' : 'Auto-fit Off' }}</span>
-      </button>
       <button class="h-8 px-3 canvas-control-btn hover:bg-base-300/90 flex items-center gap-2"
         :style="controlButtonStyle" @click="gestureMode = gestureMode === 'zoom' ? 'scroll' : 'zoom'"
         :title="gestureMode === 'zoom' ? '2-finger: Zoom, CMD+2-finger: Pan' : '2-finger: Pan, CMD+2-finger: Zoom'">
         <component :is="gestureMode === 'zoom' ? ZoomIn : Move" class="w-4 h-4" />
         <span class="text-sm">{{ gestureMode === 'zoom' ? 'Zoom Mode' : 'Pan Mode' }}</span>
       </button>
-      <div class="px-3 h-8 text-sm zoom-indicator flex items-center"
-        :style="controlButtonStyle">
-        {{ Math.round(canvasZoom * 100) }}%
-      </div>
     </div>
 
 
@@ -450,7 +436,6 @@ const handleFeaturePanelClosed = () => {
 };
 provide('canvasRef', canvasRef);
 const canvasZoom = ref(1);
-const canvasAutoZoom = ref(true);
 
 const windowSize = ref({
   innerHeight: 0,
@@ -684,11 +669,6 @@ const toggleButtonStyle = computed(() => {
 
 // Canvas wrapper style that supports both modes - copy the exact legacy approach
 const getCanvasWrapperStyle = computed(() => {
-  console.log('Canvas wrapper recalculating...', {
-    isDualSidebarMode: appStore.isDualSidebarMode,
-    isLeftSidebarExpanded: appStore.isLeftSidebarExpanded,
-    isRightContentPanelOpen: appStore.isRightContentPanelOpen
-  });
   
   if (appStore.isDualSidebarMode) {
     // Dual sidebar mode - use SAME approach as legacy but with different sidebar states
@@ -704,32 +684,8 @@ const getCanvasWrapperStyle = computed(() => {
     let marginBottom = '0';
     let paddingTop = '3rem';
 
-    // Calculate margins - respond to both content panel and sidebar hover expansion
-    if (leftSidebarOpen && rightContentPanelOpen) {
-      // Both left and content panel open
-      marginLeft = '260px';
-      marginRight = 'calc(60px + 35vw)';
-    } else if (leftSidebarOpen && rightSidebarExpanded) {
-      // Left sidebar expanded + right sidebar hover (showing labels)
-      marginLeft = '260px';
-      marginRight = '180px';
-    } else if (leftSidebarOpen) {
-      // Only left sidebar expanded
-      marginLeft = '260px';
-      marginRight = '60px';
-    } else if (rightContentPanelOpen) {
-      // Only right content panel open
-      marginLeft = '60px';
-      marginRight = 'calc(60px + 35vw)';
-    } else if (rightSidebarExpanded) {
-      // Only right sidebar hover (showing labels)
-      marginLeft = '60px';
-      marginRight = '180px';
-    } else {
-      // Both collapsed
-      marginLeft = '60px';
-      marginRight = '60px';
-    }
+    // No margins needed - snapped nodes position themselves absolutely
+    // and calculate available space directly using sidebar dimensions
     
     // Width is automatic - no need to calculate it manually
     width = 'auto';
@@ -755,7 +711,6 @@ const getCanvasWrapperStyle = computed(() => {
       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
     };
     
-    console.log('Canvas wrapper style result:', result);
     return result;
   } else {
     // Legacy mode
@@ -815,7 +770,7 @@ const topControlsContainerStyle = computed(() => {
     const rightSidebarExpanded = appStore.isRightSidebarExpanded;
     const rightContentPanelOpen = appStore.isRightContentPanelOpen;
 
-    let leftMargin = leftSidebarOpen ? '260px' : '60px';
+    let leftMargin = leftSidebarOpen ? '260px' : '0px';
     let rightMargin = '60px'; // Right sidebar is always 60px
     
     // If content panel is open, add its width
@@ -1000,12 +955,6 @@ function adjustColorOpacity(hexColor: string, opacity: number): string {
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
-const toggleAutoZoom = () => {
-  canvasAutoZoom.value = !canvasAutoZoom.value;
-  if (canvasAutoZoom.value) {
-    canvasRef.value?.autoFitNodes();
-  }
-};
 
 const handleModelSelected = (model: ModelInfo) => {
   // Update the code agent with the selected model

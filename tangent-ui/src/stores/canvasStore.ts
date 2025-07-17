@@ -748,6 +748,43 @@ export const useCanvasStore = defineStore('canvas', () => {
     return newNode;
   };
 
+  const createToolCallBranch = (parentNodeId: string, toolCall: any) => {
+    const parentNode = nodes.value.find(n => n.id === parentNodeId);
+    if (!parentNode) return null;
+
+    // Generate position to the right of parent node
+    const position = {
+      x: parentNode.x + CARD_WIDTH + 100,
+      y: parentNode.y + (Math.random() * 200 - 100) // Add some randomness to avoid overlap
+    };
+
+    // Create a unique ID for the tool call branch
+    const toolCallBranchId = `${parentNodeId}_tool_${toolCall.id}`;
+
+    const toolCallBranch = {
+      id: toolCallBranchId,
+      parentId: parentNodeId,
+      type: 'tool-call-branch',
+      x: position.x,
+      y: position.y,
+      toolCall,
+      isTemporary: true // Mark as temporary so it can be easily removed
+    };
+
+    // Add to nodes array
+    nodes.value.push(toolCallBranch);
+
+    return toolCallBranch;
+  };
+
+  // Remove tool call branch and return to main session
+  const removeToolCallBranch = (branchId: string) => {
+    const index = nodes.value.findIndex(n => n.id === branchId);
+    if (index !== -1) {
+      nodes.value.splice(index, 1);
+    }
+  };
+
   const addMessage = async (nodeId: string, message: string | Message, pasteEntries?: any[]) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (!node) return;
@@ -2213,6 +2250,8 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     // Updated methods
     addNode,
+    createToolCallBranch,
+    removeToolCallBranch,
     updateNodePosition,
     removeNode,
     updateNodeTitle,

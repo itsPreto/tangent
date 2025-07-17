@@ -1,6 +1,8 @@
 Flask
 Flask-Cors
 Flask-SQLAlchemy
+PyJWT
+Werkzeug
 pandas
 tiktoken
 google-generativeai
@@ -18,3 +20,4 @@ numpy>=1.24.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 sseclient-py
+psutil

@@ -45,6 +45,9 @@
         </div>
       </Transition>
 
+      <!-- Top Drawing Toolbar -->
+      <TopDocker v-if="!isWorkspaceOverview && !isWelcomeScreen" />
+
       <!-- Enhanced Workspace Search Bar -->
       <Transition name="slide-down" appear>
         <WorkspaceSearchBar 
@@ -97,24 +100,126 @@
 
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle">
-          <!-- SVG Layer for Connections -->
-          <svg class="absolute overflow-visible" style="z-index: 0; pointer-events: none;" :style="svgStyle">
+          <!-- SVG Layer for Connections and Drawing -->
+          <svg class="absolute overflow-visible" style="z-index: 0;" :style="svgStyle">
             <defs>
               <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                 <polygon points="0 0, 10 3.5, 0 7" class="fill-primary" />
               </marker>
             </defs>
-            <template v-for="connection in visibleConnections" :key="`${connection.parent.id}-${connection.child.id}`">
-              <SplineConnector :start-node="connection.parent" :end-node="connection.child"
-                :card-width="getEffectiveCardDimensions(connection.child).width"
-                :card-height="getEffectiveCardDimensions(connection.child).height"
-                :start-card-width="getEffectiveCardDimensions(connection.parent).width"
-                :start-card-height="getEffectiveCardDimensions(connection.parent).height"
-                :end-lod-level="getEffectiveCardDimensions(connection.child).lodLevel"
-                :start-lod-level="getEffectiveCardDimensions(connection.parent).lodLevel"
-                :is-active="isConnectionActive(connection)" :zoom-level="zoom"
-                :is-source-node-expanded="expandedNodes.has(connection.parent.id)" />
-            </template>
+            
+            <!-- Drawing Shapes Layer (behind connections) -->
+            <g class="drawing-shapes-layer">
+              <template v-for="shape in drawingStore.shapes" :key="shape.id">
+                <!-- Rectangle -->
+                <rect v-if="shape.type === 'rectangle'"
+                  :x="shape.x" :y="shape.y" 
+                  :width="shape.width" :height="shape.height"
+                  :fill="shape.fillColor" 
+                  :stroke="shape.strokeColor" 
+                  :stroke-width="shape.strokeWidth"
+                  :opacity="shape.opacity"
+                  :class="{ 'selected': shape.isSelected }"
+                  @click="handleShapeClick(shape.id)"
+                  style="cursor: pointer;" />
+                
+                <!-- Circle -->
+                <circle v-else-if="shape.type === 'circle'"
+                  :cx="shape.x" :cy="shape.y" 
+                  :r="shape.radius"
+                  :fill="shape.fillColor" 
+                  :stroke="shape.strokeColor" 
+                  :stroke-width="shape.strokeWidth"
+                  :opacity="shape.opacity"
+                  :class="{ 'selected': shape.isSelected }"
+                  @click="handleShapeClick(shape.id)"
+                  style="cursor: pointer;" />
+                
+                <!-- Line -->
+                <line v-else-if="shape.type === 'line'"
+                  :x1="shape.x" :y1="shape.y" 
+                  :x2="shape.x + (shape.width || 0)" :y2="shape.y + (shape.height || 0)"
+                  :stroke="shape.strokeColor" 
+                  :stroke-width="shape.strokeWidth"
+                  :opacity="shape.opacity"
+                  :class="{ 'selected': shape.isSelected }"
+                  @click="handleShapeClick(shape.id)"
+                  style="cursor: pointer;" />
+                
+                <!-- Arrow -->
+                <g v-else-if="shape.type === 'arrow'">
+                  <line :x1="shape.x" :y1="shape.y" 
+                    :x2="shape.x + (shape.width || 0)" :y2="shape.y + (shape.height || 0)"
+                    :stroke="shape.strokeColor" 
+                    :stroke-width="shape.strokeWidth"
+                    :opacity="shape.opacity"
+                    marker-end="url(#arrowhead)"
+                    :class="{ 'selected': shape.isSelected }"
+                    @click="handleShapeClick(shape.id)"
+                    style="cursor: pointer;" />
+                </g>
+                
+                <!-- Pen/Freehand -->
+                <path v-else-if="shape.type === 'pen' && shape.points"
+                  :d="getPathData(shape.points)"
+                  :stroke="shape.strokeColor" 
+                  :stroke-width="shape.strokeWidth"
+                  :opacity="shape.opacity"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  :class="{ 'selected': shape.isSelected }"
+                  @click="handleShapeClick(shape.id)"
+                  style="cursor: pointer;" />
+              </template>
+              
+              <!-- Current drawing shape preview -->
+              <g v-if="drawingStore.currentShape && drawingStore.isDrawing" class="current-drawing" style="opacity: 0.7;">
+                <rect v-if="drawingStore.currentShape.type === 'rectangle'"
+                  :x="drawingStore.currentShape.x" :y="drawingStore.currentShape.y" 
+                  :width="drawingStore.currentShape.width" :height="drawingStore.currentShape.height"
+                  :fill="drawingStore.currentShape.fillColor" 
+                  :stroke="drawingStore.currentShape.strokeColor" 
+                  :stroke-width="drawingStore.currentShape.strokeWidth" />
+                
+                <circle v-else-if="drawingStore.currentShape.type === 'circle'"
+                  :cx="drawingStore.currentShape.x" :cy="drawingStore.currentShape.y" 
+                  :r="drawingStore.currentShape.radius"
+                  :fill="drawingStore.currentShape.fillColor" 
+                  :stroke="drawingStore.currentShape.strokeColor" 
+                  :stroke-width="drawingStore.currentShape.strokeWidth" />
+                
+                <line v-else-if="drawingStore.currentShape.type === 'line'"
+                  :x1="drawingStore.currentShape.x" :y1="drawingStore.currentShape.y" 
+                  :x2="drawingStore.currentShape.x + (drawingStore.currentShape.width || 0)" 
+                  :y2="drawingStore.currentShape.y + (drawingStore.currentShape.height || 0)"
+                  :stroke="drawingStore.currentShape.strokeColor" 
+                  :stroke-width="drawingStore.currentShape.strokeWidth" />
+                
+                <path v-else-if="drawingStore.currentShape.type === 'pen' && drawingStore.currentShape.points"
+                  :d="getPathData(drawingStore.currentShape.points)"
+                  :stroke="drawingStore.currentShape.strokeColor" 
+                  :stroke-width="drawingStore.currentShape.strokeWidth"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </g>
+            </g>
+            
+            <!-- Connections Layer (above drawing shapes) -->
+            <g class="connections-layer" style="pointer-events: none;">
+              <template v-for="connection in visibleConnections" :key="`${connection.parent.id}-${connection.child.id}`">
+                <SplineConnector :start-node="connection.parent" :end-node="connection.child"
+                  :card-width="getEffectiveCardDimensions(connection.child).width"
+                  :card-height="getEffectiveCardDimensions(connection.child).height"
+                  :start-card-width="getEffectiveCardDimensions(connection.parent).width"
+                  :start-card-height="getEffectiveCardDimensions(connection.parent).height"
+                  :end-lod-level="getEffectiveCardDimensions(connection.child).lodLevel"
+                  :start-lod-level="getEffectiveCardDimensions(connection.parent).lodLevel"
+                  :is-active="isConnectionActive(connection)" :zoom-level="zoom"
+                  :is-source-node-expanded="expandedNodes.has(connection.parent.id)" />
+              </template>
+            </g>
           </svg>
 
           <!-- Nodes Layer -->
@@ -123,7 +228,7 @@
               <!-- Branch Node (handles text and media) -->
               <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
                 :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
@@ -153,7 +258,7 @@
               <!-- Branch Node -->
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="sidePanelOpen"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
                 :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle"
@@ -234,6 +339,46 @@
         Drop media to create a new node
       </div>
     </div>
+
+    <!-- Coordinate System Widget -->
+    <div v-if="!isWelcomeScreen && !isWorkspaceOverview" 
+         class="fixed bottom-4 z-50 pointer-events-none transition-all duration-300"
+         :class="{
+           'left-20': !sidePanelOpen,
+           'left-72': sidePanelOpen
+         }">
+      <div class="bg-black/20 backdrop-blur-md rounded-lg px-3 py-2 text-xs font-mono text-white/90 border border-white/10">
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-2">
+            <span class="text-white/60">Zoom:</span>
+            <span>{{ (zoom * 100).toFixed(1) }}%</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-white/60">Pan:</span>
+            <span>{{ panX.toFixed(1) }}, {{ panY.toFixed(1) }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-white/60">Mouse:</span>
+            <span>{{ mousePosition.x.toFixed(0) }}, {{ mousePosition.y.toFixed(0) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fit to View Button -->
+    <Transition name="fit-button">
+      <div v-if="showFitButton" 
+           class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50">
+        <button 
+          @click="autoFitNodes"
+          class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg backdrop-blur-md border border-blue-400/30 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+          </svg>
+          <span class="text-sm font-medium">Fit to View</span>
+        </button>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -253,14 +398,15 @@ import ToolCallNode from "./node/ToolCallNode.vue";
 import FileNode from "./node/FileNode.vue";
 import ExecutionNode from "./node/ExecutionNode.vue";
 import emitter from '@/utils/eventBus'
-import GridWorkspaceView from "../workspace/GridWorkspaceView.vue";
 import WelcomeScreen from "../welcome/WelcomeScreen.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
 import WebBranchNode from "./node/WebBranchNode.vue";
 import SplineConnector from "./spline/MainSplineConnector.vue";
+import TopDocker from "./TopDocker.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useToolCallStore } from "@/stores/toolCallStore";
+import { useDrawingStore } from "@/stores/drawingStore";
 import { useViewportObserver } from "@/composables/useViewportObserver";
 import { useAppStore } from "@/stores/appStore";
 import { useModelStore } from "@/stores/modelStore";
@@ -274,6 +420,7 @@ const modelRegistry = ref(new Map<string, ModelInfo>());
 
 const store = useCanvasStore();
 const chatStore = useChatStore();
+const drawingStore = useDrawingStore();
 const toolCallStore = useToolCallStore();
 const modelStore = useModelStore();
 const appStore = useAppStore();
@@ -425,6 +572,8 @@ const expandedNodes = ref(new Set());
 const isPanning = ref(false);
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
+const mousePosition = ref({ x: 0, y: 0 });
+const showFitButton = ref(false);
 // Node that's been clicked on for LOD focus
 
 const focusedTopicId = ref<string | null>(null);
@@ -524,6 +673,9 @@ const maxNodeCount = computed(() => {
 const isWelcomeScreen = ref(true);
 const isWorkspaceOverview = ref(false);
 const expandingWorkspaceId = ref<string | null>(null);
+
+// Performance testing flag
+provide('performanceTestingActive', false);
 
 // Initialize portal animations on component load
 initializePortalAnimations();
@@ -1996,6 +2148,24 @@ watch(
   { deep: true }
 );
 
+// Watch for pan/zoom changes to update fit button visibility
+// PERFORMANCE: Add throttling to prevent excessive distance checks
+let distanceCheckPending = false;
+watch([panX, panY, zoom], () => {
+  if (!distanceCheckPending) {
+    distanceCheckPending = true;
+    requestAnimationFrame(() => {
+      checkDistanceFromNodes();
+      distanceCheckPending = false;
+    });
+  }
+}, { immediate: true });
+
+// Also check when nodes change
+watch(() => store.nodes, () => {
+  checkDistanceFromNodes();
+}, { deep: true });
+
 // Handle file drag events
 const handleDragEnter = (e: DragEvent) => {
   e.preventDefault();
@@ -3249,7 +3419,10 @@ const handleSplineHover = (connection: any, isHovering: boolean) => {
 };
 
 // Mouse event handlers
-const handleMouseUp = () => {
+const handleMouseUp = (e) => {
+  // Check if drawing tool should handle this event
+  if (handleDrawingMouseUp(e)) return;
+  
   if (workspaceDragState.value.isDragging) {
     const { activeId } = workspaceDragState.value;
     if (activeId) {
@@ -3339,6 +3512,9 @@ const handleMouseUp = () => {
 
 const handleCanvasMouseDown = (e) => {
   if (snappedNodeId.value !== null) return;
+
+  // Check if drawing tool should handle this event
+  if (handleDrawingMouseDown(e)) return;
 
   // Disable panning in overview mode
   if (isWorkspaceOverview.value) return;
@@ -3731,6 +3907,47 @@ const autoFitNodes = () => {
   window.autoFitNodes = autoFitNodes;
 };
 
+// Check if user is far from visible nodes
+const checkDistanceFromNodes = () => {
+  if (!canvasRef.value || !store.nodes.length || isWorkspaceOverview.value || isWelcomeScreen.value) {
+    showFitButton.value = false;
+    return;
+  }
+
+  const bounds = calculateNodeBounds(null);
+  if (!bounds) {
+    showFitButton.value = false;
+    return;
+  }
+
+  const rect = canvasRef.value.getBoundingClientRect();
+  const currentViewport = {
+    left: -panX.value / zoom.value,
+    top: -panY.value / zoom.value,
+    right: (-panX.value + rect.width) / zoom.value,
+    bottom: (-panY.value + rect.height) / zoom.value
+  };
+
+  const nodesBounds = {
+    left: bounds.minX - 300, // Add buffer
+    top: bounds.minY - 300,
+    right: bounds.maxX + 300,
+    bottom: bounds.maxY + 300
+  };
+
+  // Check if current viewport has significant overlap with nodes area
+  const hasOverlap = !(
+    currentViewport.right < nodesBounds.left ||
+    currentViewport.left > nodesBounds.right ||
+    currentViewport.bottom < nodesBounds.top ||
+    currentViewport.top > nodesBounds.bottom
+  );
+
+  // Show button if no overlap or if zoomed out too much to see nodes clearly
+  const isZoomedOutTooMuch = zoom.value < 0.3;
+  showFitButton.value = !hasOverlap || isZoomedOutTooMuch;
+};
+
 // Reset workspace physics (placeholder function)
 const resetWorkspacePhysics = () => {
   // Reset any physics-related state for workspaces
@@ -3868,7 +4085,14 @@ const resetInactivityTimer = () => {
 const handleMouseMove = (e) => {
   if (snappedNodeId.value !== null) return;
   if (isClusterVizFocused.value) return;
+  
+  // Check if drawing tool should handle this event
+  if (handleDrawingMouseMove(e)) return;
+  
   resetInactivityTimer();
+
+  // Update mouse position for coordinate system display
+  mousePosition.value = { x: e.clientX, y: e.clientY };
 
   const worldMousePos = screenToWorld(e.clientX, e.clientY);
 
@@ -4125,8 +4349,16 @@ onMounted(async () => {
 });
 
 // Watch for zoom and pan changes to re-render grid
+// PERFORMANCE: Add throttling to prevent excessive grid re-renders
+let gridRenderPending = false;
 watch([() => zoom.value, () => panX.value, () => panY.value], () => {
-  requestAnimationFrame(() => renderGrid());
+  if (!gridRenderPending) {
+    gridRenderPending = true;
+    requestAnimationFrame(() => {
+      renderGrid();
+      gridRenderPending = false;
+    });
+  }
 }, { flush: 'post' });
 
 // Watch for theme changes to re-render grid with new colors
@@ -4303,6 +4535,66 @@ watch(visibleNodes, (newNodes) => {
     toolCallStore.fetchAllForNode(node.id)
   })
 }, { deep: true });
+
+// Drawing functionality
+const getCanvasPosition = (e: MouseEvent) => {
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return { x: 0, y: 0 };
+  
+  // Convert screen coordinates to canvas coordinates
+  const x = (e.clientX - rect.left - panX.value) / zoom.value;
+  const y = (e.clientY - rect.top - panY.value) / zoom.value;
+  
+  return { x, y };
+};
+
+const getPathData = (points: { x: number; y: number }[]) => {
+  if (points.length < 2) return '';
+  
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${points[i].x} ${points[i].y}`;
+  }
+  return d;
+};
+
+const handleShapeClick = (shapeId: string) => {
+  if (drawingStore.currentTool === 'cursor') {
+    drawingStore.selectShape(shapeId);
+  }
+};
+
+// Drawing event handlers - integrate with existing canvas events
+const handleDrawingMouseDown = (e: MouseEvent) => {
+  if (drawingStore.currentTool === 'cursor' || drawingStore.currentTool === 'hand') {
+    return false; // Let original canvas handle it
+  }
+  
+  // Drawing tool is active
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const pos = getCanvasPosition(e);
+  drawingStore.startDrawing(pos.x, pos.y);
+  return true; // Handled by drawing
+};
+
+const handleDrawingMouseMove = (e: MouseEvent) => {
+  if (drawingStore.isDrawing) {
+    const pos = getCanvasPosition(e);
+    drawingStore.updateDrawing(pos.x, pos.y);
+    return true; // Handled by drawing
+  }
+  return false; // Let original canvas handle it
+};
+
+const handleDrawingMouseUp = (e: MouseEvent) => {
+  if (drawingStore.isDrawing) {
+    drawingStore.finishDrawing();
+    return true; // Handled by drawing
+  }
+  return false; // Let original canvas handle it
+};
 </script>
 
 <style scoped>
@@ -4755,6 +5047,39 @@ watch(visibleNodes, (newNodes) => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* Drawing shapes styles */
+.drawing-shapes-layer .selected {
+  stroke-dasharray: 5,5;
+  stroke-width: 3 !important;
+  filter: drop-shadow(0 0 4px rgba(var(--p), 0.5));
+}
+
+.current-drawing {
+  pointer-events: none;
+}
+
+/* Fit to View Button Animation */
+.fit-button-enter-active,
+.fit-button-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fit-button-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px) scale(0.8);
+}
+
+.fit-button-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px) scale(0.8);
+}
+
+.fit-button-enter-to,
+.fit-button-leave-from {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 
 /* Accessibility - Reduce motion */

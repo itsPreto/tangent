@@ -1,7 +1,7 @@
 <template>
   <div class="testing-feature">
     <!-- Test Mode Selector -->
-    <div class="test-mode-selector">
+    <div class="test-mode-selector section-top">
       <div class="mode-tabs">
         <button @click="testMode = 'quick'" class="mode-tab" :class="{ active: testMode === 'quick' }">
           <span class="mode-icon">⚡</span>
@@ -21,7 +21,7 @@
     </div>
 
     <!-- Quick Test Content -->
-    <div v-if="testMode === 'quick'" class="quick-test-content">
+    <div v-if="testMode === 'quick'" class="quick-test-content section-middle">
       <div class="quick-test-columns">
         <!-- Left: Quick Configuration -->
         <div class="quick-config-column">
@@ -368,7 +368,7 @@
     </div>
 
     <!-- Custom Test Content -->
-    <div v-if="testMode === 'custom'" class="custom-test-content">
+    <div v-if="testMode === 'custom'" class="custom-test-content section-bottom">
       <div class="testing-main-columns">
         <!-- Left Column: Test Template Configuration -->
         <div class="testing-left-column">
@@ -486,6 +486,10 @@ import {
   Search, Check, Plus, X, ChevronDown, ChevronRight, Play, Pause, Square, Loader
 } from 'lucide-vue-next';
 import { useModelStore } from '@/stores/modelStore';
+import { useThemeColors } from '@/composables/useThemeColors';
+
+// Theme colors for enhanced styling
+const { themeColors, isDarkTheme } = useThemeColors();
 
 // Assets
 import ollamaIcon from '@/assets/ollama.jpeg';
@@ -840,9 +844,32 @@ onMounted(async () => {
 
 <style scoped>
 .testing-feature {
-  padding: 1rem;
+  padding: 0.75rem;
   height: 100%;
   overflow-y: auto;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 4%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2))));
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1));
+  box-shadow: 
+    0 4px 20px color-mix(in srgb, v-bind(themeColors.primary) 10%, transparent),
+    0 1px 3px color-mix(in srgb, v-bind(themeColors.secondary) 8%, transparent);
+  position: relative;
+}
+
+.testing-feature::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary), 
+    v-bind(themeColors.accent));
+  border-radius: 12px 12px 0 0;
 }
 
 /* Test Mode Selector */
@@ -858,19 +885,45 @@ onMounted(async () => {
 .mode-tab {
   flex: 1;
   padding: 1rem;
-  background: rgba(var(--theme-background-rgb), 0.5);
-  border: 1px solid rgba(var(--theme-border-rgb), 0.2);
-  border-radius: 8px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 4%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-tab::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 20% 20%, 
+    color-mix(in srgb, v-bind(themeColors.primary) 5%, transparent) 0%, 
+    transparent 70%);
+  pointer-events: none;
 }
 
 .mode-tab.active {
-  background: rgba(var(--theme-primary-rgb), 0.1);
-  border-color: var(--theme-primary);
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 12%, hsl(var(--b2))));
+  border-color: v-bind(themeColors.primary);
+  box-shadow: 0 4px 15px color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
+  transform: translateY(-1px);
+}
+
+.mode-tab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
 }
 
 .mode-icon {
@@ -879,18 +932,21 @@ onMounted(async () => {
 
 .mode-content {
   text-align: left;
+  position: relative;
+  z-index: 1;
 }
 
 .mode-label {
   display: block;
   font-weight: 600;
-  color: var(--theme-text-primary);
+  color: hsl(var(--bc));
+  text-shadow: 0 1px 2px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
 }
 
 .mode-desc {
   display: block;
   font-size: 0.875rem;
-  color: var(--theme-text-secondary);
+  color: hsl(var(--bc) / 0.7);
 }
 
 /* Quick Test Layout */
@@ -913,16 +969,39 @@ onMounted(async () => {
 .quick-execution-section,
 .model-selection-section {
   padding: 1rem;
-  background: rgba(var(--theme-background-rgb), 0.5);
-  border-radius: 8px;
-  border: 1px solid rgba(var(--theme-border-rgb), 0.2);
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 4%, hsl(var(--b2))));
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 8px color-mix(in srgb, v-bind(themeColors.primary) 8%, transparent);
+}
+
+.quick-config-section::before,
+.quick-execution-section::before,
+.model-selection-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 80% 20%, 
+    color-mix(in srgb, v-bind(themeColors.accent) 4%, transparent) 0%, 
+    transparent 60%);
+  pointer-events: none;
 }
 
 .section-title {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--theme-text-primary);
+  color: hsl(var(--bc));
   margin-bottom: 1rem;
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 2px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
 }
 
 .quick-config-grid {
@@ -948,17 +1027,37 @@ onMounted(async () => {
 .config-range,
 .field-select {
   padding: 0.5rem;
-  border: 1px solid rgba(var(--theme-border-rgb), 0.3);
-  border-radius: 6px;
-  background: var(--theme-background);
-  color: var(--theme-text-primary);
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  border-radius: 8px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 6%, hsl(var(--b2))));
+  color: hsl(var(--bc));
   font-size: 0.875rem;
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.config-input:focus,
+.field-select:focus {
+  outline: none;
+  border-color: v-bind(themeColors.primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
+}
+
+.config-input:hover,
+.field-select:hover {
+  border-color: v-bind(themeColors.secondary);
+  box-shadow: 0 2px 8px color-mix(in srgb, v-bind(themeColors.primary) 10%, transparent);
 }
 
 .range-display {
   font-size: 0.875rem;
-  color: var(--theme-text-secondary);
+  color: hsl(var(--bc) / 0.7);
   text-align: center;
+  position: relative;
+  z-index: 1;
 }
 
 /* Test Description */
@@ -996,10 +1095,12 @@ onMounted(async () => {
 .run-quick-test-btn {
   flex: 1;
   padding: 0.75rem 1rem;
-  background: var(--theme-primary);
+  background: linear-gradient(135deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary));
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   font-weight: 500;
   cursor: pointer;
   display: flex;
@@ -1007,6 +1108,17 @@ onMounted(async () => {
   justify-content: center;
   gap: 0.5rem;
   transition: all 0.2s ease;
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
+  position: relative;
+  z-index: 1;
+}
+
+.run-quick-test-btn:hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 90%, black), 
+    color-mix(in srgb, v-bind(themeColors.secondary) 90%, black));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
 }
 
 .run-quick-test-btn:disabled {
@@ -1021,15 +1133,28 @@ onMounted(async () => {
 
 .control-btn {
   padding: 0.5rem;
-  background: rgba(var(--theme-primary-rgb), 0.1);
-  color: var(--theme-primary);
-  border: none;
-  border-radius: 4px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 12%, hsl(var(--b2))));
+  color: v-bind(themeColors.primary);
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.25rem;
   font-size: 0.875rem;
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.control-btn:hover {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 18%, hsl(var(--b2))));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
 }
 
 .control-btn.pause-resume.paused {
@@ -1105,15 +1230,21 @@ onMounted(async () => {
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: rgba(var(--theme-border-rgb), 0.2);
-  border-radius: 4px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 10%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
+  border-radius: 6px;
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--theme-primary);
+  background: linear-gradient(90deg, 
+    v-bind(themeColors.primary), 
+    v-bind(themeColors.secondary));
   transition: width 0.3s ease;
+  box-shadow: 0 2px 8px color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
 }
 
 /* Model Selection */
@@ -1273,17 +1404,43 @@ onMounted(async () => {
 
 .test-model-card {
   padding: 0.75rem;
-  background: rgba(var(--theme-background-rgb), 0.8);
-  border: 1px solid rgba(var(--theme-border-rgb), 0.2);
-  border-radius: 6px;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 5%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2))));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--bc) / 0.1));
+  border-radius: 10px;
   margin-bottom: 0.5rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.test-model-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 80% 20%, 
+    color-mix(in srgb, v-bind(themeColors.accent) 4%, transparent) 0%, 
+    transparent 60%);
+  pointer-events: none;
+}
+
+.test-model-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent);
+  border-color: v-bind(themeColors.secondary);
 }
 
 .test-model-card.selected {
-  background: rgba(var(--theme-primary-rgb), 0.1);
-  border-color: var(--theme-primary);
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b1))),
+    color-mix(in srgb, v-bind(themeColors.secondary) 10%, hsl(var(--b2))));
+  border-color: v-bind(themeColors.primary);
+  box-shadow: 0 4px 15px color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
 }
 
 .model-card-content {
