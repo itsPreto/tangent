@@ -952,11 +952,113 @@ class KokoroTTSService:
     def get_available_voices(self) -> Dict[str, str]:
         """Get list of available voices"""
         return self.voices
+    
+    def warmup(self, voice: str = None, lang_code: str = 'a') -> None:
+        """Warmup the TTS pipeline with a short synthesis"""
+        try:
+            if not voice or voice not in self.voices:
+                voice = self.default_voice
+            
+            # Use a very short text for warmup
+            warmup_text = "Hi."
+            
+            logger.info(f"Warming up TTS pipeline with voice: {voice}")
+            start_time = time.time()
+            
+            # This will initialize the pipeline and do a quick synthesis
+            self.text_to_speech(warmup_text, voice=voice, speed=1.0, lang_code=lang_code)
+            
+            warmup_time = (time.time() - start_time) * 1000
+            logger.info(f"TTS warmup completed in {warmup_time:.1f}ms")
+            
+        except Exception as e:
+            logger.warning(f"TTS warmup failed: {e}")
+            # Continue anyway, warmup is optional
 
 # Initialize processors
 media_processor = EnhancedMediaProcessor()
 chat_processor = ChatGPTDataProcessor()
 tts_service = KokoroTTSService()
+
+# Warmup TTS service in background
+import threading
+def warmup_tts():
+    """Warmup TTS in a separate thread"""
+    try:
+        tts_service.warmup()
+    except Exception as e:
+        logger.warning(f"Background TTS warmup failed: {e}")
+
+# Start warmup thread
+warmup_thread = threading.Thread(target=warmup_tts, daemon=True)
+warmup_thread.start()
+
+# ========== TTS HELPER FUNCTIONS ==========
+
+def clean_text_for_speech(text: str) -> str:
+    """Clean text for better TTS pronunciation"""
+    # Remove markdown formatting
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # Bold
+    text = re.sub(r'\*(.*?)\*', r'\1', text)      # Italic
+    text = re.sub(r'`(.*?)`', r'\1', text)        # Code
+    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)  # Links
+    
+    # Clean up code blocks
+    text = re.sub(r'```.*?```', '[code block]', text, flags=re.DOTALL)
+    text = re.sub(r'`[^`]+`', '[code]', text)
+    
+    # Normalize whitespace
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    
+    return text
+
+def create_smart_chunks(text: str, chunk_size: int) -> list:
+    """Create smart sentence-level chunks for TTS streaming"""
+    import re
+    
+    # Split by sentences first
+    sentences = re.findall(r'[^.!?]*[.!?]+', text)
+    clean_sentences = [s.strip() for s in sentences if s.strip()]
+    
+    if not clean_sentences:
+        # Fallback for text without proper sentence endings
+        words = text.split()
+        if not words:
+            return []
+        
+        chunks = []
+        words_per_chunk = max(8, len(words) // 4)  # Reasonable chunks
+        
+        for i in range(0, len(words), words_per_chunk):
+            chunk = ' '.join(words[i:i + words_per_chunk])
+            chunks.append(chunk)
+        
+        return chunks
+    
+    # Group sentences into chunks
+    chunks = []
+    current_chunk = []
+    
+    for i, sentence in enumerate(clean_sentences):
+        current_chunk.append(sentence)
+        
+        # Check if we should end this chunk
+        should_end_chunk = (
+            len(current_chunk) >= chunk_size or  # Reached target sentence count
+            i == len(clean_sentences) - 1 or  # Last sentence
+            len(' '.join(current_chunk)) > 200  # Long chunk
+        )
+        
+        if should_end_chunk:
+            chunks.append(' '.join(current_chunk))
+            current_chunk = []
+    
+    # Add any remaining sentences
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+    
+    return chunks
 
 # ========== APP ROUTES ==========
 
@@ -1200,6 +1302,119 @@ def remove_node(chat_id, node_id):
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error removing node: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/chats/<chat_id>/nodes/<node_id>/detach', methods=['POST'])
+def detach_node(chat_id, node_id):
+    """Detach a node from its parent, making it orphaned"""
+    try:
+        node = chat_service.get_node(chat_id, node_id)
+        if not node:
+            return jsonify({'error': 'Node not found'}), 404
+            
+        if not node.parent_id:
+            return jsonify({'error': 'Node has no parent to detach from'}), 400
+            
+        # Store the old parent info for response
+        old_parent_id = node.parent_id
+        old_branch_index = node.branch_message_index
+        
+        # Detach the node
+        success = chat_service.update_node(chat_id, node_id, {
+            'parent_id': None,
+            'branchMessageIndex': None
+        })
+        
+        if not success:
+            return jsonify({'error': 'Failed to detach node'}), 500
+            
+        return jsonify({
+            'success': True,
+            'old_parent_id': old_parent_id,
+            'old_branch_index': old_branch_index
+        })
+    except Exception as e:
+        logger.error(f"Error detaching node: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/chats/<chat_id>/nodes/<node_id>/attach', methods=['POST'])
+def attach_node(chat_id, node_id):
+    """Attach a node to a new parent"""
+    try:
+        data = request.json
+        new_parent_id = data.get('parentId')
+        branch_message_index = data.get('branchMessageIndex')
+        
+        if not new_parent_id:
+            return jsonify({'error': 'New parent ID required'}), 400
+            
+        # Get both nodes
+        node = chat_service.get_node(chat_id, node_id)
+        parent_node = chat_service.get_node(chat_id, new_parent_id)
+        
+        if not node or not parent_node:
+            return jsonify({'error': 'Node or parent not found'}), 404
+            
+        # Prevent circular dependencies
+        if chat_service.would_create_cycle(chat_id, node_id, new_parent_id):
+            return jsonify({'error': 'This would create a circular dependency'}), 400
+            
+        # Update the node
+        success = chat_service.update_node(chat_id, node_id, {
+            'parent_id': new_parent_id,
+            'branchMessageIndex': branch_message_index
+        })
+        
+        if not success:
+            return jsonify({'error': 'Failed to attach node'}), 500
+            
+        # Calculate context preview
+        context_preview = chat_service.get_context_preview(chat_id, node_id)
+        
+        return jsonify({
+            'success': True,
+            'context_preview': context_preview
+        })
+    except Exception as e:
+        logger.error(f"Error attaching node: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/chats/<chat_id>/nodes/<node_id>/valid-parents', methods=['GET'])
+def get_valid_parents(chat_id, node_id):
+    """Get list of valid attachment targets for a node"""
+    try:
+        node = chat_service.get_node(chat_id, node_id)
+        if not node:
+            return jsonify({'error': 'Node not found'}), 404
+            
+        # Get all nodes in the chat
+        all_nodes = chat_service.get_all_nodes(chat_id)
+        
+        # Filter out invalid targets
+        valid_parents = []
+        for potential_parent in all_nodes:
+            # Skip self
+            if potential_parent.id == node_id:
+                continue
+                
+            # Skip current parent
+            if node.parent_id and potential_parent.id == node.parent_id:
+                continue
+                
+            # Skip descendants
+            if chat_service.is_descendant(chat_id, potential_parent.id, node_id):
+                continue
+                
+            valid_parents.append({
+                'id': potential_parent.id,
+                'title': potential_parent.title,
+                'type': potential_parent.type,
+                'messageCount': len(potential_parent.messages or [])
+            })
+            
+        return jsonify({'valid_parents': valid_parents})
+    except Exception as e:
+        logger.error(f"Error getting valid parents: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/process-media', methods=['POST'])
@@ -1510,7 +1725,7 @@ def get_tts_voices():
 
 @app.route('/api/tts-stream', methods=['POST'])
 def text_to_speech_stream():
-    """Stream TTS audio for long texts"""
+    """Stream TTS audio with smart sentence-level chunking"""
     try:
         data = request.json
         if not data or 'text' not in data:
@@ -1523,25 +1738,46 @@ def text_to_speech_stream():
         voice = data.get('voice', 'af_heart')
         speed = float(data.get('speed', 1.0))
         lang_code = data.get('lang_code', 'a')
+        chunk_size = int(data.get('chunk_size', 1))  # Default to 1 sentence
         
-        # Split text into sentences for streaming
-        sentences = re.split(r'[.!?]+', text)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        # Clean text for speech
+        clean_text = clean_text_for_speech(text)
+        
+        # Create smart sentence-level chunks
+        chunks = create_smart_chunks(clean_text, chunk_size)
         
         def generate_audio_stream():
-            for i, sentence in enumerate(sentences):
-                if not sentence:
+            synthesis_times = []
+            
+            for i, chunk in enumerate(chunks):
+                if not chunk.strip():
                     continue
                     
                 try:
-                    audio_bytes = tts_service.text_to_speech(sentence, voice, speed, lang_code)
+                    start_time = time.time()
+                    audio_bytes = tts_service.text_to_speech(chunk, voice, speed, lang_code)
+                    synthesis_time = (time.time() - start_time) * 1000  # Convert to ms
+                    synthesis_times.append(synthesis_time)
+                    
                     audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    
+                    # Calculate adaptive chunk size suggestion
+                    avg_synthesis_time = sum(synthesis_times) / len(synthesis_times)
+                    suggested_chunk_size = chunk_size
+                    
+                    if avg_synthesis_time < 800 and chunk_size < 3:  # Fast synthesis, increase chunk size
+                        suggested_chunk_size = min(chunk_size + 1, 3)
+                    elif avg_synthesis_time > 2000 and chunk_size > 1:  # Slow synthesis, decrease chunk size
+                        suggested_chunk_size = max(chunk_size - 1, 1)
                     
                     chunk_data = {
                         'index': i,
-                        'text': sentence,
+                        'text': chunk,
                         'audio': audio_b64,
-                        'is_final': i == len(sentences) - 1
+                        'synthesis_time': synthesis_time,
+                        'suggested_chunk_size': suggested_chunk_size,
+                        'is_final': i == len(chunks) - 1,
+                        'total_chunks': len(chunks)
                     }
                     
                     yield f"data: {json.dumps(chunk_data)}\n\n"
@@ -1550,7 +1786,8 @@ def text_to_speech_stream():
                     error_data = {
                         'error': str(e),
                         'index': i,
-                        'text': sentence
+                        'text': chunk,
+                        'synthesis_time': 0
                     }
                     yield f"data: {json.dumps(error_data)}\n\n"
                     
@@ -2425,8 +2662,18 @@ def start_clustering():
         if status['is_running']:
             return jsonify({'error': 'Clustering is already in progress'}), 409
         
-        # Start clustering
+        # Extract all clustering parameters
         kwargs = {}
+        
+        # Auto-optimization parameters
+        auto_optimize = data.get('autoOptimize', False)
+        if auto_optimize:
+            kwargs['auto_optimize'] = True
+            kwargs['min_clusters'] = data.get('minClusters', 3)
+            kwargs['max_clusters'] = data.get('maxClusters', 15)
+            kwargs['quality_target'] = data.get('qualityTarget', 'balanced')
+        
+        # Algorithm-specific parameters
         if method == 'kmeans':
             if 'n_clusters' in data:
                 kwargs['n_clusters'] = data['n_clusters']
@@ -2435,6 +2682,7 @@ def start_clustering():
                 kwargs['eps'] = data['eps']
             if 'min_samples' in data:
                 kwargs['min_samples'] = data['min_samples']
+            kwargs['include_outliers'] = data.get('includeOutliers', True)
         
         clustering_service.start_clustering_background(method=method, **kwargs)
         
@@ -2474,6 +2722,121 @@ def get_clustering_results():
         })
     except Exception as e:
         logger.error(f"Error getting clustering results: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/multi-resolution', methods=['POST'])
+def generate_multi_resolution_clusters():
+    """
+    Generate clusters at multiple resolutions for slider interface
+    """
+    try:
+        data = request.get_json() or {}
+        min_clusters = data.get('minClusters', 2)
+        max_clusters = data.get('maxClusters', 50)
+        method = data.get('method', 'kmeans')
+        
+        # Validate parameters
+        if min_clusters < 2 or max_clusters > 100 or min_clusters >= max_clusters:
+            return jsonify({'error': 'Invalid cluster range. Min should be >= 2, Max <= 100, and Min < Max'}), 400
+        
+        if method not in ['kmeans', 'dbscan']:
+            return jsonify({'error': 'Invalid clustering method. Use "kmeans" or "dbscan"'}), 400
+        
+        # Check if clustering is already running
+        status = clustering_service.get_clustering_status()
+        if status['is_running']:
+            return jsonify({'error': 'Clustering is already in progress'}), 409
+        
+        # Start multi-resolution clustering in background
+        from threading import Thread
+        
+        def generate_multi_resolution():
+            try:
+                clustering_service.clustering_status['is_running'] = True
+                clustering_service.clustering_status['status_message'] = 'Generating multi-resolution clusters...'
+                
+                cluster_range = (min_clusters, max_clusters)
+                results = clustering_service.generate_multi_resolution_clusters(cluster_range, method)
+                
+                clustering_service.clustering_status['is_running'] = False
+                clustering_service.clustering_status['status_message'] = f'Generated {len(results)} cluster resolutions'
+                
+            except Exception as e:
+                clustering_service.clustering_status['is_running'] = False
+                clustering_service.clustering_status['status_message'] = f'Error: {str(e)}'
+                logger.error(f"Error in multi-resolution clustering: {e}")
+        
+        thread = Thread(target=generate_multi_resolution)
+        thread.start()
+        
+        return jsonify({
+            'message': 'Multi-resolution clustering started',
+            'min_clusters': min_clusters,
+            'max_clusters': max_clusters,
+            'method': method
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting multi-resolution clustering: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/resolution/<int:n_clusters>', methods=['GET'])
+def get_clusters_at_resolution(n_clusters):
+    """
+    Get clusters at a specific resolution
+    """
+    try:
+        method = request.args.get('method', 'kmeans')
+        
+        if method not in ['kmeans', 'dbscan']:
+            return jsonify({'error': 'Invalid clustering method. Use "kmeans" or "dbscan"'}), 400
+        
+        if n_clusters < 2 or n_clusters > 100:
+            return jsonify({'error': 'Cluster count must be between 2 and 100'}), 400
+        
+        # Get clusters at the specified resolution
+        result = clustering_service.get_clusters_at_resolution(n_clusters, method)
+        
+        if result is None:
+            return jsonify({'error': 'Failed to generate clusters at specified resolution'}), 500
+        
+        return jsonify({
+            'clusters': result['clusters'],
+            'cluster_count': n_clusters,
+            'actual_clusters': result['actual_clusters'],
+            'quality_score': result['quality_score'],
+            'method': result['method'],
+            'timestamp': result['timestamp'].isoformat(),
+            'version': result['version']
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting clusters at resolution {n_clusters}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/cache/status', methods=['GET'])
+def get_cache_status():
+    """
+    Get current cache status and staleness information
+    """
+    try:
+        status = clustering_service.get_cache_status()
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error getting cache status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clustering/cache/invalidate', methods=['POST'])
+def invalidate_cache():
+    """
+    Manually invalidate the cluster cache
+    """
+    try:
+        clustering_service._invalidate_cache()
+        clustering_service.cache_version += 1
+        return jsonify({'message': 'Cache invalidated successfully', 'new_version': clustering_service.cache_version})
+    except Exception as e:
+        logger.error(f"Error invalidating cache: {e}")
         return jsonify({'error': str(e)}), 500
 
 @api_routes.route('/clustering/stop', methods=['POST'])

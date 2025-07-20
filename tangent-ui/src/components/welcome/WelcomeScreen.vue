@@ -1,6 +1,6 @@
 <template>
   <div class="welcome-screen" :class="['theme-' + currentTheme, { 'drag-over': isDragOver }]"
-    :style="dynamicThemeStyles" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver"
+    :style="[dynamicThemeStyles, welcomeScreenStyles]" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver"
     @dragleave.prevent="handleDragLeave" @drop.prevent="handleDrop">
 
     <!-- Scrolling Layout Container -->
@@ -198,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, withDefaults } from 'vue'
 import {
   Folder,
   Sparkles,
@@ -247,6 +247,17 @@ import { useChatStore } from '@/stores/chatStore'
 import { useUserStore } from '@/stores/userStore'
 
 // Props & Emits
+// Props
+const props = withDefaults(defineProps<{
+  sidePanelOpen?: boolean
+  rightPanelOpen?: boolean
+  rightSidebarExpanded?: boolean
+}>(), {
+  sidePanelOpen: false,
+  rightPanelOpen: false,
+  rightSidebarExpanded: false
+})
+
 const emit = defineEmits<{
   'show-all-workspaces': []
   'import-workspace': []
@@ -289,12 +300,87 @@ const containerWidth = ref(0)
 const welcomeContentRef = ref<HTMLElement>()
 
 // Computed responsive layout classes
-const isNarrowLayout = computed(() => containerWidth.value < 900)
-const isVeryNarrowLayout = computed(() => containerWidth.value < 600)
-const isExtremelyNarrowLayout = computed(() => containerWidth.value < 400)
+// Calculate available width accounting for sidebars
+const availableWidth = computed(() => {
+  if (typeof window === 'undefined') return 1200; // Default for SSR
+  
+  const vw = window.innerWidth;
+  let leftSidebarWidth = 0;
+  let rightSidebarWidth = 0;
+  
+  // Left sidebar width
+  if (props.sidePanelOpen === true) {
+    leftSidebarWidth = 260; // Left sidebar expanded width
+  } else {
+    leftSidebarWidth = 60; // Left sidebar collapsed width
+  }
+  
+  // Right sidebar width
+  if (props.rightPanelOpen === true) {
+    // Right content panel is open - account for both content panel AND sidebar
+    const contentPanelWidth = vw * 0.35;
+    const sidebarWidth = props.rightSidebarExpanded === true ? 180 : 60;
+    rightSidebarWidth = contentPanelWidth + sidebarWidth;
+  } else {
+    rightSidebarWidth = props.rightSidebarExpanded === true ? 180 : 60;
+  }
+  
+  const calculatedWidth = vw - leftSidebarWidth - rightSidebarWidth;
+  
+  // Ensure minimum width
+  return Math.max(calculatedWidth, 300);
+});
+
+// Computed responsive layout classes based on available width
+const isNarrowLayout = computed(() => availableWidth.value < 900)
+const isVeryNarrowLayout = computed(() => availableWidth.value < 600)
+const isExtremelyNarrowLayout = computed(() => availableWidth.value < 400)
 
 // User state
 const isOnTrial = computed(() => userStore.isOnTrial)
+
+// Dynamic styles for welcome screen positioning
+const welcomeScreenStyles = computed(() => {
+  if (typeof window === 'undefined') return {};
+  
+  const vw = window.innerWidth;
+  let leftOffset = 0;
+  let rightOffset = 0;
+  
+  // Left sidebar offset
+  if (props.sidePanelOpen === true) {
+    leftOffset = 260; // Left sidebar expanded width
+  } else {
+    leftOffset = 60; // Left sidebar collapsed width
+  }
+  
+  // Right sidebar offset
+  if (props.rightPanelOpen === true) {
+    // Right content panel is open - account for both content panel AND sidebar
+    const contentPanelWidth = vw * 0.35;
+    const sidebarWidth = props.rightSidebarExpanded === true ? 180 : 60;
+    rightOffset = contentPanelWidth + sidebarWidth;
+  } else {
+    rightOffset = props.rightSidebarExpanded === true ? 180 : 60;
+  }
+  
+  const calculatedWidth = vw - leftOffset - rightOffset;
+  
+  // Debug log (temporarily enabled)
+  // console.log('WelcomeScreen positioning:', { leftOffset, rightOffset, calculatedWidth, vw });
+  
+  return {
+    left: `${leftOffset}px`,
+    width: `${calculatedWidth}px`,
+    // Remove 'right' property to avoid conflicts
+    right: 'auto',
+    // Add debugging info as CSS variables
+    '--left-offset': leftOffset,
+    '--right-offset': rightOffset,
+    '--calculated-width': calculatedWidth,
+    '--viewport-width': vw
+  };
+});
 
 // Dynamic template and workspace counts based on layout
 const maxTemplatesCount = computed(() => {
@@ -1505,6 +1591,33 @@ const setupResizeObserver = () => {
   }
 }
 
+// Watch for sidebar state changes to update layout
+watch([() => props.sidePanelOpen, () => props.rightPanelOpen, () => props.rightSidebarExpanded], async () => {
+  // Force a re-render of the layout when sidebar states change
+  await nextTick()
+  if (welcomeContentRef.value) {
+    containerWidth.value = welcomeContentRef.value.offsetWidth
+  }
+  
+  // Force a style recalculation to ensure the computed properties update
+  document.documentElement.style.setProperty('--force-update', Math.random().toString())
+}, { immediate: true, flush: 'post' })
+
+// Also watch for window resize to ensure proper updates
+const handleResize = () => {
+  if (welcomeContentRef.value) {
+    containerWidth.value = welcomeContentRef.value.offsetWidth
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
 // Focus input on mount
 onMounted(() => {
   nextTick(() => {
@@ -1593,10 +1706,13 @@ defineExpose({
   background: linear-gradient(135deg, hsl(var(--b1)), hsl(var(--b2)));
   display: flex;
   flex-direction: column;
-  position: relative;
+  position: absolute;
   overflow-y: auto;
   overflow-x: hidden;
   transition: all 0.3s ease;
+  top: 0;
+  bottom: 0;
+  /* left and width are set dynamically via inline styles */
 }
 
 .welcome-screen.drag-over {

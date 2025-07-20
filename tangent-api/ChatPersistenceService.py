@@ -397,6 +397,59 @@ class ChatPersistenceService:
                 
         db.session.commit()
         return True
+    
+    def get_node(self, chat_id: str, node_id: str) -> Optional[Node]:
+        """Get a single node by ID"""
+        return Node.query.filter_by(chat_id=chat_id, id=node_id).first()
+    
+    def get_all_nodes(self, chat_id: str) -> List[Node]:
+        """Get all nodes for a chat"""
+        return Node.query.filter_by(chat_id=chat_id).all()
+    
+    def would_create_cycle(self, chat_id: str, node_id: str, new_parent_id: str) -> bool:
+        """Check if attaching node_id to new_parent_id would create a cycle"""
+        # Check if new_parent_id is a descendant of node_id
+        return self.is_descendant(chat_id, new_parent_id, node_id)
+    
+    def is_descendant(self, chat_id: str, potential_descendant_id: str, ancestor_id: str) -> bool:
+        """Check if potential_descendant is a descendant of ancestor"""
+        current_id = potential_descendant_id
+        visited = set()
+        
+        while current_id:
+            if current_id in visited:
+                # Cycle detected
+                return False
+            visited.add(current_id)
+            
+            if current_id == ancestor_id:
+                return True
+                
+            node = self.get_node(chat_id, current_id)
+            if not node:
+                return False
+                
+            current_id = node.parent_id
+            
+        return False
+    
+    def get_context_preview(self, chat_id: str, node_id: str) -> Dict:
+        """Get a preview of the context that would be inherited"""
+        node = self.get_node(chat_id, node_id)
+        if not node:
+            return {'error': 'Node not found'}
+            
+        # Get parent messages up to branch point
+        context_messages = []
+        if node.parent_id and node.branch_message_index is not None:
+            parent = self.get_node(chat_id, node.parent_id)
+            if parent and parent.messages:
+                context_messages = parent.messages[:node.branch_message_index]
+                
+        return {
+            'context_message_count': len(context_messages),
+            'context_preview': context_messages[-3:] if context_messages else []  # Last 3 messages
+        }
 
     def add_node(self, chat_id: str, node_data: Dict) -> Optional[str]:
         """Add a new node to existing chat"""

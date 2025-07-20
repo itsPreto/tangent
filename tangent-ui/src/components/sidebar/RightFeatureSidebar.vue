@@ -46,7 +46,7 @@
         <div v-if="feature.id === 'themes'" class="themes-divider"></div>
         
         <div class="feature-icon" :style="getFeatureIconStyle(feature)">
-          <component :is="feature.icon" :size="20" :style="{ color: feature.color }" />
+          <component :is="feature.icon" :size="20" :style="{ color: getIconColor(feature) }" />
         </div>
         
         <Transition name="fade-slide" mode="out-in">
@@ -114,7 +114,8 @@ import {
   FileText, 
   LayoutGrid,
   GitBranch,
-  Palette
+  Palette,
+  Link
 } from 'lucide-vue-next';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAppStore } from '@/stores/appStore';
@@ -218,16 +219,9 @@ const defaultFeatures = computed(() => [
     description: 'Model testing and evaluation suite'
   },
   { 
-    id: 'mock-data', 
-    icon: Database, 
-    label: 'Mock Data', 
-    color: themeColors.value.primary,
-    description: 'Generate mock conversation archives'
-  },
-  { 
     id: 'force-graph', 
     icon: GitBranch, 
-    label: 'Force Graph', 
+    label: 'Clusters', 
     color: themeColors.value.primary,
     description: 'Interactive workspace relationships graph'
   },
@@ -608,8 +602,17 @@ const getFeatureItemStyle = (feature: any) => {
   };
 };
 
+const getIconColor = (feature: any) => {
+  const currentTheme = themeStore.currentTheme;
+  if (currentTheme === 'black') {
+    return '#b3acac';
+  }
+  return feature.color;
+};
+
 const getFeatureIconStyle = (feature: any) => {
   const isActive = activeFeature.value === feature.id;
+  
   return {
     backgroundColor: isActive ? `${feature.color}30` : `${feature.color}20`,
     borderColor: isActive ? `${feature.color}60` : `${feature.color}40`,
@@ -981,7 +984,6 @@ onMounted(() => {
 .theme-wireframe,
 .theme-lemonade,
 .theme-winter,
-.theme-lofi,
 .theme-fantasy,
 .theme-autumn {
   .feature-list,
@@ -1056,6 +1058,7 @@ onMounted(() => {
 .theme-cmyk,
 .theme-business,
 .theme-acid,
+.theme-lofi,
 .theme-night,
 .theme-coffee {
   .feature-list,

@@ -15,6 +15,7 @@
           @keydown.ctrl.enter.prevent="handleNewline"
           @keydown.enter.prevent="handleEnter"
           @keydown.esc="handleEscape"
+          @keydown="handleKeydown"
           @input="handleInput"
           @focus="handleFocus"
           @blur="handleBlur"
@@ -220,7 +221,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, onBeforeUnmount, nextTick } from 'vue';
 import { 
   Mic, 
   Settings, 
@@ -444,6 +445,7 @@ const toggleExpanded = () => {
 
 const handleFocus = () => {
   isFocused.value = true;
+  // Let browser handle cursor positioning naturally
 };
 
 const handleBlur = () => {
@@ -519,7 +521,18 @@ const handleEnter = (event) => {
 };
 
 const handleNewline = () => {
-  document.execCommand('insertLineBreak');
+  // Insert line break naturally
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    const br = document.createElement('br');
+    range.deleteContents();
+    range.insertNode(br);
+    range.setStartAfter(br);
+    range.setEndAfter(br);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
 };
 
 const handleEscape = (event) => {
@@ -528,6 +541,10 @@ const handleEscape = (event) => {
     editableRef.value.blur();
   }
   emit('escape');
+};
+
+const handleKeydown = (event) => {
+  // No special handling needed - let all keys work normally
 };
 
 // Paste handling (simplified for now)
@@ -550,7 +567,16 @@ const handlePaste = (event) => {
     selection.removeAllRanges();
     selection.addRange(range);
   } else {
-    document.execCommand('insertText', false, pastedText);
+    // Insert text naturally without execCommand
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(pastedText));
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
   }
 };
 
@@ -652,17 +678,21 @@ onUnmounted(() => {
 // Method to insert text into the input
 const insertText = (text) => {
   if (editableRef.value) {
-    const currentText = editableRef.value.textContent || '';
-    editableRef.value.textContent = currentText + text;
-    handleInput();
-    // Focus and place cursor at the end
     editableRef.value.focus();
-    const range = document.createRange();
-    const sel = window.getSelection();
-    range.selectNodeContents(editableRef.value);
-    range.collapse(false);
-    sel?.removeAllRanges();
-    sel?.addRange(range);
+    // Insert at current cursor position naturally
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(text));
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      // Fallback if no selection
+      editableRef.value.textContent += text;
+    }
+    handleInput();
   }
 };
 

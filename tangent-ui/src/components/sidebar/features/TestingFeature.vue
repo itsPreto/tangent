@@ -6,15 +6,15 @@
         <button @click="testMode = 'quick'" class="mode-tab" :class="{ active: testMode === 'quick' }">
           <span class="mode-icon">⚡</span>
           <div class="mode-content">
-            <span class="mode-label">Quick Test</span>
-            <span class="mode-desc">Default prompt adherence test</span>
+            <span class="mode-label">Quick</span>
+            <span class="mode-desc">Default adherence test</span>
           </div>
         </button>
         <button @click="testMode = 'custom'" class="mode-tab" :class="{ active: testMode === 'custom' }">
           <span class="mode-icon">🔧</span>
           <div class="mode-content">
-            <span class="mode-label">Custom Test</span>
-            <span class="mode-desc">Create your own test template</span>
+            <span class="mode-label">Custom</span>
+            <span class="mode-desc">Own test template</span>
           </div>
         </button>
       </div>
@@ -26,7 +26,7 @@
         <!-- Left: Quick Configuration -->
         <div class="quick-config-column">
           <div class="quick-config-section">
-            <div class="section-title">Quick Test Settings</div>
+            <div class="section-title">Settings</div>
 
             <div class="quick-config-grid">
               <div class="config-item">
@@ -844,18 +844,21 @@ onMounted(async () => {
 
 <style scoped>
 .testing-feature {
-  padding: 0.75rem;
+  padding: 0.5rem;
   height: 100%;
   overflow-y: auto;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 4%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2))));
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1));
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 3%, rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, v-bind(themeColors.secondary) 2%, rgba(255, 255, 255, 0.02)));
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--bc) / 0.08));
   box-shadow: 
-    0 4px 20px color-mix(in srgb, v-bind(themeColors.primary) 10%, transparent),
-    0 1px 3px color-mix(in srgb, v-bind(themeColors.secondary) 8%, transparent);
+    0 8px 32px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent),
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
   position: relative;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .testing-feature::before {
@@ -874,7 +877,7 @@ onMounted(async () => {
 
 /* Test Mode Selector */
 .test-mode-selector {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .mode-tabs {

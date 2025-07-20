@@ -1,16 +1,19 @@
 // ./src/stores/canvasStore.ts
 import { defineStore } from 'pinia';
 import { useChatStore } from './chatStore';
+import { useConnectionStore } from './connectionStore';
 import { ref, watch, computed } from 'vue';
 import type { Message, Node, ContentPart, TTSConfig } from '../types/message';
 import type { ModelInfo, ModelParameters } from '@/types/model';
 import type { ChatSummary } from '@/types/chat';
+import type { Connection } from '@/types/connection';
 import { sandpackSetup } from '../components/sidebar/sandpackDeps'
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import emitter from '@/utils/eventBus'
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { routerService } from '@/services/routerService';
+import { generateConnectionId } from '@/utils/connectionUtils';
 
 // Helper types for model info
 type ModelSource = "custom" | "ollama" | "google" | "openrouter" | "anthropic" | "openai";
@@ -91,6 +94,7 @@ const isCodeRequest = (message: string): boolean => {
 
 export const useCanvasStore = defineStore('canvas', () => {
   const chatStore = useChatStore();
+  const connectionStore = useConnectionStore();
   const lastSavedWorkspaceId = ref<string | null>(null);
 
   // Current chat metadata (including import information)
@@ -227,6 +231,18 @@ export const useCanvasStore = defineStore('canvas', () => {
   const viewMode = ref<'2d' | '3d'>('2d');
   const isTransitioning = ref(false);
   const customApiUrl = ref<string | null>(localStorage.getItem('customApiUrl') || null);
+  
+  // Connection settings
+  const autoCreateConnections = ref(false); // Disabled by default for manual control
+  
+  // Viewport state for connection system
+  const viewport = ref({
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    zoom: 1
+  });
 
   // Constants
   const CARD_WIDTH = 672;
@@ -568,7 +584,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     };
   });
 
-  // Connections computed property
+  // Connections computed property - Legacy support for old spline system
   const connections = computed(() => {
     return nodes.value
       .filter(node => node.parentId)
@@ -577,6 +593,34 @@ export const useCanvasStore = defineStore('canvas', () => {
         return { parent, child: node };
       });
   });
+
+  // Migration function: Convert parentId-based connections to new connection system
+  const migrateConnectionsToNewSystem = () => {
+    const existingConnections = new Set();
+    
+    nodes.value.forEach(node => {
+      if (node.parentId) {
+        const connectionKey = `${node.parentId}-${node.id}`;
+        
+        // Check if this connection already exists in the new system
+        if (!existingConnections.has(connectionKey)) {
+          const connectionId = generateConnectionId(node.parentId, node.id);
+          const connection: Connection = {
+            id: connectionId,
+            startNodeId: node.parentId,
+            endNodeId: node.id,
+            typeId: 'default-curved',
+            label: connectionLabels.value.get(connectionKey) || undefined,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          
+          connectionStore.addConnection(connection);
+          existingConnections.add(connectionKey);
+        }
+      }
+    });
+  };
 
   const parseModelInfo = (selectedModel: string): ModelInfo => {
     if (selectedModel.startsWith('models/gemini')) {
@@ -745,6 +789,22 @@ export const useCanvasStore = defineStore('canvas', () => {
       cleanupMemory();
     }
 
+    // Create connection in the new system if node has a parent and auto-creation is enabled
+    if (parentId && autoCreateConnections.value) {
+      const connectionId = generateConnectionId(parentId, newNode.id);
+      const connection: Connection = {
+        id: connectionId,
+        startNodeId: parentId,
+        endNodeId: newNode.id,
+        typeId: 'default-curved',
+        label: connectionLabels.value.get(`${parentId}-${newNode.id}`) || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      connectionStore.addConnection(connection);
+    }
+
     return newNode;
   };
 
@@ -774,6 +834,22 @@ export const useCanvasStore = defineStore('canvas', () => {
     // Add to nodes array
     nodes.value.push(toolCallBranch);
 
+    // Create connection in the new system if auto-creation is enabled
+    if (autoCreateConnections.value) {
+      const connectionId = generateConnectionId(parentNodeId, toolCallBranchId);
+      const connection: Connection = {
+        id: connectionId,
+        startNodeId: parentNodeId,
+        endNodeId: toolCallBranchId,
+        typeId: 'default-curved',
+        label: connectionLabels.value.get(`${parentNodeId}-${toolCallBranchId}`) || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      connectionStore.addConnection(connection);
+    }
+
     return toolCallBranch;
   };
 
@@ -782,6 +858,9 @@ export const useCanvasStore = defineStore('canvas', () => {
     const index = nodes.value.findIndex(n => n.id === branchId);
     if (index !== -1) {
       nodes.value.splice(index, 1);
+      
+      // Remove the connection from the connection store
+      connectionStore.removeConnectionsByNodeId(branchId);
     }
   };
 
@@ -1708,6 +1787,22 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
+  const updateNodeDimensions = async (id: string, width: number, height: number) => {
+    const node = nodes.value.find(n => n.id === id);
+    if (node) {
+      (node as any).customWidth = width;
+      (node as any).customHeight = height;
+      
+      // Auto-save dimensions
+      if (chatStore.currentChatId) {
+        chatStore.autoSave(chatStore.currentChatId, id, { 
+          customWidth: width, 
+          customHeight: height 
+        });
+      }
+    }
+  };
+
   const generateTitleForBranch = async (nodeId: string, firstUserMessage: string) => {
     const node = nodes.value.find(n => n.id === nodeId);
     if (!node) {
@@ -1962,6 +2057,9 @@ export const useCanvasStore = defineStore('canvas', () => {
         lastSavedWorkspaceId: chatId
       };
       localStorage.setItem('canvasState', JSON.stringify(state));
+
+      // Migrate connections after loading nodes
+      migrateConnectionsToNewSystem();
 
       return true;
     } catch (error) {
@@ -2256,6 +2354,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     removeNode,
     updateNodeTitle,
     updateNodeMessages,
+    updateNodeDimensions,
     generateTitleForBranch,
     regenerateNodeTitle,
     addMessage,
@@ -2297,5 +2396,10 @@ export const useCanvasStore = defineStore('canvas', () => {
     setConnectionLabel,
     getConnectionLabel,
     connectionLabels,
+    
+    // New connection system
+    migrateConnectionsToNewSystem,
+    viewport,
+    autoCreateConnections,
   };
 });

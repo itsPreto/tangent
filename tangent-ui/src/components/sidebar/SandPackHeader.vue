@@ -110,8 +110,6 @@
   const headerStyle = computed(() => {
     return {
       backgroundColor: isDarkTheme.value ? 'rgba(30, 30, 40, 0.9)' : 'rgba(245, 245, 250, 0.9)',
-      borderTopLeftRadius: isFullscreen.value ? '0' : '8px',
-      borderTopRightRadius: isFullscreen.value ? '0' : '8px',
       borderBottom: isDarkTheme.value 
         ? '1px solid rgba(60, 60, 70, 0.5)' 
         : '1px solid rgba(220, 220, 230, 0.5)',

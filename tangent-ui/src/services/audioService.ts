@@ -8,6 +8,7 @@ export interface VoiceMode {
   maxSpeechDuration?: number;
   speechPad?: number;
   samplesOverlap?: number;
+  autoResume?: boolean; // Auto-resume after processing
 }
 
 export interface AudioRecordingState {
@@ -46,6 +47,13 @@ class AudioRecordingService {
   private silenceStartTime: number | null = null;
   private hasDetectedSpeech: boolean = false;
   
+  // Enhanced VAD state
+  private energyHistory: number[] = [];
+  private backgroundNoiseLevel: number = 0;
+  private adaptiveThreshold: number = 0.5;
+  private conversationPauseStart: number | null = null;
+  private speechSegments: Array<{start: number, end: number, energy: number}> = [];
+  
   // Reactive state
   public state = ref<AudioRecordingState>({
     isRecording: false,
@@ -78,10 +86,11 @@ class AudioRecordingService {
       type: 'manual',
       vadThreshold: 0.5,
       minSpeechDuration: 250,
-      minSilenceDuration: 1200, // 1.2s for auto-send in continuous mode
+      minSilenceDuration: 1500, // 1.5s for natural conversation pauses
       maxSpeechDuration: 30,
       speechPad: 200,
-      samplesOverlap: 0.1
+      samplesOverlap: 0.1,
+      autoResume: true // Auto-resume after processing in continuous mode
     };
   }
 
@@ -260,6 +269,11 @@ class AudioRecordingService {
         setTimeout(() => {
           this.state.value.transcription = '';
         }, 500);
+        
+        // Auto-resume recording for continuous conversation
+        if (this.state.value.currentMode.autoResume) {
+          this.autoResumeRecording();
+        }
       }
 
     } catch (error) {
@@ -284,11 +298,16 @@ class AudioRecordingService {
         const inputData = event.inputBuffer.getChannelData(0);
         const currentTime = Date.now();
         
-        // Simple energy-based VAD
+        // Enhanced VAD with adaptive threshold
         const energy = this.calculateAudioEnergy(inputData);
-        const threshold = this.state.value.currentMode.vadThreshold || 0.5;
+        const spectralCentroid = this.calculateSpectralCentroid(inputData);
+        const zeroCrossingRate = this.calculateZeroCrossingRate(inputData);
         
-        const isSpeech = energy > threshold;
+        // Update energy history for background noise estimation
+        this.updateEnergyHistory(energy);
+        
+        // Use multiple features for better speech detection
+        const isSpeech = this.detectSpeech(energy, spectralCentroid, zeroCrossingRate);
         this.state.value.isSpeechDetected = isSpeech;
 
         if (isSpeech) {
@@ -297,35 +316,47 @@ class AudioRecordingService {
           
           if (!this.speechStartTime) {
             this.speechStartTime = currentTime;
-            console.log('Speech started');
+            console.log('Enhanced VAD: Speech started');
           }
           
+          // Reset silence timers
           if (this.silenceStartTime) {
-            this.silenceStartTime = null; // Reset silence timer
+            this.silenceStartTime = null;
+          }
+          if (this.conversationPauseStart) {
+            this.conversationPauseStart = null;
           }
 
           // Check for maximum speech duration
           const maxSpeechMs = (this.state.value.currentMode.maxSpeechDuration || 30) * 1000;
           if (currentTime - this.speechStartTime > maxSpeechMs) {
-            console.log('Max speech duration reached');
+            console.log('Enhanced VAD: Max speech duration reached');
             this.handleContinuousStop('max_speech_duration');
           }
         } else {
-          // Silence detected
+          // Silence detected - determine if it's a natural pause or conversation end
           if (!this.silenceStartTime && this.speechStartTime && this.hasDetectedSpeech) {
             this.silenceStartTime = currentTime;
-            console.log('Silence started');
+            console.log('Enhanced VAD: Silence started');
+          }
+
+          // Check for natural conversation pause
+          if (this.silenceStartTime && currentTime - this.silenceStartTime > 800) { // 0.8s for natural pause detection
+            if (!this.conversationPauseStart) {
+              this.conversationPauseStart = currentTime;
+              console.log('Enhanced VAD: Natural pause detected');
+            }
           }
 
           // Check if we've been silent long enough to stop
-          const minSilenceMs = this.state.value.currentMode.minSilenceDuration || 1200;
-          if (this.silenceStartTime && currentTime - this.silenceStartTime > minSilenceMs && this.speechStartTime) {
+          const minSilenceMs = this.state.value.currentMode.minSilenceDuration || 1500;
+          if (this.conversationPauseStart && currentTime - this.conversationPauseStart > minSilenceMs && this.speechStartTime) {
             const speechDurationMs = this.lastSpeechTime - this.speechStartTime;
             const minSpeechMs = this.state.value.currentMode.minSpeechDuration || 250;
             
             if (speechDurationMs > minSpeechMs) {
-              console.log(`Auto-stopping after ${minSilenceMs}ms of silence`);
-              this.handleContinuousStop('silence_detected');
+              console.log(`Enhanced VAD: Auto-stopping after ${minSilenceMs}ms conversation pause`);
+              this.handleContinuousStop('conversation_pause');
             }
           }
         }
@@ -349,9 +380,78 @@ class AudioRecordingService {
     return Math.sqrt(sum / samples.length);
   }
 
+  private calculateSpectralCentroid(samples: Float32Array): number {
+    // Simplified spectral centroid calculation
+    let numerator = 0;
+    let denominator = 0;
+    
+    for (let i = 0; i < samples.length; i++) {
+      const magnitude = Math.abs(samples[i]);
+      numerator += i * magnitude;
+      denominator += magnitude;
+    }
+    
+    return denominator > 0 ? numerator / denominator : 0;
+  }
+
+  private calculateZeroCrossingRate(samples: Float32Array): number {
+    let crossings = 0;
+    
+    for (let i = 1; i < samples.length; i++) {
+      if ((samples[i] >= 0) !== (samples[i - 1] >= 0)) {
+        crossings++;
+      }
+    }
+    
+    return crossings / samples.length;
+  }
+
+  private updateEnergyHistory(energy: number): void {
+    this.energyHistory.push(energy);
+    
+    // Keep only last 100 samples for background noise estimation
+    if (this.energyHistory.length > 100) {
+      this.energyHistory.shift();
+    }
+    
+    // Update background noise level (10th percentile of energy history)
+    if (this.energyHistory.length >= 20) {
+      const sortedEnergy = [...this.energyHistory].sort((a, b) => a - b);
+      this.backgroundNoiseLevel = sortedEnergy[Math.floor(sortedEnergy.length * 0.1)];
+      
+      // Adaptive threshold: background noise + margin
+      this.adaptiveThreshold = Math.max(0.01, this.backgroundNoiseLevel * 3);
+    }
+  }
+
+  private detectSpeech(energy: number, spectralCentroid: number, zeroCrossingRate: number): boolean {
+    // Use adaptive threshold based on background noise
+    const energyThreshold = this.adaptiveThreshold;
+    
+    // Energy-based detection
+    const hasEnergy = energy > energyThreshold;
+    
+    // Spectral features for better speech detection
+    const hasVoiceSpectrum = spectralCentroid > 0.1 && spectralCentroid < 0.8;
+    const hasVoiceZCR = zeroCrossingRate > 0.02 && zeroCrossingRate < 0.3;
+    
+    // Combine features for robust detection
+    return hasEnergy && hasVoiceSpectrum && hasVoiceZCR;
+  }
+
   private async handleContinuousStop(reason: string): Promise<void> {
-    console.log(`Continuous recording stopped: ${reason}`);
+    console.log(`Enhanced VAD: Continuous recording stopped: ${reason}`);
     await this.stopRecording();
+  }
+
+  private async autoResumeRecording(): Promise<void> {
+    // Wait a moment for the UI to update and any TTS to start
+    setTimeout(async () => {
+      if (this.state.value.currentMode.type === 'continuous' && this.state.value.currentMode.autoResume) {
+        console.log('Enhanced VAD: Auto-resuming recording for continuous conversation');
+        await this.startRecording(this.state.value.currentMode);
+      }
+    }, 1000); // 1 second delay to allow for natural conversation flow
   }
 
   private cleanupContinuousMode(): void {
@@ -426,6 +526,13 @@ class AudioRecordingService {
     this.lastSpeechTime = 0;
     this.silenceStartTime = null;
     this.hasDetectedSpeech = false;
+    
+    // Reset enhanced VAD state
+    this.energyHistory = [];
+    this.backgroundNoiseLevel = 0;
+    this.adaptiveThreshold = 0.5;
+    this.conversationPauseStart = null;
+    this.speechSegments = [];
     
     console.log('AudioService: Complete reset performed');
   }

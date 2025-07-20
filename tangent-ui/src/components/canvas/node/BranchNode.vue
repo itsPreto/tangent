@@ -1,5 +1,5 @@
 <template>
-  <div class="pointer-events-auto absolute transition-all duration-300 branch-node" ref="nodeElement"
+  <div class="pointer-events-auto absolute transition-all duration-300 branch-node branch-node-container" ref="nodeElement"
     :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :data-right-sidebar-expanded="isRightSidebarExpanded" :class="[
       'theme-' + currentTheme,
       {
@@ -15,7 +15,8 @@
     ]" @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
     @dragover="supportsVision ? handleDragOver : undefined" @drop="supportsVision ? handleDrop : undefined"
     @wheel="handleNodeWheel"
-    :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle]">
+    :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle, dropTargetStyle]">
+    
     <div v-if="isSnapped" class="fixed inset-0 backdrop-blur-xl -z-10 pointer-events-none" :style="{
       backgroundColor: snappedBackgroundStyle
     }">
@@ -54,8 +55,8 @@
     <Card v-else :class="[
       'node-card overflow-x-hidden',
       'backdrop-blur transition-all duration-300',
-      isSnapped ? 'snapped-card snapped' : 'max-w-2xl w-[42rem]'
-    ]">
+      isSnapped ? 'snapped-card snapped' : ''
+    ]" :style="cardStyle">
       <div class="relative group w-full h-9 flex items-center justify-center" ref="avatarRef">
         <!-- Subtle glow effect when params editor is open -->
         <div v-if="showParamsEditor" class="absolute inset-0 bg-primary/10 blur-xl rounded-full pointer-events-none" />
@@ -395,6 +396,67 @@
       <!-- Message Input -->
       <MessageInput :is-loading="isLoading" @send="handleMessageSend" @stop="stopStreaming" @click="handleInputClick" />
     </Card>
+    
+    <!-- Resize Handles for Unsnapped Selected Nodes -->
+    <div v-if="isSelected && !isSnapped && !isDragging" class="resize-handles">
+      <!-- Corner handle (bottom-right) -->
+      <div 
+        class="resize-handle resize-handle-se" 
+        @mousedown="startNodeResize('se', $event)"
+        :style="{ 
+          position: 'absolute', 
+          bottom: `${-8 / props.zoom}px`, 
+          right: `${-8 / props.zoom}px`, 
+          width: `${16 / props.zoom}px`, 
+          height: `${16 / props.zoom}px`,
+          backgroundColor: 'white',
+          border: `${2 / props.zoom}px solid rgba(59, 130, 246, 0.8)`,
+          borderRadius: `${2 / props.zoom}px`,
+          cursor: 'se-resize',
+          zIndex: 1001
+        }">
+      </div>
+      
+      <!-- Right edge handle -->
+      <div 
+        class="resize-handle resize-handle-e" 
+        @mousedown="startNodeResize('e', $event)"
+        :style="{ 
+          position: 'absolute', 
+          top: '50%', 
+          right: `${-8 / props.zoom}px`, 
+          width: `${16 / props.zoom}px`, 
+          height: `${16 / props.zoom}px`,
+          backgroundColor: 'white',
+          border: `${2 / props.zoom}px solid rgba(59, 130, 246, 0.8)`,
+          borderRadius: `${2 / props.zoom}px`,
+          cursor: 'e-resize',
+          transform: 'translateY(-50%)',
+          zIndex: 1001
+        }">
+      </div>
+      
+      <!-- Bottom edge handle -->
+      <div 
+        class="resize-handle resize-handle-s" 
+        @mousedown="startNodeResize('s', $event)"
+        :style="{ 
+          position: 'absolute', 
+          bottom: `${-8 / props.zoom}px`, 
+          left: '50%', 
+          width: `${16 / props.zoom}px`, 
+          height: `${16 / props.zoom}px`,
+          backgroundColor: 'white',
+          border: `${2 / props.zoom}px solid rgba(59, 130, 246, 0.8)`,
+          borderRadius: `${2 / props.zoom}px`,
+          cursor: 's-resize',
+          transform: 'translateX(-50%)',
+          zIndex: 1001
+        }">
+      </div>
+    </div>
+    
+    <!-- Connection handles now managed by SmoothConnectionSystem -->
   </div>
 </template>
 <script setup lang="ts">
@@ -425,14 +487,10 @@ import LazyLoadMessageList from '../../messages/LazyLoadMessageList.vue';
 import { useCanvasStore } from '../../../stores/canvasStore';
 import { useToolCallStore } from '../../../stores/toolCallStore';
 import { Card } from '@/components/ui/card';
-import Badge from '../../ui/Badge.vue';
-import MessageContent from '../../messages/MessageContent.vue';
-import MessageTimestamp from '../../messages/MessageTimestamp.vue';
 import ModelParamsEditor from '../../models/ModelParamsEditor.vue';
 import TokenCounter from '@/components/ui/TokenCounter.vue';
 import TitleGenerationLoader from '@/components/ui/TitleGenerationLoader.vue';
 import ImageAnalysisLoader from '@/components/ui/ImageAnalysisLoader.vue';
-import TTSControls from '../../messages/TTSControls.vue';
 import { tokenTrackingService, type CompactedSection, type TokenUsage } from '@/services/tokenTrackingService';
 import { useProgressiveMessageLoading } from '@/composables/useProgressiveMessageLoading';
 import type { ModelParameters } from '@/types/model';
@@ -469,6 +527,9 @@ interface BranchNodeProps {  // Use a dedicated interface
   isRightPanelOpen?: boolean;
   isRightSidebarExpanded?: boolean;
   supportsVision?: boolean;
+  lodLevel?: 'block' | 'preview' | 'full';
+  isPotentialDropTarget?: boolean;
+  isInvalidDropTarget?: boolean;
 }
 
 const props = defineProps<BranchNodeProps>();
@@ -484,6 +545,9 @@ const emit = defineEmits([
   'snap',
   'unsnap',
   'focus-input',
+  'connection-start',
+  'connection-drag',
+  'connection-end',
   'expansion-change',
   'update-messages',
   'update-node'
@@ -516,6 +580,12 @@ const isRegeneratingTitle = ref(false);
 // Compaction state
 const compactedSections = ref<CompactedSection[]>([]);
 const expandedSectionId = ref<string | null>(null);
+
+// Node resize state
+const isNodeResizing = ref(false);
+const nodeResizeDirection = ref<string>('');
+const originalNodeDimensions = ref({ width: 672, height: 80 });
+const nodeResizeStartPos = ref({ x: 0, y: 0 });
 const summarySectionId = ref<string | null>(null);
 const currentTokenCount = ref(0);
 
@@ -634,10 +704,37 @@ const isAutoCaptioning = ref(false);
 
 // Simplified LOD System - just 2 levels
 const shouldShowFullDetail = computed(() => {
-  return props.lodLevel === 'full';
+  return props.lodLevel === 'full' || props.lodLevel === undefined;
 });
 const shouldShowPreview = computed(() => {
   return props.lodLevel === 'preview';
+});
+
+// Node dimensions for connection handles
+const nodeWidth = computed(() => {
+  if (shouldShowPreview.value) {
+    return 480; // Preview width
+  }
+  // Use custom width if available for unsnapped nodes
+  if (!isSnapped.value && (props.node as any).customWidth) {
+    return (props.node as any).customWidth;
+  }
+  return 672; // Default width for full nodes (matching CARD_WIDTH)
+});
+
+const nodeHeight = computed(() => {
+  if (shouldShowPreview.value) {
+    return 120; // Preview height
+  }
+  // Use custom height if available for unsnapped nodes
+  if (!isSnapped.value && (props.node as any).customHeight) {
+    return (props.node as any).customHeight;
+  }
+  // For full nodes, we need to calculate based on content
+  // This is a simplified calculation - in a real app you'd measure the actual element
+  const baseHeight = 200;
+  const messageHeight = (props.node.messages?.length || 0) * 50;
+  return Math.min(baseHeight + messageHeight, 600); // Cap at 600px
 });
 
 // Last message and preview for preview LOD
@@ -1151,6 +1248,23 @@ const themeMessageStyles = computed(() => {
   return styles;
 });
 
+// Drop target styling
+const dropTargetStyle = computed(() => {
+  if (props.isPotentialDropTarget) {
+    return {
+      boxShadow: `0 0 20px ${themeStore.currentThemeColors.success}, inset 0 0 10px ${themeStore.currentThemeColors.success}`,
+      borderColor: themeStore.currentThemeColors.success,
+      borderWidth: '2px'
+    };
+  } else if (props.isInvalidDropTarget) {
+    return {
+      opacity: 0.5,
+      filter: 'grayscale(0.5)'
+    };
+  }
+  return {};
+});
+
 // Generate theme-specific styles for the node
 const nodeThemeStyle = computed(() => {
   // Use the composable's theme colors
@@ -1206,9 +1320,10 @@ const nodeThemeStyle = computed(() => {
 const threadColor = computed(() => baseColorSet.value.base);
 
 const shouldGlow = computed(() => {
-  // Glow if the node is selected (focus) or multi-selected, and zoom is below 150%
+  // Original glow if the node is selected (focus) or multi-selected, and zoom is below 150%
   return (props.isSelected || props.isMultiSelected) && props.zoom < 1.5;
 });
+
 
 const calculateSnappedDimensions = () => {
   if (!isSnapped.value) return null;
@@ -1316,14 +1431,48 @@ const nodePositionStyle = computed(() => {
   }
 
   // Normal positioning
-  return {
+  const style: any = {
     transform: `translate3d(${props.node.x}px, ${props.node.y}px, 0) scale(${props.zoom})`,
     transformOrigin: '0 0',
     transition: 'none'
   };
+  
+  // Add custom dimensions if available
+  if ((props.node as any).customWidth) {
+    style.width = `${(props.node as any).customWidth}px`;
+  }
+  if ((props.node as any).customHeight) {
+    style.height = `${(props.node as any).customHeight}px`;
+  }
+  
+  return style;
 });
 
 // Theme updates are now handled by the useThemeColors composable
+
+// Card style for custom dimensions
+const cardStyle = computed(() => {
+  if (isSnapped.value) {
+    return {}; // Let snapped cards use default styling
+  }
+  
+  const style: any = {};
+  
+  // Use custom dimensions if available, otherwise use defaults
+  if ((props.node as any).customWidth) {
+    style.width = `${(props.node as any).customWidth}px`;
+    style.maxWidth = 'none'; // Override any max-width constraints
+  } else {
+    style.width = '672px'; // Default width (CARD_WIDTH)
+  }
+  
+  if ((props.node as any).customHeight) {
+    style.height = `${(props.node as any).customHeight}px`;
+    style.minHeight = `${(props.node as any).customHeight}px`;
+  }
+  
+  return style;
+});
 
 const toggleSnap = async () => {
   try {
@@ -1485,6 +1634,70 @@ const handleMouseUp = () => {
   } else {
     emit('select');
   }
+};
+
+// Node resize functions
+const startNodeResize = (direction: string, e: MouseEvent) => {
+  e.stopPropagation();
+  e.preventDefault();
+  
+  if (isSnapped.value || isDragging.value) return;
+  
+  isNodeResizing.value = true;
+  nodeResizeDirection.value = direction;
+  nodeResizeStartPos.value = { x: e.clientX, y: e.clientY };
+  
+  // Store original dimensions
+  const currentNode = canvasStore.nodes.find(n => n.id === props.node.id);
+  if (currentNode) {
+    originalNodeDimensions.value = {
+      width: (currentNode as any).customWidth || 672,
+      height: (currentNode as any).customHeight || 80
+    };
+  }
+  
+  // Add global mouse event listeners
+  document.addEventListener('mousemove', handleNodeResizeMove);
+  document.addEventListener('mouseup', handleNodeResizeEnd);
+  
+  // Prevent text selection during resize
+  document.body.style.userSelect = 'none';
+};
+
+const handleNodeResizeMove = (e: MouseEvent) => {
+  if (!isNodeResizing.value) return;
+  
+  const deltaX = e.clientX - nodeResizeStartPos.value.x;
+  const deltaY = e.clientY - nodeResizeStartPos.value.y;
+  
+  const direction = nodeResizeDirection.value;
+  const original = originalNodeDimensions.value;
+  
+  let newWidth = original.width;
+  let newHeight = original.height;
+  
+  // Calculate new dimensions based on resize direction
+  if (direction.includes('e')) {
+    newWidth = Math.max(300, original.width + deltaX / props.zoom); // Minimum width 300px
+  }
+  if (direction.includes('s')) {
+    newHeight = Math.max(200, original.height + deltaY / props.zoom); // Minimum height 200px
+  }
+  
+  // Update the node dimensions in the store
+  canvasStore.updateNodeDimensions(props.node.id, Math.round(newWidth), Math.round(newHeight));
+};
+
+const handleNodeResizeEnd = () => {
+  isNodeResizing.value = false;
+  nodeResizeDirection.value = '';
+  
+  // Remove global event listeners
+  document.removeEventListener('mousemove', handleNodeResizeMove);
+  document.removeEventListener('mouseup', handleNodeResizeEnd);
+  
+  // Restore text selection
+  document.body.style.userSelect = '';
 };
 
 const handleDragOver = (e: DragEvent) => {
@@ -1805,24 +2018,12 @@ const handleEditMessage = async (index: number, newContent: string) => {
     content: newContent
   };
   
-  // Emit event to update the node
+  // Always emit the updated messages first
   emit('update-messages', updatedMessages);
   
-  // If it's a user message, resend to get a new AI response
-  if (updatedMessages[index].role === 'user') {
-    // Remove all messages after this one
-    const messagesToKeep = updatedMessages.slice(0, index + 1);
-    emit('update-messages', messagesToKeep);
-    
-    // For Claude Code nodes, handle resending differently
-    if (isClaudeCodeNode.value) {
-      // Use Claude Code API for resending
-      await handleClaudeCodeMessage(newContent);
-    } else {
-      // Regular model resend
-      emit('resend', index);
-    }
-  }
+  // If it's a user message and the user wants to resend, handle that separately
+  // For now, just update the message content without auto-resending
+  console.log('Message edited:', index, newContent);
 };
 
 // Handle Claude Code message sending with streaming support
@@ -2323,6 +2524,11 @@ function getMessageStyles(index: number) {
   };
 }
 
+const handleConnectionCreated = (connection: any) => {
+  console.log('Connection created from node:', connection);
+  // Connection is already added to store by NodeConnectionHandles
+};
+
 const handleNodeWheel = (e: WheelEvent) => {
   // Always allow canvas zoom/pan gestures to pass through
   const isCanvasGesture = e.metaKey || e.ctrlKey; // CMD/Ctrl for zoom
@@ -2755,6 +2961,7 @@ onBeforeUnmount(() => {
 .branch-node.glow-highlight .node-card {
   box-shadow: 0 0 15px 5px var(--node-glow-color), 0 4px 12px var(--node-shadow-color);
 }
+
 
 /* Streaming effect overlays */
 .streaming .node-card::before,

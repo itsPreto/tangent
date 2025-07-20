@@ -24,12 +24,30 @@
     <!-- Enhanced Loading State -->
     <Transition name="fade" mode="out-in">
       <div v-if="chatStore.isLoading" class="canvas-loading-overlay">
-        <div class="loading-container modern-loading">
-          <div class="loading-spinner ultra-modern"></div>
-          <h3 class="loading-title">Loading workspaces...</h3>
-          <p class="loading-subtitle">Preparing your infinite canvas</p>
-          <div class="loading-progress">
-            <div class="progress-line" :style="{ width: loadingProgress + '%' }"></div>
+        <div class="loading-container lottie-loading">
+          <div class="lottie-wrapper">
+            <DotLottieVue 
+              :src="'/loading-animation-2.lottie'"
+              autoplay 
+              loop 
+              :style="{ width: '200px', height: '200px' }"
+              class="lottie-loader"
+            />
+            <div class="loading-glow"></div>
+          </div>
+          <div class="loading-content">
+            <h3 class="loading-title">Loading workspaces</h3>
+            <div class="loading-dots">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+            <div class="loading-progress-modern">
+              <div class="progress-track">
+                <div class="progress-fill" :style="{ width: loadingProgress + '%' }"></div>
+              </div>
+              <span class="progress-text">{{ loadingProgress }}%</span>
+            </div>
           </div>
         </div>
       </div>
@@ -66,6 +84,9 @@
       <transition name="fade" mode="out-in">
         <WelcomeScreen 
           v-if="isWelcomeScreen"
+          :side-panel-open="appStore.isLeftSidebarExpanded"
+          :right-panel-open="rightPanelOpen"
+          :right-sidebar-expanded="rightSidebarExpanded"
           @show-all-workspaces="showWorkspaceOverview"
           @import-workspace="handleImportWorkspace"
           @open-workspace="handleOpenWorkspace"
@@ -120,8 +141,9 @@
                   :stroke-width="shape.strokeWidth"
                   :opacity="shape.opacity"
                   :class="{ 'selected': shape.isSelected }"
-                  @click="handleShapeClick(shape.id)"
-                  style="cursor: pointer;" />
+                  @click="handleShapeClick(shape.id, $event)"
+                  @mousedown="handleShapeMouseDown(shape.id, $event)"
+                  :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
                 
                 <!-- Circle -->
                 <circle v-else-if="shape.type === 'circle'"
@@ -132,8 +154,9 @@
                   :stroke-width="shape.strokeWidth"
                   :opacity="shape.opacity"
                   :class="{ 'selected': shape.isSelected }"
-                  @click="handleShapeClick(shape.id)"
-                  style="cursor: pointer;" />
+                  @click="handleShapeClick(shape.id, $event)"
+                  @mousedown="handleShapeMouseDown(shape.id, $event)"
+                  :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
                 
                 <!-- Line -->
                 <line v-else-if="shape.type === 'line'"
@@ -143,8 +166,9 @@
                   :stroke-width="shape.strokeWidth"
                   :opacity="shape.opacity"
                   :class="{ 'selected': shape.isSelected }"
-                  @click="handleShapeClick(shape.id)"
-                  style="cursor: pointer;" />
+                  @click="handleShapeClick(shape.id, $event)"
+                  @mousedown="handleShapeMouseDown(shape.id, $event)"
+                  :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
                 
                 <!-- Arrow -->
                 <g v-else-if="shape.type === 'arrow'">
@@ -155,8 +179,9 @@
                     :opacity="shape.opacity"
                     marker-end="url(#arrowhead)"
                     :class="{ 'selected': shape.isSelected }"
-                    @click="handleShapeClick(shape.id)"
-                    style="cursor: pointer;" />
+                    @click="handleShapeClick(shape.id, $event)"
+                    @mousedown="handleShapeMouseDown(shape.id, $event)"
+                    :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
                 </g>
                 
                 <!-- Pen/Freehand -->
@@ -169,8 +194,35 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   :class="{ 'selected': shape.isSelected }"
-                  @click="handleShapeClick(shape.id)"
-                  style="cursor: pointer;" />
+                  @click="handleShapeClick(shape.id, $event)"
+                  @mousedown="handleShapeMouseDown(shape.id, $event)"
+                  :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
+                
+                <!-- Text -->
+                <text v-else-if="shape.type === 'text'"
+                  :x="shape.x" :y="shape.y + (16 / zoom)" 
+                  :fill="shape.strokeColor" 
+                  :opacity="shape.opacity"
+                  font-family="Arial, sans-serif"
+                  :font-size="16 / zoom"
+                  :class="{ 'selected': shape.isSelected }"
+                  @click="handleShapeClick(shape.id, $event)"
+                  @dblclick="handleTextDoubleClick(shape.id, $event)"
+                  @mousedown="handleShapeMouseDown(shape.id, $event)"
+                  :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }">
+                  {{ shape.text || 'Text' }}
+                </text>
+                
+                <!-- Fill areas -->
+                <path v-else-if="shape.type === 'fill' && shape.fillPath"
+                  :d="shape.fillPath"
+                  :fill="shape.fillColor" 
+                  :opacity="shape.opacity"
+                  stroke="none"
+                  :class="{ 'selected': shape.isSelected }"
+                  @click="handleShapeClick(shape.id, $event)"
+                  @mousedown="handleShapeMouseDown(shape.id, $event)"
+                  :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
               </template>
               
               <!-- Current drawing shape preview -->
@@ -204,23 +256,132 @@
                   stroke-linecap="round"
                   stroke-linejoin="round" />
               </g>
+              
+              <!-- Selection Boundary -->
+              <rect v-if="drawingStore.selectionBounds && drawingStore.hasSelection && drawingStore.selectedShapeIds.length > 1"
+                :x="drawingStore.selectionBounds.x" :y="drawingStore.selectionBounds.y" 
+                :width="drawingStore.selectionBounds.width" :height="drawingStore.selectionBounds.height"
+                fill="rgba(59, 130, 246, 0.05)" 
+                stroke="rgba(59, 130, 246, 0.8)" 
+                stroke-width="2"
+                stroke-dasharray="5,5"
+                class="selection-boundary"
+                :style="{ 
+                  pointerEvents: drawingStore.currentTool === 'cursor' ? 'auto' : 'none',
+                  cursor: drawingStore.currentTool === 'cursor' ? 'move' : 'default'
+                }"
+                @mousedown="handleSelectionBoundaryMouseDown($event)">
+                <animate attributeName="stroke-dashoffset" values="0;10" dur="1s" repeatCount="indefinite" />
+              </rect>
+              
+              <!-- Resize Handles for Single Selected Shape -->
+              <g v-if="drawingStore.hasSelection && drawingStore.selectedShapeIds.length === 1 && drawingStore.currentTool === 'cursor'">
+                <template v-for="shape in drawingStore.selectedShapes" :key="`handles-${shape.id}`">
+                  <!-- Rectangle/Diamond/Text Resize Handles -->
+                  <template v-if="['rectangle', 'diamond', 'text'].includes(shape.type) && shape.width && shape.height">
+                    <!-- Corner handles -->
+                    <rect :x="shape.x - (8 / zoom)" :y="shape.y - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: nw-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'nw')" />
+                    <rect :x="shape.x + shape.width - (8 / zoom)" :y="shape.y - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: ne-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'ne')" />
+                    <rect :x="shape.x - (8 / zoom)" :y="shape.y + shape.height - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: sw-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'sw')" />
+                    <rect :x="shape.x + shape.width - (8 / zoom)" :y="shape.y + shape.height - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: se-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'se')" />
+                    
+                    <!-- Edge handles -->
+                    <rect :x="shape.x + shape.width/2 - (8 / zoom)" :y="shape.y - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: n-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'n')" />
+                    <rect :x="shape.x + shape.width/2 - (8 / zoom)" :y="shape.y + shape.height - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: s-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 's')" />
+                    <rect :x="shape.x - (8 / zoom)" :y="shape.y + shape.height/2 - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: w-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'w')" />
+                    <rect :x="shape.x + shape.width - (8 / zoom)" :y="shape.y + shape.height/2 - (8 / zoom)" :width="16 / zoom" :height="16 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: e-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'e')" />
+                  </template>
+                  
+                  <!-- Circle Resize Handles -->
+                  <template v-if="shape.type === 'circle' && shape.radius">
+                    <!-- Four cardinal direction handles -->
+                    <circle :cx="shape.x" :cy="shape.y - shape.radius" :r="8 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: n-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'n')" />
+                    <circle :cx="shape.x + shape.radius" :cy="shape.y" :r="8 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: e-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'e')" />
+                    <circle :cx="shape.x" :cy="shape.y + shape.radius" :r="8 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: s-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 's')" />
+                    <circle :cx="shape.x - shape.radius" :cy="shape.y" :r="8 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: w-resize;"
+                      @mousedown="handleResizeStart($event, shape.id, 'w')" />
+                  </template>
+                  
+                  <!-- Line/Arrow Resize Handles -->
+                  <template v-if="['line', 'arrow'].includes(shape.type)">
+                    <!-- Start and end point handles -->
+                    <circle :cx="shape.x" :cy="shape.y" :r="8 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: move;"
+                      @mousedown="handleResizeStart($event, shape.id, 'start')" />
+                    <circle :cx="shape.x + (shape.width || 0)" :cy="shape.y + (shape.height || 0)" :r="8 / zoom" 
+                      fill="white" stroke="rgba(59, 130, 246, 0.8)" :stroke-width="2 / zoom" 
+                      class="resize-handle" style="cursor: move;"
+                      @mousedown="handleResizeStart($event, shape.id, 'end')" />
+                  </template>
+                </template>
+              </g>
             </g>
             
             <!-- Connections Layer (above drawing shapes) -->
-            <g class="connections-layer" style="pointer-events: none;">
-              <template v-for="connection in visibleConnections" :key="`${connection.parent.id}-${connection.child.id}`">
-                <SplineConnector :start-node="connection.parent" :end-node="connection.child"
-                  :card-width="getEffectiveCardDimensions(connection.child).width"
-                  :card-height="getEffectiveCardDimensions(connection.child).height"
-                  :start-card-width="getEffectiveCardDimensions(connection.parent).width"
-                  :start-card-height="getEffectiveCardDimensions(connection.parent).height"
-                  :end-lod-level="getEffectiveCardDimensions(connection.child).lodLevel"
-                  :start-lod-level="getEffectiveCardDimensions(connection.parent).lodLevel"
-                  :is-active="isConnectionActive(connection)" :zoom-level="zoom"
-                  :is-source-node-expanded="expandedNodes.has(connection.parent.id)" />
-              </template>
-            </g>
+            <!-- Original MainSplineConnector connections -->
+            <template v-for="node in visibleNodes" :key="node.id">
+              <MainSplineConnector
+                v-if="node.parentId && getParentNode(node.parentId)"
+                :start-node="getParentNode(node.parentId)"
+                :end-node="node"
+                :zoom-level="zoom"
+                :is-source-node-expanded="expandedNodes.has(node.parentId)"
+                :card-width="getEffectiveCardDimensions(node).width"
+                :card-height="getEffectiveCardDimensions(node).height"
+                :start-card-width="getEffectiveCardDimensions(getParentNode(node.parentId)).width"
+                :start-card-height="getEffectiveCardDimensions(getParentNode(node.parentId)).height"
+                :end-lod-level="getLODLevel(node.id)"
+                :start-lod-level="getLODLevel(node.parentId)"
+                :is-active="isConnectionActive(node.parentId, node.id)"
+                :is-hovered="isConnectionHovered(node.parentId, node.id)"
+                :curvature="curvature"
+                :theme="currentTheme"
+                :stroke-width="2"
+                :connection-label="connectionLabels.get(`${node.parentId}-${node.id}`)"
+                @label-update="(label) => setConnectionLabel(node.parentId, node.id, label)"
+                @connection-click="() => handleConnectionClick(node.parentId, node.id)"
+                @connection-hover="(hovered) => handleConnectionHover(node.parentId, node.id, hovered)"
+              />
+            </template>
           </svg>
+
+          <!-- Original spline connections restored -->
 
           <!-- Nodes Layer -->
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 1">
@@ -228,13 +389,19 @@
               <!-- Branch Node (handles text and media) -->
               <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
+                :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
                 :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
+                :is-potential-drop-target="potentialDropTargets.has(node.id)"
+                :is-invalid-drop-target="invalidDropTargets.has(node.id)"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
                 " @delete="() => handleNodeDelete(node.id)"
-                @update-messages="(messages) => store.updateNodeMessages(node.id, messages)" :style="{
+                @update-messages="(messages) => store.updateNodeMessages(node.id, messages)"
+                @connection-start="handleConnectionStart"
+                @connection-drag="handleConnectionDrag"
+                @connection-end="handleConnectionEnd" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning
                     ? 'transform 0.3s ease-out'
@@ -258,7 +425,8 @@
               <!-- Branch Node -->
               <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
-                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom"                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
+                :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
+                :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
                 :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle"
@@ -317,16 +485,7 @@
 
           <!-- Interaction Layer for Splines - Between SVG and Nodes -->
           <svg class="absolute overflow-visible" style="z-index: 0.5; pointer-events: none;" :style="svgStyle">
-            <template v-for="connection in visibleConnections"
-              :key="`interaction-${connection.parent.id}-${connection.child.id}`">
-              <!-- Clickable paths - show hitbox on hover -->
-              <path :d="getSplinePath(connection.parent, connection.child, expandedNodes.has(connection.parent.id))"
-                stroke="rgba(255, 255, 255, 0.2)" stroke-opacity="0" fill="none" :stroke-width="40"
-                style="cursor: pointer; pointer-events: stroke; transition: stroke-opacity 0.2s ease;"
-                class="spline-hitbox" @dblclick="handleSplineDoubleClick(connection)"
-                @click="console.log('Interaction layer clicked!', connection)"
-                @mouseenter="handleSplineHover(connection, true)" @mouseleave="handleSplineHover(connection, false)" />
-            </template>
+            <!-- Interaction layer now handled by ConnectionLayer components -->
           </svg>
         </div>
       </div>
@@ -340,45 +499,29 @@
       </div>
     </div>
 
-    <!-- Coordinate System Widget -->
-    <div v-if="!isWelcomeScreen && !isWorkspaceOverview" 
-         class="fixed bottom-4 z-50 pointer-events-none transition-all duration-300"
-         :class="{
-           'left-20': !sidePanelOpen,
-           'left-72': sidePanelOpen
-         }">
-      <div class="bg-black/20 backdrop-blur-md rounded-lg px-3 py-2 text-xs font-mono text-white/90 border border-white/10">
-        <div class="flex items-center gap-6">
-          <div class="flex items-center gap-2">
-            <span class="text-white/60">Zoom:</span>
-            <span>{{ (zoom * 100).toFixed(1) }}%</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-white/60">Pan:</span>
-            <span>{{ panX.toFixed(1) }}, {{ panY.toFixed(1) }}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-white/60">Mouse:</span>
-            <span>{{ mousePosition.x.toFixed(0) }}, {{ mousePosition.y.toFixed(0) }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Bottom Docker -->
+    <BottomDocker 
+      v-if="!isWelcomeScreen && !isWorkspaceOverview"
+      :curvature="curvature"
+      :zoom="zoom"
+      :pan-x="panX"
+      :pan-y="panY"
+      :mouse-x="mousePosition.x"
+      :mouse-y="mousePosition.y"
+      :is-pan-mode="drawingStore.currentTool === 'hand'"
+      :gesture-mode="gestureMode"
+      :is-outside-bounds="isViewportOutsideBounds"
+      @update:curvature="curvature = $event"
+      @fit-to-view="autoFitNodes"
+      @toggle-pan-mode="togglePanMode"
+      @toggle-gesture-mode="toggleGestureMode"
+    />
 
-    <!-- Fit to View Button -->
-    <Transition name="fit-button">
-      <div v-if="showFitButton" 
-           class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50">
-        <button 
-          @click="autoFitNodes"
-          class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg backdrop-blur-md border border-blue-400/30 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-          </svg>
-          <span class="text-sm font-medium">Fit to View</span>
-        </button>
-      </div>
-    </Transition>
+    <!-- Shape Properties Panel -->
+    <ShapePropertiesPanel 
+      v-if="!isWelcomeScreen && !isWorkspaceOverview"
+    />
+
   </div>
 </template>
 
@@ -401,8 +544,10 @@ import emitter from '@/utils/eventBus'
 import WelcomeScreen from "../welcome/WelcomeScreen.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
 import WebBranchNode from "./node/WebBranchNode.vue";
-import SplineConnector from "./spline/MainSplineConnector.vue";
+import MainSplineConnector from "./spline/MainSplineConnector.vue";
 import TopDocker from "./TopDocker.vue";
+import BottomDocker from "./BottomDocker.vue";
+import ShapePropertiesPanel from "./ShapePropertiesPanel.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useToolCallStore } from "@/stores/toolCallStore";
@@ -412,6 +557,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useThemeStore } from "@/stores/themeStore";
 import type { ModelInfo } from '@/types/model';
+import { debounce } from 'lodash-es';
 import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download, Sparkles, Upload, ArrowRight } from "lucide-vue-next";
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
 
@@ -523,6 +669,7 @@ const emit = defineEmits([
   "update:zoom",
   "update:autoZoomEnabled",
   "update:isHeightLocked",
+  "update:gestureMode",
   "workspace-opened",
   "snap",
   "unsnap",
@@ -568,8 +715,11 @@ watch(
 // State
 const panX = ref(0);
 const panY = ref(0);
+const connectionLayer = ref(null);
 const expandedNodes = ref(new Set());
+const connectionLabels = ref(new Map());
 const isPanning = ref(false);
+const curvature = ref(0.5); // Spline curvature (0 = straight, 1 = very curvy)
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
 const mousePosition = ref({ x: 0, y: 0 });
@@ -610,6 +760,7 @@ const isDragActive = ref(false);
 const loadingProgress = ref(0);
 const canvasRef = ref<HTMLElement>();
 const gridCanvas = ref<HTMLCanvasElement>();
+const connectionDrawer = ref<any>();
 
 // Generate cyclone lines
 const cycloneLines = ref([]);
@@ -652,6 +803,7 @@ const dragStartPosition = ref(null);
 const selectedNodeIds = ref(new Set());
 const isMultiDragging = ref(false);
 const multiDragStartPositions = ref(new Map());
+const multiDragShapePositions = ref(new Map());
 
 // Selection rectangle state
 const selectionRect = ref({
@@ -662,6 +814,23 @@ const selectionRect = ref({
   currentY: 0
 });
 const isShiftPressed = ref(false);
+
+// Shape dragging state
+const shapeDragState = ref({
+  isDragging: false,
+  activeShapeId: null as string | null,
+  startMousePos: { x: 0, y: 0 },
+  startShapePositions: new Map<string, { x: number; y: number }>()
+});
+
+// Shape resizing state
+const resizeState = ref({
+  isResizing: false,
+  shapeId: null as string | null,
+  handle: null as string | null,
+  startMousePos: { x: 0, y: 0 },
+  originalShape: null as any
+});
 
 // Calculate max node count 
 const maxNodeCount = computed(() => {
@@ -827,8 +996,9 @@ const getEffectiveCardDimensions = (node: any) => {
       break;
     case 'full':
     default:
-      width = CARD_WIDTH;
-      height = CARD_HEIGHT;
+      // For full LOD, use custom dimensions if available
+      width = node.customWidth || CARD_WIDTH;
+      height = node.customHeight || CARD_HEIGHT;
       break;
   }
   
@@ -1266,7 +1436,7 @@ const renderGrid = () => {
   let majorGridColor, minorGridColor;
   
   switch (currentTheme) {
-    // Light themes - use dark dots
+    // Light themes - use dark dots with better contrast
     case 'light':
     case 'cupcake':
     case 'bumblebee':
@@ -1278,11 +1448,11 @@ const renderGrid = () => {
     case 'fantasy':
     case 'wireframe':
     case 'lemonade':
-      majorGridColor = 'rgba(0, 0, 0, 0.25)';
-      minorGridColor = 'rgba(0, 0, 0, 0.15)';
+      majorGridColor = 'rgba(0, 0, 0, 0.4)';
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
       break;
       
-    // Dark themes - use white dots
+    // Dark themes - use white dots with better contrast
     case 'dark':
     case 'night':
     case 'black':
@@ -1294,79 +1464,98 @@ const renderGrid = () => {
     case 'dracula':
     case 'business':
     case 'coffee':
-      majorGridColor = 'rgba(255, 255, 255, 0.25)';
-      minorGridColor = 'rgba(255, 255, 255, 0.15)';
+      majorGridColor = 'rgba(255, 255, 255, 0.4)';
+      minorGridColor = 'rgba(255, 255, 255, 0.25)';
       break;
       
-    // Special themes with unique backgrounds
+    // Special themes with unique backgrounds - increased contrast
     case 'cmyk':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on cyan background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.5)'; // Black on cyan background
+      minorGridColor = 'rgba(0, 0, 0, 0.35)';
       break;
       
     case 'autumn':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on brown background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.5)'; // Black on brown background
+      minorGridColor = 'rgba(0, 0, 0, 0.35)';
       break;
       
     case 'acid':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on bright lime background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.6)'; // Black on bright lime background
+      minorGridColor = 'rgba(0, 0, 0, 0.4)';
       break;
       
     case 'winter':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on light blue background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.5)'; // Black on light blue background
+      minorGridColor = 'rgba(0, 0, 0, 0.35)';
       break;
       
     case 'retro':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on brown background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.5)'; // Black on brown background
+      minorGridColor = 'rgba(0, 0, 0, 0.35)';
       break;
       
     case 'cyberpunk':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on dark background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.6)'; // Dark dots for better visibility
+      minorGridColor = 'rgba(0, 0, 0, 0.4)';
       break;
       
     case 'valentine':
-      majorGridColor = 'rgba(0, 0, 0, 0.4)'; // Black on pink background
-      minorGridColor = 'rgba(0, 0, 0, 0.25)';
+      majorGridColor = 'rgba(0, 0, 0, 0.5)'; // Black on pink background
+      minorGridColor = 'rgba(0, 0, 0, 0.35)';
       break;
       
-    // Default fallback
+    // Default fallback - better contrast
     default:
-      majorGridColor = 'rgba(0, 0, 0, 0.25)';
-      minorGridColor = 'rgba(0, 0, 0, 0.15)';
+      majorGridColor = 'rgba(0, 0, 0, 0.4)';
+      minorGridColor = 'rgba(0, 0, 0, 0.25)';
       break;
   }
   
-  // Draw grid dots
+  // Draw grid stars
   ctx.fillStyle = gridStep === GRID_MAJOR_SIZE ? majorGridColor : minorGridColor;
   
-  const dotSize = Math.max(1, currentZoom * 1.5);
+  const starSize = Math.max(1, currentZoom * 1.5);
+  
+  // Helper function to draw a star
+  const drawStar = (cx, cy, size) => {
+    const spikes = 5;
+    const outerRadius = size;
+    const innerRadius = size * 0.4;
+    
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const radius = i % 2 === 0 ? outerRadius : innerRadius;
+      const angle = (i * Math.PI) / spikes - Math.PI / 2; // Start pointing up
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+  };
   
   for (let x = offsetX * currentZoom; x < rect.width + effectiveGridSize; x += effectiveGridSize) {
     for (let y = offsetY * currentZoom; y < rect.height + effectiveGridSize; y += effectiveGridSize) {
-      ctx.beginPath();
-      ctx.arc(x, y, dotSize, 0, 2 * Math.PI);
-      ctx.fill();
+      drawStar(x, y, starSize);
     }
   }
   
-  // Draw major grid dots if showing minor grid
+  // Draw major grid stars if showing minor grid
   if (gridStep !== GRID_MAJOR_SIZE && currentZoom > 0.3) {
     ctx.fillStyle = majorGridColor;
-    const majorDotSize = Math.max(2, currentZoom * 2);
+    const majorStarSize = Math.max(2, currentZoom * 2);
     const majorOffsetX = (currentPanX / currentZoom) % GRID_MAJOR_SIZE;
     const majorOffsetY = (currentPanY / currentZoom) % GRID_MAJOR_SIZE;
     const majorEffectiveSize = GRID_MAJOR_SIZE * currentZoom;
     
     for (let x = majorOffsetX * currentZoom; x < rect.width + majorEffectiveSize; x += majorEffectiveSize) {
       for (let y = majorOffsetY * currentZoom; y < rect.height + majorEffectiveSize; y += majorEffectiveSize) {
-        ctx.beginPath();
-        ctx.arc(x, y, majorDotSize, 0, 2 * Math.PI);
-        ctx.fill();
+        drawStar(x, y, majorStarSize);
       }
     }
   }
@@ -1921,27 +2110,11 @@ const handleNodeSelect = async (nodeId: string) => {
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
-  // Focus and center on the node
-  store.isTransitioning = true;
-  focusedNodeId.value = nodeId;
-  
-  await nextTick();
-  
   const bounds = calculateNodeBounds(node);
-  const newZoom = calculateRequiredZoom(bounds, rect);
+  const targetZoom = calculateRequiredZoom(bounds, rect);
 
-  const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
-  const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
-
-  const verticalOffset = Math.min(rect.height * 0.05, 30);
-  panX.value = rect.width / 2 - nodeCenterX * newZoom;
-  panY.value = rect.height / 2 - nodeCenterY * newZoom + verticalOffset;
-
-  zoom.value = newZoom;
-
-  setTimeout(() => {
-    store.isTransitioning = false;
-  }, 300);
+  // Use the animation function we've been working on
+  await centerOnNodeWithAnimation(nodeId, targetZoom, 600);
 };
 
 // Calculate node bounds
@@ -1957,9 +2130,12 @@ const calculateNodeBounds = (node) => {
         const nodeRect = nodeElement.getBoundingClientRect();
         const actualHeight = nodeRect.height / zoom.value;
 
+        // Use custom width if available, otherwise default to CARD_WIDTH
+        const nodeWidth = node.customWidth || store.CARD_WIDTH;
+        
         return {
           minX: Math.min(acc.minX, node.x),
-          maxX: Math.max(acc.maxX, node.x + store.CARD_WIDTH),
+          maxX: Math.max(acc.maxX, node.x + nodeWidth),
           minY: Math.min(acc.minY, node.y),
           maxY: Math.max(acc.maxY, node.y + actualHeight),
         };
@@ -1975,20 +2151,27 @@ const calculateNodeBounds = (node) => {
 
   const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
   if (!nodeElement) {
+    // Use custom dimensions if available, otherwise default values
+    const nodeWidth = node.customWidth || store.CARD_WIDTH;
+    const nodeHeight = node.customHeight || store.CARD_HEIGHT + 100;
+    
     return {
       minX: node.x,
-      maxX: node.x + store.CARD_WIDTH,
+      maxX: node.x + nodeWidth,
       minY: node.y,
-      maxY: node.y + store.CARD_HEIGHT + 100,
+      maxY: node.y + nodeHeight,
     };
   }
 
   const nodeRect = nodeElement.getBoundingClientRect();
   const actualHeight = nodeRect.height / zoom.value;
 
+  // Use custom width if available, otherwise default to CARD_WIDTH
+  const nodeWidth = node.customWidth || store.CARD_WIDTH;
+  
   return {
     minX: node.x,
-    maxX: node.x + store.CARD_WIDTH,
+    maxX: node.x + nodeWidth,
     minY: node.y,
     maxY: node.y + (actualHeight * 1.1),
   };
@@ -2266,6 +2449,42 @@ const handleDrop = async (e: DragEvent) => {
       alert(error instanceof Error ? error.message : "Unknown error occurred");
     }
   });
+};
+
+// Helper functions for MainSplineConnector
+const getParentNode = (parentId: string) => {
+  return visibleNodes.value.find(node => node.id === parentId);
+};
+
+const isConnectionHovered = (parentId: string, childId: string) => {
+  return false; // You can add logic here if needed
+};
+
+const handleConnectionClick = (parentId: string, childId: string) => {
+  console.log('Connection clicked:', parentId, '->', childId);
+};
+
+const handleConnectionHover = (parentId: string, childId: string, hovered: boolean) => {
+  console.log('Connection hover:', parentId, '->', childId, hovered);
+};
+
+const setConnectionLabel = (parentId: string, childId: string, label: string) => {
+  connectionLabels.value.set(`${parentId}-${childId}`, label);
+};
+
+const handleConnectionStart = (event: any) => {
+  console.log('Connection start:', event);
+  // Handle connection start logic here
+};
+
+const handleConnectionDrag = (event: any) => {
+  console.log('Connection drag:', event);
+  // Handle connection drag logic here
+};
+
+const handleConnectionEnd = (event: any) => {
+  console.log('Connection end:', event);
+  // Handle connection end logic here
 };
 
 const handleDragOver = (e: DragEvent) => {
@@ -3098,42 +3317,73 @@ const createTemplateWorkspace = async (nodes, connections, mainNode) => {
   }
 };
 
-// Center on a specific node with animation
+
+// in enhanced-infinite-canvas.vue
+
+// Center on a specific node with a smooth, direct (non-curved) animation
 const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 800) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
   store.isTransitioning = true;
-  const center = getNodeCenter(node);
+  const bounds = calculateNodeBounds(node);
+  const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
+  const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
   const rect = canvasRef.value.getBoundingClientRect();
 
-  // Animate to the node position
   const startPanX = panX.value;
   const startPanY = panY.value;
   const startZoom = zoom.value;
-  
-  const targetPanX = rect.width / 2 - center.x * targetZoom;
-  const targetPanY = rect.height / 2 - center.y * targetZoom;
   
   focusedNodeId.value = nodeId;
   
   return new Promise((resolve) => {
     const startTime = performance.now();
     
+    // --- FIX: The core logic change starts here ---
+
+    // 1. Define the start and end points of the animation in WORLD coordinates.
+    //    This ensures the camera's focus point travels in a straight line.
+
+    // The world point at the center of the screen at the START of the animation.
+    const startWorldX = (rect.width / 2 - startPanX) / startZoom;
+    const startWorldY = (rect.height / 2 - startPanY) / startZoom;
+
+    // The world point we want to be at the center of the screen at the END of the animation.
+    const endWorldX = nodeCenterX;
+    const endWorldY = nodeCenterY;
+    
+    // The final on-screen position for the target
+    const targetScreenX = rect.width / 2;
+    const targetScreenY = rect.height / 2;
+    
     const animate = (currentTime) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
+      // Apply easing to progress
+      const easeOut = 1 - Math.pow(1 - progress, 2);
       
-      // Easing function (ease-out)
-      const easeOut = 1 - Math.pow(1 - progress, 3);
+      // 2. Interpolate the zoom level and the viewport's center point in WORLD space.
+      // IMPORTANT: Use the same easing for all values to maintain straight path
+      const currentZoom = startZoom + (targetZoom - startZoom) * easeOut;
+      const currentWorldX = startWorldX + (endWorldX - startWorldX) * easeOut;
+      const currentWorldY = startWorldY + (endWorldY - startWorldY) * easeOut;
       
-      panX.value = startPanX + (targetPanX - startPanX) * easeOut;
-      panY.value = startPanY + (targetPanY - startPanY) * easeOut;
-      zoom.value = startZoom + (targetZoom - startZoom) * easeOut;
+      // 3. Calculate the new pan values for the current frame.
+      //    The pan is calculated to place the `currentWorld` point at the `targetScreen` position.
+      panX.value = targetScreenX - currentWorldX * currentZoom;
+      panY.value = targetScreenY - currentWorldY * currentZoom;
+      zoom.value = currentZoom;
+      
       
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
+        // On the final frame, set the exact target values to prevent rounding errors.
+        zoom.value = targetZoom;
+        panX.value = targetScreenX - endWorldX * targetZoom;
+        panY.value = targetScreenY - endWorldY * targetZoom;
+
         store.isTransitioning = false;
         resolve();
       }
@@ -3292,11 +3542,11 @@ const handleCreateBranch = async (
   await nextTick(); // Wait for DOM update
   centerOnNode(newNode.id);
 
-  // Step 4: Snap the new branch node
-  setTimeout(() => {
-    console.log('[InfiniteCanvas] Auto-snapping new branch node:', newNode.id);
-    emitter.emit('auto-snap-node', { nodeId: newNode.id });
-  }, 600); // Increased timeout to ensure centering completes
+  // Step 4: Snap the new branch node (disabled)
+  // setTimeout(() => {
+  //   console.log('[InfiniteCanvas] Auto-snapping new branch node:', newNode.id);
+  //   emitter.emit('auto-snap-node', { nodeId: newNode.id });
+  // }, 600); // Increased timeout to ensure centering completes
 };
 
 // Handle resending messages
@@ -3398,7 +3648,7 @@ const calculateSplinePath = (startNode: any, endNode: any, isExpanded: boolean) 
 // Use the shared function for interaction layer
 const getSplinePath = calculateSplinePath;
 
-// Handle spline double-click from interaction layer
+// Handle spline double-click from interaction layer - NOW HANDLED BY NEW CONNECTION SYSTEM
 const handleSplineDoubleClick = (connection: any) => {
   console.log('Spline double-clicked from interaction layer!', connection);
   // Emit an event that the SplineConnector can listen to
@@ -3408,7 +3658,7 @@ const handleSplineDoubleClick = (connection: any) => {
   });
 };
 
-// Handle spline hover from interaction layer
+// Handle spline hover from interaction layer - NOW HANDLED BY NEW CONNECTION SYSTEM
 const handleSplineHover = (connection: any, isHovering: boolean) => {
   // Emit hover event that SplineConnector can listen to
   emitter.emit('spline-hover', {
@@ -3422,6 +3672,22 @@ const handleSplineHover = (connection: any, isHovering: boolean) => {
 const handleMouseUp = (e) => {
   // Check if drawing tool should handle this event
   if (handleDrawingMouseUp(e)) return;
+  
+  // Handle resize end
+  if (resizeState.value.isResizing) {
+    handleResizeEnd();
+    return;
+  }
+  
+  // Handle shape drag end
+  if (shapeDragState.value.isDragging) {
+    // Save the shape positions after dragging
+    drawingStore.saveToHistory();
+    shapeDragState.value.isDragging = false;
+    shapeDragState.value.activeShapeId = null;
+    shapeDragState.value.startShapePositions.clear();
+    return;
+  }
   
   if (workspaceDragState.value.isDragging) {
     const { activeId } = workspaceDragState.value;
@@ -3526,6 +3792,8 @@ const handleCanvasMouseDown = (e) => {
     if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
       // Clear selection if not holding modifier keys
       selectedNodeIds.value.clear();
+      // Also clear drawing shape selections when clicking on nodes without modifiers
+      drawingStore.clearSelection();
     }
 
     // Toggle node selection
@@ -3539,12 +3807,27 @@ const handleCanvasMouseDown = (e) => {
     if (selectedNodeIds.value.has(clickedNode.id)) {
       isMultiDragging.value = true;
       multiDragStartPositions.value.clear();
+      multiDragShapePositions.value.clear();
 
       // Save start positions for all selected nodes
       selectedNodeIds.value.forEach(nodeId => {
         const node = store.nodes.find(n => n.id === nodeId);
         if (node) {
           multiDragStartPositions.value.set(nodeId, { x: node.x, y: node.y });
+        }
+      });
+      
+      // Save start positions for all selected shapes
+      drawingStore.selectedShapes.forEach(shape => {
+        if (shape.type === 'pen' && shape.points) {
+          // For pen shapes, store the original points
+          multiDragShapePositions.value.set(shape.id, {
+            x: shape.x,
+            y: shape.y,
+            points: shape.points.map(p => ({ x: p.x, y: p.y }))
+          });
+        } else {
+          multiDragShapePositions.value.set(shape.id, { x: shape.x, y: shape.y });
         }
       });
 
@@ -3563,6 +3846,7 @@ const handleCanvasMouseDown = (e) => {
       // Clear existing selection if not holding other modifier keys
       if (!e.ctrlKey && !e.metaKey) {
         selectedNodeIds.value.clear();
+        drawingStore.clearSelection();
       }
     } else {
       // Start panning
@@ -3575,6 +3859,8 @@ const handleCanvasMouseDown = (e) => {
       // Clear selection if not holding modifier keys
       if (!e.ctrlKey && !e.metaKey) {
         selectedNodeIds.value.clear();
+        // Also clear drawing shape selections
+        drawingStore.clearSelection();
       }
     }
   }
@@ -3701,7 +3987,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
   const isEditing =
     activeTag === 'input' ||
     activeTag === 'textarea' ||
-    document.activeElement?.hasAttribute('contenteditable');
+    document.activeElement?.getAttribute('contenteditable') === 'true';
+    
+  if (isEditing) {
+    return; // Don't process any keys when editing
+  }
 
   // Track shift key for multi-select
   if (e.key === 'Shift') {
@@ -3721,24 +4011,78 @@ const handleKeyDown = (e: KeyboardEvent) => {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const cmdKey = isMac ? e.metaKey : e.ctrlKey;
 
+    // Copy: Ctrl/Cmd + C for drawing shapes
+    if (cmdKey && e.key === 'c' && drawingStore.hasSelection) {
+      e.preventDefault();
+      drawingStore.copySelected();
+      showNotification(`Copied ${drawingStore.selectedShapes.length} shape${drawingStore.selectedShapes.length > 1 ? 's' : ''}`);
+      return;
+    }
+    
+    // Paste: Ctrl/Cmd + V for drawing shapes
+    if (cmdKey && e.key === 'v' && drawingStore.clipboard.length > 0) {
+      e.preventDefault();
+      drawingStore.pasteShapes();
+      showNotification(`Pasted ${drawingStore.clipboard.length} shape${drawingStore.clipboard.length > 1 ? 's' : ''}`);
+      return;
+    }
+    
+    // Fit to View: Ctrl/Cmd + 0 (alternative shortcut)
+    if (cmdKey && e.key === '0') {
+      e.preventDefault();
+      autoFitNodes();
+      return;
+    }
+
     // Undo: Ctrl/Cmd + Z (without Shift)
+    // Check if we should use drawing undo/redo or canvas undo/redo
+    const hasDrawingShapes = drawingStore.shapes.length > 0;
+    const hasSelectedShapes = drawingStore.hasSelection;
+    const isDrawingTool = !['cursor', 'hand', 'lock'].includes(drawingStore.currentTool);
+    
     if (cmdKey && e.key === 'z' && !e.shiftKey) {
       e.preventDefault();
-      undo();
+      if (hasDrawingShapes || hasSelectedShapes || isDrawingTool) {
+        drawingStore.undo();
+      } else {
+        undo();
+      }
       return;
     }
 
     // Redo: Ctrl/Cmd + Shift + Z
     if (cmdKey && e.key === 'z' && e.shiftKey) {
       e.preventDefault();
-      redo();
+      if (hasDrawingShapes || hasSelectedShapes || isDrawingTool) {
+        drawingStore.redo();
+      } else {
+        redo();
+      }
       return;
     }
 
     // Redo alternative: Ctrl/Cmd + Y
     if (cmdKey && e.key === 'y') {
       e.preventDefault();
-      redo();
+      if (hasDrawingShapes || hasSelectedShapes || isDrawingTool) {
+        drawingStore.redo();
+      } else {
+        redo();
+      }
+      return;
+    }
+
+    // Select All: Ctrl/Cmd + A for drawing shapes
+    if (cmdKey && e.key === 'a') {
+      e.preventDefault();
+      drawingStore.selectAllShapes();
+      return;
+    }
+
+    // Delete selected shapes with Delete or Backspace
+    if ((e.key === 'Delete' || e.key === 'Backspace') && drawingStore.hasSelection) {
+      e.preventDefault();
+      drawingStore.deleteSelected();
       return;
     }
   }
@@ -3862,6 +4206,86 @@ const unfocusClusterViz = () => {
 };
 
 // Enhanced auto-fit for RTS perspective
+const togglePanMode = () => {
+  if (drawingStore.currentTool === 'hand') {
+    drawingStore.setCurrentTool('cursor');
+  } else {
+    drawingStore.setCurrentTool('hand');
+  }
+};
+
+const toggleGestureMode = () => {
+  emit('update:gestureMode', props.gestureMode === 'zoom' ? 'scroll' : 'zoom');
+};
+
+// Calculate combined bounds of all canvas content (nodes + drawings)
+const calculateCanvasBounds = () => {
+  const nodeBounds = calculateNodeBounds(null);
+  const shapes = drawingStore.shapes;
+  
+  if (!nodeBounds && shapes.length === 0) return null;
+  
+  let minX = nodeBounds?.minX ?? Infinity;
+  let minY = nodeBounds?.minY ?? Infinity;
+  let maxX = nodeBounds?.maxX ?? -Infinity;
+  let maxY = nodeBounds?.maxY ?? -Infinity;
+  
+  // Include drawing shapes in bounds calculation
+  shapes.forEach(shape => {
+    if (shape.type === 'rectangle' || shape.type === 'diamond' || shape.type === 'circle' || shape.type === 'image' || shape.type === 'text') {
+      minX = Math.min(minX, shape.x);
+      minY = Math.min(minY, shape.y);
+      maxX = Math.max(maxX, shape.x + (shape.width || 0));
+      maxY = Math.max(maxY, shape.y + (shape.height || 0));
+    } else if (shape.type === 'line' || shape.type === 'arrow') {
+      minX = Math.min(minX, shape.x, shape.x + (shape.width || 0));
+      minY = Math.min(minY, shape.y, shape.y + (shape.height || 0));
+      maxX = Math.max(maxX, shape.x, shape.x + (shape.width || 0));
+      maxY = Math.max(maxY, shape.y, shape.y + (shape.height || 0));
+    } else if (shape.type === 'pen' && shape.points) {
+      shape.points.forEach(point => {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+      });
+    } else if (shape.type === 'fill') {
+      // For fill shapes, estimate bounds from the click point
+      minX = Math.min(minX, shape.x - 50);
+      minY = Math.min(minY, shape.y - 50);
+      maxX = Math.max(maxX, shape.x + 50);
+      maxY = Math.max(maxY, shape.y + 50);
+    }
+  });
+  
+  if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
+    return null;
+  }
+  
+  return { minX, minY, maxX, maxY };
+};
+
+// Check if viewport is outside canvas bounds
+const isViewportOutsideBounds = computed(() => {
+  if (!canvasRef.value) return false;
+  
+  const bounds = calculateCanvasBounds();
+  if (!bounds) return false;
+  
+  const rect = canvasRef.value.getBoundingClientRect();
+  const viewportLeft = -panX.value / zoom.value;
+  const viewportTop = -panY.value / zoom.value;
+  const viewportRight = (rect.width - panX.value) / zoom.value;
+  const viewportBottom = (rect.height - panY.value) / zoom.value;
+  
+  // Check if viewport is completely outside content bounds with some margin
+  const margin = 100; // pixels
+  return viewportRight < bounds.minX - margin || 
+         viewportLeft > bounds.maxX + margin ||
+         viewportBottom < bounds.minY - margin ||
+         viewportTop > bounds.maxY + margin;
+});
+
 const autoFitNodes = () => {
   if (
     !canvasRef.value ||
@@ -3872,7 +4296,7 @@ const autoFitNodes = () => {
   )
     return;
 
-  const bounds = isWorkspaceOverview.value ? calculateWorkspacesBounds() : calculateNodeBounds(null);
+  const bounds = isWorkspaceOverview.value ? calculateWorkspacesBounds() : calculateCanvasBounds();
   if (!bounds) return;
 
   const rect = canvasRef.value.getBoundingClientRect();
@@ -4095,9 +4519,53 @@ const handleMouseMove = (e) => {
   mousePosition.value = { x: e.clientX, y: e.clientY };
 
   const worldMousePos = screenToWorld(e.clientX, e.clientY);
+  
+  // Handle shape resizing
+  if (resizeState.value.isResizing) {
+    handleResizeMove(e);
+    return;
+  }
+
+  // Handle shape dragging (and unified node+shape dragging)
+  if (shapeDragState.value.isDragging) {
+    const canvasPos = getCanvasPosition(e);
+    const deltaX = canvasPos.x - shapeDragState.value.startMousePos.x;
+    const deltaY = canvasPos.y - shapeDragState.value.startMousePos.y;
+    
+    // Update positions of all selected shapes
+    drawingStore.selectedShapes.forEach(shape => {
+      if (!shape.isLocked) {
+        const startPos = shapeDragState.value.startShapePositions.get(shape.id);
+        if (startPos) {
+          shape.x = startPos.x + deltaX;
+          shape.y = startPos.y + deltaY;
+          
+          // Update pen shape points if needed
+          if (shape.type === 'pen' && shape.points && startPos.points) {
+            shape.points = startPos.points.map(point => ({
+              x: point.x + deltaX,
+              y: point.y + deltaY
+            }));
+          }
+        }
+      }
+    });
+    
+    // Also update positions of selected nodes when dragging shapes
+    selectedNodeIds.value.forEach(nodeId => {
+      const node = store.nodes.find(n => n.id === nodeId);
+      const startPos = shapeDragState.value.startNodePositions?.get(nodeId);
+      if (node && startPos) {
+        node.x = startPos.x + deltaX;
+        node.y = startPos.y + deltaY;
+      }
+    });
+    
+    return;
+  }
 
   if (isMultiDragging.value && dragStartPosition.value) {
-    // Handle multi-node dragging
+    // Handle multi-node dragging (and unified node+shape dragging)
     const deltaX = worldMousePos.x - dragStartPosition.value.x;
     const deltaY = worldMousePos.y - dragStartPosition.value.y;
 
@@ -4110,6 +4578,25 @@ const handleMouseMove = (e) => {
           x: startPos.x + deltaX,
           y: startPos.y + deltaY
         });
+      }
+    });
+    
+    // Also move selected shapes when dragging nodes
+    drawingStore.selectedShapes.forEach(shape => {
+      if (!shape.isLocked) {
+        const startPos = multiDragShapePositions.value?.get(shape.id);
+        if (startPos) {
+          shape.x = startPos.x + deltaX;
+          shape.y = startPos.y + deltaY;
+          
+          // Update pen shape points if needed
+          if (shape.type === 'pen' && shape.points && startPos.points) {
+            shape.points = startPos.points.map(point => ({
+              x: point.x + deltaX,
+              y: point.y + deltaY
+            }));
+          }
+        }
       }
     });
   } else if (workspaceDragState.value.isDragging) {
@@ -4185,10 +4672,70 @@ const updateSelectionFromRect = () => {
     return intersects;
   });
   
-  // Update selection
+  // Update node selection
   selectedNodeIds.value.clear();
   nodesInRect.forEach(node => {
     selectedNodeIds.value.add(node.id);
+  });
+  
+  // Find drawing shapes that intersect with the selection rectangle
+  const shapesInRect = drawingStore.shapes.filter(shape => {
+    let shapeLeft = shape.x;
+    let shapeTop = shape.y;
+    let shapeRight = shape.x;
+    let shapeBottom = shape.y;
+    
+    // Calculate bounding box based on shape type
+    if (shape.type === 'rectangle' || shape.type === 'diamond' || shape.type === 'text' || shape.type === 'image') {
+      shapeRight = shape.x + (shape.width || 0);
+      shapeBottom = shape.y + (shape.height || 0);
+    } else if (shape.type === 'circle') {
+      const radius = shape.radius || 0;
+      shapeLeft = shape.x - radius;
+      shapeTop = shape.y - radius;
+      shapeRight = shape.x + radius;
+      shapeBottom = shape.y + radius;
+    } else if (shape.type === 'line' || shape.type === 'arrow') {
+      shapeRight = shape.x + (shape.width || 0);
+      shapeBottom = shape.y + (shape.height || 0);
+      // Handle negative dimensions
+      if (shape.width && shape.width < 0) {
+        shapeLeft = shape.x + shape.width;
+        shapeRight = shape.x;
+      }
+      if (shape.height && shape.height < 0) {
+        shapeTop = shape.y + shape.height;
+        shapeBottom = shape.y;
+      }
+    } else if (shape.type === 'pen' && shape.points) {
+      // Get bounding box from all points
+      const xs = shape.points.map(p => p.x);
+      const ys = shape.points.map(p => p.y);
+      shapeLeft = Math.min(...xs);
+      shapeTop = Math.min(...ys);
+      shapeRight = Math.max(...xs);
+      shapeBottom = Math.max(...ys);
+    } else if (shape.type === 'fill') {
+      // For fill shapes, use estimated bounds
+      shapeLeft = shape.x - 50;
+      shapeTop = shape.y - 50;
+      shapeRight = shape.x + 50;
+      shapeBottom = shape.y + 50;
+    }
+    
+    // Check if rectangles intersect
+    const intersects = !(shapeRight < topLeft.x || 
+                        shapeLeft > bottomRight.x || 
+                        shapeBottom < topLeft.y || 
+                        shapeTop > bottomRight.y);
+    
+    return intersects;
+  });
+  
+  // Update shape selection
+  drawingStore.clearSelection();
+  shapesInRect.forEach(shape => {
+    drawingStore.selectShape(shape.id, true); // true = add to selection
   });
 };
 
@@ -4214,12 +4761,27 @@ const handleDragStart = (e, node) => {
     // Start multi-drag
     isMultiDragging.value = true;
     multiDragStartPositions.value.clear();
+    multiDragShapePositions.value.clear();
     
     // Save start positions for all selected nodes
     selectedNodeIds.value.forEach(nodeId => {
       const selectedNode = store.nodes.find(n => n.id === nodeId);
       if (selectedNode) {
         multiDragStartPositions.value.set(nodeId, { x: selectedNode.x, y: selectedNode.y });
+      }
+    });
+    
+    // Save start positions for all selected shapes
+    drawingStore.selectedShapes.forEach(shape => {
+      if (shape.type === 'pen' && shape.points) {
+        // For pen shapes, store the original points
+        multiDragShapePositions.value.set(shape.id, {
+          x: shape.x,
+          y: shape.y,
+          points: shape.points.map(p => ({ x: p.x, y: p.y }))
+        });
+      } else {
+        multiDragShapePositions.value.set(shape.id, { x: shape.x, y: shape.y });
       }
     });
     
@@ -4263,12 +4825,9 @@ const handleTopicSelect = (topicId: string) => {
 // Active state checks
 const isNodeFocused = (nodeId) => focusedNodeId.value === nodeId;
 
-const isConnectionActive = (connection) => {
-  if (!focusedNodeId.value) return false;
-  return (
-    connection.parent.id === focusedNodeId.value ||
-    connection.child.id === focusedNodeId.value
-  );
+const isConnectionActive = (parentId, childId) => {
+  // Always return true to make the glow effect default for all splines
+  return true;
 };
 
 // Listen for external workspace loads (from WorkspaceMenu, etc.)
@@ -4281,6 +4840,39 @@ emitter.on('workspace-loaded-external', () => {
   });
 });
 
+// Listen for node detach/attach events
+const potentialDropTargets = ref(new Set<string>());
+const invalidDropTargets = ref(new Set<string>());
+
+emitter.on('node-detach-start', (data: { nodeId: string; parentId: string }) => {
+  // Get valid drop targets
+  fetch(`/chats/${store.currentChatId}/nodes/${data.nodeId}/valid-parents`)
+    .then(res => res.json())
+    .then(result => {
+      potentialDropTargets.value.clear();
+      invalidDropTargets.value.clear();
+      
+      // Mark all nodes as either valid or invalid
+      store.nodes.forEach(node => {
+        const isValid = result.valid_parents.some((vp: any) => vp.id === node.id);
+        if (isValid) {
+          potentialDropTargets.value.add(node.id);
+        } else if (node.id !== data.nodeId) {
+          invalidDropTargets.value.add(node.id);
+        }
+      });
+    });
+});
+
+emitter.on('node-detach-move', (data: { nodeId: string; position: { x: number; y: number } }) => {
+  // Could add proximity highlighting here
+});
+
+emitter.on('node-detach-end', () => {
+  potentialDropTargets.value.clear();
+  invalidDropTargets.value.clear();
+});
+
 // Component lifecycle
 onMounted(async () => {
   if (isBrowser) {
@@ -4288,6 +4880,9 @@ onMounted(async () => {
     store.nodes.forEach(node => {
       expandedNodes.value.add(node.id);
     });
+
+    // Migrate existing connections to new system
+    store.migrateConnectionsToNewSystem();
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -4529,11 +5124,31 @@ function handleExecutionNodeRerun(executionNode) {
 }
 
 
-// Load tool call data when nodes become visible
-watch(visibleNodes, (newNodes) => {
+// Load tool call data when nodes become visible - debounced to prevent excessive API calls
+const debouncedFetchToolCallData = debounce((newNodes) => {
   newNodes.forEach(node => {
-    toolCallStore.fetchAllForNode(node.id)
+    // Only fetch if we haven't already fetched for this node
+    const hasToolCalls = toolCallStore.toolCalls.has(node.id);
+    const hasFileNodes = toolCallStore.fileNodes.has(node.id);
+    const hasExecutionNodes = toolCallStore.executionNodes.has(node.id);
+    
+    // Only fetch if we haven't fetched any data for this node yet
+    if (!hasToolCalls && !hasFileNodes && !hasExecutionNodes) {
+      toolCallStore.fetchAllForNode(node.id)
+    }
   })
+}, 500); // 500ms debounce
+
+// Clean up debounced function on unmount
+onBeforeUnmount(() => {
+  debouncedFetchToolCallData.cancel();
+});
+
+watch(visibleNodes, (newNodes) => {
+  // Only fetch when not dragging to avoid spamming API during drag operations
+  if (!store.isDragging && !isPanning.value) {
+    debouncedFetchToolCallData(newNodes);
+  }
 }, { deep: true });
 
 // Drawing functionality
@@ -4558,9 +5173,292 @@ const getPathData = (points: { x: number; y: number }[]) => {
   return d;
 };
 
-const handleShapeClick = (shapeId: string) => {
+const handleShapeClick = (shapeId: string, event?: MouseEvent) => {
+  event?.stopPropagation(); // Prevent event from bubbling up to canvas
+  
   if (drawingStore.currentTool === 'cursor') {
-    drawingStore.selectShape(shapeId);
+    const addToSelection = event?.shiftKey || event?.ctrlKey || event?.metaKey;
+    drawingStore.selectShape(shapeId, addToSelection);
+  } else if (drawingStore.currentTool === 'eraser') {
+    // Delete the shape immediately when eraser tool is active
+    drawingStore.deleteShape(shapeId);
+  }
+};
+
+const handleShapeMouseDown = (shapeId: string, event: MouseEvent) => {
+  event.stopPropagation();
+  
+  if (drawingStore.currentTool !== 'cursor') {
+    return;
+  }
+  
+  // Select the shape if not already selected
+  if (!drawingStore.selectedShapeIds.includes(shapeId)) {
+    const addToSelection = event.shiftKey || event.ctrlKey || event.metaKey;
+    drawingStore.selectShape(shapeId, addToSelection);
+  }
+  
+  startShapeDragging(event);
+};
+
+const handleSelectionBoundaryMouseDown = (event: MouseEvent) => {
+  event.stopPropagation();
+  
+  if (drawingStore.currentTool !== 'cursor') {
+    return;
+  }
+  
+  startShapeDragging(event);
+};
+
+const startShapeDragging = (event: MouseEvent) => {
+  // Start dragging
+  const canvasPos = getCanvasPosition(event);
+  shapeDragState.value.isDragging = true;
+  shapeDragState.value.activeShapeId = null; // No specific shape when dragging boundary
+  shapeDragState.value.startMousePos = { x: canvasPos.x, y: canvasPos.y };
+  
+  // Store starting positions of all selected shapes
+  shapeDragState.value.startShapePositions.clear();
+  drawingStore.selectedShapes.forEach(shape => {
+    if (shape.type === 'pen' && shape.points) {
+      // For pen shapes, store the original points
+      shapeDragState.value.startShapePositions.set(shape.id, {
+        x: shape.x,
+        y: shape.y,
+        points: shape.points.map(p => ({ x: p.x, y: p.y }))
+      });
+    } else {
+      shapeDragState.value.startShapePositions.set(shape.id, { x: shape.x, y: shape.y });
+    }
+  });
+  
+  // Store starting positions of all selected nodes for unified dragging
+  if (!shapeDragState.value.startNodePositions) {
+    shapeDragState.value.startNodePositions = new Map();
+  }
+  shapeDragState.value.startNodePositions.clear();
+  selectedNodeIds.value.forEach(nodeId => {
+    const node = store.nodes.find(n => n.id === nodeId);
+    if (node) {
+      shapeDragState.value.startNodePositions.set(nodeId, { x: node.x, y: node.y });
+    }
+  });
+};
+
+// Shape resize handlers
+const handleResizeStart = (event: MouseEvent, shapeId: string, handle: string) => {
+  event.stopPropagation();
+  
+  if (drawingStore.currentTool !== 'cursor') {
+    return;
+  }
+  
+  const shape = drawingStore.shapes.find(s => s.id === shapeId);
+  if (!shape) return;
+  
+  const canvasPos = getCanvasPosition(event);
+  resizeState.value.isResizing = true;
+  resizeState.value.shapeId = shapeId;
+  resizeState.value.handle = handle;
+  resizeState.value.startMousePos = { x: canvasPos.x, y: canvasPos.y };
+  resizeState.value.originalShape = { ...shape };
+  
+  // Clone points for pen shapes
+  if (shape.type === 'pen' && shape.points) {
+    resizeState.value.originalShape.points = shape.points.map(p => ({ x: p.x, y: p.y }));
+  }
+};
+
+const handleResizeMove = (event: MouseEvent) => {
+  if (!resizeState.value.isResizing || !resizeState.value.shapeId) return;
+  
+  const shape = drawingStore.shapes.find(s => s.id === resizeState.value.shapeId);
+  if (!shape || !resizeState.value.originalShape) return;
+  
+  const canvasPos = getCanvasPosition(event);
+  const deltaX = canvasPos.x - resizeState.value.startMousePos.x;
+  const deltaY = canvasPos.y - resizeState.value.startMousePos.y;
+  const handle = resizeState.value.handle;
+  const original = resizeState.value.originalShape;
+  
+  if (shape.type === 'rectangle' || shape.type === 'diamond') {
+    // Handle rectangle/diamond resizing
+    switch (handle) {
+      case 'nw':
+        shape.x = original.x + deltaX;
+        shape.y = original.y + deltaY;
+        shape.width = Math.max(10, original.width - deltaX);
+        shape.height = Math.max(10, original.height - deltaY);
+        break;
+      case 'ne':
+        shape.y = original.y + deltaY;
+        shape.width = Math.max(10, original.width + deltaX);
+        shape.height = Math.max(10, original.height - deltaY);
+        break;
+      case 'sw':
+        shape.x = original.x + deltaX;
+        shape.width = Math.max(10, original.width - deltaX);
+        shape.height = Math.max(10, original.height + deltaY);
+        break;
+      case 'se':
+        shape.width = Math.max(10, original.width + deltaX);
+        shape.height = Math.max(10, original.height + deltaY);
+        break;
+      case 'n':
+        shape.y = original.y + deltaY;
+        shape.height = Math.max(10, original.height - deltaY);
+        break;
+      case 's':
+        shape.height = Math.max(10, original.height + deltaY);
+        break;
+      case 'w':
+        shape.x = original.x + deltaX;
+        shape.width = Math.max(10, original.width - deltaX);
+        break;
+      case 'e':
+        shape.width = Math.max(10, original.width + deltaX);
+        break;
+    }
+  } else if (shape.type === 'circle') {
+    // Handle circle resizing
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const isExpanding = (handle === 'e' && deltaX > 0) || (handle === 'w' && deltaX < 0) || 
+                      (handle === 'n' && deltaY < 0) || (handle === 's' && deltaY > 0);
+    
+    if (isExpanding) {
+      shape.radius = Math.max(5, original.radius + distance);
+    } else {
+      shape.radius = Math.max(5, original.radius - distance);
+    }
+  } else if (shape.type === 'line' || shape.type === 'arrow') {
+    // Handle line/arrow resizing
+    if (handle === 'start') {
+      const endX = original.x + (original.width || 0);
+      const endY = original.y + (original.height || 0);
+      shape.x = original.x + deltaX;
+      shape.y = original.y + deltaY;
+      shape.width = endX - shape.x;
+      shape.height = endY - shape.y;
+    } else if (handle === 'end') {
+      shape.width = (original.width || 0) + deltaX;
+      shape.height = (original.height || 0) + deltaY;
+    }
+  }
+};
+
+const handleResizeEnd = () => {
+  if (resizeState.value.isResizing) {
+    drawingStore.saveToHistory();
+    resizeState.value.isResizing = false;
+    resizeState.value.shapeId = null;
+    resizeState.value.handle = null;
+    resizeState.value.originalShape = null;
+  }
+};
+
+// Text shape creation
+const createTextShape = (x: number, y: number) => {
+  const newShape = {
+    id: `shape-${Date.now()}-${Math.random()}`,
+    type: 'text' as const,
+    x,
+    y,
+    width: 100,
+    height: 20,
+    text: 'Double click to edit',
+    strokeColor: drawingStore.strokeColor,
+    fillColor: drawingStore.fillColor,
+    strokeWidth: drawingStore.strokeWidth,
+    opacity: drawingStore.opacity,
+    rotation: 0,
+    isSelected: false,
+    isLocked: false,
+    zIndex: drawingStore.shapes.length
+  };
+  
+  drawingStore.shapes.push(newShape);
+  drawingStore.saveToHistory();
+  
+  // Auto-select the new text shape and switch to cursor tool
+  drawingStore.clearSelection();
+  drawingStore.selectShape(newShape.id);
+  drawingStore.setCurrentTool('cursor');
+  
+  // Start editing the text
+  nextTick(() => {
+    startTextEditing(newShape.id);
+  });
+};
+
+// Text editing state
+const textEditState = ref({
+  isEditing: false,
+  shapeId: null as string | null,
+  inputElement: null as HTMLInputElement | null
+});
+
+const startTextEditing = (shapeId: string) => {
+  const shape = drawingStore.shapes.find(s => s.id === shapeId);
+  if (!shape || shape.type !== 'text') return;
+  
+  textEditState.value.isEditing = true;
+  textEditState.value.shapeId = shapeId;
+  
+  // Create a temporary input element
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = shape.text || '';
+  input.style.position = 'absolute';
+  input.style.left = `${shape.x * zoom.value + panX.value}px`;
+  input.style.top = `${shape.y * zoom.value + panY.value}px`;
+  input.style.fontSize = `${16 * zoom.value}px`;
+  input.style.border = '2px solid rgba(59, 130, 246, 0.8)';
+  input.style.background = 'white';
+  input.style.zIndex = '1000';
+  input.style.fontFamily = 'Arial, sans-serif';
+  
+  document.body.appendChild(input);
+  textEditState.value.inputElement = input;
+  
+  input.focus();
+  input.select();
+  
+  const finishEdit = () => {
+    if (textEditState.value.isEditing && textEditState.value.shapeId) {
+      const editShape = drawingStore.shapes.find(s => s.id === textEditState.value.shapeId);
+      if (editShape && editShape.type === 'text') {
+        editShape.text = input.value || 'Text';
+        // Update shape width based on text length (rough estimate)
+        editShape.width = Math.max(50, input.value.length * 10);
+        drawingStore.saveToHistory();
+      }
+    }
+    
+    if (textEditState.value.inputElement) {
+      document.body.removeChild(textEditState.value.inputElement);
+    }
+    
+    textEditState.value.isEditing = false;
+    textEditState.value.shapeId = null;
+    textEditState.value.inputElement = null;
+  };
+  
+  input.addEventListener('blur', finishEdit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      finishEdit();
+    }
+    e.stopPropagation(); // Prevent canvas key handlers
+  });
+};
+
+// Text double-click handler
+const handleTextDoubleClick = (shapeId: string, event: MouseEvent) => {
+  event.stopPropagation();
+  
+  if (drawingStore.currentTool === 'cursor') {
+    startTextEditing(shapeId);
   }
 };
 
@@ -4575,6 +5473,19 @@ const handleDrawingMouseDown = (e: MouseEvent) => {
   e.stopPropagation();
   
   const pos = getCanvasPosition(e);
+  
+  // Handle fill tool specially - perform flood fill
+  if (drawingStore.currentTool === 'fill') {
+    performFloodFillOnCanvas(pos.x, pos.y);
+    return true;
+  }
+  
+  // Handle text tool specially - create text immediately
+  if (drawingStore.currentTool === 'text') {
+    createTextShape(pos.x, pos.y);
+    return true;
+  }
+  
   drawingStore.startDrawing(pos.x, pos.y);
   return true; // Handled by drawing
 };
@@ -4594,6 +5505,32 @@ const handleDrawingMouseUp = (e: MouseEvent) => {
     return true; // Handled by drawing
   }
   return false; // Let original canvas handle it
+};
+
+// Flood fill helper function that creates a virtual canvas for the algorithm
+const performFloodFillOnCanvas = (x: number, y: number) => {
+  console.log('performFloodFillOnCanvas called with coordinates:', x, y);
+  console.log('Current shapes:', drawingStore.shapes.length);
+  
+  // Create a virtual canvas for flood fill processing
+  const canvas = document.createElement('canvas');
+  
+  // Set a reasonable canvas size
+  canvas.width = 2000;
+  canvas.height = 2000;
+  
+  console.log('Canvas size:', canvas.width, 'x', canvas.height);
+  
+  try {
+    const success = drawingStore.performFloodFill(x, y, canvas);
+    if (success) {
+      console.log('Flood fill completed successfully');
+    } else {
+      console.log('No enclosed area found to fill');
+    }
+  } catch (error) {
+    console.error('Error performing flood fill:', error);
+  }
 };
 </script>
 
@@ -4832,12 +5769,184 @@ const handleDrawingMouseUp = (e: MouseEvent) => {
   @apply text-center;
 }
 
+.lottie-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  animation: fadeInUp 0.8s ease-out;
+}
+
+.lottie-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .lottie-loader {
   filter: 
-    hue-rotate(var(--lottie-hue, 0deg))
-    saturate(var(--lottie-saturation, 1))
-    brightness(var(--lottie-brightness, 1));
-  animation: lottieGlow 3s ease-in-out infinite alternate;
+    drop-shadow(0 8px 32px rgba(var(--primary-rgb), 0.3))
+    brightness(1.1);
+  animation: float 3s ease-in-out infinite;
+  z-index: 2;
+  position: relative;
+}
+
+.loading-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(var(--primary-rgb), 0.1) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+  z-index: 1;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  animation: slideInUp 0.8s ease-out 0.2s both;
+}
+
+.loading-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: hsl(var(--bc));
+  margin: 0;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, 
+    hsl(var(--p)), 
+    hsl(var(--s)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--p));
+  animation: bounce 1.4s ease-in-out infinite both;
+}
+
+.dot:nth-child(1) { animation-delay: -0.32s; }
+.dot:nth-child(2) { animation-delay: -0.16s; }
+.dot:nth-child(3) { animation-delay: 0s; }
+
+.loading-progress-modern {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 200px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 4px;
+  background: hsl(var(--b3));
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, hsl(var(--p)), hsl(var(--s)));
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 2s infinite;
+}
+
+.progress-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: hsl(var(--bc) / 0.7);
+  min-width: 40px;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @keyframes lottieGlow {
@@ -5082,6 +6191,48 @@ const handleDrawingMouseUp = (e: MouseEvent) => {
   transform: translateX(-50%) translateY(0) scale(1);
 }
 
+/* Curvature Slider Styling */
+.slider {
+  background: linear-gradient(to right, #60a5fa 0%, #3b82f6 100%);
+  outline: none;
+  border-radius: 4px;
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
+  border: 2px solid #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  background: #f8fafc;
+  border-color: #1d4ed8;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
+  border: 2px solid #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider::-moz-range-thumb:hover {
+  background: #f8fafc;
+  border-color: #1d4ed8;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
 /* Accessibility - Reduce motion */
 @media (prefers-reduced-motion: reduce) {
   .transform-gpu {
@@ -5092,5 +6243,14 @@ const handleDrawingMouseUp = (e: MouseEvent) => {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Drawing shapes styles */
+.drawing-shapes-layer .selected {
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+}
+
+.selection-boundary {
+  pointer-events: none;
 }
 </style>

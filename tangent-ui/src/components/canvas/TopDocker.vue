@@ -112,6 +112,18 @@
         <span class="tool-number">7</span>
       </button>
 
+      <!-- Fill tool -->
+      <button 
+        @click="setTool('fill')"
+        :class="['tool-button', { 'active': currentTool === 'fill' }]"
+        title="Fill Tool"
+      >
+        <svg class="w-5 h-5" fill="currentColor" stroke="none" viewBox="0 0 24 24">
+          <path d="M12 2C13.1 2 14 2.9 14 4C14 5.1 13.1 6 12 6H10V4C10 2.9 10.9 2 12 2M21 9V7L19 5L17 7H11V10.5L4 17.5C3 18.5 3 20 4 21S6.5 21 7.5 20L14.5 13H18V11L21 9Z"/>
+        </svg>
+        <span class="tool-number">F</span>
+      </button>
+
       <!-- Text tool -->
       <button 
         @click="setTool('text')"
@@ -161,6 +173,175 @@
         </svg>
       </button>
     </div>
+    
+    <!-- Customization Panel -->
+    <Transition name="slide-down">
+      <div v-if="showCustomizationPanel" class="customization-panel bg-base-200/95 backdrop-blur-sm rounded-lg p-4 mt-3 shadow-lg border border-base-300">
+        <!-- Tool-specific options -->
+        <div v-if="currentTool === 'rectangle' || currentTool === 'circle' || currentTool === 'diamond'">
+          <div class="grid grid-cols-2 gap-4">
+            <!-- Stroke Color -->
+            <div class="customization-group">
+              <label class="text-xs text-base-content/60 mb-2 block">Stroke</label>
+              <div class="flex gap-2">
+                <button v-for="color in strokeColors" :key="color" 
+                  @click="setStrokeColor(color)"
+                  :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
+                  :style="{ backgroundColor: color }">
+                </button>
+              </div>
+            </div>
+            
+            <!-- Fill Color -->
+            <div class="customization-group">
+              <label class="text-xs text-base-content/60 mb-2 block">Fill</label>
+              <div class="flex gap-2">
+                <button v-for="color in fillColors" :key="color" 
+                  @click="setFillColor(color)"
+                  :class="['color-button', { 'active': drawingStore.fillColor === color, 'transparent-button': color === 'transparent' }]"
+                  :style="{ backgroundColor: color === 'transparent' ? 'transparent' : color }"
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Stroke Width -->
+          <div class="customization-group mt-4">
+            <label class="text-xs text-base-content/60 mb-2 block">Stroke Width</label>
+            <div class="flex gap-2">
+              <button v-for="width in strokeWidths" :key="width" 
+                @click="setStrokeWidth(width)"
+                :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
+                <div class="stroke-preview" :style="{ height: `${width}px`, backgroundColor: 'currentColor' }"></div>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Opacity -->
+          <div class="customization-group mt-4">
+            <label class="text-xs text-base-content/60 mb-2 block">Opacity</label>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.1" 
+              :value="drawingStore.opacity"
+              @input="setOpacity($event.target.value)"
+              class="opacity-slider w-full"
+            />
+            <div class="flex justify-between text-xs text-base-content/60 mt-1">
+              <span>0%</span>
+              <span>{{ Math.round(drawingStore.opacity * 100) }}%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Line/Arrow specific options -->
+        <div v-else-if="currentTool === 'line' || currentTool === 'arrow'">
+          <div class="customization-group">
+            <label class="text-xs text-base-content/60 mb-2 block">Stroke Color</label>
+            <div class="flex gap-2">
+              <button v-for="color in strokeColors" :key="color" 
+                @click="setStrokeColor(color)"
+                :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
+                :style="{ backgroundColor: color }">
+              </button>
+            </div>
+          </div>
+          
+          <div class="customization-group mt-4">
+            <label class="text-xs text-base-content/60 mb-2 block">Line Width</label>
+            <div class="flex gap-2">
+              <button v-for="width in strokeWidths" :key="width" 
+                @click="setStrokeWidth(width)"
+                :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
+                <div class="stroke-preview" :style="{ height: `${width}px`, backgroundColor: 'currentColor' }"></div>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Text tool specific options -->
+        <div v-else-if="currentTool === 'text'">
+          <div class="customization-group">
+            <label class="text-xs text-base-content/60 mb-2 block">Text Color</label>
+            <div class="flex gap-2">
+              <button v-for="color in strokeColors" :key="color" 
+                @click="setStrokeColor(color)"
+                :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
+                :style="{ backgroundColor: color }">
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Pen tool specific options -->
+        <div v-else-if="currentTool === 'pen'">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="customization-group">
+              <label class="text-xs text-base-content/60 mb-2 block">Pen Color</label>
+              <div class="flex gap-2">
+                <button v-for="color in strokeColors" :key="color" 
+                  @click="setStrokeColor(color)"
+                  :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
+                  :style="{ backgroundColor: color }">
+                </button>
+              </div>
+            </div>
+            
+            <div class="customization-group">
+              <label class="text-xs text-base-content/60 mb-2 block">Pen Width</label>
+              <div class="flex gap-2">
+                <button v-for="width in strokeWidths" :key="width" 
+                  @click="setStrokeWidth(width)"
+                  :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
+                  <div class="stroke-preview" :style="{ height: `${width}px`, backgroundColor: 'currentColor' }"></div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Fill tool specific options -->
+        <div v-else-if="currentTool === 'fill'">
+          <div class="customization-group">
+            <label class="text-xs text-base-content/60 mb-2 block">Fill Color</label>
+            <div class="flex gap-2">
+              <button v-for="color in fillColors.filter(c => c !== 'transparent')" :key="color" 
+                @click="setFillColor(color)"
+                :class="['color-button', { 'active': drawingStore.fillColor === color }]"
+                :style="{ backgroundColor: color }">
+              </button>
+            </div>
+          </div>
+          
+          <!-- Opacity -->
+          <div class="customization-group mt-4">
+            <label class="text-xs text-base-content/60 mb-2 block">Opacity</label>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.1" 
+              :value="drawingStore.opacity"
+              @input="setOpacity($event.target.value)"
+              class="opacity-slider w-full"
+            />
+            <div class="flex justify-between text-xs text-base-content/60 mt-1">
+              <span>0%</span>
+              <span>{{ Math.round(drawingStore.opacity * 100) }}%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Default message for tools without options -->
+        <div v-else class="text-center text-sm text-base-content/60 py-4">
+          {{ getToolMessage(currentTool) }}
+        </div>
+      </div>
+    </Transition>
     
     <!-- Tooltip for canvas instructions -->
     <div class="canvas-help-text text-xs text-base-content/60 text-center mt-2 px-4">
@@ -215,6 +396,22 @@ const dockerStyle = computed(() => {
 // Current tool state
 const currentTool = ref<string>('cursor');
 
+// Customization panel state
+const showCustomizationPanel = computed(() => {
+  return ['rectangle', 'circle', 'diamond', 'line', 'arrow', 'pen', 'text', 'fill'].includes(currentTool.value);
+});
+
+// Color options
+const strokeColors = ref([
+  '#000000', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffffff'
+]);
+
+const fillColors = ref([
+  'transparent', '#000000', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffffff'
+]);
+
+const strokeWidths = ref([1, 2, 4, 8, 16]);
+
 // Set the current tool
 const setTool = (tool: string) => {
   currentTool.value = tool;
@@ -228,6 +425,17 @@ const setTool = (tool: string) => {
 
 // Handle keyboard shortcuts
 const handleKeyDown = (e: KeyboardEvent) => {
+  // Check if user is typing in an input field
+  const activeTag = document.activeElement?.tagName.toLowerCase();
+  const isEditing = 
+    activeTag === 'input' ||
+    activeTag === 'textarea' ||
+    document.activeElement?.getAttribute('contenteditable') === 'true';
+    
+  if (isEditing) {
+    return; // Don't interfere with input
+  }
+  
   const key = e.key.toLowerCase();
   
   // Number keys for tool selection
@@ -239,6 +447,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     '5': 'arrow',
     '6': 'line',
     '7': 'pen',
+    'f': 'fill',
     '8': 'text',
     '9': 'image',
     '0': 'eraser'
@@ -261,6 +470,36 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
 };
 
+// Customization methods
+const setStrokeColor = (color: string) => {
+  drawingStore.strokeColor = color;
+};
+
+const setFillColor = (color: string) => {
+  drawingStore.fillColor = color;
+};
+
+const setStrokeWidth = (width: number) => {
+  drawingStore.strokeWidth = width;
+};
+
+const setOpacity = (opacity: string) => {
+  drawingStore.opacity = parseFloat(opacity);
+};
+
+const getToolMessage = (tool: string) => {
+  const messages: Record<string, string> = {
+    'cursor': 'Select and move objects',
+    'hand': 'Pan around the canvas',
+    'lock': 'Lock/unlock objects',
+    'eraser': 'Click on shapes to delete them',
+    'fill': 'Click inside enclosed areas to fill them',
+    'more': 'More tools coming soon',
+    'image': 'Click to place an image'
+  };
+  return messages[tool] || 'Tool selected';
+};
+
 onMounted(() => {
   document.addEventListener('keydown', handleKeyDown);
 });
@@ -270,6 +509,7 @@ onUnmounted(() => {
 });
 </script>
 
+<!-- TopDocker.vue -->
 <style scoped>
 .top-docker {
   user-select: none;
@@ -281,11 +521,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 8px;
-  background: rgba(var(--b2), 0.9);
+  /* Increased opacity for a slightly more solid base */
+  background: rgba(var(--b2), 0.95);
   backdrop-filter: blur(12px);
   border-radius: 12px;
   border: 1px solid rgba(var(--bc), 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  /* Added subtle inner border for clean edge separation */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(var(--bc), 0.08);
 }
 
 .tool-button {
@@ -304,6 +546,11 @@ onUnmounted(() => {
   padding: 0;
 }
 
+/* NEW: Adds a drop-shadow to all icons for guaranteed contrast */
+.tool-button svg {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3));
+}
+
 .tool-button:hover {
   background: rgba(var(--bc), 0.1);
   color: rgba(var(--bc), 0.9);
@@ -311,9 +558,15 @@ onUnmounted(() => {
 }
 
 .tool-button.active {
-  background: rgba(var(--p), 0.15);
+  background: rgba(var(--p), 0.2);
   color: rgba(var(--p), 1);
-  box-shadow: 0 0 0 2px rgba(var(--p), 0.3);
+  box-shadow: 0 0 0 2px rgba(var(--p), 0.5), 0 4px 12px rgba(var(--p), 0.3);
+  transform: translateY(-2px);
+}
+
+/* NEW: Makes the active tool's icon shadow match the primary color */
+.tool-button.active svg {
+    filter: drop-shadow(0 1px 2px rgba(var(--p), 0.4));
 }
 
 .tool-number {
@@ -324,6 +577,8 @@ onUnmounted(() => {
   font-weight: 600;
   color: rgba(var(--bc), 0.5);
   pointer-events: none;
+  /* NEW: Adds a shadow to the tool numbers for legibility */
+  text-shadow: 0 1px 1px rgba(0,0,0,0.4);
 }
 
 .tool-button.active .tool-number {
@@ -353,5 +608,115 @@ onUnmounted(() => {
   .canvas-help-text {
     display: none;
   }
+}
+
+/* Customization Panel Styles */
+.customization-panel {
+  min-width: 300px;
+  max-width: 500px;
+}
+
+.customization-group {
+  margin-bottom: 1rem;
+}
+
+.color-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.color-button:hover {
+  transform: scale(1.1);
+  border-color: rgba(var(--bc), 0.3);
+}
+
+.color-button.active {
+  border-color: rgba(var(--p), 0.8);
+  box-shadow: 0 0 0 2px rgba(var(--p), 0.3);
+}
+
+.transparent-button {
+  background: linear-gradient(45deg, #ccc 25%, transparent 25%), 
+              linear-gradient(-45deg, #ccc 25%, transparent 25%), 
+              linear-gradient(45deg, transparent 75%, #ccc 75%), 
+              linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 6px 6px;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0px;
+}
+
+.stroke-width-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 32px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background: rgba(var(--bc), 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.stroke-width-button:hover {
+  background: rgba(var(--bc), 0.2);
+  border-color: rgba(var(--bc), 0.3);
+}
+
+.stroke-width-button.active {
+  background: rgba(var(--p), 0.15);
+  border-color: rgba(var(--p), 0.5);
+}
+
+.stroke-preview {
+  width: 20px;
+  border-radius: 2px;
+}
+
+.opacity-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(var(--bc), 0.1);
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(var(--p), 1);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.opacity-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(var(--p), 1);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Transition animations */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
 </style>

@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score, calinski_harabasz_score
 from EmbeddingService import EmbeddingService
 from ChatPersistenceService import ChatPersistenceService, ClusteringResult, NodeEmbedding
 import logging
@@ -33,6 +34,12 @@ class ClusteringService:
         self.workspace_embeddings = {}  # Cache for embeddings
         self.cached_clusters = []  # Persistent clustering results
         self.cache_timestamp = None  # When clusters were last generated
+        
+        # Multi-resolution clustering cache
+        self.cluster_cache = {}  # {cluster_count: {clusters: [], timestamp: datetime, version: int}}
+        self.cache_version = 0  # Increments when workspaces change
+        self.last_workspace_count = 0  # Track workspace changes
+        self.cache_staleness_threshold = 300  # 5 minutes in seconds
         
     def extract_workspace_content(self, chat_data: Dict[str, Any]) -> str:
         """
@@ -212,7 +219,9 @@ class ClusteringService:
             return {}
     
     def cluster_workspaces(self, method: str = 'kmeans', n_clusters: Optional[int] = None, 
-                          min_samples: int = 2, eps: float = 0.5) -> List[Dict[str, Any]]:
+                          min_samples: int = 2, eps: float = 0.5, auto_optimize: bool = False,
+                          min_clusters: int = 3, max_clusters: int = 15, quality_target: str = 'balanced',
+                          include_outliers: bool = True) -> List[Dict[str, Any]]:
         """
         Cluster workspaces based on their embeddings
         """
@@ -236,21 +245,29 @@ class ClusteringService:
             self.clustering_status['status_message'] = 'Running clustering algorithm...'
             self.clustering_status['progress'] = 0.9
             
-            # Perform clustering
-            if method == 'kmeans':
-                # Auto-determine number of clusters if not specified
-                if n_clusters is None:
-                    n_clusters = min(max(2, len(workspace_ids) // 3), 8)  # 2-8 clusters
-                
-                clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                cluster_labels = clusterer.fit_predict(normalized_embeddings)
-                
-            elif method == 'dbscan':
-                clusterer = DBSCAN(eps=eps, min_samples=min_samples)
-                cluster_labels = clusterer.fit_predict(normalized_embeddings)
-                
+            # Perform clustering with auto-optimization if enabled
+            if auto_optimize:
+                cluster_labels, best_params = self._optimize_clustering(
+                    normalized_embeddings, method, min_clusters, max_clusters, 
+                    quality_target, eps, min_samples
+                )
+                self.logger.info(f"Auto-optimization complete. Best parameters: {best_params}")
             else:
-                raise ValueError(f"Unknown clustering method: {method}")
+                # Standard clustering without optimization
+                if method == 'kmeans':
+                    # Auto-determine number of clusters if not specified
+                    if n_clusters is None:
+                        n_clusters = min(max(2, len(workspace_ids) // 3), 8)  # 2-8 clusters
+                    
+                    clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    cluster_labels = clusterer.fit_predict(normalized_embeddings)
+                    
+                elif method == 'dbscan':
+                    clusterer = DBSCAN(eps=eps, min_samples=min_samples)
+                    cluster_labels = clusterer.fit_predict(normalized_embeddings)
+                    
+                else:
+                    raise ValueError(f"Unknown clustering method: {method}")
             
             # Organize results
             clusters = {}
@@ -260,14 +277,25 @@ class ClusteringService:
                     clusters[cluster_id] = []
                 clusters[cluster_id].append(workspace_id)
             
+            # Handle DBSCAN outliers based on user preference
+            if method == 'dbscan' and not include_outliers:
+                # Remove outliers (cluster_id == -1) from results
+                clusters = {k: v for k, v in clusters.items() if k != -1}
+            
             # Format cluster results
             formatted_clusters = []
             for cluster_id, workspace_ids in clusters.items():
-                if cluster_id == -1:  # DBSCAN noise points
+                # For DBSCAN, -1 represents noise points (outliers)
+                if cluster_id == -1 and method == 'dbscan':
+                    if include_outliers:
+                        # Create a special "Outliers" cluster
+                        cluster_name = "Outliers"
+                    else:
+                        continue  # Skip if outliers not included
+                elif len(workspace_ids) < 2:  # Skip single-item clusters for other methods
                     continue
-                
-                if len(workspace_ids) < 2:  # Skip single-item clusters
-                    continue
+                else:
+                    cluster_name = None  # Will be generated by LLM
                 
                 # Get workspace details with content samples for LLM naming
                 cluster_workspaces = []
@@ -442,6 +470,443 @@ Generate only the name, nothing else:"""
                 })
         
         return common_tags
+    
+    def _optimize_clustering(self, embeddings: np.ndarray, method: str, min_clusters: int, 
+                           max_clusters: int, quality_target: str, eps: float, min_samples: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Optimize clustering parameters using silhouette analysis
+        """
+        best_score = -1
+        best_labels = None
+        best_params = {}
+        
+        self.clustering_status['status_message'] = 'Optimizing clustering parameters...'
+        
+        if method == 'kmeans':
+            # Test different numbers of clusters
+            for n_clusters in range(min_clusters, max_clusters + 1):
+                try:
+                    clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    labels = clusterer.fit_predict(embeddings)
+                    
+                    # Calculate quality score
+                    if len(np.unique(labels)) > 1:  # Need at least 2 clusters
+                        score = self._calculate_clustering_quality(embeddings, labels, quality_target)
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_labels = labels
+                            best_params = {'n_clusters': n_clusters, 'method': method}
+                            
+                        # Update progress
+                        progress = 0.9 + (0.05 * (n_clusters - min_clusters) / (max_clusters - min_clusters))
+                        self.clustering_status['progress'] = progress
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to test {n_clusters} clusters: {e}")
+                    continue
+                    
+        elif method == 'dbscan':
+            # Test different eps values
+            eps_values = np.linspace(0.1, 2.0, 10)
+            min_samples_values = [2, 3, 4, 5]
+            
+            for eps_val in eps_values:
+                for min_samples_val in min_samples_values:
+                    try:
+                        clusterer = DBSCAN(eps=eps_val, min_samples=min_samples_val)
+                        labels = clusterer.fit_predict(embeddings)
+                        
+                        # Skip if all points are noise or only one cluster
+                        unique_labels = np.unique(labels)
+                        if len(unique_labels) <= 1 or (len(unique_labels) == 2 and -1 in unique_labels):
+                            continue
+                            
+                        score = self._calculate_clustering_quality(embeddings, labels, quality_target)
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_labels = labels
+                            best_params = {'eps': eps_val, 'min_samples': min_samples_val, 'method': method}
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Failed to test eps={eps_val}, min_samples={min_samples_val}: {e}")
+                        continue
+        
+        # Fallback if optimization fails
+        if best_labels is None:
+            self.logger.warning("Optimization failed, using default parameters")
+            if method == 'kmeans':
+                clusterer = KMeans(n_clusters=5, random_state=42, n_init=10)
+                best_labels = clusterer.fit_predict(embeddings)
+                best_params = {'n_clusters': 5, 'method': method}
+            else:
+                clusterer = DBSCAN(eps=eps, min_samples=min_samples)
+                best_labels = clusterer.fit_predict(embeddings)
+                best_params = {'eps': eps, 'min_samples': min_samples, 'method': method}
+        
+        return best_labels, best_params
+    
+    def generate_multi_resolution_clusters(self, cluster_range: Tuple[int, int] = (2, 100), 
+                                         method: str = 'kmeans') -> Dict[int, Dict[str, Any]]:
+        """
+        Generate clusters at multiple resolutions and cache them
+        """
+        min_clusters, max_clusters = cluster_range
+        self.logger.info(f"Generating multi-resolution clusters from {min_clusters} to {max_clusters}")
+        
+        # Check if we need to invalidate cache due to workspace changes
+        self._check_cache_validity()
+        
+        # Generate embeddings once
+        embeddings = self.generate_workspace_embeddings()
+        if not embeddings:
+            return {}
+        
+        workspace_ids = list(embeddings.keys())
+        embedding_matrix = np.array([embeddings[id] for id in workspace_ids])
+        
+        # Normalize embeddings
+        scaler = StandardScaler()
+        normalized_embeddings = scaler.fit_transform(embedding_matrix)
+        
+        # Determine optimal cluster counts to cache
+        cluster_counts = self._get_optimal_cluster_counts(min_clusters, max_clusters, len(workspace_ids))
+        
+        multi_resolution_cache = {}
+        total_counts = len(cluster_counts)
+        
+        for i, n_clusters in enumerate(cluster_counts):
+            try:
+                # Update progress
+                progress = 0.1 + (0.8 * i / total_counts)
+                self.clustering_status['progress'] = progress
+                self.clustering_status['status_message'] = f'Generating {n_clusters}-cluster resolution...'
+                
+                # Check if already cached and valid
+                if self._is_cache_valid(n_clusters):
+                    multi_resolution_cache[n_clusters] = self.cluster_cache[n_clusters]
+                    continue
+                
+                # Generate clusters for this resolution
+                if method == 'kmeans':
+                    clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    cluster_labels = clusterer.fit_predict(normalized_embeddings)
+                elif method == 'dbscan':
+                    # For DBSCAN, we'll use different eps values to approximate cluster counts
+                    eps_val = self._estimate_eps_for_target_clusters(normalized_embeddings, n_clusters)
+                    clusterer = DBSCAN(eps=eps_val, min_samples=2)
+                    cluster_labels = clusterer.fit_predict(normalized_embeddings)
+                else:
+                    continue
+                
+                # Format clusters for this resolution
+                formatted_clusters = self._format_cluster_results(cluster_labels, workspace_ids, method)
+                
+                # Calculate quality metrics
+                quality_score = self._calculate_clustering_quality(normalized_embeddings, cluster_labels, 'balanced')
+                
+                # Cache this resolution
+                cache_entry = {
+                    'clusters': formatted_clusters,
+                    'timestamp': datetime.now(),
+                    'version': self.cache_version,
+                    'quality_score': quality_score,
+                    'method': method,
+                    'actual_clusters': len(formatted_clusters)
+                }
+                
+                self.cluster_cache[n_clusters] = cache_entry
+                multi_resolution_cache[n_clusters] = cache_entry
+                
+                self.logger.info(f"Cached {n_clusters}-cluster resolution with {len(formatted_clusters)} actual clusters")
+                
+            except Exception as e:
+                self.logger.error(f"Error generating {n_clusters}-cluster resolution: {e}")
+                continue
+        
+        self.clustering_status['progress'] = 1.0
+        self.clustering_status['status_message'] = f'Generated {len(multi_resolution_cache)} cluster resolutions'
+        
+        return multi_resolution_cache
+    
+    def get_clusters_at_resolution(self, n_clusters: int, method: str = 'kmeans') -> Optional[Dict[str, Any]]:
+        """
+        Get clusters at a specific resolution, generating if not cached
+        """
+        # Check cache validity
+        if self._is_cache_valid(n_clusters):
+            return self.cluster_cache[n_clusters]
+        
+        # Generate single resolution if not cached
+        self.logger.info(f"Generating on-demand clusters for {n_clusters} resolution")
+        
+        embeddings = self.generate_workspace_embeddings()
+        if not embeddings:
+            return None
+        
+        workspace_ids = list(embeddings.keys())
+        embedding_matrix = np.array([embeddings[id] for id in workspace_ids])
+        
+        # Normalize embeddings
+        scaler = StandardScaler()
+        normalized_embeddings = scaler.fit_transform(embedding_matrix)
+        
+        # Generate clusters
+        if method == 'kmeans':
+            clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_labels = clusterer.fit_predict(normalized_embeddings)
+        elif method == 'dbscan':
+            eps_val = self._estimate_eps_for_target_clusters(normalized_embeddings, n_clusters)
+            clusterer = DBSCAN(eps=eps_val, min_samples=2)
+            cluster_labels = clusterer.fit_predict(normalized_embeddings)
+        else:
+            return None
+        
+        # Format and cache results
+        formatted_clusters = self._format_cluster_results(cluster_labels, workspace_ids, method)
+        quality_score = self._calculate_clustering_quality(normalized_embeddings, cluster_labels, 'balanced')
+        
+        cache_entry = {
+            'clusters': formatted_clusters,
+            'timestamp': datetime.now(),
+            'version': self.cache_version,
+            'quality_score': quality_score,
+            'method': method,
+            'actual_clusters': len(formatted_clusters)
+        }
+        
+        self.cluster_cache[n_clusters] = cache_entry
+        return cache_entry
+    
+    def _check_cache_validity(self):
+        """
+        Check if cache needs to be invalidated due to workspace changes
+        """
+        try:
+            # Get current workspace count
+            current_workspace_count = len(self.persistence_service.list_chats())
+            
+            # If workspace count changed, invalidate cache
+            if current_workspace_count != self.last_workspace_count:
+                self.logger.info(f"Workspace count changed from {self.last_workspace_count} to {current_workspace_count}, invalidating cache")
+                self._invalidate_cache()
+                self.last_workspace_count = current_workspace_count
+                self.cache_version += 1
+                
+        except Exception as e:
+            self.logger.error(f"Error checking cache validity: {e}")
+    
+    def _is_cache_valid(self, n_clusters: int) -> bool:
+        """
+        Check if a specific cluster resolution cache is still valid
+        """
+        if n_clusters not in self.cluster_cache:
+            return False
+        
+        cache_entry = self.cluster_cache[n_clusters]
+        
+        # Check version
+        if cache_entry['version'] != self.cache_version:
+            return False
+        
+        # Check timestamp staleness
+        age = (datetime.now() - cache_entry['timestamp']).total_seconds()
+        if age > self.cache_staleness_threshold:
+            return False
+        
+        return True
+    
+    def _invalidate_cache(self):
+        """
+        Invalidate all cached cluster resolutions
+        """
+        self.cluster_cache.clear()
+        self.workspace_embeddings.clear()
+        self.cached_clusters.clear()
+        self.cache_timestamp = None
+        self.logger.info("Cluster cache invalidated")
+    
+    def _get_optimal_cluster_counts(self, min_clusters: int, max_clusters: int, workspace_count: int) -> List[int]:
+        """
+        Get optimal cluster counts to cache based on workspace count and range
+        """
+        # Don't exceed reasonable limits based on workspace count
+        effective_max = min(max_clusters, workspace_count // 2)
+        effective_min = max(min_clusters, 2)
+        
+        if effective_max <= effective_min:
+            return [effective_min]
+        
+        # Create logarithmic distribution for better resolution at lower counts
+        cluster_counts = []
+        
+        # Always include key points
+        key_points = [2, 3, 5, 10, 15, 25, 50, 100]
+        for point in key_points:
+            if effective_min <= point <= effective_max:
+                cluster_counts.append(point)
+        
+        # Add linear distribution for fine-grained control
+        step = max(1, (effective_max - effective_min) // 20)  # Max 20 cached resolutions
+        for i in range(effective_min, effective_max + 1, step):
+            if i not in cluster_counts:
+                cluster_counts.append(i)
+        
+        return sorted(list(set(cluster_counts)))
+    
+    def _estimate_eps_for_target_clusters(self, embeddings: np.ndarray, target_clusters: int) -> float:
+        """
+        Estimate eps parameter for DBSCAN to approximate target cluster count
+        """
+        # Use k-distance graph approach
+        from sklearn.neighbors import NearestNeighbors
+        
+        k = max(2, min(10, len(embeddings) // 10))  # Adaptive k
+        nbrs = NearestNeighbors(n_neighbors=k).fit(embeddings)
+        distances, indices = nbrs.kneighbors(embeddings)
+        
+        # Sort distances and find elbow point
+        k_distances = np.sort(distances[:, k-1])
+        
+        # Estimate eps based on target clusters
+        # Higher target clusters = smaller eps
+        percentile = max(10, min(90, 100 - (target_clusters * 2)))
+        eps = np.percentile(k_distances, percentile)
+        
+        return max(0.1, min(2.0, eps))
+    
+    def _format_cluster_results(self, cluster_labels: np.ndarray, workspace_ids: List[str], method: str) -> List[Dict[str, Any]]:
+        """
+        Format cluster results into the expected format
+        """
+        clusters = {}
+        for i, workspace_id in enumerate(workspace_ids):
+            cluster_id = int(cluster_labels[i])
+            if cluster_id not in clusters:
+                clusters[cluster_id] = []
+            clusters[cluster_id].append(workspace_id)
+        
+        formatted_clusters = []
+        for cluster_id, workspace_ids in clusters.items():
+            # Skip noise points for DBSCAN or single-item clusters
+            if cluster_id == -1 or len(workspace_ids) < 2:
+                continue
+            
+            # Get workspace details
+            cluster_workspaces = []
+            for workspace_id in workspace_ids:
+                try:
+                    chat_data = self.persistence_service.get_chat(workspace_id)
+                    if chat_data:
+                        cluster_workspaces.append({
+                            'id': workspace_id,
+                            'title': chat_data.get('title', f'Workspace {workspace_id[:8]}'),
+                            'lastUpdated': chat_data.get('lastUpdated', ''),
+                            'nodeCount': len(chat_data.get('nodes', {})) if isinstance(chat_data.get('nodes'), dict) else 10,
+                            'tags': chat_data.get('tags', [])
+                        })
+                except Exception as e:
+                    self.logger.warning(f"Error getting workspace {workspace_id}: {e}")
+                    continue
+            
+            if cluster_workspaces:
+                # Generate cluster name
+                cluster_name = self.generate_cluster_title_llm(cluster_workspaces)
+                common_tags = self.extract_common_tags(cluster_workspaces)
+                
+                formatted_clusters.append({
+                    'id': f'cluster_{cluster_id}',
+                    'title': cluster_name,
+                    'workspaces': cluster_workspaces,
+                    'size': len(cluster_workspaces),
+                    'commonTags': common_tags
+                })
+        
+        return formatted_clusters
+    
+    def get_cache_status(self) -> Dict[str, Any]:
+        """
+        Get current cache status and staleness information
+        """
+        try:
+            current_workspace_count = len(self.persistence_service.list_chats())
+            
+            # Check for staleness
+            is_stale = current_workspace_count != self.last_workspace_count
+            
+            # Get cached resolutions
+            cached_resolutions = []
+            for n_clusters, cache_entry in self.cluster_cache.items():
+                age_seconds = (datetime.now() - cache_entry['timestamp']).total_seconds()
+                cached_resolutions.append({
+                    'cluster_count': n_clusters,
+                    'actual_clusters': cache_entry['actual_clusters'],
+                    'quality_score': cache_entry['quality_score'],
+                    'age_seconds': age_seconds,
+                    'is_stale': age_seconds > self.cache_staleness_threshold or cache_entry['version'] != self.cache_version
+                })
+            
+            return {
+                'cache_version': self.cache_version,
+                'last_workspace_count': self.last_workspace_count,
+                'current_workspace_count': current_workspace_count,
+                'is_stale': is_stale,
+                'cached_resolutions': sorted(cached_resolutions, key=lambda x: x['cluster_count']),
+                'staleness_threshold': self.cache_staleness_threshold
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting cache status: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_clustering_quality(self, embeddings: np.ndarray, labels: np.ndarray, quality_target: str) -> float:
+        """
+        Calculate clustering quality score based on the specified target
+        """
+        try:
+            # Remove noise points for DBSCAN
+            mask = labels != -1
+            if np.sum(mask) < 2:
+                return -1
+                
+            filtered_embeddings = embeddings[mask]
+            filtered_labels = labels[mask]
+            
+            if len(np.unique(filtered_labels)) < 2:
+                return -1
+            
+            # Calculate base metrics
+            silhouette = silhouette_score(filtered_embeddings, filtered_labels)
+            calinski_harabasz = calinski_harabasz_score(filtered_embeddings, filtered_labels)
+            
+            # Normalize Calinski-Harabasz score (log scale)
+            ch_normalized = min(1.0, np.log(calinski_harabasz + 1) / 10)
+            
+            # Calculate cluster balance
+            unique_labels, counts = np.unique(filtered_labels, return_counts=True)
+            balance_score = 1.0 - (np.std(counts) / np.mean(counts)) if len(counts) > 1 else 0.0
+            balance_score = max(0.0, min(1.0, balance_score))
+            
+            # Combine metrics based on quality target
+            if quality_target == 'balanced':
+                # Equal weight to all metrics
+                score = (silhouette + ch_normalized + balance_score) / 3
+            elif quality_target == 'tight':
+                # Emphasize cluster cohesion
+                score = (silhouette * 0.6 + ch_normalized * 0.3 + balance_score * 0.1)
+            elif quality_target == 'separated':
+                # Emphasize cluster separation
+                score = (silhouette * 0.5 + ch_normalized * 0.4 + balance_score * 0.1)
+            else:
+                # Default to balanced
+                score = (silhouette + ch_normalized + balance_score) / 3
+            
+            return score
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating clustering quality: {e}")
+            return -1
     
     def start_clustering_background(self, method: str = 'kmeans', **kwargs):
         """

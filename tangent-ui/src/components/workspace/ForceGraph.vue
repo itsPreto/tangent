@@ -158,8 +158,35 @@
       </div>
     </div>
 
+    <!-- 3D Force Graph Container -->
+    <div v-if="is3DSupported && props.enable3d && forceGraphData" class="vue-force-graph-3d">
+      <VueForceGraph3D
+        ref="forceGraph3DRef"
+        :graphData="forceGraphData"
+        :backgroundColor="getThemeAwareColors().backgroundColor"
+        :nodeColor="nodeColorFunction"
+        :linkColor="getThemeAwareColors().linkColor"
+        :nodeLabel="nodeLabelFunction"
+        :nodeVal="nodeValFunction"
+        :linkWidth="1"
+        :nodeRelSize="4"
+        :enableNodeDrag="true"
+        :controlType="'orbit'"
+        :width="containerWidth"
+        :height="containerHeight"
+        @nodeClick="handleNodeClick"
+      />
+    </div>
+
     <!-- SVG Container -->
-    <svg ref="svgRef" class="d3-svg" :style="{ background: `linear-gradient(135deg, ${getThemeAwareColors().backgroundGradient.from}, ${getThemeAwareColors().backgroundGradient.to})` }">
+    <svg 
+      ref="svgRef" 
+      class="d3-svg" 
+      :style="{ 
+        background: `linear-gradient(135deg, ${getThemeAwareColors().backgroundGradient.from}, ${getThemeAwareColors().backgroundGradient.to})`,
+        display: (is3DSupported && props.enable3d) ? 'none' : 'block'
+      }"
+    >
       <defs>
         <marker
           id="arrowhead"
@@ -217,6 +244,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue';
 import * as d3 from 'd3';
+import { VueForceGraph3D } from 'vue-force-graph';
 import { RotateCcw, Maximize2, Minimize2, Settings } from 'lucide-vue-next';
 import type { ClusteringStatus } from '@/services/clusteringService';
 import { useThemeStore } from '@/stores/themeStore';
@@ -242,6 +270,9 @@ let THREE: ThreeJS | null = null;
 interface Props {
   clusteringStatus: ClusteringStatus;
   externalControls?: boolean;
+  enable3d?: boolean;
+  forceSettings?: any;
+  currentLayout?: string;
 }
 
 interface VisualizationData {
@@ -297,9 +328,13 @@ const emit = defineEmits<{
   updateFullscreen: [fullscreen: boolean];
 }>();
 
+// Debug prop values
+console.log('ForceGraph props on mount:', props);
+
 // Refs
 const containerRef = ref<HTMLElement>();
 const svgRef = ref<SVGElement>();
+const forceGraph3DRef = ref<any>();
 const isLoading = ref(false);
 const isFullscreen = ref(false);
 const visualizationData = ref<VisualizationData | null>(null);
@@ -324,6 +359,29 @@ let currentVisualizationLinks: any[] = [];
 
 // 3D support flag
 const is3DSupported = ref(false);
+
+// vue-force-graph data
+const forceGraphData = ref<any>(null);
+const containerWidth = ref(800);
+const containerHeight = ref(600);
+
+// vue-force-graph functions
+const nodeColorFunction = (node: any) => {
+  const colors = getThemeAwareColors();
+  if (node.type === 'topic') {
+    return colors.topicColors[node.clusterId % colors.topicColors.length];
+  } else {
+    return colors.topicColors[node.clusterId % colors.topicColors.length];
+  }
+};
+
+const nodeLabelFunction = (node: any) => {
+  return node.title || node.name || node.id;
+};
+
+const nodeValFunction = (node: any) => {
+  return node.type === 'topic' ? 10 : 5;
+};
 
 // Tooltip state
 const tooltip = ref({
@@ -645,7 +703,7 @@ const updateThemeFromDOM = () => {
     // Update colors instead of recreating entire visualization
     nextTick(() => {
       console.log('D3ForceGraph: Updating colors for new theme');
-      if (is3DSupported.value && THREE && nodes3D.length > 0) {
+      if (is3DSupported.value && THREE && props.enable3d && nodes3D.length > 0) {
         update3DColors();
       } else {
         updateColors();
@@ -755,7 +813,7 @@ const updateVisuals = () => {
   
   // Update link width
   d3.select(svgRef.value)
-    .selectAll('.links-group line')
+    .selectAll('.links-group path')
     .attr('stroke-width', forceSettings.value.linkWidth);
   
   // Update node sizes
@@ -776,7 +834,7 @@ const updateColors = () => {
   console.log('D3ForceGraph: Updating colors with:', colors);
   
   // Update link colors
-  const links = d3.select(svgRef.value).selectAll('.links-group line');
+  const links = d3.select(svgRef.value).selectAll('.links-group path');
   console.log('D3ForceGraph: Found', links.size(), 'links to update');
   links.attr('stroke', colors.linkColor);
   
@@ -859,7 +917,7 @@ const updateVisualsPreview = () => {
   
   // Update link width
   d3.select(svgRef.value)
-    .selectAll('.links-group line')
+    .selectAll('.links-group path')
     .attr('stroke-width', forceSettings.value.linkWidth);
   
   // Update node sizes
@@ -906,10 +964,10 @@ const fetchVisualizationData = async () => {
       props.clusteringStatus.clusters.forEach((cluster, clusterIndex) => {
         // Add topic for this cluster
         topics[clusterIndex.toString()] = {
-          topic: cluster.topic || `Cluster ${clusterIndex + 1}`,
+          topic: cluster.title || `Cluster ${clusterIndex + 1}`,
           size: cluster.workspaces.length,
           coherence: cluster.coherence || 0.8,
-          reflection: cluster.reflection || `Topic about ${cluster.topic || 'general discussion'}`
+          reflection: cluster.reflection || `Topic about ${cluster.title || 'general discussion'}`
         };
         
         // Add workspaces for this cluster
@@ -968,12 +1026,27 @@ const createVisualization = async () => {
   console.log('Creating visualization with data:', data);
   console.log('Container dimensions:', width, 'x', height);
 
-  // Try to use 3D if supported, fallback to lofi force graph
-  if (is3DSupported.value && THREE) {
-    console.log('Using 3D visualization');
-    create3DVisualization(data, width, height);
+  // Try to use 3D if both supported and enabled, fallback to lofi force graph
+  console.log('3D Check:', { 
+    is3DSupported: is3DSupported.value, 
+    THREE: !!THREE, 
+    enable3D: props.enable3d,
+    containerRef: !!containerRef.value 
+  });
+  
+  if (is3DSupported.value && props.enable3d) {
+    console.log('Using vue-force-graph 3D visualization');
+    createVueForceGraphData(data, width, height);
+    // Add a small delay to ensure DOM is ready
+    nextTick(() => {
+      console.log('3D graph should be visible now, forceGraphData:', forceGraphData.value);
+    });
   } else {
-    console.log('Using Lofi Force Graph visualization');
+    console.log('Using Lofi Force Graph visualization - reasons:', {
+      is3DSupported: is3DSupported.value,
+      THREE: !!THREE,
+      enable3D: props.enable3d
+    });
     if (!svgRef.value) {
       console.error('SVG ref not available for 2D visualization');
       return;
@@ -982,120 +1055,62 @@ const createVisualization = async () => {
   }
 };
 
-const create3DVisualization = (data: VisualizationData, width: number, height: number) => {
-  if (!THREE || !containerRef.value) return;
-
-  // Clear previous 3D scene
-  if (renderer && renderer.domElement && renderer.domElement.parentNode === containerRef.value) {
-    containerRef.value.removeChild(renderer.domElement);
-  }
-
-  // Setup 3D scene
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const createVueForceGraphData = (data: VisualizationData, width: number, height: number) => {
+  // Ensure we use the actual container dimensions, not full screen
+  const actualWidth = Math.min(containerRef.value?.clientWidth || width || 800, 800);
+  const actualHeight = Math.min(containerRef.value?.clientHeight || height || 600, 600);
   
-  // Get theme colors first
-  const colors = getThemeAwareColors();
+  containerWidth.value = actualWidth;
+  containerHeight.value = actualHeight;
   
-  renderer.setSize(width, height);
-  // Set theme-aware background color for 3D scene
-  const bgColor = new THREE.Color(colors.backgroundColor);
-  renderer.setClearColor(bgColor, 1);
-  containerRef.value.appendChild(renderer.domElement);
-
-  // Setup lighting
-  const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-  scene.add(ambientLight);
+  console.log('Setting container dimensions:', containerWidth.value, 'x', containerHeight.value);
+  console.log('Container element dimensions:', containerRef.value?.clientWidth, 'x', containerRef.value?.clientHeight);
   
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(10, 10, 5);
-  scene.add(directionalLight);
-
-  // Setup raycaster for mouse interaction
-  raycaster = new THREE.Raycaster();
-  mouse = new THREE.Vector2();
-  nodes3D = [];
-  links3D = [];
-
-  // Create topic nodes (larger, solid colored spheres)
+  const nodes: any[] = [];
+  const links: any[] = [];
+  
+  // Create topic nodes (cluster centers)
   Object.entries(data.topics).forEach(([clusterId, topicData], index) => {
-    const geometry = new THREE.SphereGeometry(3, 32, 32);
-    const color = new THREE.Color(colors.topicColors[index % colors.topicColors.length]);
-    const material = new THREE.MeshLambertMaterial({ 
-      color: color,
-      transparent: false,
-      opacity: 1.0
-    });
-    
-    const mesh = new THREE.Mesh(geometry, material);
-    
-    // Position topics in a circle
-    const angle = (index / Object.keys(data.topics).length) * Math.PI * 2;
-    const radius = 20;
-    mesh.position.set(
-      Math.cos(angle) * radius,
-      Math.sin(angle) * radius,
-      0
-    );
-    
-    mesh.userData = {
+    nodes.push({
       id: `topic-${clusterId}`,
-      type: 'topic',
+      name: topicData.topic,
       title: topicData.topic,
+      type: 'topic',
+      clusterId: parseInt(clusterId),
       size: topicData.size,
-      clusterId: parseInt(clusterId)
-    };
-    
-    scene.add(mesh);
-    nodes3D.push(mesh);
+      val: 15 // Larger size for topic nodes
+    });
   });
-
-  // Create workspace nodes (smaller, semi-transparent spheres)
+  
+  // Create workspace nodes and links to their topics
   data.points.forEach((point, index) => {
-    const geometry = new THREE.SphereGeometry(1, 16, 16);
     const clusterIndex = data.clusters[index];
-    const color = new THREE.Color(colors.topicColors[clusterIndex % colors.topicColors.length]);
-    const material = new THREE.MeshLambertMaterial({ 
-      color: color,
-      transparent: true,
-      opacity: 0.7
+    const workspaceId = `workspace-${index}`;
+    const topicId = `topic-${clusterIndex}`;
+    
+    nodes.push({
+      id: workspaceId,
+      name: data.titles[index],
+      title: data.titles[index],
+      type: 'workspace',
+      clusterId: clusterIndex,
+      val: 5 // Smaller size for workspace nodes
     });
     
-    const mesh = new THREE.Mesh(geometry, material);
-    
-    // Position workspaces around their topic
-    const topicNode = nodes3D.find(n => n.userData.clusterId === clusterIndex);
-    if (topicNode) {
-      const offset = new THREE.Vector3(
-        (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 5
-      );
-      mesh.position.copy(topicNode.position).add(offset);
-    }
-    
-    mesh.userData = {
-      id: `workspace-${index}`,
-      type: 'workspace',
-      title: data.titles[index],
-      clusterId: clusterIndex
-    };
-    
-    scene.add(mesh);
-    nodes3D.push(mesh);
+    // Create link between workspace and its topic
+    links.push({
+      source: workspaceId,
+      target: topicId
+    });
   });
-
-  // Position camera
-  camera.position.set(0, 0, 50);
-  camera.lookAt(0, 0, 0);
-
-  // Add mouse interaction
-  renderer.domElement.addEventListener('mousemove', onMouseMove);
-  renderer.domElement.addEventListener('click', onClick3D);
-
-  // Start animation loop
-  animate3D();
+  
+  forceGraphData.value = { nodes, links };
+  console.log('Created vue-force-graph data:', forceGraphData.value);
+  
+  // Center the 3D graph after data is loaded
+  nextTick(() => {
+    center3DGraph();
+  });
 };
 
 const createLofiForceGraph = (data: VisualizationData, width: number, height: number) => {
@@ -1200,15 +1215,16 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
   simulation = d3.forceSimulation(nodes);
   applyLayoutForces();
 
-  // Create links
+  // Create links as curved paths
   const link = g.append('g')
     .attr('class', 'links-group')
     .attr('stroke', colors.linkColor)
     .attr('stroke-opacity', 0.6)
     .attr('stroke-width', forceSettings.value.linkWidth)
-    .selectAll('line')
+    .attr('fill', 'none')
+    .selectAll('path')
     .data(links)
-    .join('line');
+    .join('path');
 
   // Create nodes
   const node = g.append('g')
@@ -1314,7 +1330,7 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
       }
     });
 
-  // Helper function to calculate link endpoints that stop at circle edges
+  // Helper function to calculate curved link path
   function linkArc(d) {
     const source = d.source;
     const target = d.target;
@@ -1323,7 +1339,7 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
     if (!source || !target || 
         isNaN(source.x) || isNaN(source.y) || 
         isNaN(target.x) || isNaN(target.y)) {
-      return { x1: 0, y1: 0, x2: 0, y2: 0 };
+      return 'M0,0L0,0';
     }
     
     // Calculate distance between nodes
@@ -1332,7 +1348,7 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
     const distance = Math.sqrt(dx * dx + dy * dy);
     
     if (distance === 0 || isNaN(distance)) {
-      return { x1: source.x || 0, y1: source.y || 0, x2: target.x || 0, y2: target.y || 0 };
+      return `M${source.x || 0},${source.y || 0}L${target.x || 0},${target.y || 0}`;
     }
     
     // Calculate unit vector
@@ -1349,19 +1365,25 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
     const x2 = target.x - ux * targetRadius;
     const y2 = target.y - uy * targetRadius;
     
-    return { x1, y1, x2, y2 };
+    // Create curved path with control points
+    const curvature = 0.3; // Adjust this to control curve intensity
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    
+    // Create control point perpendicular to the line
+    const perpX = -uy * distance * curvature * 0.2;
+    const perpY = ux * distance * curvature * 0.2;
+    
+    const cx = midX + perpX;
+    const cy = midY + perpY;
+    
+    // Return quadratic bezier curve path
+    return `M${x1},${y1}Q${cx},${cy} ${x2},${y2}`;
   }
 
   // Update positions on tick
   simulation.on('tick', () => {
-    link.each(function(d) {
-      const coords = linkArc(d);
-      d3.select(this)
-        .attr('x1', coords.x1)
-        .attr('y1', coords.y1)
-        .attr('x2', coords.x2)
-        .attr('y2', coords.y2);
-    });
+    link.attr('d', linkArc);
 
     node
       .attr('cx', d => d.x || 0)
@@ -1383,6 +1405,10 @@ const createLofiForceGraph = (data: VisualizationData, width: number, height: nu
     function dragged(event, d) {
       d.fx = event.x;
       d.fy = event.y;
+      
+      // Immediately update connected links for real-time response
+      link.filter(linkData => linkData.source === d || linkData.target === d)
+        .attr('d', linkArc);
     }
 
     function dragended(event, d) {
@@ -1409,27 +1435,6 @@ const showTooltip = (event: MouseEvent, d: Node) => {
 
 const hideTooltip = () => {
   tooltip.value.visible = false;
-};
-
-// 3D Animation and interaction functions
-const animate3D = () => {
-  if (!scene || !camera || !renderer) return;
-  
-  animationId = requestAnimationFrame(animate3D);
-  
-  // Rotate the scene slowly
-  if (nodes3D.length > 0) {
-    nodes3D.forEach((node, index) => {
-      if (node.userData.type === 'workspace') {
-        // Orbit workspace nodes around their topics
-        const time = Date.now() * 0.001;
-        const offset = index * 0.1;
-        node.rotation.y = time + offset;
-      }
-    });
-  }
-  
-  renderer.render(scene, camera);
 };
 
 const onMouseMove = (event: MouseEvent) => {
@@ -1462,35 +1467,68 @@ const onMouseMove = (event: MouseEvent) => {
   }
 };
 
-const onClick3D = (event: MouseEvent) => {
-  if (!camera || !raycaster) return;
-  
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(nodes3D);
-  
-  if (intersects.length > 0) {
-    const object = intersects[0].object;
-    if (object.userData.type === 'workspace') {
-      // Find the actual workspace ID from clustering data
-      const workspaceIndex = parseInt(object.userData.id.split('-')[1]);
-      const cluster = props.clusteringStatus.clusters[object.userData.clusterId!];
-      if (cluster && cluster.workspaces[workspaceIndex % cluster.workspaces.length]) {
-        const workspace = cluster.workspaces[workspaceIndex % cluster.workspaces.length];
-        emit('selectWorkspace', workspace.id);
-      }
+// 3D interaction handlers for vue-force-graph
+const handleNodeClick = (node: any) => {
+  if (node.type === 'workspace') {
+    // Find the actual workspace from clustering data
+    const workspaceIndex = parseInt(node.id.split('-')[1]);
+    const cluster = props.clusteringStatus.clusters[node.clusterId];
+    if (cluster && cluster.workspaces[workspaceIndex % cluster.workspaces.length]) {
+      const workspace = cluster.workspaces[workspaceIndex % cluster.workspaces.length];
+      emit('selectWorkspace', workspace.id);
     }
   }
 };
 
+// Center the 3D graph
+const center3DGraph = () => {
+  if (!forceGraph3DRef.value || !forceGraphData.value || !containerRef.value) return;
+  
+  try {
+    // Wait a bit for the graph to render
+    setTimeout(() => {
+      // Get actual container dimensions
+      const containerWidth = containerRef.value.clientWidth;
+      const containerHeight = containerRef.value.clientHeight;
+      
+      console.log('Centering 3D graph within container:', containerWidth, 'x', containerHeight);
+      
+      // Try multiple centering approaches
+      if (forceGraph3DRef.value.zoomToFit) {
+        // Use built-in zoom to fit with padding
+        forceGraph3DRef.value.zoomToFit(1000, 20); // 1 second animation, 20px padding
+        console.log('Used zoomToFit for centering');
+      }
+      else if (forceGraph3DRef.value.cameraPosition) {
+        // Calculate optimal camera distance based on container size and node count
+        const nodeCount = forceGraphData.value.nodes.length;
+        const minDimension = Math.min(containerWidth, containerHeight);
+        const distance = Math.max(minDimension / 2, nodeCount * 2);
+        
+        forceGraph3DRef.value.cameraPosition(
+          { x: 0, y: 0, z: distance }, // position
+          { x: 0, y: 0, z: 0 }, // lookAt center
+          1000 // animation duration
+        );
+        console.log('Used cameraPosition for centering, distance:', distance);
+      }
+      
+      // Also try to refresh the graph size
+      if (forceGraph3DRef.value.refresh) {
+        forceGraph3DRef.value.refresh();
+      }
+      
+      console.log('3D graph centered within viewport');
+    }, 500);
+  } catch (error) {
+    console.warn('Could not center 3D graph:', error);
+  }
+};
+
 const resetZoom = () => {
-  if (is3DSupported.value && camera) {
-    // Reset 3D camera position
-    camera.position.set(0, 0, 50);
-    camera.lookAt(0, 0, 0);
+  if (is3DSupported.value && props.enable3d) {
+    // Use the new centering function for 3D
+    center3DGraph();
   } else if (svg && zoom) {
     // Reset 2D zoom and pan
     svg.transition()
@@ -1524,6 +1562,22 @@ const handleFullscreenChange = () => {
 // Handle window resize
 const handleResize = () => {
   nextTick(() => {
+    // Update container dimensions for 3D graph
+    if (containerRef.value && props.enable3d && forceGraphData.value) {
+      const newWidth = Math.min(containerRef.value.clientWidth, 800);
+      const newHeight = Math.min(containerRef.value.clientHeight, 600);
+      
+      if (newWidth !== containerWidth.value || newHeight !== containerHeight.value) {
+        containerWidth.value = newWidth;
+        containerHeight.value = newHeight;
+        console.log('Updated 3D graph dimensions:', newWidth, 'x', newHeight);
+        
+        // Re-center after resize
+        setTimeout(() => {
+          center3DGraph();
+        }, 500);
+      }
+    }
     createVisualization();
   });
 };
@@ -1537,6 +1591,36 @@ watch(() => props.clusteringStatus, async (newStatus) => {
     createVisualization();
   }
 }, { immediate: true, deep: true });
+
+// Watch for 3D toggle changes
+watch(() => props.enable3d, (newEnable3D, oldEnable3D) => {
+  console.log('ForceGraph: 3D prop changed from', oldEnable3D, 'to', newEnable3D);
+  if (visualizationData.value) {
+    console.log('ForceGraph: Re-creating visualization for 3D toggle');
+    // Force re-render by clearing and recreating data
+    if (newEnable3D) {
+      forceGraphData.value = null;
+      nextTick(() => {
+        createVisualization();
+      });
+    } else {
+      createVisualization();
+    }
+  } else {
+    console.log('ForceGraph: No visualization data available');
+  }
+});
+
+// Watch for forceGraphData changes to ensure 3D renders
+watch(() => forceGraphData.value, (newData) => {
+  if (newData && props.enable3d) {
+    console.log('ForceGraph: 3D data ready, should render now');
+    // Center the graph after a delay to ensure it's fully rendered
+    setTimeout(() => {
+      center3DGraph();
+    }, 1000);
+  }
+});
 
 // Methods to handle external control updates
 const updateLayout = (layout: string) => {
@@ -1564,7 +1648,7 @@ const updateForceSettings = (newSettings: any) => {
     if (svg) {
       // Update link stroke width
       svg.select('.links-group')
-        .selectAll('line')
+        .selectAll('path')
         .attr('stroke-width', forceSettings.value.linkWidth);
       
       // Update node sizes
@@ -1615,6 +1699,14 @@ const initThreeJS = async () => {
     is3DSupported.value = true;
     console.log('Three.js loaded successfully - 3D visualization enabled');
     emit('update3DSupport', true);
+    
+    // Re-create visualization if we have data and 3D is enabled
+    if (visualizationData.value && props.enable3d) {
+      console.log('Three.js now available - switching to 3D mode');
+      nextTick(() => {
+        createVisualization();
+      });
+    }
   } catch (error) {
     console.log('Three.js not available - falling back to 2D visualization');
     is3DSupported.value = false;
@@ -1624,7 +1716,10 @@ const initThreeJS = async () => {
 
 // Lifecycle
 onMounted(async () => {
-  await initThreeJS();
+  // Enable 3D support since we're using vue-force-graph
+  is3DSupported.value = true;
+  emit('update3DSupport', true);
+  
   document.addEventListener('fullscreenchange', handleFullscreenChange);
   window.addEventListener('resize', handleResize);
   
@@ -1675,6 +1770,23 @@ onBeforeUnmount(() => {
   background: oklch(var(--b1));
   min-height: 600px;
   transition: background-color 0.3s ease;
+  overflow: hidden;
+  contain: layout style size;
+}
+
+.vue-force-graph-3d {
+  @apply absolute top-0 left-0 w-full h-full;
+  z-index: 10;
+  overflow: hidden;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.vue-force-graph-3d > div {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
 }
 
 /* Controls */

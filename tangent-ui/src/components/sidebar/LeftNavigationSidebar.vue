@@ -966,6 +966,10 @@ onMounted(async () => {
     inset 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
 }
 
+.theme-lofi .chat-title {
+  color: #ffffff;
+}
+
 .chat-title {
   font-size: 12px;
   font-weight: 500;

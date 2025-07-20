@@ -126,7 +126,12 @@
                       @deny-permission="(toolCallId, toolName, parameters) => $emit('deny-permission', toolCallId, toolName, parameters)" />
                     <textarea v-else v-model="editingContent"
                       class="w-full p-2 bg-base-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-                      :rows="Math.max(3, editingContent.split('\n').length)" @keydown.escape="cancelEditing" />
+                      :rows="Math.max(3, editingContent.split('\n').length)" 
+                      @keydown.escape="cancelEditing"
+                      @keydown.enter.ctrl="saveEditedMessage(startIndex + index)"
+                      @keydown.enter.meta="saveEditedMessage(startIndex + index)"
+                      placeholder="Edit your message..."
+                      spellcheck="false" />
                   </div>
                 </div>
                 <!-- User timestamp handled in main header -->

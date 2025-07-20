@@ -56,6 +56,7 @@
     "topojson": "^3.0.2",
     "vue": "^3.5.13",
     "vue-draggable-plus": "^0.6.0",
+    "vue-force-graph": "^0.1.2",
     "vue-prism": "^1.0.5",
     "vue-prism-component": "^2.0.0",
     "vue-router": "^4.5.0"

@@ -39,75 +39,99 @@
         </div>
       </div>
       
-      <!-- Create Form - Fixed Position Overlay -->
-      <div v-if="showCreateForm" class="create-form-overlay">
-        <div class="create-form">
+
+      <div class="panel-content">
+        <!-- Create Form -->
+        <div v-if="showCreateForm" class="create-form">
           <div class="form-grid">
-            <input v-model="newInstance.name" placeholder="Session name" class="form-field" />
-            <input v-model="newInstance.working_dir" placeholder="Working directory" class="form-field" />
+            <input 
+              v-model="newInstance.name" 
+              class="form-field" 
+              placeholder="Session name"
+              type="text"
+            />
+            <input 
+              v-model="newInstance.working_dir" 
+              class="form-field" 
+              placeholder="Working directory"
+              type="text"
+            />
+            <textarea 
+              v-model="newInstance.initial_prompt" 
+              class="form-field form-textarea" 
+              placeholder="Initial prompt..."
+              rows="4"
+            ></textarea>
           </div>
-          <textarea v-model="newInstance.initial_prompt" placeholder="Initial prompt..." class="form-field form-textarea" rows="2"></textarea>
           <div class="form-actions">
-            <button @click="createInstance" class="btn-primary" :disabled="!canCreateInstance">
+            <button 
+              @click="createInstance" 
+              class="btn-primary"
+              :disabled="!canCreateInstance"
+            >
               Create Session
             </button>
-            <button @click="showCreateForm = false" class="btn-secondary">
+            <button 
+              @click="showCreateForm = false" 
+              class="btn-secondary"
+            >
               Cancel
             </button>
           </div>
         </div>
-      </div>
 
-      <div class="panel-content">
-        <div v-if="claudeCodeInstances.length === 0" class="empty-state">
-          <div class="empty-icon">🤖</div>
-          <div class="empty-message">No active sessions</div>
-          <div class="empty-hint">Create a new session to get started</div>
-        </div>
-        
-        <div v-else class="sessions-list">
-          <div v-for="instance in claudeCodeInstances" :key="instance.instance_id" class="session-card">
-            <div class="session-header">
-              <div class="session-info">
-                <div class="session-name">{{ instance.config?.name || `Process ${instance.pid}` }}</div>
-                <div class="session-meta">
-                  <span class="status-dot" :class="instance.status"></span>
-                  <span class="status-text">{{ instance.status }}</span>
-                  <span class="session-separator">•</span>
-                  <span class="session-duration">{{ formatDuration(instance.duration_ms || 0) }}</span>
+        <!-- Sessions List -->
+        <div v-else>
+          <div v-if="claudeCodeInstances.length === 0" class="empty-state">
+            <div class="empty-icon">🤖</div>
+            <div class="empty-message">No active sessions</div>
+            <div class="empty-hint">Create a new session to get started</div>
+          </div>
+          
+          <div v-else class="sessions-list">
+            <div v-for="instance in claudeCodeInstances" :key="instance.instance_id" class="session-card">
+              <div class="session-header">
+                <div class="session-info">
+                  <div class="session-name">{{ instance.config?.name || `Process ${instance.pid}` }}</div>
+                  <div class="session-meta">
+                    <span class="status-dot" :class="instance.status"></span>
+                    <span class="status-text">{{ instance.status }}</span>
+                    <span class="session-separator">•</span>
+                    <span class="session-duration">{{ formatDuration(instance.duration_ms || 0) }}</span>
+                  </div>
+                </div>
+                <div class="session-actions">
+                  <button v-if="instance.status === 'running'" @click="pauseInstance(instance.instance_id)" 
+                          class="action-btn pause" title="Pause">
+                    <Pause class="w-3 h-3" />
+                  </button>
+                  <button v-if="instance.status === 'paused'" @click="resumeInstance(instance.instance_id)"
+                          class="action-btn resume" title="Resume">
+                    <Play class="w-3 h-3" />
+                  </button>
+                  <button @click="stopInstance(instance.instance_id)" class="action-btn stop" title="Stop">
+                    <Square class="w-3 h-3" />
+                  </button>
                 </div>
               </div>
-              <div class="session-actions">
-                <button v-if="instance.status === 'running'" @click="pauseInstance(instance.instance_id)" 
-                        class="action-btn pause" title="Pause">
-                  <Pause class="w-3 h-3" />
-                </button>
-                <button v-if="instance.status === 'paused'" @click="resumeInstance(instance.instance_id)"
-                        class="action-btn resume" title="Resume">
-                  <Play class="w-3 h-3" />
-                </button>
-                <button @click="stopInstance(instance.instance_id)" class="action-btn stop" title="Stop">
-                  <Square class="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-            
-            <div class="session-details">
-              <div class="detail-row">
-                <span class="detail-label">Directory</span>
-                <span class="detail-value">{{ instance.working_dir.split('/').pop() || 'Unknown' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Memory</span>
-                <span class="detail-value">{{ instance.memory_mb ? instance.memory_mb.toFixed(0) + 'MB' : 'N/A' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Cost</span>
-                <span class="detail-value">${{ (instance.cost_usd || 0).toFixed(3) }}</span>
-              </div>
-              <div v-if="instance.is_detected" class="detail-row">
-                <span class="detail-label">Source</span>
-                <span class="detail-value detected">🔍 Auto-detected</span>
+              
+              <div class="session-details">
+                <div class="detail-row">
+                  <span class="detail-label">Directory</span>
+                  <span class="detail-value">{{ instance.working_dir.split('/').pop() || 'Unknown' }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Memory</span>
+                  <span class="detail-value">{{ instance.memory_mb ? instance.memory_mb.toFixed(0) + 'MB' : 'N/A' }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Cost</span>
+                  <span class="detail-value">${{ (instance.cost_usd || 0).toFixed(3) }}</span>
+                </div>
+                <div v-if="instance.is_detected" class="detail-row">
+                  <span class="detail-label">Source</span>
+                  <span class="detail-value detected">🔍 Auto-detected</span>
+                </div>
               </div>
             </div>
           </div>
@@ -218,12 +242,13 @@
       </div>
     </div>
   </div>
+  
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue';
 import {
-  Square, RotateCcw, Loader, ExternalLink, Pause, Play, Info, Plus, PlayCircle, Download, RefreshCw
+  Square, RotateCcw, Loader, ExternalLink, Pause, Play, Info, Plus, PlayCircle, Download, RefreshCw, X
 } from 'lucide-vue-next';
 import { useToolCallStore } from '@/stores/toolCallStore';
 import { useRouter } from 'vue-router';
@@ -386,6 +411,38 @@ const refreshInstances = async () => {
   lastUpdateTime.value = new Date();
 };
 
+const detectAndRegisterExternalSession = async () => {
+  try {
+    // Check if we're in a Claude Code session by looking for environment variables or processes
+    const response = await fetch('http://127.0.0.1:5050/api/claude-code/instances/register-external', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'External Claude Code Session',
+        working_dir: '/Users/928546/Desktop/tangent',
+        session_id: `tangent-session-${Date.now()}`,
+        auto_detected: true
+      })
+    });
+    
+    if (response.ok) {
+      console.log('External Claude Code session registered successfully');
+      await refreshInstances();
+    }
+  } catch (error) {
+    console.log('No external Claude Code session detected or registration failed:', error);
+  }
+};
+
+const checkForExternalSessions = async () => {
+  // Only try to register if we don't have any active sessions
+  if (claudeCodeInstances.value.length === 0) {
+    await detectAndRegisterExternalSession();
+  }
+};
+
 
 const pauseInstance = async (instanceId: string) => {
   const success = await toolCallStore.pauseInstance(instanceId);
@@ -430,14 +487,16 @@ const showNotification = (message: string) => {
 };
 
 // Initialize data
-onMounted(() => {
-  refreshInstances();
+onMounted(async () => {
+  await refreshInstances();
+  await checkForExternalSessions();
   toolCallStore.fetchClaudeCodeSessions();
 });
 
 // Auto-refresh every 10 seconds to keep instances up to date
-setInterval(() => {
-  toolCallStore.fetchClaudeCodeInstances();
+setInterval(async () => {
+  await toolCallStore.fetchClaudeCodeInstances();
+  await checkForExternalSessions();
 }, 10000);
 </script>
 
@@ -638,33 +697,11 @@ setInterval(() => {
   z-index: 1;
 }
 
-/* Create Form Overlay */
-.create-form-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
+/* Create Form */
 .create-form {
-  background: var(--theme-background);
-  border-radius: 8px;
-  padding: 1.5rem;
-  border: 1px solid var(--theme-border);
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 500px;
-  width: 100%;
-  max-height: 80vh;
-  overflow-y: auto;
 }
 
 .form-grid {
@@ -674,18 +711,23 @@ setInterval(() => {
 }
 
 .form-field {
-  padding: 0.625rem 0.875rem;
-  border: 1px solid var(--theme-border);
-  border-radius: 6px;
-  background: var(--theme-surface);
-  color: var(--theme-text);
+  padding: 0.75rem 1rem;
+  border: 1px solid hsl(var(--bc) / 0.1);
+  border-radius: 8px;
+  background: hsl(var(--b2));
+  color: hsl(var(--bc));
   font-size: 0.875rem;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .form-field:focus {
   outline: none;
-  border-color: var(--theme-primary);
+  border-color: hsl(var(--p));
+  box-shadow: 0 0 0 3px hsl(var(--p) / 0.2);
+}
+
+.form-field::placeholder {
+  color: hsl(var(--bc) / 0.5);
 }
 
 .form-textarea {

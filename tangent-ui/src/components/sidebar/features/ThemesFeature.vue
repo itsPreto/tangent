@@ -260,6 +260,8 @@ const getThemePreviewStyle = (theme: any) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .themes-content {
@@ -270,7 +272,7 @@ const getThemePreviewStyle = (theme: any) => {
 }
 
 .themes-header {
-  padding: 16px;
+  padding: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -9,7 +9,9 @@ export default defineConfig({
       '@': resolve(__dirname, './src'),
       'react': resolve(__dirname, 'node_modules/react'),
       'react-dom': resolve(__dirname, 'node_modules/react-dom'),
-      'eslint/conf/eslint-all': resolve(__dirname, 'node_modules/eslint/conf/eslint-all.js')
+      'eslint/conf/eslint-all': resolve(__dirname, 'node_modules/eslint/conf/eslint-all.js'),
+      // Force all packages to use the same Three.js instance
+      'three': resolve(__dirname, 'node_modules/three')
     },
   },
   define: {
@@ -43,6 +45,7 @@ export default defineConfig({
         manualChunks: {
           'vue-vendor': ['vue', 'vue-router', 'pinia'],
           'ui-vendor': ['@headlessui/vue', '@heroicons/vue', 'lucide-vue-next'],
+          'three-vendor': ['three'],
           'highlight': ['highlight.js'],
           'prism': ['prismjs'],
           'marked': ['marked'],

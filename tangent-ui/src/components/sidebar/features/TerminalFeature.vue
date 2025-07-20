@@ -369,6 +369,8 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .terminal-content {
@@ -379,7 +381,7 @@ onMounted(() => {
 }
 
 .terminal-header {
-  padding: 16px;
+  padding: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;

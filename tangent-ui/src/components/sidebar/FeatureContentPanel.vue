@@ -46,11 +46,7 @@
         <!-- Testing Feature -->
         <TestingFeature 
           v-else-if="activeFeature === 'testing'" />
-        
-        <!-- Mock Data Feature -->
-        <MockDataFeature 
-          v-else-if="activeFeature === 'mock-data'" />
-        
+
         <!-- Force Graph -->
         <GraphFeature 
           v-else-if="activeFeature === 'force-graph'" />
@@ -84,7 +80,6 @@ import { useThemeColors } from '@/composables/useThemeColors';
 import ModelSelectorFeature from './features/ModelSelectorFeature.vue';
 import ClaudeCodeManagementFeature from './features/ClaudeCodeManagementFeature.vue';
 import TestingFeature from './features/TestingFeature.vue';
-import MockDataFeature from './features/MockDataFeature.vue';
 
 // Existing real components
 import SandpackSidePanel from '../sidebar/SandPackSidePanel.vue';
@@ -134,11 +129,6 @@ const featureConfigs = {
     icon: TestTube, 
     label: 'Testing', 
     color: '#22c55e' 
-  },
-  'mock-data': { 
-    icon: Database, 
-    label: 'Mock Data', 
-    color: '#ec4899' 
   },
   'force-graph': { 
     icon: GitBranch, 
@@ -624,7 +614,7 @@ const panelPositionStyle = computed(() => {
     color-mix(in srgb, v-bind(themeColors.secondary) 2%, hsl(var(--b2)))) !important;
   border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1)) !important;
   border-radius: 8px !important;
-  padding: 0.5rem !important;
+  padding-left: 30px;
   color: hsl(var(--bc)) !important;
   transition: all 0.2s ease !important;
 }

@@ -300,8 +300,10 @@ const getDocumentIconStyle = (doc: any) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0.75rem;
-  gap: 0.75rem;
+  padding: 0.5rem;
+  gap: 0.5rem;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .documents-content {
@@ -309,15 +311,17 @@ const getDocumentIconStyle = (doc: any) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 8%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.secondary) 5%, hsl(var(--b2))));
-  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 20%, hsl(var(--bc) / 0.1));
-  border-radius: 12px;
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 6%, rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, v-bind(themeColors.secondary) 4%, rgba(255, 255, 255, 0.02)));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 15%, hsl(var(--bc) / 0.08));
+  border-radius: 16px;
   position: relative;
   box-shadow: 
-    0 4px 20px color-mix(in srgb, v-bind(themeColors.primary) 10%, transparent),
-    0 1px 3px color-mix(in srgb, v-bind(themeColors.secondary) 8%, transparent);
+    0 8px 32px color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent),
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
 }
 
 .documents-content::before {
@@ -335,17 +339,18 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .documents-header {
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 12%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
-  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, rgba(255, 255, 255, 0.02)),
+    color-mix(in srgb, v-bind(themeColors.secondary) 5%, rgba(255, 255, 255, 0.01)));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.08));
   position: relative;
   overflow: hidden;
+  min-height: 40px;
 }
 
 .documents-header::before {
@@ -365,7 +370,7 @@ const getDocumentIconStyle = (doc: any) => {
 .header-section {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
   z-index: 1;
 }
@@ -375,22 +380,28 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .header-text {
-  font-weight: 600;
-  font-size: 0.875rem;
+  font-weight: 700;
+  font-size: 0.8125rem;
   color: hsl(var(--bc));
-  text-shadow: 0 1px 2px color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent);
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, 
+    hsl(var(--bc)),
+    color-mix(in srgb, v-bind(themeColors.primary) 40%, hsl(var(--bc))));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .document-count {
   background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 20%, transparent),
-    color-mix(in srgb, v-bind(themeColors.secondary) 15%, transparent));
+    color-mix(in srgb, v-bind(themeColors.primary) 15%, transparent),
+    color-mix(in srgb, v-bind(themeColors.secondary) 10%, transparent));
   color: v-bind(themeColors.primary);
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.6875rem;
   font-weight: 600;
-  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 30%, transparent);
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.primary) 25%, transparent);
 }
 
 .header-controls {
@@ -399,15 +410,15 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .upload-btn, .action-btn {
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 10%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.secondary) 8%, hsl(var(--b2))));
-  color: hsl(var(--bc));
-  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 25%, hsl(var(--bc) / 0.1));
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 8%, rgba(255, 255, 255, 0.05)),
+    color-mix(in srgb, v-bind(themeColors.secondary) 6%, rgba(255, 255, 255, 0.02)));
+  color: hsl(var(--bc) / 0.8);
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.08));
   position: relative;
   z-index: 1;
 }
@@ -421,15 +432,15 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .search-section {
-  padding: 1rem;
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 6%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.secondary) 4%, hsl(var(--b2))));
-  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 20%, hsl(var(--bc) / 0.1));
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 4%, rgba(255, 255, 255, 0.03)),
+    color-mix(in srgb, v-bind(themeColors.secondary) 3%, rgba(255, 255, 255, 0.01)));
+  border-bottom: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--bc) / 0.06));
 }
 
 .search-container {
@@ -451,9 +462,9 @@ const getDocumentIconStyle = (doc: any) => {
 
 .search-input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 0.75rem;
   transition: all 0.2s ease;
   background: transparent;
   border: none;
@@ -476,15 +487,15 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .filter-select {
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.6875rem;
   cursor: pointer;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.secondary) 10%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.accent) 8%, hsl(var(--b2))));
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.secondary) 8%, rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, v-bind(themeColors.accent) 6%, rgba(255, 255, 255, 0.02)));
   color: hsl(var(--bc));
-  border: 1px solid color-mix(in srgb, v-bind(themeColors.secondary) 25%, hsl(var(--bc) / 0.1));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.secondary) 20%, hsl(var(--bc) / 0.08));
   transition: all 0.2s ease;
 }
 
@@ -509,32 +520,32 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .results-header {
-  padding: 12px 16px;
+  padding: 8px 12px;
   flex-shrink: 0;
 }
 
 .results-count {
-  font-size: 12px;
+  font-size: 0.6875rem;
   opacity: 0.7;
 }
 
 .documents-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 16px 16px;
+  padding: 0 12px 12px;
 }
 
 .document-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  margin-bottom: 8px;
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, v-bind(themeColors.primary) 4%, hsl(var(--b1))),
-    color-mix(in srgb, v-bind(themeColors.secondary) 3%, hsl(var(--b2))));
-  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 15%, hsl(var(--bc) / 0.1));
-  border-radius: 10px;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 4px;
+  background: linear-gradient(145deg, 
+    color-mix(in srgb, v-bind(themeColors.primary) 3%, rgba(255, 255, 255, 0.03)),
+    color-mix(in srgb, v-bind(themeColors.secondary) 2%, rgba(255, 255, 255, 0.01)));
+  border: 1px solid color-mix(in srgb, v-bind(themeColors.accent) 12%, hsl(var(--bc) / 0.08));
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
@@ -561,9 +572,9 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .document-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -576,8 +587,8 @@ const getDocumentIconStyle = (doc: any) => {
 }
 
 .document-name {
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 0.75rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -585,15 +596,15 @@ const getDocumentIconStyle = (doc: any) => {
 
 .document-meta {
   display: flex;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 0.6875rem;
   opacity: 0.6;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .document-actions {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.2s ease;
 }

@@ -42,7 +42,7 @@
             @click="setVoiceMode('continuous')"
             :class="['mode-btn', currentMode === 'continuous' ? 'active' : '']"
           >
-            Auto
+            Conversation
           </button>
         </div>
       </div>
@@ -85,14 +85,15 @@
     <div v-if="isRecording || isProcessing" class="status-minimal">
       <div v-if="isRecording" class="status-item">
         <div class="status-dot recording"></div>
-        <span>{{ currentMode === 'continuous' ? 'Listening' : 'Recording' }}</span>
+        <span>{{ currentMode === 'continuous' ? 'In Conversation' : 'Recording' }}</span>
         <div v-if="currentMode === 'continuous' && isRecording" 
-             :class="['speech-dot', isSpeechDetected ? 'active' : '']">
+             :class="['speech-dot', isSpeechDetected ? 'active' : '']"
+             :title="isSpeechDetected ? 'Speech detected' : 'Waiting for speech'">
         </div>
       </div>
       <div v-if="isProcessing" class="status-item">
         <div class="status-dot processing"></div>
-        <span>Processing</span>
+        <span>{{ currentMode === 'continuous' ? 'Processing & Resuming' : 'Processing' }}</span>
       </div>
     </div>
 
@@ -159,10 +160,11 @@ const showSettings = ref(false);
 const vadSettings = ref({
   vadThreshold: 0.5,
   minSpeechDuration: 250,
-  minSilenceDuration: 1200, // 1.2s for auto-send
+  minSilenceDuration: 1500, // 1.5s for natural conversation pauses
   maxSpeechDuration: 30,
   speechPad: 200,
-  samplesOverlap: 0.1
+  samplesOverlap: 0.1,
+  autoResume: true // Enable auto-resume for seamless conversation
 });
 
 // Computed properties from audio service
@@ -182,8 +184,8 @@ watch(vadSettings, (newSettings) => {
 
 const getButtonTitle = () => {
   if (isProcessing.value) return 'Processing...';
-  if (isRecording.value) return 'Stop Recording';
-  return `Start Recording (${currentMode.value} mode)`;
+  if (isRecording.value) return currentMode.value === 'continuous' ? 'Stop Conversation' : 'Stop Recording';
+  return currentMode.value === 'continuous' ? 'Start Conversation' : 'Start Recording';
 };
 
 const setVoiceMode = (mode: 'manual' | 'continuous') => {
@@ -234,23 +236,15 @@ const clearError = () => {
 
 // Initialize audio service on mount
 onMounted(async () => {
-  // Set up callbacks for audio service
+  // Set up callbacks for enhanced audio service
   audioService.setCallbacks({
     onTranscription: (text: string) => {
       emit('transcription', text);
     },
     onAutoSubmit: (text: string) => {
       emit('submit', text);
-      // In continuous mode, immediately start recording again
-      if (currentMode.value === 'continuous') {
-        setTimeout(async () => {
-          const voiceMode = {
-            type: currentMode.value,
-            ...vadSettings.value
-          };
-          await audioService.startRecording(voiceMode);
-        }, 100); // Small delay to ensure clean state
-      }
+      // Auto-resume is now handled by the enhanced audioService
+      console.log('VoiceInput: Auto-submitted text, auto-resume handled by service');
     },
     onError: (error: string) => {
       emit('error', error);

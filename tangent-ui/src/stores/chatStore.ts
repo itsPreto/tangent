@@ -11,6 +11,11 @@ export const useChatStore = defineStore('chat', () => {
 
     // Load chat list
     const loadChats = async () => {
+        // Prevent multiple simultaneous loads
+        if (isLoading.value) {
+            return;
+        }
+        
         isLoading.value = true;
         error.value = null;
         try {
@@ -22,12 +27,7 @@ export const useChatStore = defineStore('chat', () => {
             chats.value = data.chats;
             triggerRef(chats); // Manually trigger reactivity for shallowRef
             
-            // Log memory usage info for debugging
-            console.log(`[ChatStore] Loaded ${data.chats.length} chats`);
-            if (typeof performance !== 'undefined' && performance.memory) {
-                const memMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
-                console.log(`[ChatStore] Memory usage: ${memMB}MB`);
-            }
+            // Loaded successfully - remove debug logging for production
         } catch (e: any) { // using any to avoid TS type issues with generic errors
             error.value = e.message || 'Failed to load chats';  // Store a user-friendly error
             console.error(e);

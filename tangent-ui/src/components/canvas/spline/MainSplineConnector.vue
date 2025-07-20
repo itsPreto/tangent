@@ -35,12 +35,44 @@
         filter: isHovered ? `drop-shadow(0 0 ${strokeWidth.value * 0.5}px ${activePathColor.value})` : 'none'
       }"
     />
+    
+    <!-- Interactive connection circle at start point -->
+    <g 
+      v-if="!isDragging"
+      :transform="`translate(${connectionPoint.x}, ${connectionPoint.y})`"
+      @mouseenter="handleConnectionHover(true)"
+      @mouseleave="handleConnectionHover(false)"
+      @mousedown.stop="startDrag"
+      style="cursor: grab; pointer-events: all;"
+    >
+      <!-- Outer glow circle -->
+      <circle
+        r="8"
+        :fill="connectionCircleColor"
+        :opacity="isConnectionHovered ? 0.3 : 0.1"
+        :style="{
+          filter: isConnectionHovered ? `blur(4px)` : 'blur(2px)',
+          transition: 'all 0.2s ease'
+        }"
+      />
+      <!-- Inner circle -->
+      <circle
+        r="4"
+        :fill="connectionCircleColor"
+        :opacity="isConnectionHovered ? 1 : 0.4"
+        :style="{
+          transition: 'all 0.2s ease'
+        }"
+      />
+    </g>
+    
 
 
     <!-- Hidden path for text alignment -->
     <path
-      :id="`connection-path-${startNode.id}-${endNode.id}`"
+      :id="pathId"
       :d="isLeftBranch ? reversedPathData : pathData"
+      :key="pathId"
       fill="none"
       stroke="none"
       pointer-events="none"
@@ -69,7 +101,8 @@
       <!-- A single, clean text element. -->
       <text class="text-container" style="pointer-events: all;">
         <textPath
-          :href="`#connection-path-${startNode.id}-${endNode.id}`"
+          :href="`#${pathId}`"
+          :key="`textpath-${pathId}`"
           startOffset="50%"
           text-anchor="middle"
           :class="{ reversed: isLeftBranch }"
@@ -152,7 +185,8 @@ const props = defineProps({
   startLodLevel: { type: String, default: 'full' }, // Start node LOD level
   isActive: { type: Boolean, default: false },
   zoomLevel: { type: Number, default: 1 },
-  isSourceNodeExpanded: { type: Boolean, default: true }
+  isSourceNodeExpanded: { type: Boolean, default: true },
+  curvature: { type: Number, default: 0.5 } // Curvature factor (0 = straight, 1 = moderate, 3 = extremely curvy)
 })
 
 // State
@@ -161,6 +195,9 @@ const labelInput = ref('')
 const customLabel = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 const isHovered = ref(false)
+const isConnectionHovered = ref(false)
+const isDragging = ref(false)
+const dragPosition = ref({ x: 0, y: 0 })
 
 // Theme store for accessing theme colors
 const themeStore = useThemeStore()
@@ -311,19 +348,20 @@ const glowColor = computed(() => {
 const isLeftBranch = computed(() => props.endNode.type === 'left-branch')
 
 const connectionPoints = computed(() => {
-  // Explicitly reference all reactive dependencies
-  const startNodeX = props.startNode.x
-  const startNodeY = props.startNode.y
-  const endNodeX = props.endNode.x
-  const endNodeY = props.endNode.y
-  const endCardWidth = props.cardWidth
-  const endCardHeight = props.cardHeight
-  const startCardWidth = props.startCardWidth
-  const startCardHeight = props.startCardHeight
-  const isSourceExpanded = props.isSourceNodeExpanded
+  // Explicitly reference all reactive dependencies with safe defaults
+  const startNodeX = Number(props.startNode?.x) || 0
+  const startNodeY = Number(props.startNode?.y) || 0
+  // Use drag position if dragging, otherwise use actual end node position
+  const endNodeX = isDragging.value ? dragPosition.value.x : (Number(props.endNode?.x) || 0)
+  const endNodeY = isDragging.value ? dragPosition.value.y : (Number(props.endNode?.y) || 0)
+  const endCardWidth = Number(props.cardWidth) || 300
+  const endCardHeight = Number(props.cardHeight) || 200
+  const startCardWidth = Number(props.startCardWidth) || 300
+  const startCardHeight = Number(props.startCardHeight) || 200
+  const isSourceExpanded = Boolean(props.isSourceNodeExpanded)
   const isLeft = isLeftBranch.value
   
-  const idx = props.endNode.branchMessageIndex ?? 0
+  const idx = Number(props.endNode?.branchMessageIndex) || 0
   
   // Calculate yOff based on specific LOD level
   let yOff;
@@ -348,11 +386,20 @@ const connectionPoints = computed(() => {
     y: startNodeY + Math.min(yOff, startCardHeight - 10)
   }
 
-  const endPoint = {
-    x: endNodeX + (isLeft ? endCardWidth - 1 : 1), // Stop 1px before the edge
-    y: endNodeY + endCardHeight / 2
+  let endPoint
+  if (isDragging.value) {
+    // When dragging, end point is exactly at cursor position (no card offset)
+    endPoint = {
+      x: endNodeX, // This is already dragPosition.x
+      y: endNodeY  // This is already dragPosition.y
+    }
+  } else {
+    // Normal connection to the actual end node with card offset
+    endPoint = {
+      x: endNodeX + (isLeft ? endCardWidth - 1 : 1), // Stop 1px before the edge
+      y: endNodeY + endCardHeight / 2
+    }
   }
-
 
   return { startPoint, endPoint }
 })
@@ -367,21 +414,43 @@ const pathAndControlPoints = computed(() => {
   const dy = endPoint.y - startPoint.y
   const dist = Math.hypot(dx, dy)
   
-  // Improved curve calculation for better visual flow
-  const cpDist = Math.min(dist * 0.5, 300) // Slightly less aggressive curve
-  const vert = Math.min(Math.abs(dy) * 0.2, 60) * (dy < 0 ? -1 : 1) // Reduced vertical influence
+  // Customizable curve calculation based on curvature prop
+  // curvature: 0 = straight line, 1 = moderate curve, 3 = extremely curvy
+  const curvatureMultiplier = Math.max(0, props.curvature) // Allow values above 1 for extreme curves
+  
+  // Scale the base curve more dramatically for higher curvature values
+  const baseCurveRatio = curvatureMultiplier <= 1 
+    ? 0.1 + curvatureMultiplier * 0.8  // 0.1 to 0.9 for values 0-1
+    : 0.9 + (curvatureMultiplier - 1) * 1.5  // 0.9 to 3.9 for values 1-3
+  const baseCurve = dist * baseCurveRatio
+  
+  // Dramatically increase max curve distance for higher values
+  const maxCurve = curvatureMultiplier <= 1
+    ? 100 + curvatureMultiplier * 400  // 100px to 500px for values 0-1
+    : 500 + (curvatureMultiplier - 1) * 800  // 500px to 2100px for values 1-3
+  const cpDist = Math.min(baseCurve, maxCurve)
+  
+  // Increase vertical influence dramatically for higher curvature
+  const verticalInfluence = curvatureMultiplier <= 1
+    ? curvatureMultiplier * 0.3  // 0 to 0.3 for values 0-1
+    : 0.3 + (curvatureMultiplier - 1) * 0.6  // 0.3 to 1.5 for values 1-3
+  const maxVertical = curvatureMultiplier <= 1
+    ? 60 * curvatureMultiplier  // 0 to 60px for values 0-1
+    : 60 + (curvatureMultiplier - 1) * 100  // 60px to 260px for values 1-3
+  const vert = Math.min(Math.abs(dy) * verticalInfluence, maxVertical) * (dy < 0 ? -1 : 1)
 
   const controlPoint1 = {
     x: startPoint.x + (isLeftBranch.value ? -cpDist : cpDist),
-    y: startPoint.y + vert * 0.5 // Smoother transition
+    y: startPoint.y + vert * 0.5
   }
   const controlPoint2 = {
-    x: endPoint.x + (isLeftBranch.value ? cpDist * 0.6 : -cpDist * 0.6), // Asymmetric for better flow
+    x: endPoint.x + (isLeftBranch.value ? cpDist * 0.6 : -cpDist * 0.6),
     y: endPoint.y - vert * 0.5
   }
 
-  // Clean up path formatting for better performance
-  const path = `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C${controlPoint1.x.toFixed(1)},${controlPoint1.y.toFixed(1)},${controlPoint2.x.toFixed(1)},${controlPoint2.y.toFixed(1)},${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`
+  // Clean up path formatting for better performance with NaN safety
+  const safeNum = (n) => isNaN(n) ? 0 : n
+  const path = `M${safeNum(startPoint.x).toFixed(1)},${safeNum(startPoint.y).toFixed(1)}C${safeNum(controlPoint1.x).toFixed(1)},${safeNum(controlPoint1.y).toFixed(1)},${safeNum(controlPoint2.x).toFixed(1)},${safeNum(controlPoint2.y).toFixed(1)},${safeNum(endPoint.x).toFixed(1)},${safeNum(endPoint.y).toFixed(1)}`
 
   return { startPoint, endPoint, controlPoint1, controlPoint2, path }
 })
@@ -390,10 +459,11 @@ const pathData = computed(() => pathAndControlPoints.value.path)
 const reversedPathData = computed(() => {
   const { startPoint, endPoint, controlPoint1, controlPoint2 } =
     pathAndControlPoints.value
-  return `M ${endPoint.x} ${endPoint.y}
-          C ${controlPoint2.x} ${controlPoint2.y},
-            ${controlPoint1.x} ${controlPoint1.y},
-            ${startPoint.x} ${startPoint.y}`
+  const safeNum = (n) => isNaN(n) ? 0 : n
+  return `M ${safeNum(endPoint.x)} ${safeNum(endPoint.y)}
+          C ${safeNum(controlPoint2.x)} ${safeNum(controlPoint2.y)},
+            ${safeNum(controlPoint1.x)} ${safeNum(controlPoint1.y)},
+            ${safeNum(startPoint.x)} ${safeNum(startPoint.y)}`
 })
 
 // Styling - consistent across all zoom levels
@@ -404,20 +474,37 @@ const strokeWidth = computed(() => {
 const dashPattern = computed(() => {
   return "4 6" // Consistent dash pattern regardless of zoom
 })
+
+// Connection point at the end node connection
+const connectionPoint = computed(() => {
+  const { endPoint } = connectionPoints.value
+  return endPoint
+})
+
+// Connection circle color
+const connectionCircleColor = computed(() => activePathColor.value)
+
 const fontSize = computed(() => {
   // Scale font size inversely with zoom level to maintain readability
   return baseFontSize / Math.max(props.zoomLevel, 0.1) // Prevent division by zero
+})
+
+// Compute unique path ID based on node positions
+const pathId = computed(() => {
+  return `connection-path-${props.startNode.id}-${props.endNode.id}-${Math.round(props.startNode.x)}-${Math.round(props.startNode.y)}-${Math.round(props.endNode.x)}-${Math.round(props.endNode.y)}`
 })
 
 // Gradient coordinates for directional flow from parent to child
 const gradientCoords = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints()
   
+  const safeNum = (n) => isNaN(n) ? 0 : n
+  
   return {
-    x1: startPoint.x,
-    y1: startPoint.y,
-    x2: endPoint.x,
-    y2: endPoint.y
+    x1: safeNum(startPoint.x),
+    y1: safeNum(startPoint.y),
+    x2: safeNum(endPoint.x),
+    y2: safeNum(endPoint.y)
   }
 })
 
@@ -574,75 +661,109 @@ function getInputBackgroundColor(): string {
 
 // Get label color with proper contrast for all themes
 function getLabelColor(): string {
-  // Use theme colors for maximum visibility
   const colors = themeColors.value
   
-  switch (currentThemeName.value) {
-    // Light themes - use darker variants of theme colors
-    case 'light':
-      return '#570DF8' // Deep purple
-    case 'cupcake':
-      return '#65C3C8' // Teal
-    case 'bumblebee':
-      return '#181830' // Use accent (dark) for contrast
-    case 'emerald':
-      return '#377CFB' // Blue secondary
-    case 'corporate':
-      return '#4B6BFB' // Primary blue
-    case 'garden':
-      return '#5c7f67' // Forest green
-    case 'lofi':
-      return '#0D0D0D' // Near black
-    case 'pastel':
-      return '#7c6882' // Darker variant of pastel purple
-    case 'fantasy':
-      return '#6D0A0A' // Deep red
-    case 'wireframe':
-      return '#595959' // Dark gray
-    case 'lemonade':
-      return '#519903' // Dark lime
-      
-    // Dark themes - use brighter/vibrant variants
-    case 'dark':
-      return '#F471B5' // Bright pink secondary
-    case 'synthwave':
-      return '#FF00FF' // Magenta
-    case 'retro':
-      return '#F4A460' // Sandy brown accent
-    case 'cyberpunk':
-      return '#00FFFF' // Cyan
-    case 'valentine':
-      return '#FFB6C1' // Light pink accent
-    case 'halloween':
-      return '#FF8C00' // Dark orange
-    case 'forest':
-      return '#1EB854' // Bright green
-    case 'aqua':
-      return '#09ECF3' // Bright cyan
-    case 'black':
-      return '#999999' // Light gray accent
-    case 'luxury':
-      return '#FFD700' // Gold accent
-    case 'dracula':
-      return '#FF79C6' // Pink
-    case 'cmyk':
-      return '#FFEB3B' // Yellow accent
-    case 'autumn':
-      return '#CD853F' // Peru accent
-    case 'business':
-      return '#60A5FA' // Light blue accent
-    case 'acid':
-      return '#FFFF00' // Yellow
-    case 'night':
-      return '#C084FC' // Purple accent
-    case 'coffee':
-      return '#DAC3B3' // Light coffee accent
-    case 'winter':
-      return '#10B981' // Emerald accent
-      
-    default:
-      return colors.primary
+  // Helper function to calculate luminance
+  function getLuminance(hex: string): number {
+    const r = parseInt(hex.slice(1, 3), 16) / 255
+    const g = parseInt(hex.slice(3, 5), 16) / 255
+    const b = parseInt(hex.slice(5, 7), 16) / 255
+    
+    const toLinear = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+    
+    return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
   }
+  
+  // Helper function to calculate contrast ratio
+  function getContrastRatio(color1: string, color2: string): number {
+    const lum1 = getLuminance(color1)
+    const lum2 = getLuminance(color2)
+    const brightest = Math.max(lum1, lum2)
+    const darkest = Math.min(lum1, lum2)
+    return (brightest + 0.05) / (darkest + 0.05)
+  }
+  
+  // Get candidate colors for each theme
+  const candidateColors = []
+  
+  // For light themes, prefer darker colors
+  if (!isThemeDark.value) {
+    candidateColors.push('#000000', '#333333', '#555555', colors.primary, colors.secondary)
+    // Add darker variants of theme colors
+    candidateColors.push(darkenColor(colors.primary, 0.3))
+    candidateColors.push(darkenColor(colors.secondary, 0.3))
+  } else {
+    // For dark themes, prefer lighter colors  
+    candidateColors.push('#FFFFFF', '#CCCCCC', '#AAAAAA', colors.primary, colors.secondary, colors.accent)
+    // Add lighter variants of theme colors
+    candidateColors.push(lightenColor(colors.primary, 0.3))
+    candidateColors.push(lightenColor(colors.secondary, 0.3))
+    candidateColors.push(lightenColor(colors.accent, 0.3))
+  }
+  
+  // Special overrides for problematic themes
+  switch (currentThemeName.value) {
+    case 'bumblebee':
+      candidateColors.unshift('#181830', '#000000') // Dark colors for yellow background
+      break
+    case 'cyberpunk':
+      candidateColors.unshift('#00FFFF', '#FFFFFF') // Cyan or white for contrast
+      break
+    case 'synthwave':
+      candidateColors.unshift('#FF00FF', '#00FFFF') // Bright magenta/cyan
+      break
+    case 'acid':
+      candidateColors.unshift('#FFFF00', '#00FF00') // Bright yellow/green
+      break
+    case 'valentine':
+      candidateColors.unshift('#FFB6C1', '#FFFFFF') // Light pink or white
+      break
+    case 'halloween':
+      candidateColors.unshift('#FF8C00', '#FFFFFF') // Orange or white
+      break
+    case 'luxury':
+      candidateColors.unshift('#FFD700', '#FFFFFF') // Gold or white
+      break
+  }
+  
+  // Try to get background color from CSS custom properties or fallback
+  const backgroundColor = isThemeDark.value ? '#1a1a1a' : '#ffffff'
+  
+  // Find the color with best contrast (minimum 4.5:1 for accessibility)
+  let bestColor = candidateColors[0]
+  let bestContrast = getContrastRatio(bestColor, backgroundColor)
+  
+  for (const color of candidateColors) {
+    const contrast = getContrastRatio(color, backgroundColor)
+    if (contrast > bestContrast) {
+      bestColor = color
+      bestContrast = contrast
+    }
+  }
+  
+  // Ensure minimum contrast - if none meet the threshold, use black or white
+  if (bestContrast < 4.5) {
+    const blackContrast = getContrastRatio('#000000', backgroundColor)
+    const whiteContrast = getContrastRatio('#FFFFFF', backgroundColor)
+    bestColor = blackContrast > whiteContrast ? '#000000' : '#FFFFFF'
+  }
+  
+  return bestColor
+}
+
+// Helper functions for color manipulation
+function darkenColor(hex: string, amount: number): string {
+  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount))
+  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount))
+  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount))
+  return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`
+}
+
+function lightenColor(hex: string, amount: number): string {
+  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + (255 - parseInt(hex.slice(1, 3), 16)) * amount)
+  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + (255 - parseInt(hex.slice(3, 5), 16)) * amount)
+  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + (255 - parseInt(hex.slice(5, 7), 16)) * amount)
+  return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`
 }
 
 // Label content
@@ -744,7 +865,7 @@ function getVisualStrokeWidth() {
 // Setup intersection observer
 function setupObserver() {
   if (typeof IntersectionObserver === 'undefined') return
-  const id = `connection-path-${props.startNode.id}-${props.endNode.id}`
+  const id = pathId.value
   const svg = document.querySelector(`#${id}`)?.closest('svg')
   if (!svg) return
   const obs = new IntersectionObserver(
@@ -831,6 +952,186 @@ onMounted(() => {
     emitter.off('spline-hover', handleInteractionLayerHover)
   })
 })
+
+// Connection circle hover handlers
+const handleConnectionHover = (hovering: boolean) => {
+  isConnectionHovered.value = hovering
+}
+
+// Drag handlers
+const startDrag = (event: MouseEvent) => {
+  event.preventDefault()
+  isDragging.value = true
+  
+  // Get SVG coordinates
+  const svg = event.currentTarget?.closest('svg')
+  if (!svg) return
+  
+  const pt = svg.createSVGPoint()
+  pt.x = event.clientX
+  pt.y = event.clientY
+  const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+  
+  dragPosition.value = { x: svgP.x, y: svgP.y }
+  
+  // Add global event listeners
+  document.addEventListener('mousemove', handleDragMove)
+  document.addEventListener('mouseup', handleDragEnd)
+  
+  // Emit drag start event
+  emitter.emit('node-detach-start', {
+    nodeId: props.endNode.id,
+    parentId: props.startNode.id
+  })
+}
+
+const handleDragMove = (event: MouseEvent) => {
+  if (!isDragging.value) return
+  
+  // Get SVG coordinates
+  const svg = document.querySelector('svg')
+  if (!svg) return
+  
+  const pt = svg.createSVGPoint()
+  pt.x = event.clientX
+  pt.y = event.clientY
+  const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+  
+  dragPosition.value = { x: svgP.x, y: svgP.y }
+  
+  // Emit drag move event for highlighting potential targets
+  emitter.emit('node-detach-move', {
+    nodeId: props.endNode.id,
+    position: dragPosition.value
+  })
+}
+
+const handleDragEnd = async (event: MouseEvent) => {
+  if (!isDragging.value) return
+  
+  // Remove global event listeners
+  document.removeEventListener('mousemove', handleDragMove)
+  document.removeEventListener('mouseup', handleDragEnd)
+  
+  // Get the target element at the mouse position
+  const target = document.elementFromPoint(event.clientX, event.clientY)
+  
+  // Check if dropped on a valid node
+  const nodeElement = target?.closest('.branch-node-container')
+  let actionPerformed = false
+  
+  if (nodeElement) {
+    const targetNodeId = nodeElement.getAttribute('data-node-id')
+    if (targetNodeId && targetNodeId !== props.endNode.id && targetNodeId !== props.startNode.id) {
+      // Valid drop target - attempt to attach
+      try {
+        const response = await fetch(`http://127.0.0.1:5050/chats/${canvasStore.currentChatId}/nodes/${props.endNode.id}/attach`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parentId: targetNodeId,
+            branchMessageIndex: 0 // TODO: Calculate appropriate index
+          })
+        })
+        
+        if (response.ok) {
+          // Success - update the canvas
+          canvasStore.updateNode(props.endNode.id, {
+            parentId: targetNodeId,
+            branchMessageIndex: 0
+          })
+          actionPerformed = true
+          
+          // Add to undo/redo history
+          emitter.emit('add-undo-action', {
+            type: 'node-reattach',
+            nodeId: props.endNode.id,
+            oldParentId: props.startNode.id,
+            newParentId: targetNodeId,
+            oldBranchIndex: props.endNode.branchMessageIndex
+          })
+        } else {
+          const error = await response.json()
+          console.error('Failed to attach node:', error)
+        }
+      } catch (error) {
+        console.error('Error attaching node:', error)
+      }
+    }
+  }
+  
+  if (!actionPerformed) {
+    // Dropped in empty space - animate out and detach
+    await animateSplineOut()
+    
+    try {
+      const response = await fetch(`http://127.0.0.1:5050/chats/${canvasStore.currentChatId}/nodes/${props.endNode.id}/detach`, {
+        method: 'POST'
+      })
+      
+      if (response.ok) {
+        // Success - update the canvas
+        canvasStore.updateNode(props.endNode.id, {
+          parentId: null,
+          branchMessageIndex: null
+        })
+        
+        // Add to undo/redo history
+        emitter.emit('add-undo-action', {
+          type: 'node-orphan',
+          nodeId: props.endNode.id,
+          oldParentId: props.startNode.id,
+          oldBranchIndex: props.endNode.branchMessageIndex
+        })
+      }
+    } catch (error) {
+      console.error('Error detaching node:', error)
+    }
+  }
+  
+  isDragging.value = false
+  
+  // Emit drag end event
+  emitter.emit('node-detach-end', {
+    nodeId: props.endNode.id
+  })
+}
+
+// Animate spline fading out when orphaned
+const animateSplineOut = async () => {
+  return new Promise<void>((resolve) => {
+    // Animate the spline to fade and move off-canvas
+    const steps = 20
+    const duration = 300
+    const stepTime = duration / steps
+    let currentStep = 0
+    
+    const animate = () => {
+      currentStep++
+      const progress = currentStep / steps
+      
+      // Move end point off-canvas while fading
+      const windowWidth = window.innerWidth
+      const windowHeight = window.innerHeight
+      const offCanvasX = windowWidth + 200
+      const offCanvasY = props.endNode.y
+      
+      // Interpolate between current drag position and off-canvas
+      dragPosition.value = {
+        x: dragPosition.value.x + (offCanvasX - dragPosition.value.x) * progress * 0.1,
+        y: dragPosition.value.y + (offCanvasY - dragPosition.value.y) * progress * 0.05
+      }
+      
+      if (currentStep < steps) {
+        setTimeout(animate, stepTime)
+      } else {
+        resolve()
+      }
+    }
+    
+    animate()
+  })
+}
 </script>
 
 <style scoped>

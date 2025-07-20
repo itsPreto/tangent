@@ -61,8 +61,11 @@
     </div>
 
     <!-- Status Indicator -->
-    <div v-if="isLoading || error" class="status-indicator ml-2">
-      <Loader2 v-if="isLoading" class="w-4 h-4 animate-spin text-blue-500" />
+    <div v-if="isLoading || error || progress > 0" class="status-indicator ml-2">
+      <div v-if="isLoading" class="flex items-center gap-1">
+        <Loader2 class="w-4 h-4 animate-spin text-blue-500" />
+        <div v-if="progress > 0" class="text-xs text-blue-500">{{ progress }}%</div>
+      </div>
       <AlertCircle v-else-if="error" class="w-4 h-4 text-red-500" :title="error" />
     </div>
   </div>
@@ -71,7 +74,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Volume2, VolumeX, RotateCcw, Loader2, AlertCircle } from 'lucide-vue-next'
-import ttsService from '@/services/ttsService'
+import smartTTSService from '@/services/smartTTSService'
 
 interface Props {
   text: string
@@ -100,19 +103,20 @@ const emit = defineEmits<{
 }>()
 
 // Local state
-const selectedVoice = ref(ttsService.settings.voice)
-const speed = ref(ttsService.settings.speed)
+const selectedVoice = ref(smartTTSService.settings.voice)
+const speed = ref(smartTTSService.settings.speed)
 const isStreamingMode = ref(false)
 const streamingBuffer = ref('')
 const lastProcessedLength = ref(0)
 
 // Computed properties
-const canSpeak = computed(() => ttsService.canSpeak)
-const voices = computed(() => ttsService.voices.value)
-const isLoading = computed(() => ttsService.isSpeaking.value)
-const isPlaying = computed(() => ttsService.isPlaying.value)
-const error = computed(() => ttsService.error.value)
-const autoRead = computed(() => ttsService.settings.autoRead)
+const canSpeak = computed(() => smartTTSService.canSpeak)
+const voices = computed(() => smartTTSService.voices.value)
+const isLoading = computed(() => smartTTSService.isSpeaking.value)
+const isPlaying = computed(() => smartTTSService.isPlaying.value)
+const error = computed(() => smartTTSService.error.value)
+const autoRead = computed(() => smartTTSService.settings.autoRead)
+const progress = computed(() => smartTTSService.progress.value)
 
 const isActive = computed(() => isLoading.value || isPlaying.value)
 
@@ -126,53 +130,45 @@ const togglePlayback = async () => {
 }
 
 const startReading = async () => {
-  console.log('TTSControls: startReading called, text:', props.text.slice(0, 50), 'canSpeak:', canSpeak.value)
+  console.log('SmartTTSControls: startReading called, text:', props.text.slice(0, 50), 'canSpeak:', canSpeak.value)
   
   if (!props.text.trim() || !canSpeak.value) {
-    console.log('TTSControls: Cannot start reading - no text or cannot speak')
+    console.log('SmartTTSControls: Cannot start reading - no text or cannot speak')
     return
   }
 
   try {
-    console.log('TTSControls: Starting TTS with voice:', selectedVoice.value, 'speed:', speed.value)
+    console.log('SmartTTSControls: Starting Smart TTS with voice:', selectedVoice.value, 'speed:', speed.value)
     
-    // Use semantic chunking for better natural speech flow
-    if (props.text.length > 100) {
-      await ttsService.speakSemanticChunks(props.text, {
-        voice: selectedVoice.value,
-        speed: speed.value
-      })
-    } else {
-      // For very short texts, use the regular speak method
-      await ttsService.speak(props.text, {
-        voice: selectedVoice.value,
-        speed: speed.value
-      })
-    }
-    console.log('TTSControls: TTS completed successfully')
+    // Use smart TTS with word-level chunking for immediate playback
+    await smartTTSService.speakSmart(props.text, {
+      voice: selectedVoice.value,
+      speed: speed.value
+    })
+    console.log('SmartTTSControls: Smart TTS completed successfully')
   } catch (error) {
-    console.error('TTSControls: TTS error:', error)
+    console.error('SmartTTSControls: Smart TTS error:', error)
   }
 }
 
 const stopReading = () => {
-  ttsService.stop()
+  smartTTSService.stop()
 }
 
 const toggleAutoRead = () => {
-  ttsService.updateSettings({
+  smartTTSService.updateSettings({
     autoRead: !autoRead.value
   })
 }
 
 const updateVoice = () => {
-  ttsService.updateSettings({
+  smartTTSService.updateSettings({
     voice: selectedVoice.value
   })
 }
 
 const updateSpeed = () => {
-  ttsService.updateSettings({
+  smartTTSService.updateSettings({
     speed: speed.value
   })
 }
@@ -258,7 +254,7 @@ const extractSpeakableChunk = (text: string, fromIndex: number): string => {
 
 const speakStreamingChunk = async (chunk: string) => {
   try {
-    await ttsService.speak(chunk, {
+    await smartTTSService.speakSmart(chunk, {
       voice: selectedVoice.value,
       speed: speed.value
     })
@@ -338,7 +334,7 @@ watch(error, (newError) => {
 // Cleanup on unmount
 onUnmounted(() => {
   if (isActive.value) {
-    ttsService.stop()
+    smartTTSService.stop()
   }
   if (isStreamingMode.value) {
     stopStreamingMode()
