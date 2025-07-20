@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Test coverage
+coverage/
+*.lcov
+.nyc_output
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
