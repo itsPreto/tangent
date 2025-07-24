@@ -48,6 +48,26 @@ class EmbeddingService:
             self.logger.error(f"Error generating embeddings: {e}")
             raise
     
+    async def generate_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Generate embedding for a single text using Ollama (async compatible)
+        """
+        try:
+            response = requests.post(
+                f"{self.ollama_base_url}/api/embed",
+                json={
+                    "model": self.model_name,
+                    "input": text
+                },
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result["embeddings"][0]
+        except Exception as e:
+            self.logger.error(f"Error generating single embedding: {e}")
+            return None
+    
     def extract_conversation_text(self, conversation: Dict[str, Any]) -> str:
         """
         Extract meaningful text from a conversation object for embedding
@@ -230,4 +250,83 @@ class EmbeddingService:
             self.logger.info("Cleared all conversation embeddings")
         except Exception as e:
             self.logger.error(f"Error clearing collection: {e}")
+            raise
+    
+    def search_nodes(self, query: str, chat_id: str = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search for nodes based on semantic similarity to query
+        """
+        try:
+            # Generate embedding for the query
+            query_embedding = self.generate_embeddings([query])[0]
+            
+            # Build filter for specific chat if provided
+            where_filter = None
+            if chat_id:
+                where_filter = {"chat_id": {"$eq": chat_id}}
+            
+            # Search in nodes collection
+            results = self.nodes_collection.query(
+                query_embeddings=[query_embedding.tolist()],
+                n_results=limit,
+                where=where_filter,
+                include=['metadatas', 'documents', 'distances']
+            )
+            
+            # Format results
+            formatted_results = []
+            if results['ids'] and results['ids'][0]:
+                for i in range(len(results['ids'][0])):
+                    formatted_results.append({
+                        'node_id': results['ids'][0][i],
+                        'metadata': results['metadatas'][0][i],
+                        'content': results['documents'][0][i],
+                        'similarity': 1 - results['distances'][0][i]
+                    })
+            
+            return formatted_results
+            
+        except Exception as e:
+            self.logger.error(f"Error searching nodes: {e}")
+            return []
+    
+    def store_node_embedding(self, node_id: str, node_content: str, chat_id: str, metadata: Dict[str, Any] = None):
+        """
+        Store embedding for a single node
+        """
+        try:
+            if not hasattr(self, 'nodes_collection'):
+                self.nodes_collection = self.client.get_or_create_collection(
+                    name="nodes",
+                    metadata={"hnsw:space": "cosine"}
+                )
+            
+            if not node_content.strip():
+                self.logger.warning(f"No content for node {node_id}")
+                return
+            
+            embedding = self.generate_embeddings([node_content])[0]
+            
+            # Prepare metadata
+            meta = {
+                'node_id': node_id,
+                'chat_id': chat_id,
+                'content_length': len(node_content),
+                'created_at': metadata.get('created_at', '') if metadata else ''
+            }
+            if metadata:
+                meta.update(metadata)
+            
+            # Store in ChromaDB
+            self.nodes_collection.upsert(
+                embeddings=[embedding.tolist()],
+                documents=[node_content],
+                metadatas=[meta],
+                ids=[node_id]
+            )
+            
+            self.logger.info(f"Stored embedding for node {node_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error storing node embedding {node_id}: {e}")
             raise

@@ -348,7 +348,7 @@ const glowColor = computed(() => {
 const isLeftBranch = computed(() => props.endNode.type === 'left-branch')
 
 const connectionPoints = computed(() => {
-  // Explicitly reference all reactive dependencies with safe defaults
+  // Use node coordinates directly (should be fixed by canvas store migration)
   const startNodeX = Number(props.startNode?.x) || 0
   const startNodeY = Number(props.startNode?.y) || 0
   // Use drag position if dragging, otherwise use actual end node position
@@ -360,6 +360,21 @@ const connectionPoints = computed(() => {
   const startCardHeight = Number(props.startCardHeight) || 200
   const isSourceExpanded = Boolean(props.isSourceNodeExpanded)
   const isLeft = isLeftBranch.value
+  
+  console.log('[MainSplineConnector] Node coordinates:', {
+    startNode: { 
+      id: props.startNode?.id, 
+      x: startNodeX, 
+      y: startNodeY,
+      type: props.startNode?.type
+    },
+    endNode: { 
+      id: props.endNode?.id, 
+      x: endNodeX, 
+      y: endNodeY,
+      type: props.endNode?.type
+    }
+  })
   
   const idx = Number(props.endNode?.branchMessageIndex) || 0
   
@@ -400,6 +415,12 @@ const connectionPoints = computed(() => {
       y: endNodeY + endCardHeight / 2
     }
   }
+
+  console.log('[MainSplineConnector] Final connection points:', {
+    startPoint,
+    endPoint,
+    SVGPath: `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C...${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`
+  })
 
   return { startPoint, endPoint }
 })
@@ -451,6 +472,7 @@ const pathAndControlPoints = computed(() => {
   // Clean up path formatting for better performance with NaN safety
   const safeNum = (n) => isNaN(n) ? 0 : n
   const path = `M${safeNum(startPoint.x).toFixed(1)},${safeNum(startPoint.y).toFixed(1)}C${safeNum(controlPoint1.x).toFixed(1)},${safeNum(controlPoint1.y).toFixed(1)},${safeNum(controlPoint2.x).toFixed(1)},${safeNum(controlPoint2.y).toFixed(1)},${safeNum(endPoint.x).toFixed(1)},${safeNum(endPoint.y).toFixed(1)}`
+
 
   return { startPoint, endPoint, controlPoint1, controlPoint2, path }
 })

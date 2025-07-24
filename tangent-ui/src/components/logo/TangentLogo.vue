@@ -1,140 +1,90 @@
 <template>
-  <div
-    class="relative inline-block theme-logo-container"
-    :class="'theme-' + currentTheme"
-  >
+  <div class="relative inline-block theme-logo-container" :class="'theme-' + currentTheme">
     <!-- Logo Section -->
 
-        <!-- Theme Dropdown (visible when clicked) -->
-        <Teleport to="body">
-      <div 
-        v-if="isDropdownOpen"
+    <!-- Theme Dropdown (visible when clicked) -->
+    <Teleport to="body">
+      <div v-if="isDropdownOpen"
         class="fixed w-64 max-h-[60vh] overflow-y-auto rounded-lg border shadow-lg theme-dropdown transition-all duration-200"
-        style="z-index: 99999;"
-        :style="{ ...dropdownStyle, ...getDropdownPosition() }"
-        @click.stop
-      >
-      <div class="p-2 search-container" :style="searchContainerStyle">
-        <div class="relative">
-          <Search class="absolute left-3 top-2.5 w-4 h-4 search-icon" :style="{ color: searchIconColor }" />
-          <input 
-            v-model="search" 
-            type="text" 
-            placeholder="Search themes..."
-            class="w-full px-3 py-2 pl-9 text-sm rounded-md border-0 focus:ring-1 focus:outline-none search-input"
-            :style="searchInputStyle" 
-          />
-        </div>
-      </div>
-
-      <div class="py-1 themes-list">
-        <button 
-          v-for="theme in filteredThemes" 
-          :key="theme" 
-          @click="selectTheme(theme)"
-          class="w-full px-3 py-2 flex items-center gap-3 transition-colors group theme-option"
-          :class="{ 'selected-theme': theme === currentTheme }"
-          :style="getThemeOptionStyle(theme)"
-        >
-          <!-- Theme Preview -->
-          <div class="flex items-center gap-1.5">
-            <div 
-              class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200 theme-preview-dot"
-              :style="{ backgroundColor: getThemeColors(theme).primary }" 
-            />
-            <div 
-              class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200 theme-preview-dot"
-              :style="{ backgroundColor: getThemeColors(theme).secondary }" 
-            />
-            <div 
-              class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200 theme-preview-dot"
-              :style="{ backgroundColor: getThemeColors(theme).accent }" 
-            />
+        style="z-index: 99999;" :style="{ ...dropdownStyle, ...getDropdownPosition() }" @click.stop>
+        <div class="p-2 search-container" :style="searchContainerStyle">
+          <div class="relative">
+            <Search class="absolute left-3 top-2.5 w-4 h-4 search-icon" :style="{ color: searchIconColor }" />
+            <input v-model="search" type="text" placeholder="Search themes..."
+              class="w-full px-3 py-2 pl-9 text-sm rounded-md border-0 focus:ring-1 focus:outline-none search-input"
+              :style="searchInputStyle" />
           </div>
+        </div>
 
-          <span class="text-sm theme-option-name">{{ theme.charAt(0).toUpperCase() + theme.slice(1) }}</span>
+        <div class="py-1 themes-list">
+          <button v-for="theme in filteredThemes" :key="theme" @click="selectTheme(theme)"
+            class="w-full px-3 py-2 flex items-center gap-3 transition-colors group theme-option"
+            :class="{ 'selected-theme': theme === currentTheme }" :style="getThemeOptionStyle(theme)">
+            <!-- Theme Preview -->
+            <div class="flex items-center gap-1.5">
+              <div
+                class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200 theme-preview-dot"
+                :style="{ backgroundColor: getThemeColors(theme).primary }" />
+              <div
+                class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200 theme-preview-dot"
+                :style="{ backgroundColor: getThemeColors(theme).secondary }" />
+              <div
+                class="w-3 h-3 rounded-full transition-transform group-hover:scale-110 duration-200 theme-preview-dot"
+                :style="{ backgroundColor: getThemeColors(theme).accent }" />
+            </div>
 
-          <Check v-if="theme === currentTheme" class="w-4 h-4 ml-auto text-primary" />
-        </button>
-      </div>
-      
+            <span class="text-sm theme-option-name">{{ theme.charAt(0).toUpperCase() + theme.slice(1) }}</span>
+
+            <Check v-if="theme === currentTheme" class="w-4 h-4 ml-auto text-primary" />
+          </button>
+        </div>
+
       </div>
     </Teleport>
 
     <div
       class="w-[180px] h-[36px] relative perspective-[1000px] rounded-lg overflow-hidden cursor-pointer logo-container"
-      @mousemove="handleMouseMove"
-      @mouseleave="handleLogoMouseLeave"
-    >
+      @mousemove="handleMouseMove" @mouseleave="handleLogoMouseLeave">
       <!-- Left click area -->
-      <div 
-        class="absolute left-0 top-0 w-1/2 h-full z-10 hover-area-left"
-        @click="previousTheme"
-        :style="leftHoverStyle"
-      ></div>
+      <div class="absolute left-0 top-0 w-1/2 h-full z-10 hover-area-left" @click.stop="(e) => previousTheme(e)"
+        :style="leftHoverStyle"></div>
       <!-- Right click area -->
-      <div 
-        class="absolute right-0 top-0 w-1/2 h-full z-10 hover-area-right"
-        @click="nextTheme"
-        :style="rightHoverStyle"
-      ></div>
-      <div
-        ref="gridRef"
-        class="w-full h-full grid relative gap-0"
-        :style="{
-          gridTemplateColumns: `repeat(${COLS}, 1fr)`,
-          gridTemplateRows: `repeat(${ROWS}, 1fr)`
-        }"
-      >
-        <div
-          v-for="(_, i) in cells"
-          :key="i"
-          class="relative transition-transform duration-1000 ease-in-out cell"
+      <div class="absolute right-0 top-0 w-1/2 h-full z-10 hover-area-right" @click.stop="(e) => nextTheme(e)"
+        :style="rightHoverStyle"></div>
+      <div ref="gridRef" class="w-full h-full grid relative gap-0" :style="{
+        gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+        gridTemplateRows: `repeat(${ROWS}, 1fr)`
+      }">
+        <div v-for="(_, i) in cells" :key="i" class="relative transition-transform duration-1000 ease-in-out cell"
           :style="{
             transformStyle: 'preserve-3d',
             border: 'none',
             backgroundColor: 'transparent'
-          }"
-        >
-          <div
-            class="absolute w-full h-full overflow-hidden front"
-            :style="{
-              backfaceVisibility: 'hidden',
-              backgroundColor: 'transparent'
-            }"
-          >
-            <div
-              class="w-[180px] h-[36px] relative"
-              :style="{
-                transform: `translate(${-(i % COLS) * (180 / COLS)}px, ${-Math.floor(i / COLS) * (36 / ROWS)}px)`
-              }"
-            >
+          }">
+          <div class="absolute w-full h-full overflow-hidden front" :style="{
+            backfaceVisibility: 'hidden',
+            backgroundColor: 'transparent'
+          }">
+            <div class="w-[180px] h-[36px] relative" :style="{
+              transform: `translate(${-(i % COLS) * (180 / COLS)}px, ${-Math.floor(i / COLS) * (36 / ROWS)}px)`
+            }">
               <LogoSVG />
             </div>
           </div>
-          <div
-            class="absolute w-full h-full overflow-hidden back"
-            :style="{
-              backfaceVisibility: 'hidden',
-              transform: 'rotateY(180deg)',
-              backgroundColor: 'transparent'
-            }"
-          >
-            <div
-              class="absolute w-[180px] h-[36px]"
-              :style="{
-                transform: `translate(${-(i % COLS) * (180 / COLS)}px, ${-Math.floor(i / COLS) * (36 / ROWS)}px)`
-              }"
-            >
-              <div 
-                class="font-sans text-[24px] font-bold w-full h-full flex items-center justify-center"
-                :style="{
-                  background: `linear-gradient(135deg, ${getThemeColors(currentTheme).primary}, ${getThemeColors(currentTheme).secondary}, ${getThemeColors(currentTheme).accent})`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }"
-              >
+          <div class="absolute w-full h-full overflow-hidden back" :style="{
+            backfaceVisibility: 'hidden',
+            transform: 'rotateY(180deg)',
+            backgroundColor: 'transparent'
+          }">
+            <div class="absolute w-[180px] h-[36px]" :style="{
+              transform: `translate(${-(i % COLS) * (180 / COLS)}px, ${-Math.floor(i / COLS) * (36 / ROWS)}px)`
+            }">
+              <div class="font-sans text-[24px] font-bold w-full h-full flex items-center justify-center" :style="{
+                background: `linear-gradient(135deg, ${getThemeColors(currentTheme).primary}, ${getThemeColors(currentTheme).secondary}, ${getThemeColors(currentTheme).accent})`,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text'
+              }">
                 TANGENT
               </div>
             </div>
@@ -245,23 +195,23 @@ const dropdownStyle = computed(() => {
     borderColor: isDarkTheme.value ? 'rgba(70, 70, 80, 0.3)' : 'rgba(210, 210, 220, 0.5)',
     color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)',
     backdropFilter: 'blur(10px)',
-    boxShadow: isDarkTheme.value 
-      ? '0 8px 20px rgba(0, 0, 0, 0.4)' 
+    boxShadow: isDarkTheme.value
+      ? '0 8px 20px rgba(0, 0, 0, 0.4)'
       : '0 8px 20px rgba(0, 0, 0, 0.1)',
   };
 });
 
 const searchContainerStyle = computed(() => {
   return {
-    borderBottom: isDarkTheme.value 
-      ? '1px solid rgba(80, 80, 90, 0.2)' 
+    borderBottom: isDarkTheme.value
+      ? '1px solid rgba(80, 80, 90, 0.2)'
       : '1px solid rgba(220, 220, 230, 0.5)'
   };
 });
 
 const searchInputStyle = computed(() => {
   const primaryColor = getThemeColors(currentTheme.value).primary;
-  
+
   return {
     backgroundColor: isDarkTheme.value ? 'rgba(40, 40, 50, 0.5)' : 'rgba(240, 240, 250, 0.5)',
     color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)',
@@ -298,7 +248,7 @@ const animateFlip = () => {
   const delayBetweenColumns = 50;
   const middle = Math.floor(COLS / 2);
   let columnOrder = [middle];
-  
+
   for (let offset = 1; offset <= middle; offset++) {
     if (middle - offset >= 0) columnOrder.push(middle - offset);
     if (middle + offset < COLS) columnOrder.push(middle + offset);
@@ -323,7 +273,7 @@ const animateFlip = () => {
 
 const startIndicatorWave = () => {
   isAnimating.value = true;
-  
+
   // Sequential wave animation for dots
   if (dotsRefs.value.length > 0) {
     dotsRefs.value.forEach((dot, index) => {
@@ -336,12 +286,12 @@ const startIndicatorWave = () => {
       }
     });
   }
-  
+
   // For theme label letters, do a wave bounce
   if (!showDotsState.value) {
     animateLabel();
   }
-  
+
   setTimeout(() => {
     isAnimating.value = false;
   }, 1200); // Total animation duration
@@ -351,7 +301,7 @@ const animateDot = (dot: HTMLDivElement) => {
   // Move up
   dot.style.transform = 'translateY(-8px)';
   dot.style.transition = 'transform 0.3s ease-out';
-  
+
   // Move down
   setTimeout(() => {
     dot.style.transform = 'translateY(0px)';
@@ -369,7 +319,7 @@ const animateLabel = () => {
           // Bounce effect
           letter.style.transform = 'translateY(-6px) scale(1.1)';
           letter.style.transition = 'transform 0.3s ease-out';
-          
+
           setTimeout(() => {
             letter.style.transform = 'translateY(0px) scale(1)';
             letter.style.transition = 'transform 0.3s ease-in';
@@ -393,11 +343,11 @@ const getLabelWaveOffset = () => {
 // Theme functions
 function adjustColorOpacity(hexColor: string, opacity: number): string {
   let r, g, b;
-  
+
   if (!/^#([A-Fa-f0-9]{3}){1,2}$/.test(hexColor)) {
     return `rgba(128, 128, 128, ${opacity})`;
   }
-  
+
   const hex = hexColor.replace('#', '');
   if (hex.length === 3) {
     r = parseInt(hex.charAt(0) + hex.charAt(0), 16);
@@ -408,7 +358,7 @@ function adjustColorOpacity(hexColor: string, opacity: number): string {
     g = parseInt(hex.substring(2, 4), 16);
     b = parseInt(hex.substring(4, 6), 16);
   }
-  
+
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
@@ -418,19 +368,19 @@ const getThemeColors = (theme: ThemeName): ThemeColors => {
 
 const getDropdownPosition = () => {
   if (typeof window === 'undefined') return {};
-  
+
   const container = document.querySelector('.theme-logo-container');
   if (!container) return {};
-  
+
   const rect = container.getBoundingClientRect();
   const viewportWidth = window.innerWidth;
   const dropdownWidth = 256; // 16rem (w-64)
-  
+
   let left = rect.left;
   if (left + dropdownWidth > viewportWidth - 16) {
     left = viewportWidth - dropdownWidth - 16;
   }
-  
+
   return {
     top: `${rect.bottom + 8}px`,
     left: `${Math.max(16, left)}px`
@@ -447,16 +397,16 @@ const filteredThemes = computed(() => {
 const getThemeOptionStyle = (theme: ThemeName) => {
   const isSelected = theme === currentTheme.value;
   const primaryColor = getThemeColors(theme).primary;
-  
+
   if (isSelected) {
     return {
-      backgroundColor: isDarkTheme.value 
-        ? adjustColorOpacity(primaryColor, 0.15) 
+      backgroundColor: isDarkTheme.value
+        ? adjustColorOpacity(primaryColor, 0.15)
         : adjustColorOpacity(primaryColor, 0.1),
       color: isDarkTheme.value ? 'white' : 'black'
     };
   }
-  
+
   return {
     backgroundColor: 'transparent',
     color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.8)',
@@ -468,14 +418,42 @@ const selectTheme = (theme: ThemeName) => {
   isDropdownOpen.value = false;
 };
 
-const nextTheme = () => {
+const nextTheme = (event?: Event) => {
+  // Prevent default behavior and stop propagation
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  
+  // Check if floating buttons are being hovered
+  const floatingButtons = document.querySelectorAll('.simple-floating-button, .floating-corner-button');
+  for (const button of floatingButtons) {
+    if (button.matches(':hover')) {
+      return; // Don't change theme if floating button is hovered
+    }
+  }
+  
   const currentIndex = themes.indexOf(currentTheme.value);
   const nextIndex = (currentIndex + 1) % themes.length;
   selectTheme(themes[nextIndex]);
   showThemeLabelBriefly();
 };
 
-const previousTheme = () => {
+const previousTheme = (event?: Event) => {
+  // Prevent default behavior and stop propagation
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  
+  // Check if floating buttons are being hovered
+  const floatingButtons = document.querySelectorAll('.simple-floating-button, .floating-corner-button');
+  for (const button of floatingButtons) {
+    if (button.matches(':hover')) {
+      return; // Don't change theme if floating button is hovered
+    }
+  }
+  
   const currentIndex = themes.indexOf(currentTheme.value);
   const prevIndex = currentIndex === 0 ? themes.length - 1 : currentIndex - 1;
   selectTheme(themes[prevIndex]);
@@ -518,11 +496,17 @@ const handleDotsMouseLeave = () => {
 };
 
 const handleMouseMove = (event: MouseEvent) => {
-  const target = event.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
+  // Don't handle mouse move if it's coming from floating buttons
+  const target = event.target as HTMLElement;
+  if (target.closest('.simple-floating-button') || target.closest('.floating-corner-button')) {
+    return;
+  }
+  
+  const currentTarget = event.currentTarget as HTMLElement;
+  const rect = currentTarget.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const width = rect.width;
-  
+
   hoverSide.value = x < width / 2 ? 'left' : 'right';
 };
 
@@ -533,7 +517,7 @@ const handleLogoMouseLeave = () => {
 const leftHoverStyle = computed(() => {
   const isHovering = hoverSide.value === 'left';
   return {
-    background: isHovering 
+    background: isHovering
       ? `linear-gradient(to right, ${adjustColorOpacity(getThemeColors(currentTheme.value).primary, 0.15)}, transparent)`
       : 'transparent',
     transition: 'background 0.2s ease',
@@ -543,7 +527,7 @@ const leftHoverStyle = computed(() => {
 const rightHoverStyle = computed(() => {
   const isHovering = hoverSide.value === 'right';
   return {
-    background: isHovering 
+    background: isHovering
       ? `linear-gradient(to left, ${adjustColorOpacity(getThemeColors(currentTheme.value).secondary, 0.15)}, transparent)`
       : 'transparent',
     transition: 'background 0.2s ease',
@@ -553,21 +537,29 @@ const rightHoverStyle = computed(() => {
 let intervalId: number;
 
 
-// Close dropdown when clicking outside
+// Close dropdown when clicking outside - only handle when dropdown is open
 const handleClickOutside = (event: MouseEvent) => {
+  if (!isDropdownOpen.value) return;
+  
   const target = event.target as HTMLElement;
-  if (isDropdownOpen.value && !target.closest('.theme-dropdown') && !target.closest('.theme-logo-container')) {
-    isDropdownOpen.value = false;
+  // Don't close if clicking on dropdown, logo, or floating buttons
+  if (target.closest('.theme-dropdown') || 
+      target.closest('.theme-logo-container') ||
+      target.closest('.simple-floating-button') ||
+      target.closest('.floating-corner-button')) {
+    return;
   }
+  
+  isDropdownOpen.value = false;
 };
 
 onMounted(() => {
   intervalId = window.setInterval(animateFlip, 5050);
-  
+
   const savedTheme = localStorage.getItem('theme') as ThemeName || 'light';
   themeStore.setTheme(savedTheme);
   document.documentElement.setAttribute('data-theme', savedTheme);
-  
+
   themeObserver = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.attributeName === 'data-theme') {
@@ -580,7 +572,7 @@ onMounted(() => {
     attributes: true,
     attributeFilter: ['data-theme']
   });
-  
+
   // Add click outside listener
   document.addEventListener('click', handleClickOutside);
 });
@@ -604,11 +596,13 @@ onBeforeUnmount(() => {
 .theme-logo-container {
   position: relative;
   z-index: 50;
-  transform: translateY(2px); /* Adjust logo position slightly down */
+  transform: translateY(2px);
+  /* Adjust logo position slightly down */
 }
 
 .logo-container {
-  margin-top: -8px;
+  margin-top: -20px;
+  justify-self: center;
 }
 
 .theme-dropdown {
@@ -690,14 +684,43 @@ onBeforeUnmount(() => {
 }
 
 /* Staggered animation delays for letters */
-.letter-element:nth-child(1) { transition-delay: 0ms; }
-.letter-element:nth-child(2) { transition-delay: 50ms; }
-.letter-element:nth-child(3) { transition-delay: 100ms; }
-.letter-element:nth-child(4) { transition-delay: 150ms; }
-.letter-element:nth-child(5) { transition-delay: 200ms; }
-.letter-element:nth-child(6) { transition-delay: 250ms; }
-.letter-element:nth-child(7) { transition-delay: 300ms; }
-.letter-element:nth-child(8) { transition-delay: 350ms; }
-.letter-element:nth-child(9) { transition-delay: 400ms; }
-.letter-element:nth-child(10) { transition-delay: 450ms; }
+.letter-element:nth-child(1) {
+  transition-delay: 0ms;
+}
+
+.letter-element:nth-child(2) {
+  transition-delay: 50ms;
+}
+
+.letter-element:nth-child(3) {
+  transition-delay: 100ms;
+}
+
+.letter-element:nth-child(4) {
+  transition-delay: 150ms;
+}
+
+.letter-element:nth-child(5) {
+  transition-delay: 200ms;
+}
+
+.letter-element:nth-child(6) {
+  transition-delay: 250ms;
+}
+
+.letter-element:nth-child(7) {
+  transition-delay: 300ms;
+}
+
+.letter-element:nth-child(8) {
+  transition-delay: 350ms;
+}
+
+.letter-element:nth-child(9) {
+  transition-delay: 400ms;
+}
+
+.letter-element:nth-child(10) {
+  transition-delay: 450ms;
+}
 </style>

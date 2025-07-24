@@ -88,6 +88,11 @@
 
                       <!-- Assistant-specific actions -->
                       <template v-if="message.role === 'assistant'">
+                        <button @click.stop="handleUpvoteMessage(startIndex + index)" class="action-btn upvote-btn"
+                          :class="{ 'upvoted': isMessageUpvoted(startIndex + index) }"
+                          title="Mark as helpful (triggers reflection)">
+                          <ThumbsUp class="w-4 h-4" />
+                        </button>
                         <button @click.stop="$emit('resend', startIndex + index - 1)" class="action-btn resend-btn"
                           title="Regenerate response">
                           <RotateCw class="w-4 h-4" />
@@ -156,6 +161,18 @@
                   <!-- Removed bottom timestamp since it's now in header -->
                 </div>
               </div>
+              
+              <!-- Reflection Suggestions - Show after assistant messages when conditions are met -->
+              <ReflectionSuggestions
+                v-if="shouldShowReflectionSuggestions(startIndex + index, message)"
+                :node-id="nodeId"
+                :chat-id="chatId || 'unknown'"
+                :messages="getConversationContext(startIndex + index)"
+                :auto-expand="isMessageUpvoted(startIndex + index)"
+                @suggestion-click="handleReflectionSuggestionClick"
+                @feedback="handleReflectionFeedback"
+                class="reflection-suggestions-container"
+              />
             </div>
           </div>
 
@@ -287,11 +304,13 @@ import {
   MessageCircle,
   Settings,
   Zap,
+  ThumbsUp,
 } from 'lucide-vue-next';
 
 import MessageContent from './MessageContent.vue';
 import MessageTimestamp from './MessageTimestamp.vue';
 import TTSControls from './TTSControls.vue';
+import ReflectionSuggestions from './ReflectionSuggestions.vue';
 import type { Message } from '@/types/message';
 import type { ModelInfo } from '@/types/model';
 import { useThemeStore } from '@/stores/themeStore';
@@ -302,6 +321,7 @@ import { getContrastTextColor } from '@/utils/themeUtils';
 interface Props {
   messages: Message[];
   nodeId: string;
+  chatId?: string; // Add chatId for reflection system
   isSnapped: boolean;
   expandedMessages: Set<number>;
   textContentColor: string;
@@ -327,6 +347,7 @@ const emit = defineEmits<{
   'edit-message': [index: number, newContent: string];
   'approve-permission': [toolCallId: string, toolName: string, parameters: any];
   'deny-permission': [toolCallId: string, toolName: string, parameters: any];
+  'reflectionSuggestionClick': [suggestion: any];
 }>();
 
 // Helper function to format time
@@ -342,6 +363,12 @@ const messageRefs = ref<Record<number, HTMLElement>>({});
 // Edit state
 const editingMessageIndex = ref<number | null>(null);
 const editingContent = ref('');
+
+// Upvote state - track which messages have been upvoted
+const upvotedMessages = ref<Set<string>>(new Set());
+
+// Reflection suggestions state
+const reflectionSuggestionsEnabled = ref(true);
 
 // Theme support
 const themeStore = useThemeStore();
@@ -509,6 +536,102 @@ const cancelEditing = () => {
   editingContent.value = '';
 };
 
+// Upvote message functions
+const handleUpvoteMessage = (messageIndex: number) => {
+  const message = props.messages[messageIndex];
+  const messageId = `${props.nodeId}-${messageIndex}`;
+  
+  if (upvotedMessages.value.has(messageId)) {
+    // Remove upvote
+    upvotedMessages.value.delete(messageId);
+  } else {
+    // Add upvote and trigger reflection system
+    upvotedMessages.value.add(messageId);
+    triggerReflection(message, messageIndex, 'upvote');
+  }
+};
+
+const isMessageUpvoted = (messageIndex: number) => {
+  const messageId = `${props.nodeId}-${messageIndex}`;
+  return upvotedMessages.value.has(messageId);
+};
+
+// Thanks detection patterns
+const thanksPatterns = [
+  // Direct thanks
+  /\b(thank you|thanks|thx|ty)\b/i,
+  /\b(much appreciated|appreciate it|appreciate this)\b/i,
+  /\b(grateful|thankful)\b/i,
+  
+  // Positive feedback
+  /\b(perfect|excellent|brilliant|amazing|fantastic|great job|well done)\b/i,
+  /\b(exactly what I needed|just what I was looking for)\b/i,
+  /\b(this works|that worked|this fixed it|that fixed it)\b/i,
+  /\b(solved it|problem solved|issue resolved)\b/i,
+  
+  // Satisfaction expressions
+  /\b(love it|love this|this is great|this is perfect)\b/i,
+  /\b(you saved me|lifesaver|you're amazing)\b/i,
+  /\b(nailed it|spot on|bang on)\b/i,
+];
+
+const detectThanksInMessage = (content: string): boolean => {
+  if (!content || typeof content !== 'string') return false;
+  
+  // Check if the message contains any thanks patterns
+  return thanksPatterns.some(pattern => pattern.test(content));
+};
+
+const findPreviousAssistantMessage = (userMessageIndex: number): number => {
+  // Look backwards from the user message to find the most recent assistant message
+  for (let i = userMessageIndex - 1; i >= 0; i--) {
+    if (props.messages[i].role === 'assistant') {
+      return i;
+    }
+  }
+  return -1; // No previous assistant message found
+};
+
+const triggerReflection = async (message: any, messageIndex: number, triggerType: 'upvote' | 'thanks') => {
+  try {
+    console.log('Triggering reflection:', {
+      nodeId: props.nodeId,
+      messageIndex,
+      triggerType,
+      timestamp: new Date().toISOString()
+    });
+
+    // Call reflection API
+    const response = await fetch('http://127.0.0.1:5050/api/reflections/trigger', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        node_id: props.nodeId,
+        chat_id: props.chatId || 'unknown',
+        trigger_type: triggerType,
+        trigger_message_index: messageIndex
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log('Reflection created successfully:', result);
+      
+      // TODO: Show user notification that reflection was created
+      // Could show a toast notification or update UI to indicate reflection generation
+      
+    } else {
+      const error = await response.json();
+      console.error('Failed to create reflection:', error);
+    }
+    
+  } catch (error) {
+    console.error('Error triggering reflection:', error);
+  }
+};
+
 // Auto-scroll to bottom for new messages
 const scrollToBottom = () => {
   if (scrollContainer.value) {
@@ -522,6 +645,46 @@ const scrollToTop = () => {
   }
 };
 
+// Reflection suggestions methods
+const shouldShowReflectionSuggestions = (messageIndex: number, message: any) => {
+  // ONLY show reflections when the node is snapped (in sidebar)
+  if (!props.isSnapped || !reflectionSuggestionsEnabled.value || message.role !== 'assistant') {
+    return false;
+  }
+  
+  // Show if message is upvoted OR if it's the last assistant message in a meaningful conversation
+  const isUpvoted = isMessageUpvoted(messageIndex);
+  const isLastAssistantMessage = messageIndex === getLastAssistantMessageIndex();
+  const hasMinimumContext = props.messages.length >= 3; // At least user->assistant->user exchange
+  
+  return isUpvoted || (isLastAssistantMessage && hasMinimumContext);
+};
+
+const getLastAssistantMessageIndex = () => {
+  for (let i = props.messages.length - 1; i >= 0; i--) {
+    if (props.messages[i]?.role === 'assistant') {
+      return i;
+    }
+  }
+  return -1;
+};
+
+const getConversationContext = (upToIndex: number) => {
+  // Return messages up to and including the current message for context
+  return props.messages.slice(0, upToIndex + 1);
+};
+
+const handleReflectionSuggestionClick = (suggestion: any) => {
+  // Emit the suggestion to parent component (should be handled by SnappedNodeRightSidebar)
+  emit('reflectionSuggestionClick', suggestion);
+};
+
+const handleReflectionFeedback = (suggestionId: string, helpful: boolean) => {
+  console.log('Reflection feedback:', { suggestionId, helpful });
+  // The ReflectionSuggestions component handles the API call
+  // This is for any additional UI feedback or analytics
+};
+
 // Watch for new messages
 watch(
   () => props.messages.length,
@@ -533,6 +696,19 @@ watch(
         nextTick(() => {
           scrollToBottom();
         });
+      }
+      
+      // Check new user messages for thanks expressions
+      for (let i = oldLength; i < newLength; i++) {
+        const message = props.messages[i];
+        if (message.role === 'user' && detectThanksInMessage(message.content)) {
+          // Look for the previous assistant message to trigger reflection on
+          const previousAssistantIndex = findPreviousAssistantMessage(i);
+          if (previousAssistantIndex !== -1) {
+            console.log('Thanks detected in user message, triggering reflection on previous assistant message');
+            triggerReflection(props.messages[previousAssistantIndex], previousAssistantIndex, 'thanks');
+          }
+        }
       }
     }
   }
@@ -929,6 +1105,26 @@ defineExpose({
   color: hsl(var(--s));
 }
 
+.upvote-btn {
+  color: hsl(var(--bc) / 0.7);
+  transition: all 0.2s ease;
+}
+
+.upvote-btn:hover {
+  background: hsl(var(--su) / 0.1);
+  color: hsl(var(--su));
+}
+
+.upvote-btn.upvoted {
+  background: hsl(var(--su) / 0.15);
+  color: hsl(var(--su));
+  transform: scale(1.05);
+}
+
+.upvote-btn.upvoted:hover {
+  background: hsl(var(--su) / 0.2);
+}
+
 .edit-btn {
   color: hsl(var(--bc) / 0.7);
 }
@@ -1207,5 +1403,19 @@ defineExpose({
 .routing-fallback {
   color: hsl(var(--wa));
   font-weight: 600;
+}
+
+/* Reflection Suggestions Styles */
+.reflection-suggestions-container {
+  margin-top: 0.75rem;
+  margin-left: 3rem; /* Align with assistant message content */
+  max-width: calc(100% - 3rem);
+}
+
+@media (max-width: 640px) {
+  .reflection-suggestions-container {
+    margin-left: 0;
+    max-width: 100%;
+  }
 }
 </style>

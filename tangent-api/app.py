@@ -30,6 +30,11 @@ from SessionService import SessionService
 from SlashCommandService import SlashCommandService
 from ToolCallService import ToolCallService
 from ClaudeCodeService import ClaudeCodeService
+from NodeClusteringService import NodeClusteringService
+from SearchService import SearchService
+from ReflectionService import ReflectionService
+from RouterAgentService import RouterAgentService
+from AgentConfigService import AgentConfigService
 import tempfile
 import uuid
 import subprocess
@@ -2639,9 +2644,14 @@ def ollama_proxy_metadata(model_name):
 chat_service = ChatPersistenceService(app)
 embedding_service = EmbeddingService()
 clustering_service = ClusteringService(embedding_service, chat_service)
+node_clustering_service = NodeClusteringService(embedding_service, chat_service)
+search_service = SearchService(chat_service, embedding_service)
 import_service = ConversationImportService(chat_service, embedding_service)
 tool_call_service = ToolCallService(app)
 claude_code_service = ClaudeCodeService(app, tool_call_service)
+reflection_service = ReflectionService()
+router_agent_service = RouterAgentService()
+agent_config_service = AgentConfigService()
 
 # Clustering endpoints
 @api_routes.route('/clustering/start', methods=['POST'])
@@ -2914,6 +2924,181 @@ def get_visualization_data():
         
     except Exception as e:
         logger.error(f"Error getting visualization data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Node clustering endpoints
+@api_routes.route('/nodes/cluster', methods=['POST'])
+def cluster_nodes():
+    """
+    Cluster nodes within a chat based on content similarity
+    """
+    try:
+        data = request.get_json() or {}
+        chat_id = data.get('chat_id')
+        method = data.get('method', 'kmeans')
+        
+        if not chat_id:
+            return jsonify({'error': 'chat_id is required'}), 400
+        
+        # Method-specific parameters
+        kwargs = {}
+        if method == 'kmeans':
+            kwargs['k'] = data.get('k')  # Will auto-determine if None
+        elif method == 'dbscan':
+            kwargs['eps'] = data.get('eps', 0.5)
+            kwargs['min_samples'] = data.get('min_samples', 2)
+        
+        # Add canvas bounds if provided
+        if 'canvas_bounds' in data:
+            kwargs['canvas_bounds'] = data['canvas_bounds']
+        
+        import asyncio
+        result = asyncio.run(node_clustering_service.auto_arrange_nodes(chat_id, method, **kwargs))
+        
+        if 'error' in result:
+            return jsonify(result), 400
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error clustering nodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/nodes/auto-arrange', methods=['POST'])
+def auto_arrange_nodes():
+    """
+    Auto-arrange nodes based on clustering and relationships
+    """
+    try:
+        data = request.get_json() or {}
+        chat_id = data.get('chat_id')
+        
+        if not chat_id:
+            return jsonify({'error': 'chat_id is required'}), 400
+        
+        # Default to kmeans clustering for auto-arrange
+        import asyncio
+        result = asyncio.run(node_clustering_service.auto_arrange_nodes(
+            chat_id=chat_id,
+            method=data.get('method', 'kmeans'),
+            canvas_bounds=data.get('canvas_bounds')
+        ))
+        
+        if 'error' in result:
+            return jsonify(result), 400
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error auto-arranging nodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Search endpoints
+@api_routes.route('/search/nodes', methods=['POST'])
+def search_nodes():
+    """
+    Search nodes using text, semantic, or hybrid search
+    """
+    try:
+        data = request.get_json() or {}
+        query = data.get('query', '').strip()
+        chat_id = data.get('chat_id')
+        search_type = data.get('type', 'hybrid')  # text, semantic, hybrid
+        limit = data.get('limit', 20)
+        
+        if not query:
+            return jsonify({'error': 'query is required'}), 400
+        
+        results = []
+        
+        if search_type == 'text':
+            results = search_service.text_search_nodes(
+                query=query,
+                chat_id=chat_id,
+                search_titles=data.get('search_titles', True),
+                search_content=data.get('search_content', True),
+                case_sensitive=data.get('case_sensitive', False),
+                regex=data.get('regex', False)
+            )
+        elif search_type == 'semantic':
+            results = search_service.semantic_search_nodes(
+                query=query,
+                chat_id=chat_id,
+                limit=limit,
+                similarity_threshold=data.get('similarity_threshold', 0.7)
+            )
+        elif search_type == 'hybrid':
+            results = search_service.hybrid_search_nodes(
+                query=query,
+                chat_id=chat_id,
+                limit=limit,
+                text_weight=data.get('text_weight', 0.4),
+                semantic_weight=data.get('semantic_weight', 0.6)
+            )
+        else:
+            return jsonify({'error': f'Invalid search type: {search_type}'}), 400
+        
+        return jsonify({
+            'results': results,
+            'query': query,
+            'search_type': search_type,
+            'total_results': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching nodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/search/suggestions', methods=['GET'])
+def get_search_suggestions():
+    """
+    Get search suggestions based on partial query
+    """
+    try:
+        query = request.args.get('q', '').strip()
+        chat_id = request.args.get('chat_id')
+        limit = int(request.args.get('limit', 5))
+        
+        if not query:
+            return jsonify({'suggestions': []})
+        
+        suggestions = search_service.get_search_suggestions(
+            partial_query=query,
+            chat_id=chat_id,
+            limit=limit
+        )
+        
+        return jsonify({'suggestions': suggestions})
+        
+    except Exception as e:
+        logger.error(f"Error getting search suggestions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/search/nodes/by-type', methods=['GET'])
+def search_nodes_by_type():
+    """
+    Search nodes by type (branch, main, media, etc.)
+    """
+    try:
+        node_type = request.args.get('type')
+        chat_id = request.args.get('chat_id')
+        
+        if not node_type:
+            return jsonify({'error': 'type parameter is required'}), 400
+        
+        results = search_service.search_nodes_by_type(
+            node_type=node_type,
+            chat_id=chat_id
+        )
+        
+        return jsonify({
+            'results': results,
+            'node_type': node_type,
+            'total_results': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching nodes by type: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Conversation Import endpoints
@@ -4449,6 +4634,746 @@ def send_claude_code_message_simple():
             
     except Exception as e:
         logger.error(f"Error setting up Claude Code streaming: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ========== REFLECTION SYSTEM ENDPOINTS ==========
+
+@api_routes.route('/reflections/trigger', methods=['POST'])
+def trigger_reflection():
+    """Trigger reflection generation from upvote or thanks detection"""
+    try:
+        data = request.json
+        
+        # Validate required fields
+        required_fields = ['node_id', 'chat_id', 'trigger_type', 'trigger_message_index']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Get the node from database directly
+        from ChatPersistenceService import Node
+        node_record = Node.query.get(data['node_id'])
+        if not node_record:
+            return jsonify({'error': 'Node not found'}), 404
+        
+        messages = node_record.messages or []
+        if not messages:
+            return jsonify({'error': 'No messages found in node'}), 400
+        
+        # Use router agent to analyze conversation
+        trigger_data = {
+            'node_id': data['node_id'],
+            'chat_id': data['chat_id'],
+            'trigger_type': data['trigger_type'],
+            'trigger_message_index': data['trigger_message_index']
+        }
+        
+        # Analyze conversation with router agent
+        reflection_data = router_agent_service.analyze_conversation_for_reflection(messages, trigger_data)
+        
+        # Create reflection in database
+        reflection_id = reflection_service.create_reflection(reflection_data)
+        
+        return jsonify({
+            'reflection_id': reflection_id,
+            'message': 'Reflection created successfully',
+            'reflection_data': reflection_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error triggering reflection: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/<reflection_id>', methods=['GET'])
+def get_reflection(reflection_id):
+    """Get a specific reflection by ID"""
+    try:
+        reflection = reflection_service.get_reflection(reflection_id)
+        if not reflection:
+            return jsonify({'error': 'Reflection not found'}), 404
+        
+        return jsonify(reflection)
+        
+    except Exception as e:
+        logger.error(f"Error getting reflection: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/search', methods=['POST'])
+def search_reflections():
+    """Search for relevant reflections based on current context"""
+    try:
+        data = request.json
+        
+        # Get search parameters
+        query_params = {
+            'keywords': data.get('keywords', []),
+            'technologies': data.get('technologies', []),
+            'domains': data.get('domains', []),
+            'complexity': data.get('complexity'),
+            'min_relevance_score': data.get('min_relevance_score', 0.1),
+            'limit': data.get('limit', 10),
+            'exclude_node_id': data.get('exclude_node_id'),
+            'exclude_chat_id': data.get('exclude_chat_id')
+        }
+        
+        # Search reflections
+        reflections = reflection_service.search_reflections(query_params)
+        
+        return jsonify({
+            'reflections': reflections,
+            'count': len(reflections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching reflections: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/suggest', methods=['POST'])
+def suggest_reflections():
+    """Get reflection suggestions for current conversation context"""
+    try:
+        data = request.json
+        
+        if 'messages' not in data:
+            return jsonify({'error': 'Messages are required'}), 400
+        
+        messages = data['messages']
+        node_id = data.get('node_id')
+        chat_id = data.get('chat_id')
+        
+        # Analyze current context
+        context = router_agent_service.analyze_current_conversation_context(messages)
+        
+        # Search for relevant reflections
+        query_params = {
+            'keywords': context['keywords'],
+            'technologies': context['technologies'],
+            'domains': context['domains'],
+            'complexity': context['complexity'],
+            'min_relevance_score': 0.3,
+            'limit': 5,
+            'exclude_node_id': node_id,
+            'exclude_chat_id': chat_id
+        }
+        
+        reflections = reflection_service.search_reflections(query_params)
+        
+        return jsonify({
+            'suggestions': reflections,
+            'context': context,
+            'count': len(reflections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting reflection suggestions: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/<reflection_id>/feedback', methods=['POST'])
+def provide_reflection_feedback(reflection_id):
+    """Provide feedback on reflection helpfulness"""
+    try:
+        data = request.json
+        
+        if 'helpful' not in data:
+            return jsonify({'error': 'helpful field is required (true/false)'}), 400
+        
+        was_helpful = data['helpful']
+        success = reflection_service.update_reflection_usage(reflection_id, was_helpful)
+        
+        if not success:
+            return jsonify({'error': 'Reflection not found'}), 404
+        
+        return jsonify({'message': 'Feedback recorded successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error recording feedback: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/node/<node_id>', methods=['GET'])
+def get_reflections_by_node(node_id):
+    """Get all reflections for a specific node"""
+    try:
+        reflections = reflection_service.get_reflections_by_node(node_id)
+        return jsonify({
+            'reflections': reflections,
+            'count': len(reflections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting node reflections: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/chat/<chat_id>', methods=['GET'])
+def get_reflections_by_chat(chat_id):
+    """Get all reflections for a specific chat"""
+    try:
+        reflections = reflection_service.get_reflections_by_chat(chat_id)
+        return jsonify({
+            'reflections': reflections,
+            'count': len(reflections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting chat reflections: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/stats', methods=['GET'])
+def get_reflection_stats():
+    """Get reflection system statistics"""
+    try:
+        stats = reflection_service.get_reflection_stats()
+        return jsonify(stats)
+        
+    except Exception as e:
+        logger.error(f"Error getting reflection stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/recent', methods=['GET'])
+def get_recent_reflections():
+    """Get recent reflections"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        days = request.args.get('days', 30, type=int)
+        
+        reflections = reflection_service.get_recent_reflections(limit, days)
+        return jsonify({
+            'reflections': reflections,
+            'count': len(reflections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting recent reflections: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/top', methods=['GET'])
+def get_top_reflections():
+    """Get highest scoring reflections"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        
+        reflections = reflection_service.get_top_reflections(limit)
+        return jsonify({
+            'reflections': reflections,
+            'count': len(reflections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting top reflections: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/<reflection_id>', methods=['DELETE'])
+def delete_reflection(reflection_id):
+    """Delete a reflection"""
+    try:
+        success = reflection_service.delete_reflection(reflection_id)
+        if not success:
+            return jsonify({'error': 'Reflection not found'}), 404
+        
+        return jsonify({'message': 'Reflection deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting reflection: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/similarity-search', methods=['POST'])
+def search_reflections_by_similarity():
+    """Search for reflections using semantic similarity"""
+    try:
+        data = request.get_json()
+        query_text = data.get('query_text')
+        limit = data.get('limit', 10)
+        similarity_threshold = data.get('similarity_threshold', 0.7)
+        
+        if not query_text:
+            return jsonify({'error': 'query_text is required'}), 400
+        
+        results = reflection_service.search_reflections_by_similarity(
+            query_text, limit, similarity_threshold
+        )
+        
+        return jsonify({
+            'reflections': results,
+            'query': query_text,
+            'total_results': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in similarity search: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/<reflection_id>/related', methods=['GET'])
+def get_related_reflections(reflection_id):
+    """Get reflections related to a specific reflection"""
+    try:
+        limit = int(request.args.get('limit', 5))
+        
+        related = reflection_service.find_related_reflections(reflection_id, limit)
+        
+        return jsonify({
+            'related_reflections': related,
+            'source_reflection_id': reflection_id,
+            'total_results': len(related)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting related reflections: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/<reflection_id>/update-embeddings', methods=['POST'])
+def update_reflection_embeddings(reflection_id):
+    """Regenerate embeddings for a specific reflection"""
+    try:
+        success = reflection_service.update_reflection_embeddings(reflection_id)
+        
+        if not success:
+            return jsonify({'error': 'Failed to update embeddings or reflection not found'}), 404
+        
+        return jsonify({'message': 'Embeddings updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating reflection embeddings: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/advanced-search', methods=['POST'])
+def advanced_reflection_search():
+    """Search reflections using advanced criteria and metadata"""
+    try:
+        data = request.get_json()
+        criteria = data.get('criteria', {})
+        
+        results = reflection_service.search_by_advanced_criteria(criteria)
+        
+        return jsonify({
+            'reflections': results,
+            'criteria': criteria,
+            'total_results': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in advanced reflection search: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/<reflection_id>/metadata', methods=['GET'])
+def get_reflection_metadata(reflection_id):
+    """Get detailed metadata for a specific reflection"""
+    try:
+        metadata = reflection_service.get_reflection_metadata(reflection_id)
+        
+        if not metadata:
+            return jsonify({'error': 'Reflection not found'}), 404
+        
+        return jsonify({
+            'reflection_id': reflection_id,
+            'metadata': metadata
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting reflection metadata: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/keyword-search', methods=['POST'])
+def keyword_pattern_search():
+    """Search reflections by keyword patterns"""
+    try:
+        data = request.get_json()
+        
+        technical_keywords = data.get('technical_keywords')
+        error_keywords = data.get('error_keywords')
+        domains = data.get('domains')
+        complexity = data.get('complexity')
+        limit = data.get('limit', 10)
+        
+        results = reflection_service.search_reflections_by_keyword_patterns(
+            technical_keywords=technical_keywords,
+            error_keywords=error_keywords,
+            domains=domains,
+            complexity=complexity,
+            limit=limit
+        )
+        
+        return jsonify({
+            'reflections': results,
+            'search_criteria': {
+                'technical_keywords': technical_keywords,
+                'error_keywords': error_keywords,
+                'domains': domains,
+                'complexity': complexity
+            },
+            'total_results': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in keyword pattern search: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/update-all-metadata', methods=['POST'])
+def update_all_reflection_metadata():
+    """Update metadata for all existing reflections"""
+    try:
+        results = reflection_service.update_all_reflection_metadata()
+        
+        return jsonify({
+            'message': 'Metadata update completed',
+            'results': results
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating all reflection metadata: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/conversation/analyze-context', methods=['POST'])
+def analyze_conversation_context():
+    """Analyze current conversation context for reflection matching"""
+    try:
+        data = request.get_json()
+        messages = data.get('messages', [])
+        
+        if not messages:
+            return jsonify({'error': 'messages are required'}), 400
+        
+        # Analyze context
+        context_data = router_agent_service.analyze_current_conversation_context(messages)
+        
+        # Get reflection suggestions based on context
+        suggestions = router_agent_service.suggest_relevant_reflections(context_data, limit=5)
+        
+        return jsonify({
+            'context': context_data,
+            'reflection_suggestions': suggestions,
+            'suggestion_count': len(suggestions)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error analyzing conversation context: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/conversation/reflection-suggestions', methods=['POST'])
+def get_reflection_suggestions():
+    """Get reflection suggestions for current conversation"""
+    try:
+        data = request.get_json()
+        messages = data.get('messages', [])
+        limit = data.get('limit', 5)
+        
+        if not messages:
+            return jsonify({'error': 'messages are required'}), 400
+        
+        # Analyze context first
+        context_data = router_agent_service.analyze_current_conversation_context(messages)
+        
+        # Get suggestions
+        suggestions = router_agent_service.suggest_relevant_reflections(context_data, limit=limit)
+        
+        return jsonify({
+            'suggestions': suggestions,
+            'context_summary': {
+                'domains': context_data.get('domains', []),
+                'technologies': context_data.get('technologies', []),
+                'stage': context_data.get('conversation_stage', 'unknown'),
+                'complexity': context_data.get('complexity', 'medium')
+            },
+            'total_suggestions': len(suggestions)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting reflection suggestions: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/reflections/test-relevance-scoring', methods=['POST'])
+def test_relevance_scoring():
+    """Test enhanced relevance scoring with sample context data"""
+    try:
+        data = request.get_json()
+        context_data = data.get('context_data', {})
+        limit = data.get('limit', 5)
+        min_score = data.get('min_score', 0.2)
+        
+        if not context_data:
+            # Use sample context data for testing
+            context_data = {
+                'technologies': ['react', 'javascript'],
+                'domains': ['frontend'],
+                'keywords': ['component', 'useState', 'rendering'],
+                'problem_patterns': ['state management'],
+                'complexity': 'medium'
+            }
+        
+        # Get contextual suggestions using enhanced scoring
+        suggestions = reflection_service.get_contextual_reflection_suggestions(
+            context_data, 
+            limit=limit, 
+            min_score=min_score
+        )
+        
+        # Also get basic suggestions for comparison
+        basic_suggestions = reflection_service.search_reflections({
+            'technologies': context_data.get('technologies', []),
+            'domains': context_data.get('domains', []),
+            'keywords': context_data.get('keywords', []),
+            'limit': limit
+        })
+        
+        return jsonify({
+            'enhanced_suggestions': suggestions,
+            'basic_suggestions': basic_suggestions,
+            'context_used': context_data,
+            'enhanced_count': len(suggestions),
+            'basic_count': len(basic_suggestions),
+            'scoring_improvement': len(suggestions) - len(basic_suggestions)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error testing relevance scoring: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# Agent Configuration Endpoints
+
+@api_routes.route('/agent-configs', methods=['GET'])
+def get_agent_configs():
+    """Get all agent configurations"""
+    try:
+        user_id = request.args.get('user_id')  # For future multi-user support
+        configs = agent_config_service.get_all_agent_configs(user_id)
+        return jsonify(configs)
+    except Exception as e:
+        logger.error(f"Error getting agent configs: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/agent-configs', methods=['POST'])
+def create_agent_config():
+    """Create a new agent configuration"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')  # For future multi-user support
+        
+        config_id = agent_config_service.create_agent_config(data, user_id)
+        return jsonify({'id': config_id, 'message': 'Agent configuration created successfully'}), 201
+    except Exception as e:
+        logger.error(f"Error creating agent config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/agent-configs/<config_id>', methods=['GET'])
+def get_agent_config(config_id):
+    """Get a specific agent configuration"""
+    try:
+        user_id = request.args.get('user_id')
+        config = agent_config_service.get_agent_config(config_id, user_id)
+        if not config:
+            return jsonify({'error': 'Agent configuration not found'}), 404
+        return jsonify(config)
+    except Exception as e:
+        logger.error(f"Error getting agent config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/agent-configs/<config_id>', methods=['PUT'])
+def update_agent_config(config_id):
+    """Update an agent configuration"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        
+        success = agent_config_service.update_agent_config(config_id, data, user_id)
+        if not success:
+            return jsonify({'error': 'Agent configuration not found'}), 404
+        
+        return jsonify({'message': 'Agent configuration updated successfully'})
+    except Exception as e:
+        logger.error(f"Error updating agent config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/agent-configs/<config_id>', methods=['DELETE'])
+def delete_agent_config(config_id):
+    """Delete an agent configuration"""
+    try:
+        user_id = request.args.get('user_id')
+        success = agent_config_service.delete_agent_config(config_id, user_id)
+        if not success:
+            return jsonify({'error': 'Agent configuration not found or cannot be deleted'}), 404
+        
+        return jsonify({'message': 'Agent configuration deleted successfully'})
+    except Exception as e:
+        logger.error(f"Error deleting agent config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/agent-configs/set-model', methods=['POST'])
+def set_agent_model():
+    """Set model for a specific agent type"""
+    try:
+        data = request.get_json()
+        agent_type = data.get('agent_type')
+        model_data = data.get('model')
+        user_id = data.get('user_id')
+        
+        if not agent_type or not model_data:
+            return jsonify({'error': 'agent_type and model are required'}), 400
+        
+        success = agent_config_service.set_agent_model(agent_type, model_data, user_id)
+        if not success:
+            return jsonify({'error': 'Failed to set agent model'}), 400
+        
+        return jsonify({'message': 'Agent model set successfully'})
+    except Exception as e:
+        logger.error(f"Error setting agent model: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/agent-configs/defaults', methods=['POST'])
+def create_default_agents():
+    """Create default agent configurations"""
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        
+        created_ids = agent_config_service.create_default_agents(user_id)
+        return jsonify({'created_agents': created_ids, 'message': f'Created {len(created_ids)} default agents'})
+    except Exception as e:
+        logger.error(f"Error creating default agents: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# API Key Endpoints
+
+@api_routes.route('/api-keys', methods=['GET'])
+def get_api_keys():
+    """Get all API keys"""
+    try:
+        user_id = request.args.get('user_id')
+        keys = agent_config_service.get_api_keys(user_id)
+        # Don't return actual key values for security
+        return jsonify({provider: '***' if key else '' for provider, key in keys.items()})
+    except Exception as e:
+        logger.error(f"Error getting API keys: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/api-keys', methods=['POST'])
+def set_api_key():
+    """Set an API key"""
+    try:
+        data = request.get_json()
+        provider = data.get('provider')
+        key_value = data.get('key_value')
+        user_id = data.get('user_id')
+        
+        if not provider or not key_value:
+            return jsonify({'error': 'provider and key_value are required'}), 400
+        
+        success = agent_config_service.set_api_key(provider, key_value, user_id)
+        return jsonify({'message': 'API key set successfully'})
+    except Exception as e:
+        logger.error(f"Error setting API key: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/api-keys/<provider>', methods=['DELETE'])
+def delete_api_key(provider):
+    """Delete an API key"""
+    try:
+        user_id = request.args.get('user_id')
+        success = agent_config_service.delete_api_key(provider, user_id)
+        if not success:
+            return jsonify({'error': 'API key not found'}), 404
+        
+        return jsonify({'message': 'API key deleted successfully'})
+    except Exception as e:
+        logger.error(f"Error deleting API key: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# System Message Endpoints
+
+@api_routes.route('/system-messages', methods=['GET'])
+def get_system_messages():
+    """Get all system messages"""
+    try:
+        user_id = request.args.get('user_id')
+        messages = agent_config_service.get_system_messages(user_id)
+        return jsonify(messages)
+    except Exception as e:
+        logger.error(f"Error getting system messages: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/system-messages', methods=['POST'])
+def set_system_message():
+    """Set a system message"""
+    try:
+        data = request.get_json()
+        agent_type = data.get('agent_type')
+        message = data.get('message')
+        user_id = data.get('user_id')
+        agent_id = data.get('agent_id')
+        
+        if not agent_type or not message:
+            return jsonify({'error': 'agent_type and message are required'}), 400
+        
+        success = agent_config_service.set_system_message(agent_type, message, user_id, agent_id)
+        return jsonify({'message': 'System message set successfully'})
+    except Exception as e:
+        logger.error(f"Error setting system message: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# User Preference Endpoints
+
+@api_routes.route('/preferences', methods=['GET'])
+def get_preferences():
+    """Get user preferences"""
+    try:
+        user_id = request.args.get('user_id')
+        category = request.args.get('category')
+        preferences = agent_config_service.get_preferences(category, user_id)
+        return jsonify(preferences)
+    except Exception as e:
+        logger.error(f"Error getting preferences: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/preferences', methods=['POST'])
+def set_preference():
+    """Set a user preference"""
+    try:
+        data = request.get_json()
+        key = data.get('key')
+        value = data.get('value')
+        category = data.get('category')
+        user_id = data.get('user_id')
+        
+        if not key or value is None or not category:
+            return jsonify({'error': 'key, value, and category are required'}), 400
+        
+        success = agent_config_service.set_preference(key, value, category, user_id)
+        return jsonify({'message': 'Preference set successfully'})
+    except Exception as e:
+        logger.error(f"Error setting preference: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/preferences/<key>', methods=['DELETE'])
+def delete_preference(key):
+    """Delete a user preference"""
+    try:
+        user_id = request.args.get('user_id')
+        success = agent_config_service.delete_preference(key, user_id)
+        if not success:
+            return jsonify({'error': 'Preference not found'}), 404
+        
+        return jsonify({'message': 'Preference deleted successfully'})
+    except Exception as e:
+        logger.error(f"Error deleting preference: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# Migration Endpoint
+
+@api_routes.route('/migrate-localstorage', methods=['POST'])
+def migrate_localstorage():
+    """Migrate data from localStorage format to database"""
+    try:
+        data = request.get_json()
+        localStorage_data = data.get('localStorage_data')
+        user_id = data.get('user_id')
+        
+        if not localStorage_data:
+            return jsonify({'error': 'localStorage_data is required'}), 400
+        
+        results = agent_config_service.import_localStorage_data(localStorage_data, user_id)
+        return jsonify({
+            'message': 'LocalStorage data migrated successfully',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f"Error migrating localStorage: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # Register the blueprint AFTER all routes are defined

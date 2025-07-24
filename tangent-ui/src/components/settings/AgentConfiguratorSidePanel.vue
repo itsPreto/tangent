@@ -6446,9 +6446,9 @@ onBeforeUnmount(() => {
 }
 
 .theme-halloween .panel-container {
-  background: linear-gradient(1deg, rgb(75 40 0), rgb(24 187 233 / 53%));
-  box-shadow: -8px 0 40px rgba(255, 165, 0, 0.15), inset 0px 1px 20px 2px rgba(255, 165, 0, 0.08);
-  border-color: rgba(255, 165, 0, 0.3);
+  background: linear-gradient(1deg, rgb(45 27 105), rgb(255 107 26 / 25%));
+  box-shadow: -8px 0 40px rgba(255, 107, 26, 0.15), inset 0px 1px 20px 2px rgba(45, 27, 105, 0.08);
+  border-color: rgba(57, 255, 20, 0.3);
 }
 
 .theme-emerald .panel-container,

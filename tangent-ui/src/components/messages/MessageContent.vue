@@ -38,7 +38,7 @@
     
     <!-- Complete content display -->
     <template v-else>
-      <div class="message-content" :style="themeStyles">
+      <div class="message-content">
         <div v-for="(part, index) in parsedContent" :key="index" class="content-part">
           <!-- Text content with enhanced typography -->
           <div v-if="part.type === 'text'" 
@@ -170,11 +170,6 @@ const textColor = computed(() => {
     ? 'rgba(255, 255, 255, 0.95)'
     : 'rgba(0, 0, 0, 0.8)'
 })
-
-// Add CSS custom properties for theme-aware styling
-const themeStyles = computed(() => ({
-  '--message-text-color': textColor.value
-}))
 
 // Content wrapper classes for theme-aware styling
 const contentWrapperClasses = computed(() => ({

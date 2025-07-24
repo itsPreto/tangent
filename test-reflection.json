@@ -1,0 +1,11 @@
+{
+  "node_id": "63756456-9d4d-4d1f-b798-2af24768d305",
+  "chat_id": "5e3c6d70-b203-4de8-b10f-d40a1069736b",
+  "trigger_type": "upvote",
+  "trigger_message_index": 1,
+  "messages": [
+    {"role": "user", "content": "My React useState hook is not working"},
+    {"role": "assistant", "content": "Make sure you are not mutating state directly"},
+    {"role": "user", "content": "Thanks that fixed it"}
+  ]
+}

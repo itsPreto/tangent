@@ -70,6 +70,7 @@ export interface Message {
 
 export interface Node {
   id: string;
+  chatId?: string; // Chat ID for reflection system
   x: number;
   y: number;
   title?: string;

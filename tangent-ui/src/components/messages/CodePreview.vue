@@ -1355,8 +1355,8 @@ const closeThumbnailModal = () => {
 .theme-halloween .theme-bg {
   background: linear-gradient(135deg, 
     hsl(var(--b1)) 0%, 
-    hsl(25 100% 5%) 50%, 
-    hsl(15 100% 8%) 100%);
+    hsl(250 60% 8%) 50%, 
+    hsl(24 100% 12%) 100%);
 }
 
 .theme-forest .theme-bg {

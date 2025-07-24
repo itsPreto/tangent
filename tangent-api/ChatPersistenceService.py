@@ -211,6 +211,201 @@ class ClaudeCodeInstance(db.Model):
         db.Index('idx_claude_code_instances_heartbeat', 'last_heartbeat'),
     )
 
+class Reflection(db.Model):
+    __tablename__ = 'reflections'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # Source information
+    source_node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False)
+    source_chat_id = db.Column(db.String(36), db.ForeignKey('chats.id'), nullable=False)
+    triggered_by = db.Column(db.String(20), nullable=False)  # 'upvote', 'thanks'
+    trigger_message_index = db.Column(db.Integer, nullable=False)  # Which message was upvoted/thanked
+    
+    # Core reflection content
+    problem_statement = db.Column(db.Text, nullable=False)
+    technical_challenge = db.Column(db.Text, nullable=False)
+    solution_breakthrough = db.Column(db.Text, nullable=False)
+    failed_approaches = db.Column(db.JSON, nullable=True)  # Array of failed approach descriptions
+    key_insights = db.Column(db.JSON, nullable=False)  # Array of key insights
+    
+    # Technical context
+    technologies = db.Column(db.JSON, nullable=True)  # Array of technologies involved
+    code_patterns = db.Column(db.JSON, nullable=True)  # Array of code patterns/snippets
+    error_patterns = db.Column(db.JSON, nullable=True)  # Common errors encountered
+    domains = db.Column(db.JSON, nullable=True)  # Domain categories (frontend, backend, etc.)
+    
+    # Learning metadata
+    complexity = db.Column(db.String(20), nullable=False, default='medium')  # 'low', 'medium', 'high', 'expert'
+    iteration_count = db.Column(db.Integer, nullable=True)  # How many attempts before breakthrough
+    time_to_solution = db.Column(db.Integer, nullable=True)  # Minutes from problem to solution
+    
+    # Indexing & retrieval
+    embeddings = db.Column(db.JSON, nullable=True)  # Vector embeddings for semantic search
+    keywords = db.Column(db.JSON, nullable=False)  # Extracted technical keywords
+    
+    # Quality & usage tracking
+    relevance_score = db.Column(db.Float, default=0.0)  # How often this helps similar problems
+    usage_count = db.Column(db.Integer, default=0)  # How many times this reflection was suggested
+    helpful_count = db.Column(db.Integer, default=0)  # How many times marked as helpful
+    not_helpful_count = db.Column(db.Integer, default=0)  # How many times marked as not helpful
+    last_used = db.Column(db.DateTime, nullable=True)
+    
+    # Conversation context range
+    message_range_start = db.Column(db.Integer, nullable=False)  # Start index of analyzed messages
+    message_range_end = db.Column(db.Integer, nullable=False)  # End index of analyzed messages
+    conversation_length = db.Column(db.Integer, nullable=False)  # Total messages in conversation at time of reflection
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    source_node = db.relationship('Node', backref='reflections')
+    source_chat = db.relationship('Chat', backref='reflections')
+    
+    # Indexes for performance
+    __table_args__ = (
+        db.Index('idx_reflections_source_node', 'source_node_id'),
+        db.Index('idx_reflections_source_chat', 'source_chat_id'),
+        db.Index('idx_reflections_triggered_by', 'triggered_by'),
+        db.Index('idx_reflections_complexity', 'complexity'),
+        db.Index('idx_reflections_relevance_score', 'relevance_score'),
+        db.Index('idx_reflections_created_at', 'created_at'),
+        db.Index('idx_reflections_last_used', 'last_used'),
+        db.Index('idx_reflections_usage_count', 'usage_count'),
+        # Composite indexes for common queries
+        db.Index('idx_reflections_score_used', 'relevance_score', 'last_used'),
+        db.Index('idx_reflections_helpful_ratio', 'helpful_count', 'not_helpful_count'),
+    )
+
+class AgentConfig(db.Model):
+    """Agent configuration with model assignments and settings"""
+    __tablename__ = 'agent_configs'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # Agent identification
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    type = db.Column(db.String(50), nullable=False)  # 'text', 'vision', 'code', 'router', 'custom'
+    custom_type = db.Column(db.String(100), nullable=True)  # For custom agents
+    
+    # Model assignment
+    model_data = db.Column(db.JSON, nullable=True)  # Stores ModelInfo object
+    
+    # Configuration flags
+    is_default = db.Column(db.Boolean, default=False)
+    enabled = db.Column(db.Boolean, default=True)
+    
+    # Custom agent properties
+    emoji = db.Column(db.String(10), nullable=True)
+    color = db.Column(db.String(7), nullable=True)  # Hex color
+    priority = db.Column(db.Integer, default=50)
+    
+    # Advanced properties
+    prompt = db.Column(db.Text, nullable=True)
+    trigger_patterns = db.Column(db.JSON, nullable=True)  # Array of regex patterns
+    tags = db.Column(db.JSON, nullable=True)  # Array of tags
+    
+    # User ownership
+    user_id = db.Column(db.String(36), nullable=True)  # For future multi-user support
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_agent_configs_type', 'type'),
+        db.Index('idx_agent_configs_user_id', 'user_id'),
+        db.Index('idx_agent_configs_enabled', 'enabled'),
+        db.Index('idx_agent_configs_is_default', 'is_default'),
+        db.Index('idx_agent_configs_custom_type', 'custom_type'),
+    )
+
+class UserApiKey(db.Model):
+    """User API keys for different providers"""
+    __tablename__ = 'user_api_keys'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # Key identification
+    provider = db.Column(db.String(50), nullable=False)  # 'anthropic', 'openrouter', 'google'
+    key_value = db.Column(db.Text, nullable=False)  # Encrypted in production
+    
+    # User ownership
+    user_id = db.Column(db.String(36), nullable=True)  # For future multi-user support
+    
+    # Status
+    is_active = db.Column(db.Boolean, default=True)
+    last_validated = db.Column(db.DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_user_api_keys_provider', 'provider'),
+        db.Index('idx_user_api_keys_user_id', 'user_id'),
+        db.UniqueConstraint('provider', 'user_id', name='uq_user_provider_key'),
+    )
+
+class SystemMessage(db.Model):
+    """Custom system messages for agents"""
+    __tablename__ = 'system_messages'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # Message identification
+    agent_type = db.Column(db.String(50), nullable=False)  # 'text', 'vision', 'code', 'router'
+    agent_id = db.Column(db.String(36), db.ForeignKey('agent_configs.id'), nullable=True)  # For custom agents
+    
+    # Message content
+    message = db.Column(db.Text, nullable=False)
+    
+    # User ownership
+    user_id = db.Column(db.String(36), nullable=True)  # For future multi-user support
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    agent = db.relationship('AgentConfig', backref='system_messages')
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_system_messages_agent_type', 'agent_type'),
+        db.Index('idx_system_messages_agent_id', 'agent_id'),
+        db.Index('idx_system_messages_user_id', 'user_id'),
+        db.UniqueConstraint('agent_type', 'user_id', name='uq_user_agent_message'),
+    )
+
+class UserPreference(db.Model):
+    """General user preferences and settings"""
+    __tablename__ = 'user_preferences'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # Preference identification
+    preference_key = db.Column(db.String(100), nullable=False)  # 'tts_enabled', 'whisper_model', etc.
+    preference_value = db.Column(db.JSON, nullable=False)  # Flexible JSON storage
+    
+    # Category for organization
+    category = db.Column(db.String(50), nullable=False)  # 'tts', 'whisper', 'ui', 'models'
+    
+    # User ownership
+    user_id = db.Column(db.String(36), nullable=True)  # For future multi-user support
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Indexes
+    __table_args__ = (
+        db.Index('idx_user_preferences_key', 'preference_key'),
+        db.Index('idx_user_preferences_category', 'category'),
+        db.Index('idx_user_preferences_user_id', 'user_id'),
+        db.UniqueConstraint('preference_key', 'user_id', name='uq_user_preference'),
+    )
+
 class ChatPersistenceService:
     def __init__(self, app):
         self.app = app  # Store reference to Flask app
@@ -262,6 +457,7 @@ class ChatPersistenceService:
         def node_to_dict(node):
             return {
                 'id': node.id,
+                'chatId': node.chat_id,  # Add chatId for reflection system
                 'type': node.type,
                 'title': node.title,
                 'x': node.x,
@@ -293,6 +489,7 @@ class ChatPersistenceService:
             children = getattr(node, '_children_cache', [])
             return {
                 'id': node.id,
+                'chatId': node.chat_id,  # Add chatId for reflection system
                 'type': node.type,
                 'title': node.title,
                 'x': node.x,

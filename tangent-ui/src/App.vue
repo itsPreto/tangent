@@ -1,91 +1,104 @@
 <template>
-  <div class="min-h-screen bg-background app-container" :class="['theme-' + currentTheme]">
+  <div class="min-h-screen bg-background app-container" :class="['theme-' + currentTheme, { 'settings-open': appStore.isSettingsOverlayOpen }]">
 
-    <!-- Dual Sidebar Mode - Flexbox Layout -->
-    <div v-if="appStore.isDualSidebarMode" class="flex h-screen">
-      <!-- Left Navigation Sidebar -->
-      <LeftNavigationSidebar 
-        class="flex-shrink-0"
-        :is-expanded="appStore.isLeftSidebarExpanded"
-        @toggle-expanded="appStore.toggleLeftSidebar"
-        @nav-item-clicked="handleLeftNavItemClick" />
+    <!-- Global Floating Buttons -->
+    <div 
+      class="floating-buttons-overlay" 
+      :class="{ 'zen-mode': zenMode, 'show-zen-buttons': showZenButtons }"
+      @mouseleave="handleOverlayMouseLeave"
+    >
+      <!-- Floating Corner Buttons -->
+      <FloatingCornerButton
+        :icon="Menu"
+        position="top-left"
+        title="Navigation Menu"
+        :morphWidth="320"
+        morphHeight="88vh"
+        @mouseenter="showZenButtons = true; clearHideTimer()"
+        @mouseleave="startHideTimer"
+      >
+        <LeftNavigationDropdown
+          @nav-item-clicked="handleNavItemClick"
+          @chat-selected="handleChatSelected"
+          @close="closeLeftDropdown"
+        />
+      </FloatingCornerButton>
       
-      <!-- Main Content Area -->
-      <div class="flex-1 flex flex-col min-w-0">
-        <!-- Canvas Container Wrapper -->
-        <div class="flex-1 transition-all duration-300 canvas-wrapper" :class="'theme-' + currentTheme"
-          :style="getFlexCanvasWrapperStyle">
-          <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
-            :model-type="modelType" :side-panel-open="effectiveSidePanelOpen"
-            :right-panel-open="effectiveRightPanelOpen" :right-sidebar-expanded="appStore.isRightSidebarExpanded" v-model:gesture-mode="gestureMode" v-model:zoom="canvasZoom"
-            v-model:is-height-locked="isHeightLocked" :auto-zoom-enabled="true"
-            :viewport-height="windowSize.innerHeight" :viewport-width="windowSize.innerWidth"
-            @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
-            @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
-            @update-fullscreen="handleFullscreenUpdate" />
-        </div>
-      </div>
-      
-      <!-- Right Sidebar Container -->
-      <div class="flex flex-shrink-0">
-        <!-- Right Feature Sidebar -->
-        <RightFeatureSidebar 
-          class="flex-shrink-0"
-          @feature-clicked="handleRightFeatureClick" />
-        
-        <!-- Feature Content Panel -->
-        <FeatureContentPanel 
-          v-if="appStore.isRightContentPanelOpen"
-          class="flex-shrink-0"
-          :is-open="appStore.isRightContentPanelOpen"
-          :active-feature="appStore.activeRightFeature"
-          :node-id="currentNodeId"
-          @close="appStore.closeRightFeature"
+      <FloatingCornerButton
+        :icon="Settings"
+        position="top-right" 
+        title="Features & Tools"
+        :morphWidth="dropdownState === 'feature-content' ? '36vw' : 300"
+        morphHeight="96.5vh"
+        morphingMode="hover"
+        :forceOpen="dropdownState !== 'collapsed'"
+        :isRightContentPanelOpen="appStore.isRightContentPanelOpen"
+        @click="toggleRightDropdown"
+        @mouseenter="showZenButtons = true; clearHideTimer()"
+        @mouseleave="startHideTimer"
+      >
+        <RightFeaturesDropdown
+          :dropdownState="dropdownState === 'collapsed' ? 'features-list' : dropdownState"
+          :selectedFeature="selectedFeature"
+          :nodeId="currentNodeId"
+          :isRightContentPanelOpen="appStore.isRightContentPanelOpen"
+          @feature-clicked="handleRightFeatureClick"
+          @feature-hovered="handleFeatureHover"
+          @theme-selected="handleThemeSelected"
+          @back-to-features="handleBackToFeatures"
+          @close="closeRightDropdown"
           @panel-opened="handleFeaturePanelOpened"
           @panel-closed="handleFeaturePanelClosed"
-          @document-selected="handleDocumentSelected"
-          @document-dragged="handleDocumentDragged" />
-      </div>
+          @open-workspace="handleWorkspaceOpen"
+        />
+      </FloatingCornerButton>
+
+      <!-- Bottom Corner Buttons -->
+      <!-- <SimpleFloatingButton
+        :icon="HelpCircle"
+        position="bottom-left" 
+        title="Help & Tips"
+        @click="handleHelpButtonClick"
+        @mouseenter="showZenButtons = true; clearHideTimer()"
+        @mouseleave="startHideTimer"
+      /> -->
+
+      <!-- Hot Corners for Zen Mode -->
+      <div v-if="zenMode" class="hot-corner top-left" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+      <div v-if="zenMode" class="hot-corner top-right" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+      <div v-if="zenMode" class="hot-corner bottom-left" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+      <div v-if="zenMode" class="hot-corner bottom-right" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
     </div>
 
-
-
-    <!-- Workspace Controls Dock - Only visible in overview mode and not during onboarding -->
-    <WorkspaceControlsDock 
-      v-if="isInOverview && !isOnboarding"
-      :current-view-mode="workspaceViewMode"
-      :sort-by="workspaceSortBy"
-      :card-size="workspaceCardSize"
-      :has-active-filters="workspaceHasActiveFilters"
-      :active-filter-count="workspaceActiveFilterCount"
-      :is-side-panel-open="appStore.isSidePanelOpen"
-      :is-agent-configurator-open="appStore.isAgentConfiguratorOpen"
-      :graph-stats="workspaceGraphStats"
-      :graph-layout="workspaceGraphLayout"
-      :show-graph-controls="workspaceShowGraphControls"
-      :is3-d-supported="workspaceIs3DSupported"
-      :is-fullscreen="workspaceIsFullscreen"
-      @update:view-mode="updateWorkspaceViewMode"
-      @update:sort-by="updateWorkspaceSortBy"
-      @update:card-size="updateWorkspaceCardSize"
-      @toggle-filters="toggleWorkspaceFilters"
-      @update:graph-layout="updateWorkspaceGraphLayout"
-      @toggle-graph-controls="toggleWorkspaceGraphControls"
-      @reset-graph="resetWorkspaceGraph"
-      @toggle-fullscreen="toggleWorkspaceFullscreen"
-    />
-
-    <!-- Bottom Controls Container -->
-    <!-- <div class="fixed bottom-0 flex justify-start pointer-events-none" 
-         style="transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
-         :style="{
-           zIndex: 50,
-           left: (!isInOverview) ? effectiveLeftMargin : '1rem',
-           right: (!isInOverview && effectiveRightPanelOpen) ? effectiveRightMargin : 'auto',
-           marginBottom: appStore.isRAGPanelOpen ? '20vh' : '0'
-         }">
-      
-    </div> -->
+    <!-- Main Content Layout -->
+    <div 
+      class="main-layout" 
+      :class="{ 
+        'with-expanded-dropdown': dropdownState !== 'collapsed',
+        'feature-content': dropdownState === 'feature-content'
+      }"
+      @click="appStore.isSettingsOverlayOpen ? appStore.closeSettingsOverlay() : null"
+      :title="appStore.isSettingsOverlayOpen ? 'Click to close settings' : ''"
+      :style="{ cursor: appStore.isSettingsOverlayOpen ? 'pointer' : 'auto' }"
+    >
+      <!-- Canvas Area -->
+      <div class="canvas-area">
+        <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
+          :model-type="modelType" :side-panel-open="false"
+          :right-panel-open="dropdownState !== 'collapsed'" 
+          :right-panel-width="dropdownState === 'feature-content' ? '36vw' : (dropdownState === 'features-list' ? '300px' : '0px')"
+          :right-sidebar-expanded="false" v-model:gesture-mode="gestureMode" v-model:zoom="canvasZoom"
+          v-model:is-height-locked="isHeightLocked" :auto-zoom-enabled="true"
+          :viewport-height="windowSize.innerHeight" :viewport-width="windowSize.innerWidth"
+          :effective-right-margin="effectiveRightMargin"
+          :effective-canvas-width="effectiveCanvasWidth"
+          v-model:is-welcome-screen="isOnWelcomeScreenState"
+          :is-welcome-screen-controlled="isOnWelcomeScreenState"
+          @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
+          @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
+          @update-fullscreen="handleFullscreenUpdate" />
+      </div>
+    </div>
 
     <!-- Canvas Controls -->
     <div v-if="!isInOverview && !isOnWelcomeScreen" class="fixed bottom-4 z-50 flex items-center gap-2"
@@ -135,6 +148,11 @@
       :is-open="appStore.isSlidingFooterOpen"
       @close="appStore.closeSlidingFooter"
       @toggle="appStore.toggleSlidingFooter" />
+    
+    <!-- Settings Slide Overlay -->
+    <SettingsSlideOverlay 
+      :is-open="appStore.isSettingsOverlayOpen"
+      @close="appStore.closeSettingsOverlay" />
 
   </div>
 </template>
@@ -144,14 +162,13 @@ import { ref, onMounted, onBeforeUnmount, computed, provide, watch, nextTick } f
 import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText, Terminal, X, FolderOpen } from 'lucide-vue-next';
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
-import ThemeToggle from './components/theme/ThemeToggle.vue';
-import WorkspaceMenu from './components/workspace/WorkspaceMenu.vue';
-import LeftNavigationSidebar from './components/sidebar/LeftNavigationSidebar.vue';
-import RightFeatureSidebar from './components/sidebar/RightFeatureSidebar.vue';
 import FeatureContentPanel from './components/sidebar/FeatureContentPanel.vue';
+import FloatingCornerButton from './components/ui/FloatingCornerButton.vue';
+import SimpleFloatingButton from './components/ui/SimpleFloatingButton.vue';
+import LeftNavigationDropdown from './components/ui/LeftNavigationDropdown.vue';
+import RightFeaturesDropdown from './components/ui/RightFeaturesDropdown.vue';
 import SlidingFooter from './components/ui/SlidingFooter.vue';
-import Badge from './components/ui/Badge.vue';
-import WorkspaceControlsDock from './components/workspace/WorkspaceControlsDock.vue';
+import SettingsSlideOverlay from './components/ui/SettingsSlideOverlay.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -164,6 +181,15 @@ import type { ModelInfo } from '@/types/model';
 
 const gestureMode = ref<'scroll' | 'zoom'>('scroll');
 const anthropicApiKey = ref(localStorage.getItem('anthropicApiKey') || '');
+
+// Feature panel state
+const isFeaturePanelOpen = ref(false);
+const activeFeature = ref<string | null>(null);
+
+// Enhanced dropdown state management for morphing
+const dropdownState = ref<'collapsed' | 'features-list' | 'feature-content'>('collapsed');
+const selectedFeature = ref<string | null>(null);
+const currentNodeId = ref<string | null>(null);
 
 // Canvas and workspace state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
@@ -179,11 +205,30 @@ const effectiveRightPanelOpen = computed(() => {
 
 // Computed positioning for UI elements in dual sidebar mode
 const effectiveLeftMargin = computed(() => {
+  if (isOnWelcomeScreen.value) return '0px';
   return appStore.isLeftSidebarExpanded ? '260px' : '60px';
 });
 
+// Compute the effective available width for canvas content
+const effectiveCanvasWidth = computed(() => {
+  if (dropdownState.value === 'feature-content') {
+    return 'calc(100vw - 36vw)'; // 64vw available
+  } else if (dropdownState.value === 'features-list') {
+    return 'calc(100vw - 300px)';
+  }
+  return '100vw'; // Full width when collapsed
+});
+
+
 const effectiveRightMargin = computed(() => {
-  if (appStore.isRightContentPanelOpen) {
+  if (isOnWelcomeScreen.value) return '0px';
+  
+  // Account for our new dropdown states
+  if (dropdownState.value === 'feature-content') {
+    return '36vw';
+  } else if (dropdownState.value === 'features-list') {
+    return '300px';
+  } else if (appStore.isRightContentPanelOpen) {
     return 'calc(60px + 35vw)';
   } else if (appStore.isRightSidebarExpanded) {
     return '180px';
@@ -200,7 +245,31 @@ const handleLeftNavItemClick = (item: any) => {
 
 const handleRightFeatureClick = (feature: any) => {
   console.log('Right feature clicked:', feature);
-  appStore.toggleRightFeature(feature.id);
+  if (feature.id === 'themes') {
+    // Themes are handled inline in the dropdown
+    return;
+  }
+  
+  // Transition to feature content state (inline morphing)
+  selectedFeature.value = feature.id;
+  dropdownState.value = 'feature-content';
+  activeFeature.value = feature.id;
+  isFeaturePanelOpen.value = true;
+  
+  // Update appStore so InfiniteCanvas knows to adjust docker positioning
+  appStore.isRightContentPanelOpen = true;
+};
+
+const handleBackToFeatures = () => {
+  console.log('Back to features clicked');
+  // Return to features list state
+  selectedFeature.value = null;
+  dropdownState.value = 'features-list';
+  activeFeature.value = null;
+  isFeaturePanelOpen.value = false;
+  
+  // Update appStore so InfiniteCanvas knows to adjust docker positioning
+  appStore.isRightContentPanelOpen = false;
 };
 
 const handleFeaturePanelOpened = () => {
@@ -209,6 +278,16 @@ const handleFeaturePanelOpened = () => {
 
 const handleFeaturePanelClosed = () => {
   console.log('Feature panel closed');
+};
+
+const handleWorkspaceOpen = (event: any) => {
+  console.log('Workspace open requested:', event);
+  // Handle workspace opening if needed
+};
+
+const closeFeaturePanel = () => {
+  isFeaturePanelOpen.value = false;
+  activeFeature.value = null;
 };
 provide('canvasRef', canvasRef);
 const canvasZoom = ref(1);
@@ -221,8 +300,6 @@ const windowSize = ref({
 const showLogo = computed(() => {
   return (canvasRef.value?.workspaces && canvasRef.value.workspaces.length !== 0) || false;
 });
-
-const currentNodeId = ref('');
 
 // Stores
 const canvasStore = useCanvasStore();
@@ -239,6 +316,14 @@ const isOnboarding = computed(() => {
 
 // Theme awareness - use reactive theme store
 const currentTheme = computed(() => themeStore.currentTheme);
+
+// Check if any node is snapped
+const hasSnappedNode = computed(() => canvasStore.snappedNodeId !== null);
+
+// Zen mode state for hiding/showing buttons
+const showZenButtons = ref(false);
+const zenHideTimer = ref<number | null>(null);
+const zenMode = ref(false); // Track if we're in zen mode (separate from visibility)
 
 // Theme observer
 let themeObserver;
@@ -311,9 +396,121 @@ const isInOverview = computed(() => {
   return canvasRef.value?.isWorkspaceOverview ?? true;
 });
 
+// Shared welcome screen state to avoid component recreation issues
+const isOnWelcomeScreenState = ref(true);
+
 const isOnWelcomeScreen = computed(() => {
-  return canvasRef.value?.isWelcomeScreen ?? true;
+  // Use shared state instead of relying on canvas component state
+  return isOnWelcomeScreenState.value;
 });
+
+// Floating button states
+const isLeftDropdownOpen = ref(false);
+const isRightDropdownOpen = ref(false);
+
+const toggleLeftDropdown = () => {
+  isLeftDropdownOpen.value = !isLeftDropdownOpen.value;
+  if (isLeftDropdownOpen.value) {
+    isRightDropdownOpen.value = false;
+  }
+};
+
+const toggleRightDropdown = () => {
+  if (dropdownState.value === 'collapsed') {
+    // Open to features list
+    dropdownState.value = 'features-list';
+    isRightDropdownOpen.value = true;
+  } else {
+    // Close dropdown
+    dropdownState.value = 'collapsed';
+    isRightDropdownOpen.value = false;
+    selectedFeature.value = null;
+    activeFeature.value = null;
+    isFeaturePanelOpen.value = false;
+  }
+  
+  if (isRightDropdownOpen.value) {
+    isLeftDropdownOpen.value = false;
+  }
+};
+
+const closeLeftDropdown = () => {
+  isLeftDropdownOpen.value = false;
+};
+
+const closeRightDropdown = () => {
+  dropdownState.value = 'collapsed';
+  isRightDropdownOpen.value = false;
+  selectedFeature.value = null;
+  activeFeature.value = null;
+  isFeaturePanelOpen.value = false;
+  
+  // Update appStore so InfiniteCanvas knows to adjust docker positioning
+  appStore.isRightContentPanelOpen = false;
+};
+
+// Event handlers for floating dropdowns
+const handleNavItemClick = (item: any) => {
+  console.log('Navigation item clicked:', item);
+  closeLeftDropdown();
+  
+  // Handle navigation logic
+  if (item.id === 'home') {
+    // Return to welcome screen for new workspace creation
+    isOnWelcomeScreenState.value = true;
+    
+    // If we're currently in a workspace, trigger return to overview
+    if (canvasRef.value && !canvasRef.value.isWorkspaceOverview) {
+      canvasRef.value.returnToOverview();
+    }
+  }
+};
+
+const handleChatSelected = async (chatId: string) => {
+  console.log('Chat selected:', chatId);
+  closeLeftDropdown();
+  
+  // If we're on welcome screen, trigger exit animation first
+  if (isOnWelcomeScreenState.value) {
+    // Emit event to trigger exit animation in welcome screen
+    emitter.emit('trigger-workspace-exit-animation');
+    
+    setTimeout(async () => {
+      isOnWelcomeScreenState.value = false;
+      await canvasRef.value?.handleWorkspaceSelect(chatId);
+    }, 300); // Give time for exit animation to start
+  } else {
+    // Direct workspace loading without animation
+    await canvasRef.value?.handleWorkspaceSelect(chatId);
+  }
+};
+
+const handleFeatureClick = (feature: any) => {
+  console.log('Feature clicked:', feature);
+  closeRightDropdown();
+  // Handle feature activation
+  appStore.setActiveRightFeature(feature);
+};
+
+const handleFeatureHover = (feature: any) => {
+  // Handle feature hover if needed
+};
+
+const handleThemeSelected = (theme: string) => {
+  themeStore.setTheme(theme);
+  closeRightDropdown();
+};
+
+// Event handlers for bottom corner buttons
+const handleHelpButtonClick = () => {
+  console.log('Help button clicked');
+  appStore.openSlidingFooter();
+};
+
+const handleSettingsButtonClick = () => {
+  console.log('Settings button clicked');
+  appStore.openSettingsOverlay();
+};
 
 // Responsive breakpoints based on available space in dual sidebar mode
 const availableWidth = computed(() => {
@@ -434,7 +631,6 @@ const getFlexCanvasWrapperStyle = computed(() => {
   
   return {
     height: ragPanelOpen ? '80vh' : '100vh',
-    paddingTop: isInOverview.value ? '4rem' : '3rem', // Space for top controls
     marginBottom: ragPanelOpen ? '20vh' : '0',
     position: 'relative',
     overflow: 'hidden'
@@ -801,6 +997,37 @@ const handleGlobalHotkey = (e: KeyboardEvent) => {
     e.preventDefault();
     appStore.openAgentConfigurator();
   }
+
+  // Theme cycling hotkeys: CMD/CTRL + SHIFT + < or >
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
+    // Debug logging
+    console.log('Theme hotkey pressed:', e.key, e.code);
+    
+    // Check for < key (previous theme)
+    if (e.key === '<' || e.code === 'Comma') {
+      e.preventDefault();
+      themeStore.previousTheme();
+      return;
+    }
+    // Check for > key (next theme)  
+    if (e.key === '>' || e.code === 'Period') {
+      e.preventDefault();
+      themeStore.nextTheme();
+      return;
+    }
+    
+    // Alternative: Use [ and ] keys
+    if (e.key === '[') {
+      e.preventDefault();
+      themeStore.previousTheme();
+      return;
+    }
+    if (e.key === ']') {
+      e.preventDefault();
+      themeStore.nextTheme();
+      return;
+    }
+  }
 };
 
 // Close overflow menus when clicking outside
@@ -811,6 +1038,43 @@ const handleClickOutside = (e: MouseEvent) => {
   }
   if (showRightOverflowMenu.value && !target.closest('.right-overflow-menu')) {
     showRightOverflowMenu.value = false;
+  }
+};
+
+// Zen mode functions for hot corners
+const startHideTimer = () => {
+  if (!zenMode.value) return; // Only apply in zen mode
+  
+  if (zenHideTimer.value) {
+    clearTimeout(zenHideTimer.value);
+  }
+  zenHideTimer.value = window.setTimeout(() => {
+    showZenButtons.value = false;
+  }, 1500); // Hide after 1.5 seconds
+};
+
+const clearHideTimer = () => {
+  if (zenHideTimer.value) {
+    clearTimeout(zenHideTimer.value);
+    zenHideTimer.value = null;
+  }
+};
+
+const enterZenMode = () => {
+  zenMode.value = true;
+  showZenButtons.value = false;
+  clearHideTimer();
+};
+
+const exitZenMode = () => {
+  zenMode.value = false;
+  showZenButtons.value = false;
+  clearHideTimer();
+};
+
+const handleOverlayMouseLeave = () => {
+  if (zenMode.value && showZenButtons.value) {
+    startHideTimer();
   }
 };
 
@@ -1166,6 +1430,17 @@ watch(() => modelStore.selectedModel, (newModel) => {
   }
 });
 
+// Handle zen mode transitions when snap state changes
+watch(hasSnappedNode, (newVal, oldVal) => {
+  if (newVal && !oldVal) {
+    // Entering snapped mode - activate zen mode with smooth transition
+    setTimeout(() => enterZenMode(), 100); // Small delay for smooth transition
+  } else if (!newVal && oldVal) {
+    // Exiting snapped mode - deactivate zen mode
+    exitZenMode();
+  }
+});
+
 onMounted(async () => {
   // Suppress Three.js multiple instance warnings from vue-force-graph
   const originalWarn = console.warn;
@@ -1213,6 +1488,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateWindowSize);
   document.removeEventListener('keydown', handleGlobalHotkey);
   document.removeEventListener('click', handleClickOutside);
+  clearHideTimer(); // Clean up zen mode timer
 });
 </script>
 
@@ -1496,6 +1772,10 @@ onBeforeUnmount(() => {
   background: rgba(240, 248, 255, 0.8);
 }
 
+[data-theme="watermelon"] .bg-background {
+  background: rgba(240, 255, 248, 0.8);
+}
+
 /* Dark themes */
 [data-theme="dark"] .bg-background {
   background: rgba(15, 23, 42, 0.8);
@@ -1699,5 +1979,303 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 100vh;
   overflow: hidden;
+}
+
+/* Main Layout - 50/50 Split */
+/* Main Layout System with Dropdown Compression */
+.main-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.canvas-area {
+  flex: 1;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Main layout uses absolute positioning to layer elements */
+.main-layout {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Canvas area is absolutely positioned to always be full width */
+.canvas-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+}
+
+/* Override BottomDocker positioning when panels are open - try multiple selectors */
+.main-layout.with-expanded-dropdown .canvas-area :deep(.bottom-docker),
+.main-layout.with-expanded-dropdown :deep(.bottom-docker) {
+  left: calc(50% - 150px) !important;
+  transform: translateX(-50%) !important;
+  transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.main-layout.with-expanded-dropdown.feature-content .canvas-area :deep(.bottom-docker),
+.main-layout.with-expanded-dropdown.feature-content :deep(.bottom-docker) {
+  left: calc(50% - 18vw) !important;
+  transform: translateX(-50%) !important;
+  transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* The InfiniteCanvas should handle content centering internally via props */
+/* We're passing: right-panel-width, effective-canvas-width, effective-right-margin */
+
+/* Morphing panel animation */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Make welcome screen content responsive to split layout */
+.canvas-area .welcome-screen {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* State-specific styles */
+.main-grid-layout.state-features-list .inline-feature-area {
+  background: var(--features-list-bg, rgba(0, 0, 0, 0.95));
+}
+
+.main-grid-layout.state-feature-content .inline-feature-area {
+  background: var(--feature-content-bg, rgba(0, 0, 0, 0.98));
+}
+
+/* Ensure proper canvas compression animation */
+.main-grid-layout.morphing-active .canvas-area {
+  transform: scale(1);
+  transform-origin: left center;
+}
+
+/* Coordinated Animation Choreography */
+.main-grid-layout {
+  will-change: grid-template-columns;
+}
+
+.main-grid-layout.morphing-active {
+  animation: gridMorphIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.inline-feature-area {
+  will-change: transform, opacity;
+}
+
+@keyframes gridMorphIn {
+  0% {
+    grid-template-columns: 1fr 0vw;
+  }
+  100% {
+    grid-template-columns: 1fr 35vw;
+  }
+}
+
+/* Staggered animations for polished feel */
+.main-grid-layout.state-features-list .floating-corner-button .dropdown-content-wrapper {
+  animation-delay: 0.1s;
+}
+
+.main-grid-layout.state-feature-content .floating-corner-button .dropdown-content-wrapper {
+  animation-delay: 0.15s;
+}
+
+/* Enhanced transitions for all morphing states */
+.main-grid-layout * {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Prevent layout shifts during transitions */
+.main-grid-layout.morphing-active,
+.main-grid-layout.morphing-active * {
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+/* Settings slide-up system - Updated for grid layout */
+.app-container.settings-open .main-grid-layout {
+  height: 20vh;
+  overflow: hidden;
+  transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-grid-layout {
+  height: 100vh;
+  transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  will-change: height;
+}
+
+/* When settings are open, make the compressed main content area show it's clickable */
+.app-container.settings-open .main-grid-layout {
+  position: relative;
+}
+
+.app-container.settings-open .main-grid-layout::after {
+  content: 'Click anywhere to close settings';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.app-container.settings-open .main-grid-layout:hover::after {
+  opacity: 1;
+}
+
+/* Global Floating Buttons Overlay */
+.floating-buttons-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 2000;
+}
+
+.floating-buttons-overlay > * {
+  pointer-events: auto;
+}
+
+/* Zen Mode: Smooth transitions for all floating buttons */
+.floating-buttons-overlay :deep(.floating-corner-button),
+.floating-buttons-overlay :deep(.simple-floating-button) {
+  transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease;
+}
+
+/* Zen Mode: Hide all floating buttons with slide animation */
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button),
+.floating-buttons-overlay.zen-mode :deep(.simple-floating-button) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Corner buttons slide into corners in zen mode */
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.top-left) {
+  transform: translate(-70px, -70px);
+}
+
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.top-right) {
+  transform: translate(70px, -70px);
+}
+
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.bottom-left) {
+  transform: translate(-70px, 70px);
+}
+
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.bottom-right) {
+  transform: translate(70px, 70px);
+}
+
+/* Simple floating buttons also slide away */
+.floating-buttons-overlay.zen-mode :deep(.simple-floating-button.bottom-left) {
+  transform: translate(-70px, 70px);
+}
+
+.floating-buttons-overlay.zen-mode :deep(.simple-floating-button.bottom-right) {
+  transform: translate(70px, 70px);
+}
+
+/* Hot corners: invisible trigger areas */
+.hot-corner {
+  position: fixed;
+  z-index: 2001;
+  background: transparent;
+  pointer-events: auto;
+  transition: width 0.3s ease, height 0.3s ease;
+}
+
+/* Hot corners - small when buttons hidden, invisible when buttons shown */
+.floating-buttons-overlay.zen-mode:not(.show-zen-buttons) .hot-corner {
+  width: 80px;
+  height: 80px;
+  pointer-events: auto;
+}
+
+.floating-buttons-overlay.zen-mode.show-zen-buttons .hot-corner {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.hot-corner.top-left {
+  top: 0;
+  left: 0;
+}
+
+.hot-corner.top-right {
+  top: 0;
+  right: 0;
+}
+
+.hot-corner.bottom-left {
+  bottom: 0;
+  left: 0;
+}
+
+.hot-corner.bottom-right {
+  bottom: 0;
+  right: 0;
+}
+
+/* Reveal all buttons when hovering corners or buttons themselves */
+.floating-buttons-overlay.zen-mode.show-zen-buttons :deep(.floating-corner-button),
+.floating-buttons-overlay.zen-mode.show-zen-buttons :deep(.simple-floating-button),
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button:hover),
+.floating-buttons-overlay.zen-mode :deep(.simple-floating-button:hover),
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.morphing),
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.morphed) {
+  transform: translate(0, 0) !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transition: transform 0.3s cubic-bezier(0.2, 0, 0.2, 1), opacity 0.2s ease !important;
+}
+
+/* Keep buttons revealed when hovering any part of them */
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button:hover) ~ .hot-corner,
+.floating-buttons-overlay.zen-mode :deep(.simple-floating-button:hover) ~ .hot-corner {
+  pointer-events: none;
+}
+
+/* Ensure buttons stay functional when revealed */
+.floating-buttons-overlay.zen-mode.show-zen-buttons :deep(.floating-corner-button),
+.floating-buttons-overlay.zen-mode.show-zen-buttons :deep(.simple-floating-button) {
+  pointer-events: auto !important;
+}
+
+/* Keep morphing buttons visible and functional */
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.morphing) *,
+.floating-buttons-overlay.zen-mode :deep(.floating-corner-button.morphed) * {
+  pointer-events: auto !important;
 }
 </style>

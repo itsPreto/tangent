@@ -19,6 +19,9 @@ export const useAppStore = defineStore('app', {
     
     // Sliding footer state
     isSlidingFooterOpen: false,
+    
+    // Settings overlay state
+    isSettingsOverlayOpen: false,
   }),
   getters: {
     // Computed properties for layout calculations
@@ -171,6 +174,19 @@ export const useAppStore = defineStore('app', {
     
     toggleSlidingFooter() {
       this.isSlidingFooterOpen = !this.isSlidingFooterOpen;
+    },
+    
+    // Settings overlay actions
+    openSettingsOverlay() {
+      this.isSettingsOverlayOpen = true;
+    },
+    
+    closeSettingsOverlay() {
+      this.isSettingsOverlayOpen = false;
+    },
+    
+    toggleSettingsOverlay() {
+      this.isSettingsOverlayOpen = !this.isSettingsOverlayOpen;
     },
   },
 });

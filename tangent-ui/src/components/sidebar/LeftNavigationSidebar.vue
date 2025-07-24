@@ -30,12 +30,6 @@
           />
         </div>
       </button>
-
-      <Transition name="fade-slide" mode="out-in">
-        <div v-if="isExpanded" class="app-title">
-          <TangentLogo class="w-6 h-6" />
-        </div>
-      </Transition>
     </div>
 
     <!-- Navigation Section -->
@@ -165,18 +159,12 @@ import { ref, computed, inject, onMounted } from 'vue';
 import {
   ChevronRight,
   ChevronLeft,
-  ChevronDown,
   Plus,
   MessageSquare,
-  Star,
-  Clock,
-  Archive,
-  Settings,
   HelpCircle,
   User,
   PanelLeft
 } from 'lucide-vue-next';
-import TangentLogo from '@/components/logo/TangentLogo.vue';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAppStore } from '@/stores/appStore';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -205,7 +193,6 @@ const {
   isDarkTheme,
   themeColors,
   backgroundColors,
-  commonStyles,
   getTextColor,
   forceLightText
 } = useThemeColors();
@@ -1027,7 +1014,6 @@ onMounted(async () => {
 
 .slide-down-enter-to,
 .slide-down-leave-from {
-  max-height: 300px;
   opacity: 1;
   transform: translateY(0);
 }

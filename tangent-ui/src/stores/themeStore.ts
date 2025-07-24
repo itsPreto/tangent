@@ -6,7 +6,7 @@ export type ThemeName =
   | "synthwave" | "retro" | "cyberpunk" | "valentine" | "halloween" | "garden"
   | "forest" | "aqua" | "lofi" | "pastel" | "fantasy" | "wireframe" | "black"
   | "luxury" | "neon" | "dracula" | "cmyk" | "autumn" | "business" | "acid" | "lemonade"
-  | "night" | "coffee" | "winter";
+  | "night" | "coffee" | "winter" | "watermelon";
 
 export interface ThemeColors {
   primary: string;
@@ -28,7 +28,7 @@ export const useThemeStore = defineStore('theme', {
       "synthwave", "retro", "cyberpunk", "valentine", "halloween",
       "garden", "forest", "aqua", "lofi", "pastel", "fantasy",
       "wireframe", "black", "luxury", "neon", "dracula", "cmyk", "autumn",
-      "business", "acid", "lemonade", "night", "coffee", "winter"
+      "business", "acid", "lemonade", "night", "coffee", "winter", "watermelon"
     ],
     themeColors: {
       // Light themes
@@ -49,7 +49,7 @@ export const useThemeStore = defineStore('theme', {
       retro: { primary: '#D2691E', secondary: '#CD853F', accent: '#F4A460' },
       cyberpunk: { primary: '#00CCDD', secondary: '#FF1493', accent: '#66AA00' },
       valentine: { primary: '#FF69B4', secondary: '#DC143C', accent: '#FFB6C1' },
-      halloween: { primary: '#7C3AED', secondary: '#581C87', accent: '#3B82F6' },
+      halloween: { primary: 'oklch(0.43 0.23 310.22)', secondary: '#2D1B69', accent: '#39FF14' },
       forest: { primary: '#1EB854', secondary: '#1DB88E', accent: '#1EA885' },
       aqua: { primary: '#09ECF3', secondary: '#0771DE', accent: '#07ABE3' },
       black: { primary: '#333333', secondary: '#666666', accent: '#999999' },
@@ -62,7 +62,8 @@ export const useThemeStore = defineStore('theme', {
       acid: { primary: '#FF00FF', secondary: '#00FF00', accent: '#CCCC00' },
       night: { primary: '#38BDF8', secondary: '#818CF8', accent: '#C084FC' },
       coffee: { primary: '#6F4E37', secondary: '#C6A880', accent: '#DAC3B3' },
-      winter: { primary: '#0EA5E9', secondary: '#84CC16', accent: '#10B981' }
+      winter: { primary: '#0EA5E9', secondary: '#84CC16', accent: '#10B981' },
+      watermelon: { primary: '#FF1493', secondary: '#00CC66', accent: '#00AAFF' }
     }
   }),
 
@@ -163,6 +164,24 @@ export const useThemeStore = defineStore('theme', {
     toggleDarkMode() {
       const isDark = this.isDarkTheme(this.currentTheme);
       this.setTheme(isDark ? 'light' : 'dark');
+    },
+
+    /**
+     * Cycle to the next theme
+     */
+    nextTheme() {
+      const currentIndex = this.availableThemes.indexOf(this.currentTheme);
+      const nextIndex = (currentIndex + 1) % this.availableThemes.length;
+      this.setTheme(this.availableThemes[nextIndex]);
+    },
+
+    /**
+     * Cycle to the previous theme
+     */
+    previousTheme() {
+      const currentIndex = this.availableThemes.indexOf(this.currentTheme);
+      const previousIndex = currentIndex === 0 ? this.availableThemes.length - 1 : currentIndex - 1;
+      this.setTheme(this.availableThemes[previousIndex]);
     }
   }
 });

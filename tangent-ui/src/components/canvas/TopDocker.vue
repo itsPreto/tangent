@@ -174,16 +174,15 @@
       </button>
     </div>
     
-    <!-- Customization Panel -->
+    <!-- Minimalist Customization Panel -->
     <Transition name="slide-down">
-      <div v-if="showCustomizationPanel" class="customization-panel bg-base-200/95 backdrop-blur-sm rounded-lg p-4 mt-3 shadow-lg border border-base-300">
+      <div v-if="showCustomizationPanel" class="customization-panel">
         <!-- Tool-specific options -->
-        <div v-if="currentTool === 'rectangle' || currentTool === 'circle' || currentTool === 'diamond'">
-          <div class="grid grid-cols-2 gap-4">
+        <div v-if="currentTool === 'rectangle' || currentTool === 'circle' || currentTool === 'diamond'" class="horizontal-layout">
             <!-- Stroke Color -->
             <div class="customization-group">
-              <label class="text-xs text-base-content/60 mb-2 block">Stroke</label>
-              <div class="flex gap-2">
+              <label>Stroke</label>
+              <div class="color-grid">
                 <button v-for="color in strokeColors" :key="color" 
                   @click="setStrokeColor(color)"
                   :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
@@ -194,8 +193,8 @@
             
             <!-- Fill Color -->
             <div class="customization-group">
-              <label class="text-xs text-base-content/60 mb-2 block">Fill</label>
-              <div class="flex gap-2">
+              <label>Fill</label>
+              <div class="color-grid">
                 <button v-for="color in fillColors" :key="color" 
                   @click="setFillColor(color)"
                   :class="['color-button', { 'active': drawingStore.fillColor === color, 'transparent-button': color === 'transparent' }]"
@@ -203,45 +202,43 @@
                 </button>
               </div>
             </div>
-          </div>
           
           <!-- Stroke Width -->
-          <div class="customization-group mt-4">
-            <label class="text-xs text-base-content/60 mb-2 block">Stroke Width</label>
-            <div class="flex gap-2">
+          <div class="customization-group">
+            <label>Width</label>
+            <div class="stroke-width-grid">
               <button v-for="width in strokeWidths" :key="width" 
                 @click="setStrokeWidth(width)"
                 :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
-                <div class="stroke-preview" :style="{ height: `${width}px`, backgroundColor: 'currentColor' }"></div>
+                <div class="stroke-preview" :style="{ height: `${width}px` }"></div>
               </button>
             </div>
           </div>
           
           <!-- Opacity -->
-          <div class="customization-group mt-4">
-            <label class="text-xs text-base-content/60 mb-2 block">Opacity</label>
-            <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.1" 
-              :value="drawingStore.opacity"
-              @input="setOpacity($event.target.value)"
-              class="opacity-slider w-full"
-            />
-            <div class="flex justify-between text-xs text-base-content/60 mt-1">
-              <span>0%</span>
-              <span>{{ Math.round(drawingStore.opacity * 100) }}%</span>
-              <span>100%</span>
+          <div class="customization-group opacity-group">
+            <label>Opacity</label>
+            <div class="opacity-container">
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.05" 
+                :value="drawingStore.opacity"
+                @input="setOpacity($event.target.value)"
+                class="opacity-slider"
+                :style="{ '--slider-progress': (drawingStore.opacity * 100) + '%' }"
+              />
+              <span class="opacity-value">{{ Math.round(drawingStore.opacity * 100) }}%</span>
             </div>
           </div>
         </div>
         
         <!-- Line/Arrow specific options -->
-        <div v-else-if="currentTool === 'line' || currentTool === 'arrow'">
+        <div v-else-if="currentTool === 'line' || currentTool === 'arrow'" class="horizontal-layout">
           <div class="customization-group">
-            <label class="text-xs text-base-content/60 mb-2 block">Stroke Color</label>
-            <div class="flex gap-2">
+            <label>Color</label>
+            <div class="color-grid">
               <button v-for="color in strokeColors" :key="color" 
                 @click="setStrokeColor(color)"
                 :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
@@ -250,23 +247,23 @@
             </div>
           </div>
           
-          <div class="customization-group mt-4">
-            <label class="text-xs text-base-content/60 mb-2 block">Line Width</label>
-            <div class="flex gap-2">
+          <div class="customization-group">
+            <label>Width</label>
+            <div class="stroke-width-grid">
               <button v-for="width in strokeWidths" :key="width" 
                 @click="setStrokeWidth(width)"
                 :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
-                <div class="stroke-preview" :style="{ height: `${width}px`, backgroundColor: 'currentColor' }"></div>
+                <div class="stroke-preview" :style="{ height: `${width}px` }"></div>
               </button>
             </div>
           </div>
         </div>
         
         <!-- Text tool specific options -->
-        <div v-else-if="currentTool === 'text'">
+        <div v-else-if="currentTool === 'text'" class="horizontal-layout">
           <div class="customization-group">
-            <label class="text-xs text-base-content/60 mb-2 block">Text Color</label>
-            <div class="flex gap-2">
+            <label>Color</label>
+            <div class="color-grid">
               <button v-for="color in strokeColors" :key="color" 
                 @click="setStrokeColor(color)"
                 :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
@@ -277,37 +274,35 @@
         </div>
         
         <!-- Pen tool specific options -->
-        <div v-else-if="currentTool === 'pen'">
-          <div class="grid grid-cols-2 gap-4">
-            <div class="customization-group">
-              <label class="text-xs text-base-content/60 mb-2 block">Pen Color</label>
-              <div class="flex gap-2">
-                <button v-for="color in strokeColors" :key="color" 
-                  @click="setStrokeColor(color)"
-                  :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
-                  :style="{ backgroundColor: color }">
-                </button>
-              </div>
+        <div v-else-if="currentTool === 'pen'" class="horizontal-layout">
+          <div class="customization-group">
+            <label>Color</label>
+            <div class="color-grid">
+              <button v-for="color in strokeColors" :key="color" 
+                @click="setStrokeColor(color)"
+                :class="['color-button', { 'active': drawingStore.strokeColor === color }]"
+                :style="{ backgroundColor: color }">
+              </button>
             </div>
-            
-            <div class="customization-group">
-              <label class="text-xs text-base-content/60 mb-2 block">Pen Width</label>
-              <div class="flex gap-2">
-                <button v-for="width in strokeWidths" :key="width" 
-                  @click="setStrokeWidth(width)"
-                  :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
-                  <div class="stroke-preview" :style="{ height: `${width}px`, backgroundColor: 'currentColor' }"></div>
-                </button>
-              </div>
+          </div>
+          
+          <div class="customization-group">
+            <label>Width</label>
+            <div class="stroke-width-grid">
+              <button v-for="width in strokeWidths" :key="width" 
+                @click="setStrokeWidth(width)"
+                :class="['stroke-width-button', { 'active': drawingStore.strokeWidth === width }]">
+                <div class="stroke-preview" :style="{ height: `${width}px` }"></div>
+              </button>
             </div>
           </div>
         </div>
         
         <!-- Fill tool specific options -->
-        <div v-else-if="currentTool === 'fill'">
+        <div v-else-if="currentTool === 'fill'" class="horizontal-layout">
           <div class="customization-group">
-            <label class="text-xs text-base-content/60 mb-2 block">Fill Color</label>
-            <div class="flex gap-2">
+            <label>Color</label>
+            <div class="color-grid">
               <button v-for="color in fillColors.filter(c => c !== 'transparent')" :key="color" 
                 @click="setFillColor(color)"
                 :class="['color-button', { 'active': drawingStore.fillColor === color }]"
@@ -317,27 +312,26 @@
           </div>
           
           <!-- Opacity -->
-          <div class="customization-group mt-4">
-            <label class="text-xs text-base-content/60 mb-2 block">Opacity</label>
-            <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.1" 
-              :value="drawingStore.opacity"
-              @input="setOpacity($event.target.value)"
-              class="opacity-slider w-full"
-            />
-            <div class="flex justify-between text-xs text-base-content/60 mt-1">
-              <span>0%</span>
-              <span>{{ Math.round(drawingStore.opacity * 100) }}%</span>
-              <span>100%</span>
+          <div class="customization-group opacity-group">
+            <label>Opacity</label>
+            <div class="opacity-container">
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.05" 
+                :value="drawingStore.opacity"
+                @input="setOpacity($event.target.value)"
+                class="opacity-slider"
+                :style="{ '--slider-progress': (drawingStore.opacity * 100) + '%' }"
+              />
+              <span class="opacity-value">{{ Math.round(drawingStore.opacity * 100) }}%</span>
             </div>
           </div>
         </div>
         
         <!-- Default message for tools without options -->
-        <div v-else class="text-center text-sm text-base-content/60 py-4">
+        <div v-else class="tool-message">
           {{ getToolMessage(currentTool) }}
         </div>
       </div>
@@ -610,102 +604,280 @@ onUnmounted(() => {
   }
 }
 
-/* Customization Panel Styles */
+/* Minimalist Horizontal Customization Panel */
 .customization-panel {
-  min-width: 300px;
-  max-width: 500px;
+  width: 100%;
+  min-width: 600px;
+  max-width: 900px;
+  margin-top: 12px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, 
+    oklch(from oklch(var(--b1)) calc(l + 2) c h / 0.98),
+    oklch(from oklch(var(--b1)) l c h / 0.95)
+  );
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.08);
+  box-shadow: 
+    0 12px 40px oklch(from oklch(var(--b3)) l c h / 0.15),
+    0 2px 8px oklch(from oklch(var(--b3)) l c h / 0.1),
+    inset 0 1px 0 oklch(from oklch(var(--bc)) l c h / 0.05);
+}
+
+/* Horizontal layout for tool options */
+.horizontal-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .customization-group {
-  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: fit-content;
+}
+
+.horizontal-layout .customization-group {
+  margin-bottom: 0;
+}
+
+.customization-group label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: oklch(from oklch(var(--bc)) l c h / 0.5);
+  margin-bottom: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Special styling for opacity group */
+.opacity-group {
+  flex: 1;
+  max-width: 200px;
+  min-width: 120px;
+}
+
+.opacity-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.opacity-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+  background: oklch(from oklch(var(--b1)) l c h / 0.5);
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  min-width: 40px;
+  text-align: center;
 }
 
 .color-button {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  border: 2px solid transparent;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 2px solid oklch(from oklch(var(--bc)) l c h / 0.1);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  overflow: hidden;
+}
+
+.color-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.2) 50%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
 .color-button:hover {
-  transform: scale(1.1);
-  border-color: rgba(var(--bc), 0.3);
+  transform: translateY(-2px) scale(1.05);
+  border-color: oklch(from oklch(var(--bc)) l c h / 0.2);
+  box-shadow: 0 4px 12px oklch(from oklch(var(--bc)) l c h / 0.1);
+}
+
+.color-button:hover::before {
+  opacity: 1;
 }
 
 .color-button.active {
-  border-color: rgba(var(--p), 0.8);
-  box-shadow: 0 0 0 2px rgba(var(--p), 0.3);
+  border-color: oklch(from oklch(var(--p)) l c h / 0.6);
+  box-shadow: 
+    0 0 0 3px oklch(from oklch(var(--p)) l c h / 0.2),
+    0 4px 12px oklch(from oklch(var(--p)) l c h / 0.2);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.color-button.active::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .transparent-button {
-  background: linear-gradient(45deg, #ccc 25%, transparent 25%), 
-              linear-gradient(-45deg, #ccc 25%, transparent 25%), 
-              linear-gradient(45deg, transparent 75%, #ccc 75%), 
-              linear-gradient(-45deg, transparent 75%, #ccc 75%);
-  background-size: 6px 6px;
-  background-position: 0 0, 0 3px, 3px -3px, -3px 0px;
+  background: 
+    linear-gradient(45deg, oklch(from oklch(var(--bc)) l c h / 0.2) 25%, transparent 25%), 
+    linear-gradient(-45deg, oklch(from oklch(var(--bc)) l c h / 0.2) 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, oklch(from oklch(var(--bc)) l c h / 0.2) 75%), 
+    linear-gradient(-45deg, transparent 75%, oklch(from oklch(var(--bc)) l c h / 0.2) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+}
+
+.transparent-button.active::after {
+  background: oklch(from oklch(var(--bc)) l c h / 0.8);
 }
 
 .stroke-width-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 32px;
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background: rgba(var(--bc), 0.1);
+  width: 48px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
+  background: oklch(from oklch(var(--b1)) l c h / 0.5);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
 }
 
 .stroke-width-button:hover {
-  background: rgba(var(--bc), 0.2);
-  border-color: rgba(var(--bc), 0.3);
+  background: oklch(from oklch(var(--b1)) l c h / 0.8);
+  border-color: oklch(from oklch(var(--bc)) l c h / 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px oklch(from oklch(var(--bc)) l c h / 0.1);
 }
 
 .stroke-width-button.active {
-  background: rgba(var(--p), 0.15);
-  border-color: rgba(var(--p), 0.5);
+  background: oklch(from oklch(var(--p)) l c h / 0.1);
+  border-color: oklch(from oklch(var(--p)) l c h / 0.3);
+  box-shadow: 
+    0 0 0 2px oklch(from oklch(var(--p)) l c h / 0.1),
+    0 2px 8px oklch(from oklch(var(--p)) l c h / 0.15);
 }
 
 .stroke-preview {
-  width: 20px;
-  border-radius: 2px;
+  width: 24px;
+  border-radius: 99px;
+  background: oklch(from oklch(var(--bc)) l c h / 0.8);
 }
 
+.stroke-width-button.active .stroke-preview {
+  background: oklch(from oklch(var(--p)) l c h / 0.8);
+}
+
+/* Minimalist Opacity Slider */
 .opacity-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(var(--bc), 0.1);
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right,
+    oklch(from oklch(var(--bc)) l c h / 0.1) 0%,
+    oklch(from oklch(var(--bc)) l c h / 0.3) 100%
+  );
   outline: none;
   -webkit-appearance: none;
+  position: relative;
+  min-width: 80px;
+}
+
+.opacity-slider::before {
+  content: '';
+  position: absolute;
+  height: 100%;
+  background: oklch(from oklch(var(--p)) l c h / 0.5);
+  border-radius: 2px;
+  width: var(--slider-progress, 50%);
 }
 
 .opacity-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: rgba(var(--p), 1);
+  background: white;
   cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 2px solid oklch(from oklch(var(--p)) l c h / 0.8);
+  box-shadow: 
+    0 2px 8px oklch(from oklch(var(--b3)) l c h / 0.2),
+    0 1px 3px oklch(from oklch(var(--b3)) l c h / 0.3);
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.opacity-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 
+    0 0 0 6px oklch(from oklch(var(--p)) l c h / 0.1),
+    0 2px 8px oklch(from oklch(var(--b3)) l c h / 0.3);
 }
 
 .opacity-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: rgba(var(--p), 1);
+  background: white;
   cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 2px solid oklch(from oklch(var(--p)) l c h / 0.8);
+  box-shadow: 
+    0 2px 8px oklch(from oklch(var(--b3)) l c h / 0.2),
+    0 1px 3px oklch(from oklch(var(--b3)) l c h / 0.3);
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.opacity-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 
+    0 0 0 6px oklch(from oklch(var(--p)) l c h / 0.1),
+    0 2px 8px oklch(from oklch(var(--b3)) l c h / 0.3);
+}
+
+/* Opacity value display */
+.opacity-value-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.opacity-value-display span {
+  font-size: 10px;
+  font-weight: 500;
+  color: oklch(from oklch(var(--bc)) l c h / 0.4);
+}
+
+.opacity-value-display .current-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: oklch(from oklch(var(--bc)) l c h / 0.7);
+  background: oklch(from oklch(var(--b1)) l c h / 0.5);
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.1);
 }
 
 /* Transition animations */
@@ -718,5 +890,90 @@ onUnmounted(() => {
 .slide-down-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* Grid layouts */
+.color-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stroke-width-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Tool message styling */
+.tool-message {
+  text-align: center;
+  padding: 24px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(from oklch(var(--bc)) l c h / 0.5);
+  background: oklch(from oklch(var(--b1)) l c h / 0.3);
+  border-radius: 12px;
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.08);
+}
+
+/* Grid layout improvements */
+.customization-panel .grid {
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .customization-panel {
+    min-width: 500px;
+    max-width: 95vw;
+    padding: 10px 16px;
+  }
+  
+  .horizontal-layout {
+    gap: 16px;
+  }
+  
+  .color-button {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .stroke-width-button {
+    width: 40px;
+    height: 32px;
+  }
+  
+  .opacity-group {
+    min-width: 100px;
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 580px) {
+  .customization-panel {
+    min-width: 400px;
+  }
+  
+  .horizontal-layout {
+    gap: 12px;
+  }
+  
+  .color-grid {
+    gap: 6px;
+  }
+  
+  .stroke-width-grid {
+    gap: 4px;
+  }
+  
+  .color-button {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .stroke-width-button {
+    width: 36px;
+    height: 28px;
+  }
 }
 </style>

@@ -10,15 +10,42 @@
         'fading-out': !node.streamingContent && isStreaming,
         'draggable': isDraggable,
         'snapped': isSnapped,
-        'transition-snap': isTransitioningSnap
+        'transition-snap': isTransitioningSnap,
+        'right-content-panel-open': appStore.isRightContentPanelOpen
       }
     ]" @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
     @dragover="supportsVision ? handleDragOver : undefined" @drop="supportsVision ? handleDrop : undefined"
     @wheel="handleNodeWheel"
-    :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle, dropTargetStyle]">
+    :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle, dropTargetStyle, snappedLayoutStyle]">
     
-    <div v-if="isSnapped" class="fixed inset-0 backdrop-blur-xl -z-10 pointer-events-none" :style="{
-      backgroundColor: snappedBackgroundStyle
+    <!-- Snapped sidebars -->
+    <SnappedNodeSidebar 
+      v-if="isSnapped"
+      :node-id="node.id"
+      :is-streaming="isStreaming"
+      :current-tokens="totalTokens"
+      :max-tokens="8192"
+      :session-type="sessionType"
+      :message-count="node.messages?.length || 0"
+      :messages="node.messages"
+      :window-dimensions="windowDimensions"
+      :is-right-content-panel-open="appStore.isRightContentPanelOpen"
+      :stacked-position="'top'"
+    />
+
+    <SnappedNodeRightSidebar 
+      v-if="isSnapped"
+      :node-id="node.id"
+      :session-type="sessionType"
+      :window-dimensions="windowDimensions"
+      :is-right-content-panel-open="appStore.isRightContentPanelOpen"
+    />
+
+    <div v-if="isSnapped" class="fixed backdrop-blur-xl -z-10 pointer-events-none" :style="{
+      top: '0',
+      left: '0',
+      width: windowDimensions.width + 'px',
+      height: windowDimensions.height + 'px'
     }">
     </div>
 
@@ -57,17 +84,60 @@
       'backdrop-blur transition-all duration-300',
       isSnapped ? 'snapped-card snapped' : ''
     ]" :style="cardStyle">
-      <div class="relative group w-full h-9 flex items-center justify-center" ref="avatarRef">
-        <!-- Subtle glow effect when params editor is open -->
-        <div v-if="showParamsEditor" class="absolute inset-0 bg-primary/10 blur-xl rounded-full pointer-events-none" />
-        <div class="flex -space-x-3 relative z-10">
-          <div v-for="model in uniqueModels" :key="model.id" @click.stop="() => openModelParams(model)" class="relative first:ml-0">
-            <img :src="getAvatarUrl(model)" :alt="model.name"
-              :class="[
-                'w-9 h-9 rounded-full border-2 shadow-md object-cover cursor-pointer hover:z-10 transition-all duration-300',
-                showParamsEditor && lastModel?.id === model.id ? 'border-primary scale-110 ring-2 ring-primary/50' : 'border-base-100 hover:scale-110'
-              ]" />
+      <!-- Compact Header with Title and Avatars -->
+      <div v-if="!isSnapped" class="px-3 pt-2 pb-2">
+        <div class="flex items-center justify-between gap-2">
+          <!-- Model Avatars (left side, only if not Claude Code) -->
+          <div v-if="!isClaudeCodeNode && uniqueModels.length > 0" class="flex -space-x-2 flex-shrink-0" ref="avatarRef">
+            <div v-for="model in uniqueModels" :key="model.id" @click.stop="() => openModelParams(model)" class="relative first:ml-0">
+              <img :src="getAvatarUrl(model)" :alt="model.name"
+                :class="[
+                  'w-7 h-7 rounded-full border-2 shadow-sm object-cover cursor-pointer hover:z-10 transition-all duration-300',
+                  showParamsEditor && lastModel?.id === model.id ? 'border-primary scale-110 ring-2 ring-primary/50' : 'border-base-100 hover:scale-110'
+                ]" />
+            </div>
           </div>
+          
+          <!-- Title (center/main content) -->
+          <div class="flex-1 flex items-center justify-center gap-2">
+            <template v-if="isEditing">
+              <input ref="titleInputRef" v-model="titleInput" @blur="handleTitleUpdate"
+                @keyup.enter="handleTitleUpdate" class="bg-base-100 px-2 py-1 rounded-lg border text-sm text-base-content text-center w-full max-w-md"
+                placeholder="Enter title..." />
+            </template>
+            <template v-else>
+              <!-- Show loading animation when generating title -->
+              <template v-if="node.isGeneratingTitle">
+                <TitleGenerationLoader />
+              </template>
+              <!-- Show normal title when not generating -->
+              <template v-else>
+                <h3 class="text-sm font-medium text-base-content text-center">
+                  {{ node.title || "Untitled Thread" }}
+                </h3>
+                <div class="flex items-center gap-0.5">
+                  <!-- Regenerate title button -->
+                  <button 
+                    @click.stop="regenerateTitle" 
+                    class="p-1 rounded-lg hover:bg-white/10 transition-all duration-200 opacity-50 hover:opacity-100"
+                    :class="{ 'animate-pulse': isRegeneratingTitle }"
+                    :disabled="isRegeneratingTitle"
+                    title="Regenerate title with AI"
+                  >
+                    <Sparkles class="w-3 h-3 text-base-content/60 hover:text-primary" />
+                  </button>
+                  <!-- Manual edit button -->
+                  <button @click.stop="startEditing" class="p-1 rounded-lg hover:bg-white/10 transition-all duration-200 opacity-50 hover:opacity-100"
+                          title="Edit conversation title">
+                    <Edit2 class="w-3 h-3 text-base-content/60" />
+                  </button>
+                </div>
+              </template>
+            </template>
+          </div>
+          
+          <!-- Spacer for balance when no avatars -->
+          <div v-if="isClaudeCodeNode || uniqueModels.length === 0" class="w-7 flex-shrink-0"></div>
         </div>
       </div>
 
@@ -77,24 +147,45 @@
           :current-parameters="canvasStore.getModelParams(node.id, currentModel.id)" :trigger-rect="avatarRect" @save="updateModelParams"
           @close="() => { showParamsEditor = false }" />
       </Teleport>
-      
-      <!-- Full LOD: Complete content -->
-      <div :class="['p-4 mt-4', isSnapped ? 'snapped-content' : '']"
-        :style="isSnapped ? { height: '100%', display: 'flex', flexDirection: 'column' } : {}">
-        <!-- Header Row -->
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center gap-3">
-            <button @click.stop="toggleExpanded" class="p-2 rounded-full hover:bg-white/10 transition-colors"
-              :style="{ color: threadColor }" title="Expand or collapse conversation">
-              <ChevronDown class="w-5 h-5 transition-transform duration-200" :class="{ '-rotate-90': !isExpanded }" />
-            </button>
 
-            <div class="flex flex-col">
-              <!-- Title Section -->
-              <div class="flex items-center gap-2">
+      <!-- Teleported Header for Snapped Mode -->
+      <Teleport to="body">
+        <div v-if="isSnapped" 
+             class="snapped-node-header fixed top-0 z-[9999]"
+             :style="{ 
+               borderBottom: '1px solid var(--node-border-color)',
+               color: 'var(--node-text-color)',
+               left: '0px',
+               width: appStore.isRightContentPanelOpen ? '45vw' : '65vw'
+             }">
+          <div class="flex items-center justify-between space-around px-6 py-4 max-w-6xl mx-auto w-full">
+            <!-- Left: Controls -->
+            <div class="flex items-center">
+              <!-- Expand/Collapse Button -->
+              <button @click.stop="toggleExpanded" 
+                      class="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                      :style="{ color: threadColor }" 
+                      title="Expand or collapse conversation">
+                <ChevronDown class="w-5 h-5 transition-transform duration-200" :class="{ '-rotate-90': !isExpanded }" />
+              </button>
+
+              <!-- Token Counter -->
+              <TokenCounter 
+                :text="getAllMessagesText" 
+                :context-limit="actualContextLimit"
+                :show-percentage="true"
+                :show-progress-bar="true"
+                :cache-key="`branch-${node.id}`"
+                size="small"
+                :class="contextStatusClass"
+              />
+            </div>
+            
+            <!-- Center: Title with edit functionality -->
+            <div class="flex items-center justify-center ml-20 gap-3 flex-1 absolute left-1/2 transform -translate-x-1/2">
                 <template v-if="isEditing">
                   <input ref="titleInputRef" v-model="titleInput" @blur="handleTitleUpdate"
-                    @keyup.enter="handleTitleUpdate" class="bg-base-100 px-2 py-1 rounded border text-base-content"
+                    @keyup.enter="handleTitleUpdate" class="bg-base-100 px-3 py-2 rounded-lg border text-lg text-base-content text-center max-w-md"
                     placeholder="Enter title..." />
                 </template>
                 <template v-else>
@@ -104,14 +195,14 @@
                   </template>
                   <!-- Show normal title when not generating -->
                   <template v-else>
-                    <span class="text-lg font-semibold truncate max-w-lg text-base-content">
+                    <h2 class="text-lg font-semibold text-base-content truncate">
                       {{ node.title || "Untitled Thread" }}
-                    </span>
-                    <div class="flex items-center gap-1 flex-shrink-0">
+                    </h2>
+                    <div class="flex items-center gap-1">
                       <!-- Regenerate title button -->
                       <button 
                         @click.stop="regenerateTitle" 
-                        class="p-1 rounded-full hover:bg-white/10 transition-all duration-200"
+                        class="p-1.5 rounded-lg hover:bg-white/10 transition-all duration-200 opacity-50 hover:opacity-100"
                         :class="{ 'animate-pulse': isRegeneratingTitle }"
                         :disabled="isRegeneratingTitle"
                         title="Regenerate title with AI"
@@ -119,27 +210,90 @@
                         <Sparkles class="w-4 h-4 text-base-content/60 hover:text-primary" />
                       </button>
                       <!-- Manual edit button -->
-                      <button @click.stop="startEditing" class="p-1 rounded-full hover:bg-white/10 transition-all duration-200"
+                      <button @click.stop="startEditing" class="p-1.5 rounded-lg hover:bg-white/10 transition-all duration-200 opacity-50 hover:opacity-100"
                               title="Edit conversation title">
                         <Edit2 class="w-4 h-4 text-base-content/60" />
                       </button>
                     </div>
                   </template>
                 </template>
-              </div>
+            </div>
+            
+            <!-- Right: Token Counter and Controls -->
+            <div class="flex items-center gap-1 mr-20">
+              <!-- Auto-compact button -->
+              <button 
+                v-if="shouldShowCompactButton"
+                @click.stop="handleAutoCompact"
+                :class="[
+                  'p-1.5 rounded-full transition-colors',
+                  contextUsagePercentage >= 85 
+                    ? 'bg-red-500/20 hover:bg-red-500/30 text-red-600' 
+                    : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-600'
+                ]"
+                :title="contextUsagePercentage >= 85 ? 'Context limit approaching - compact now!' : 'Auto-compact old messages'"
+              >
+                <Archive class="w-3.5 h-3.5" />
+              </button>
 
+              <!-- Auto TTS Toggle -->
+              <button @click.stop="toggleAutoTTS" :class="[
+                'p-1.5 rounded-lg transition-colors',
+                autoTTSEnabled
+                  ? 'bg-green-500/20 hover:bg-green-500/30 text-green-600'
+                  : 'hover:bg-white/10 text-base-content/60'
+              ]" :title="autoTTSEnabled ? 'Disable auto TTS for responses' : 'Enable auto TTS for responses'">
+                <Volume2 class="w-4 h-4" />
+              </button>
+
+              <!-- Full View Toggle -->
+              <button @click.stop="toggleSnap" class="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                :title="isSnapped ? 'Exit full view' : 'Enter full view'">
+                <Expand v-if="!isSnapped" class="w-4 h-4 text-base-content/60" />
+                <Shrink v-else class="w-4 h-4 text-base-content/60" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+      
+      <!-- Full LOD: Complete content -->
+      <div :class="['px-3 pb-3', isSnapped ? 'snapped-content pt-16' : 'pt-1']"
+        :style="isSnapped ? { height: '100%', display: 'flex', flexDirection: 'column' } : {}">
+        <!-- Simplified Header with Controls (Hidden when snapped since it's teleported to top) -->
+        <div v-if="!isSnapped" class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <!-- Expand/Collapse Button -->
+            <button @click.stop="toggleExpanded" class="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              :style="{ color: threadColor }" title="Expand or collapse conversation">
+              <ChevronDown class="w-4 h-4 transition-transform duration-200" :class="{ '-rotate-90': !isExpanded }" />
+            </button>
+
+            <!-- Contextual Info Badges -->
+            <div class="flex items-center gap-2">
               <!-- Message Count -->
-              <div class="flex items-center gap-2 mt-1">
-                <MessageCircle class="w-4 h-4 text-base-content/60" />
-                <span class="text-sm text-base-content/60">
-                  {{ node.messages?.length || 0 }} messages
-                </span>
+              <span class="text-xs text-base-content/60 flex items-center gap-1">
+                <MessageCircle class="w-3.5 h-3.5" />
+                {{ node.messages?.length || 0 }}
+              </span>
+              
+              <!-- Claude Code Badge -->
+              <div v-if="isClaudeCodeNode" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-xs">
+                <Bot class="w-3.5 h-3.5 text-primary" />
+                <span class="text-primary font-medium">Claude Code</span>
+                <div class="w-1.5 h-1.5 rounded-full" :class="claudeCodeStatusColor"></div>
+              </div>
+              
+              <!-- Media Badge -->
+              <div v-if="hasMediaContent" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 text-xs">
+                <component :is="isImageMedia ? ImageIcon : isVideoMedia ? Video : FileIcon" class="w-3.5 h-3.5 text-accent" />
+                <span class="text-accent font-medium">{{ isImageMedia ? 'Image' : isVideoMedia ? 'Video' : 'Media' }}</span>
               </div>
             </div>
           </div>
 
           <!-- Control Buttons -->
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1">
             <!-- Enhanced Context Usage Indicator -->
             <div class="flex items-center gap-2">
               <TokenCounter 
@@ -193,97 +347,74 @@
 
             <!-- Auto TTS Toggle -->
             <button @click.stop="toggleAutoTTS" :class="[
-              'p-2 rounded-full transition-colors',
+              'p-1.5 rounded-lg transition-colors',
               autoTTSEnabled
                 ? 'bg-green-500/20 hover:bg-green-500/30 text-green-600'
                 : 'hover:bg-white/10 text-base-content/60'
             ]" :title="autoTTSEnabled ? 'Disable auto TTS for responses' : 'Enable auto TTS for responses'">
-              <Volume2 class="w-5 h-5" />
+              <Volume2 class="w-4 h-4" />
             </button>
 
-            <button @click.stop="toggleSnap" class="p-2 rounded-full hover:bg-white/10 transition-colors"
+            <button @click.stop="toggleSnap" class="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
               :title="isSnapped ? 'Exit full view' : 'Enter full view'">
-              <Expand v-if="!isSnapped" class="w-5 h-5 text-base-content/60" />
-              <Shrink v-else class="w-5 h-5 text-base-content/60" />
+              <Expand v-if="!isSnapped" class="w-4 h-4 text-base-content/60" />
+              <Shrink v-else class="w-4 h-4 text-base-content/60" />
             </button>
 
             <button v-if="node.type !== 'main' && !isSnapped"
-              class="p-2 rounded-full hover:bg-destructive/10 text-base-content/60 hover:text-destructive flex-shrink-0"
+              class="p-1.5 rounded-lg hover:bg-destructive/10 text-base-content/60 hover:text-destructive flex-shrink-0"
               @click.stop="$emit('delete')">
-              <X class="w-5 h-5" />
+              <X class="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        <!-- Media Content Section -->
-        <div v-if="hasMediaContent" class="media-content-section">
-          <!-- Media thumbnail header for images -->
-          <div v-if="isImageMedia" class="media-thumbnail-header p-3 border-b border-base-300/50">
-            <div class="flex items-center gap-3">
-              <img 
-                :src="mediaUrl" 
-                class="w-16 h-16 object-cover rounded-lg shadow-sm flex-shrink-0"
-                :alt="node.mediaContent.filename" />
-              <div class="flex-grow min-w-0">
-                <p class="font-medium text-sm text-base-content truncate">{{ node.mediaContent.filename }}</p>
-                <p class="text-xs text-base-content/60 mt-1">{{ node.mediaContent.mime_type }}</p>
-                <!-- Processing status in header -->
-                <div v-if="node.isProcessingMedia || isMediaProcessing" class="flex items-center gap-2 mt-2">
-                  <ImageAnalysisLoader />
-                </div>
-              </div>
+        <!-- Media Content Preview (Integrated) -->
+        <div v-if="hasMediaContent && (isImageMedia || isVideoMedia) && !node.hideMediaPreview" class="px-3 pb-3">
+          <!-- Image Preview -->
+          <div v-if="isImageMedia" class="relative rounded-lg overflow-hidden bg-base-200/30">
+            <img 
+              :src="mediaUrl" 
+              class="w-full h-32 object-cover"
+              :alt="node.mediaContent.filename" />
+            <!-- Processing overlay -->
+            <div v-if="node.isProcessingMedia || isMediaProcessing" class="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <ImageAnalysisLoader />
             </div>
-          </div>
-
-          <!-- Full media preview for videos -->
-          <div v-if="isVideoMedia" class="media-preview p-4 border-b border-base-300">
-            <video controls class="max-w-full h-auto rounded-lg">
-              <source :src="mediaUrl" :type="node.mediaContent.mime_type">
-              Your browser does not support the video tag.
-            </video>
-            <div class="mt-2 text-sm text-base-content/70">
-              <span class="font-medium">{{ node.mediaContent.filename }}</span>
-              <span class="ml-2 px-2 py-1 bg-base-200 rounded text-xs">{{ node.mediaContent.type }}</span>
-            </div>
-            <div v-if="isMediaProcessing" class="mt-4 text-sm text-base-content/60">
-              <div class="flex items-center gap-2">
-                <div class="loading loading-spinner loading-sm"></div>
-                <span>{{ mediaProcessingStatus }}</span>
-              </div>
+            <!-- Regenerate button overlay -->
+            <div v-if="node.mediaContent?.analysis && !isMediaProcessing" class="absolute bottom-2 right-2">
+              <button 
+                @click="regenerateCaption" 
+                class="px-2 py-1 rounded-lg bg-black/50 backdrop-blur-sm text-white text-xs hover:bg-black/70 transition-colors"
+                title="Regenerate caption">
+                <Sparkles class="w-3 h-3 inline mr-1" />
+                Regenerate
+              </button>
             </div>
           </div>
           
-          <!-- Regenerate caption button for images -->
-          <div v-if="isImageMedia && node.mediaContent?.analysis && !isMediaProcessing" class="p-3 border-b border-base-300/50">
-            <button 
-              @click="regenerateCaption" 
-              class="btn btn-xs btn-ghost opacity-60 hover:opacity-100"
-              title="Regenerate caption">
-              🔄 Regenerate Caption
-            </button>
+          <!-- Video Preview -->
+          <div v-if="isVideoMedia">
+            <video controls class="w-full h-32 object-cover rounded-lg bg-base-200/30">
+              <source :src="mediaUrl" :type="node.mediaContent.mime_type">
+              Your browser does not support the video tag.
+            </video>
+            <div v-if="isMediaProcessing" class="mt-2 text-xs text-base-content/60 flex items-center gap-1">
+              <div class="loading loading-spinner loading-xs"></div>
+              <span>{{ mediaProcessingStatus }}</span>
+            </div>
           </div>
         </div>
 
-        <!-- Claude Code Section -->
-        <div v-if="isClaudeCodeNode" class="claude-code-section">
-          <!-- Claude Code Status Header -->
-          <div class="claude-code-header p-3 border-b border-base-300/50">
-            <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-primary/10">
-                <Bot class="w-5 h-5 text-primary" />
-              </div>
-              <div class="flex-grow min-w-0">
-                <p class="font-medium text-sm text-base-content">Claude Code Session</p>
-                <div class="flex items-center gap-4 mt-1 text-xs text-base-content/60">
-                  <span class="flex items-center gap-1">
-                    <div class="w-2 h-2 rounded-full" :class="claudeCodeStatusColor"></div>
-                    {{ claudeCodeStatus }}
-                  </span>
-                  <span>Cost: ${{ claudeCodeCost.toFixed(4) }}</span>
-                  <span>Turns: {{ claudeCodeTurns }}</span>
-                </div>
-              </div>
-            </div>
+        <!-- Claude Code Status Bar (Minimal) -->
+        <div v-if="isClaudeCodeNode && (claudeCodeCost > 0 || claudeCodeTurns > 0)" class="px-3 pb-2">
+          <div class="flex items-center justify-between text-xs text-base-content/60 px-2 py-1 rounded-lg bg-base-200/20">
+            <span class="flex items-center gap-2">
+              <span>{{ claudeCodeStatus }}</span>
+              <span class="text-base-content/40">•</span>
+              <span>${{ claudeCodeCost.toFixed(3) }}</span>
+            </span>
+            <span>{{ claudeCodeTurns }} turns</span>
           </div>
         </div>
 
@@ -293,7 +424,7 @@
           isSnapped ? 'snapped-messages-container' : '',
           isExpanded && node.messages ? 'space-y-4' : ''
         ]" :style="{
-          height: isSnapped ? 'calc(100vh - 200px)' : '400px',
+          height: isSnapped ? (windowDimensions.height - 200) + 'px' : '400px',
           overflow: 'hidden'
         }">
           <!-- Compacted Messages Section -->
@@ -344,6 +475,7 @@
             ref="messagesContainerRef"
             :messages="displayMessages"
             :node-id="node.id"
+            :chat-id="node.chatId"
             :is-snapped="isSnapped"
             :expanded-messages="expandedMessages"
             :text-content-color="textContentColor"
@@ -361,6 +493,7 @@
             @create-branch="(index, direction) => createBranch(index, direction)"
             @wheel="handleMessagesWheel"
             @edit-message="handleEditMessage"
+            @reflectionSuggestionClick="handleReflectionSuggestionClick"
           />
 
           <!-- Loading Indicator for Progressive Loading -->
@@ -394,7 +527,14 @@
       </div>
 
       <!-- Message Input -->
-      <MessageInput :is-loading="isLoading" @send="handleMessageSend" @stop="stopStreaming" @click="handleInputClick" />
+      <MessageInput 
+        :is-loading="isLoading" 
+        :node-height="(node as any).customHeight || null"
+        :node-width="(node as any).customWidth || null"
+        @send="handleMessageSend" 
+        @stop="stopStreaming" 
+        @click="handleInputClick" 
+      />
     </Card>
     
     <!-- Resize Handles for Unsnapped Selected Nodes -->
@@ -478,7 +618,10 @@ import {
   Volume2,
   Archive,
   Sparkles,
-  Bot
+  Bot,
+  Image as ImageIcon,
+  Video,
+  FileIcon
 } from 'lucide-vue-next';
 
 import MessageInput from '../../messages/MessageInput.vue';
@@ -497,8 +640,11 @@ import type { ModelParameters } from '@/types/model';
 import type { ModelInfo } from '@/types/model';
 import { useModelStore } from '@/stores/modelStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { useAppStore } from '@/stores/appStore';
 import anthropic from '@/assets/anthropic.jpeg';
 import emitter, { Events } from '@/utils/eventBus'
+import SnappedNodeSidebar from './SnappedNodeSidebar.vue';
+import SnappedNodeRightSidebar from './SnappedNodeRightSidebar.vue';
 import openai from '@/assets/openai.jpeg';
 import google from '@/assets/google.jpeg';
 import meta from '@/assets/meta.jpeg';
@@ -507,7 +653,9 @@ import unknownAvatar from '@/assets/unknown.jpeg';
 import ollama from '@/assets/ollama.jpeg';
 import { autoCaptionService, type CaptionResult } from '@/services/autoCaptionService';
 import { useThemeColors } from '@/composables/useThemeColors';
+import { useSnappedNodeLayout } from '@/composables/useSnappedNodeLayout';
 import { hexToRgb } from '@/utils/themeUtils';
+import { metricsService } from '@/services/metricsService';
 
 interface ExtendedMessage extends ModelParameters {
   // Extend as needed
@@ -534,6 +682,18 @@ interface BranchNodeProps {  // Use a dedicated interface
 
 const props = defineProps<BranchNodeProps>();
 
+// Initialize layout composable for responsive snapped node layout
+const {
+  layoutDimensions,
+  layoutStrategy,
+  leftSidebarStyle,
+  rightSidebarStyle,
+  nodeContainerStyle,
+  nodeCardStyle,
+  availableWidth,
+  debugInfo
+} = useSnappedNodeLayout();
+
 const emit = defineEmits([
   'select',
   'drag-start',
@@ -550,7 +710,8 @@ const emit = defineEmits([
   'connection-end',
   'expansion-change',
   'update-messages',
-  'update-node'
+  'update-node',
+  'reflectionSuggestionClick'
 ]);
 
 // Local state and refs
@@ -577,6 +738,65 @@ const isTransitioningSnap = ref(false);
 const autoTTSEnabled = ref(false);
 const isRegeneratingTitle = ref(false);
 
+// Session type detection
+const sessionType = computed(() => {
+  try {
+    if (!props.node.messages?.length) return 'chat';
+    
+    // Check if we have any tool calls or Claude Code related content
+    const hasToolCalls = props.node.messages.some(message => {
+      if (!message.content || !Array.isArray(message.content)) return false;
+      return message.content.some(part => 
+        part.type === 'tool_use' || 
+        part.type === 'tool_result' ||
+        (part.type === 'text' && part.text && 
+         (part.text.includes('claude-code') || part.text.includes('<function_calls>')))
+      );
+    });
+    
+    // Check if there are any Claude Code session indicators in the chat
+    const hasClaudeCodeIndicators = props.node.messages.some(message => {
+      if (!message.content || !Array.isArray(message.content)) return false;
+      return message.content.some(part =>
+        part.type === 'text' && part.text && (
+          part.text.includes('Claude Code') ||
+          part.text.includes('claude.ai/code') ||
+          part.text.includes('<function_calls>') ||
+          part.text.includes('antml:invoke')
+        )
+      );
+    });
+    
+    return (hasToolCalls || hasClaudeCodeIndicators) ? 'claude-code' : 'chat';
+  } catch (error) {
+    console.error('Error in sessionType computed:', error);
+    return 'chat';
+  }
+});
+
+// Total tokens computed property
+const totalTokens = computed(() => {
+  try {
+    // Calculate total tokens from all messages in the node
+    if (!props.node.messages?.length) return 0;
+    
+    return props.node.messages.reduce((total, message) => {
+      if (!message.content || !Array.isArray(message.content)) return total;
+      
+      return total + message.content.reduce((msgTotal, part) => {
+        if (part.type === 'text' && part.text) {
+          // Rough token estimation: ~4 characters per token
+          return msgTotal + Math.ceil(part.text.length / 4);
+        }
+        return msgTotal;
+      }, 0);
+    }, 0);
+  } catch (error) {
+    console.error('Error in totalTokens computed:', error);
+    return 0;
+  }
+});
+
 // Compaction state
 const compactedSections = ref<CompactedSection[]>([]);
 const expandedSectionId = ref<string | null>(null);
@@ -589,6 +809,42 @@ const nodeResizeStartPos = ref({ x: 0, y: 0 });
 const summarySectionId = ref<string | null>(null);
 const currentTokenCount = ref(0);
 
+// Window dimensions for responsive snapped layout
+const windowDimensions = ref({
+  width: window.innerWidth,
+  height: window.innerHeight
+});
+
+// Update window dimensions on resize
+const handleWindowResize = () => {
+  windowDimensions.value = {
+    width: window.innerWidth,
+    height: window.innerHeight
+  };
+};
+
+// Computed styles for responsive snapped layout
+const snappedLayoutStyle = computed(() => {
+  if (!isSnapped.value) return {};
+  
+  const layout = layoutDimensions.value;
+  
+  // Extract numeric values from CSS strings for calculations
+  const containerWidth = parseFloat(layout.containerWidth.replace(/\D/g, '')) || windowDimensions.value.width;
+  const nodeWidth = layout.nodeWidth.includes('calc') 
+    ? Math.floor(windowDimensions.value.width * 0.7) // Fallback for calc expressions
+    : parseFloat(layout.nodeWidth.replace(/\D/g, '')) || Math.floor(containerWidth * 0.7);
+  
+  return {
+    '--snapped-width': layout.containerWidth,
+    '--snapped-height': layout.containerHeight,
+    '--snapped-content-width': layout.nodeWidth,
+    '--snapped-content-height': `calc(${layout.containerHeight} - 128px)`,
+    '--layout-mode': layout.layoutMode,
+    '--available-width': availableWidth.value + 'px'
+  };
+});
+
 // Claude Code permissions
 const claudeCodePermissions = ref<string>('auto-allow'); // This will be set from the workspace settings\n\n// Initialize permissions from node metadata or workspace settings\nonMounted(() => {\n  if (isClaudeCodeNode.value && props.node.metadata?.claudeCodeSettings?.permissions) {\n    claudeCodePermissions.value = props.node.metadata.claudeCodeSettings.permissions;\n  }\n});
 
@@ -596,6 +852,7 @@ const canvasStore = useCanvasStore();
 const toolCallStore = useToolCallStore();
 const modelStore = useModelStore();
 const themeStore = useThemeStore();
+const appStore = useAppStore();
 
 // Permission checking function
 const checkToolPermission = (toolName: string, parameters: any): boolean => {
@@ -645,10 +902,7 @@ watch(currentTheme, async (newTheme, oldTheme) => {
 }, { flush: 'post' });
 
 
-const snappedBackgroundStyle = computed(() => {
-  // Use the CSS custom property set by nodeThemeStyle
-  return `var(--node-color-transparent)`;
-});
+
 // Calculate theme-based colors using the centralized composable
 // Create a hash from the node ID to get a consistent color index
 let hash = 0;
@@ -1190,32 +1444,48 @@ const themeMessageStyles = computed(() => {
     styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 10%, rgba(0, 0, 0, 0.8))`;
     styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(30, 30, 30, 0.6))`;
   } else {
-    // Light themes
-    styles['--node-text-color'] = 'rgba(0, 0, 0, 0.85)';
-    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(255, 255, 255, 0.9))`;
-    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(245, 245, 245, 0.8))`;
+    // Light themes - improved contrast
+    styles['--node-text-color'] = 'rgba(0, 0, 0, 0.95)'; // Increased from 0.85 to 0.95
+    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 12%, rgba(255, 255, 255, 0.95))`; // More opacity and color mix
+    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(240, 240, 240, 0.9))`; // Darker background
   }
   
   // Theme-specific user message backgrounds using actual theme colors
   switch(theme) {
     case 'cyberpunk':
-      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 30%, transparent), color-mix(in srgb, ${accentColor} 20%, transparent))`;
-      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 30%, transparent), color-mix(in srgb, ${primaryColor} 15%, transparent))`;
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(5, 5, 15, 0.95)), color-mix(in srgb, ${accentColor} 6%, rgba(8, 8, 18, 0.95)))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 8%, rgba(8, 8, 18, 0.95)), color-mix(in srgb, ${primaryColor} 5%, rgba(5, 5, 15, 0.95)))`;
+      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(3, 3, 10, 0.98))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(6, 6, 12, 0.96))`;
       break;
     case 'synthwave':
-      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 25%, transparent), color-mix(in srgb, ${accentColor} 30%, transparent))`;
-      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 20%, transparent), color-mix(in srgb, ${primaryColor} 30%, transparent))`;
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(8, 2, 15, 0.95)), color-mix(in srgb, ${accentColor} 6%, rgba(12, 4, 18, 0.95)))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 7%, rgba(10, 3, 16, 0.95)), color-mix(in srgb, ${primaryColor} 6%, rgba(8, 2, 15, 0.95)))`;
+      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(5, 1, 10, 0.98))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(7, 2, 12, 0.96))`;
       break;
     case 'halloween':
-      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 20%, transparent), color-mix(in srgb, ${secondaryColor} 15%, transparent))`;
-      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${accentColor} 20%, transparent), color-mix(in srgb, ${primaryColor} 15%, transparent))`;
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(15, 5, 0, 0.95)), color-mix(in srgb, ${secondaryColor} 6%, rgba(18, 8, 2, 0.95)))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${accentColor} 8%, rgba(12, 6, 0, 0.95)), color-mix(in srgb, ${primaryColor} 6%, rgba(15, 5, 0, 0.95)))`;
+      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(10, 3, 0, 0.98))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(12, 4, 0, 0.96))`;
       break;
     case 'acid':
-      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 25%, transparent), color-mix(in srgb, ${accentColor} 15%, transparent))`;
-      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 25%, transparent), color-mix(in srgb, ${accentColor} 15%, transparent))`;
-      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.95)';
-      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 15%, rgba(20, 20, 20, 0.9))`;
-      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(30, 30, 30, 0.6))`;
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 6%, rgba(5, 10, 5, 0.96)), color-mix(in srgb, ${accentColor} 4%, rgba(8, 12, 8, 0.96)))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 6%, rgba(8, 12, 8, 0.96)), color-mix(in srgb, ${accentColor} 4%, rgba(5, 10, 5, 0.96)))`;
+      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(3, 6, 3, 0.98))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 2%, rgba(5, 8, 5, 0.97))`;
+      break;
+    case 'aqua':
+      styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(0, 8, 12, 0.95)), color-mix(in srgb, ${accentColor} 6%, rgba(2, 10, 15, 0.95)))`;
+      styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 8%, rgba(2, 10, 15, 0.95)), color-mix(in srgb, ${primaryColor} 6%, rgba(0, 8, 12, 0.95)))`;
+      styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(0, 5, 8, 0.98))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(1, 6, 10, 0.96))`;
       break;
     case 'night':
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 40%, transparent), color-mix(in srgb, ${secondaryColor} 35%, transparent))`;
@@ -1238,12 +1508,19 @@ const themeMessageStyles = computed(() => {
       styles['--ai-message-bg'] = `color-mix(in srgb, ${secondaryColor} 15%, transparent)`;
   }
   
-  // Snapped backdrop uses theme colors with appropriate opacity
-  if (darkThemes.includes(theme)) {
-    styles['--snapped-backdrop'] = `color-mix(in srgb, ${primaryColor} 12%, rgba(20, 20, 30, 0.85))`;
-  } else {
-    styles['--snapped-backdrop'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(250, 250, 255, 0.85))`;
-  }
+  // Add additional contrast improvements for all themes
+  styles['--input-bg-color'] = darkThemes.includes(theme) 
+    ? 'rgba(255, 255, 255, 0.1)' 
+    : 'rgba(0, 0, 0, 0.05)';
+  styles['--input-border-color'] = darkThemes.includes(theme)
+    ? 'rgba(255, 255, 255, 0.2)'
+    : 'rgba(0, 0, 0, 0.15)';
+  styles['--button-bg-color'] = darkThemes.includes(theme)
+    ? 'rgba(255, 255, 255, 0.1)'
+    : 'rgba(0, 0, 0, 0.08)';
+  styles['--button-hover-bg-color'] = darkThemes.includes(theme)
+    ? 'rgba(255, 255, 255, 0.2)'
+    : 'rgba(0, 0, 0, 0.12)';
   
   return styles;
 });
@@ -1282,11 +1559,15 @@ const nodeThemeStyle = computed(() => {
     highlight: `color-mix(in srgb, ${themeStoreColors.primary} 40%, transparent)`
   };
 
+  // Extract RGB values for the sidebars (removing rgba() wrapper)
+  const nodeColorRGB = baseColorSet.value.base.match(/\d+/g)?.join(', ') || '255, 255, 255';
+  
   const baseStyles = {
     '--node-color': baseColorSet.value.base,
     '--node-color-light': baseColorSet.value.light,
     '--node-color-dark': baseColorSet.value.dark,
     '--node-color-transparent': baseColorSet.value.transparent,
+    '--node-color-rgb': nodeColorRGB,
     '--node-text-color': textColor,
     '--node-glow-color': adjustColorOpacity(baseColorSet.value.base, 0.4),
     '--node-border-color': adjustColorOpacity(baseColorSet.value.light, 0.6),
@@ -1310,63 +1591,59 @@ const nodeThemeStyle = computed(() => {
     '--ai-highlight-color': `color-mix(in srgb, ${themeStoreColors.secondary} 40%, transparent)`
   };
   
-  // Merge base styles with theme-specific message styles
-  const styles = { ...baseStyles, ...themeMessageStyles.value };
+  // Sidebar styling using comprehensive theming system
+  const sidebarBg = backgroundColors.value.base;
+  const borderColor = isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)';
   
-  return styles;
+  // Theme-specific sidebar overrides
+  let finalSidebarBg = sidebarBg;
+  let finalBorderColor = borderColor;
+  
+  if (currentTheme.value === 'cyberpunk') {
+    finalSidebarBg = 'rgba(20, 20, 30, 0.95)';
+    finalBorderColor = `${themeStoreColors.primary}50`;
+  } else if (currentTheme.value === 'synthwave') {
+    finalSidebarBg = 'rgba(30, 10, 50, 0.95)';
+    finalBorderColor = `${themeStoreColors.secondary}50`;
+  } else if (currentTheme.value === 'acid') {
+    finalSidebarBg = 'rgba(15, 25, 15, 0.95)';
+    finalBorderColor = `${themeStoreColors.primary}40`;
+  } else if (currentTheme.value === 'halloween') {
+    finalSidebarBg = 'rgba(15, 8, 5, 0.92)';
+    finalBorderColor = `${themeStoreColors.primary}25`;
+  } else if (currentTheme.value === 'aqua') {
+    finalSidebarBg = 'rgba(5, 20, 25, 0.95)';
+    finalBorderColor = `${themeStoreColors.primary}40`;
+  }
+  
+  baseStyles['--sidebar-bg-color'] = finalSidebarBg;
+  baseStyles['--sidebar-border-color'] = finalBorderColor;
+  baseStyles['--sidebar-card-bg'] = isDarkTheme.value ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
+  baseStyles['--sidebar-card-border'] = isDarkTheme.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+  
+  // Merge base styles with theme-specific message styles
+  const mergedStyles = { ...baseStyles, ...themeMessageStyles.value };
+  
+  return mergedStyles;
 });
 
 // Thread color based on theme
 const threadColor = computed(() => baseColorSet.value.base);
 
 const shouldGlow = computed(() => {
-  // Original glow if the node is selected (focus) or multi-selected, and zoom is below 150%
-  return (props.isSelected || props.isMultiSelected) && props.zoom < 1.5;
+  // Glow when selected but NOT snapped (to help with arrow navigation visibility)
+  return (props.isSelected || props.isMultiSelected) && !isSnapped.value && props.zoom < 1.5;
 });
 
 
 const calculateSnappedDimensions = () => {
   if (!isSnapped.value) return null;
-
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
   
-  // Calculate sidebar widths based on actual sidebar states
-  let leftSidebarWidth = 0;
-  let rightSidebarWidth = 0;
-  
-  if (props.isSidePanelOpen) {
-    leftSidebarWidth = 260; // Left sidebar expanded width
-  } else {
-    leftSidebarWidth = 60; // Left sidebar collapsed width
-  }
-  
-  if (props.isRightPanelOpen) {
-    // Right content panel is open - need to account for both content panel AND potential sidebar expansion
-    const contentPanelWidth = vw * 0.35;
-    const sidebarWidth = props.isRightSidebarExpanded ? 180 : 60; // Sidebar can expand even when content panel is open
-    rightSidebarWidth = contentPanelWidth + sidebarWidth;
-  } else {
-    rightSidebarWidth = props.isRightSidebarExpanded ? 180 : 60; // Right sidebar expanded (180px) or collapsed (60px)
-  }
-  
-  // Calculate available space - node should fill from left sidebar to right sidebar
-  const availableWidth = vw - leftSidebarWidth - rightSidebarWidth;
-  const availableHeight = vh;
-  
-  // Node should take up the full available space
-  const width = availableWidth;
-  const height = availableHeight;
-  
-  // Position at the edge of left sidebar
-  const left = leftSidebarWidth;
-  const top = 0;
-
+  // Use the new responsive layout composable
+  const layout = layoutDimensions.value;
   return {
-    width: `${width}px`,
-    height: `${height}px`,
-    left: `${left}px`,
-    top: `${top}px`
+    width: layout.containerWidth,
+    height: layout.containerHeight
   };
 };
 
@@ -1422,8 +1699,17 @@ const nodePositionStyle = computed(() => {
     const dimensions = calculateSnappedDimensions();
     if (!dimensions) return {};
     
+    // Calculate left offset based on sidebar configuration
+    let leftPosition = '0px';
+    if (appStore.isRightContentPanelOpen) {
+      // Keep container at left edge, sidebar positioning handled internally
+      leftPosition = '0px';
+    }
+    
     return {
       position: 'fixed',
+      left: leftPosition,
+      top: '0px',
       ...dimensions,
       zIndex: 1000,
       transition: isTransitioningSnap.value ? 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)' : 'none'
@@ -1434,7 +1720,9 @@ const nodePositionStyle = computed(() => {
   const style: any = {
     transform: `translate3d(${props.node.x}px, ${props.node.y}px, 0) scale(${props.zoom})`,
     transformOrigin: '0 0',
-    transition: 'none'
+    transition: 'none',
+    // Higher z-index for selected nodes to bring them to front
+    zIndex: props.isSelected ? 100 : 10
   };
   
   // Add custom dimensions if available
@@ -1647,9 +1935,18 @@ const startNodeResize = (direction: string, e: MouseEvent) => {
   nodeResizeDirection.value = direction;
   nodeResizeStartPos.value = { x: e.clientX, y: e.clientY };
   
-  // Store original dimensions
+  // Store original dimensions - get actual rendered dimensions from DOM
+  const nodeElement = document.querySelector(`[data-node-id="${props.node.id}"]`);
   const currentNode = canvasStore.nodes.find(n => n.id === props.node.id);
-  if (currentNode) {
+  
+  if (nodeElement && currentNode) {
+    const rect = nodeElement.getBoundingClientRect();
+    originalNodeDimensions.value = {
+      width: (currentNode as any).customWidth || rect.width / props.zoom,
+      height: rect.height / props.zoom  // Always use actual rendered height
+    };
+  } else if (currentNode) {
+    // Fallback if element not found
     originalNodeDimensions.value = {
       width: (currentNode as any).customWidth || 672,
       height: (currentNode as any).customHeight || 80
@@ -1684,8 +1981,19 @@ const handleNodeResizeMove = (e: MouseEvent) => {
     newHeight = Math.max(200, original.height + deltaY / props.zoom); // Minimum height 200px
   }
   
-  // Update the node dimensions in the store
-  canvasStore.updateNodeDimensions(props.node.id, Math.round(newWidth), Math.round(newHeight));
+  // For width-only resize (direction 'e'), preserve the actual height
+  // For height-only resize (direction 's'), preserve the actual width
+  // For corner resize (direction 'se'), update both
+  if (direction === 'e') {
+    // Only update width, preserve current height
+    canvasStore.updateNodeDimensions(props.node.id, Math.round(newWidth), null);
+  } else if (direction === 's') {
+    // Only update height, preserve current width
+    canvasStore.updateNodeDimensions(props.node.id, null, Math.round(newHeight));
+  } else if (direction === 'se') {
+    // Update both dimensions
+    canvasStore.updateNodeDimensions(props.node.id, Math.round(newWidth), Math.round(newHeight));
+  }
 };
 
 const handleNodeResizeEnd = () => {
@@ -2619,6 +2927,13 @@ watch(() => props.isRightSidebarExpanded, () => {
   }
 }, { immediate: true });
 
+// Watch for right content panel changes (features panel)
+watch(() => appStore.isRightContentPanelOpen, () => {
+  if (isSnapped.value) {
+    updateSnappedDimensions();
+  }
+}, { immediate: true });
+
 watch(() => props.node.streamingContent, (newVal) => {
   if (newVal) {
     if (fadeTimeout.value) {
@@ -2775,6 +3090,28 @@ watch(() => getAllMessagesText.value, async (newText) => {
   }
 }, { immediate: true });
 
+// Parse messages and track tool activities for Claude Code sessions
+const parseAndTrackToolActivities = () => {
+  if (sessionType.value !== 'claude-code' || !props.node.messages?.length) {
+    return;
+  }
+
+  props.node.messages.forEach((message) => {
+    if (!message.content || !Array.isArray(message.content)) return;
+
+    message.content.forEach((part) => {
+      if (part.type === 'tool_use' && part.name) {
+        metricsService.addToolActivity({
+          nodeId: props.node.id,
+          tool: part.name,
+          description: part.input ? JSON.stringify(part.input).slice(0, 100) : 'Tool execution',
+          status: 'success' // Historical tool calls are completed
+        });
+      }
+    });
+  });
+};
+
 onMounted(() => {
   if (!props.node.title) {
     isEditing.value = true;
@@ -2785,6 +3122,9 @@ onMounted(() => {
   if (savedAutoTTS !== null) {
     autoTTSEnabled.value = savedAutoTTS === 'true';
   }
+
+  // Parse existing messages for tool activities
+  parseAndTrackToolActivities();
 
   // Listen for auto-snap events
   const handleAutoSnap = (data: any) => {
@@ -2856,6 +3196,7 @@ onMounted(() => {
   });
 
   window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("resize", handleWindowResize);
   if (props.node.messages && props.node.messages.length > 0) {
     let lastMessage = props.node.messages[props.node.messages.length - 1];
     if (lastMessage.modelId) {
@@ -2892,6 +3233,16 @@ watch(isExpanded, () => {
   });
 });
 
+// Reflection handler
+const handleReflectionSuggestionClick = (suggestion: any) => {
+  // Find the SnappedNodeRightSidebar component and call its method
+  // This will be handled via the canvas store or direct ref communication
+  console.log('Reflection suggestion clicked in BranchNode:', suggestion);
+  
+  // For now, we'll emit it up to the canvas level to handle
+  emit('reflectionSuggestionClick', suggestion);
+};
+
 onBeforeUnmount(() => {
   document.body.classList.remove('has-snapped-node');
   emitter.off('debug-sandbox');
@@ -2903,6 +3254,7 @@ onBeforeUnmount(() => {
   emitter.off('auto-snap-node');
   emitter.off('request-node-position-update');
   window.removeEventListener("keydown", onKeyDown);
+  window.removeEventListener("resize", handleWindowResize);
   if (messagesContainerRef.value) {
     // Use the exposed removeEventListener method from VirtualizedMessageList
     if (typeof messagesContainerRef.value.removeEventListener === 'function') {
@@ -2922,6 +3274,7 @@ onBeforeUnmount(() => {
 /* Base container for the node */
 .branch-node {
   position: absolute;
+  border-radius: 16px;
   transition: all 0.3s ease-out;
   user-select: none;
   overflow: visible;
@@ -2936,7 +3289,6 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(12px);
   background-color: var(--base-bg-color) !important;
   border: 1px solid var(--node-border-color);
-  margin: 4px;
   transition: all 0.3s ease;
   position: relative;
   box-shadow: 0 4px 12px var(--node-shadow-color);
@@ -2944,6 +3296,42 @@ onBeforeUnmount(() => {
   border-radius: 0.75rem;
   color: var(--node-text-color);
   /* Ensure proper text color inheritance */
+}
+
+/* Apply margins only when snapped */
+.snapped .node-card {
+  margin-top: 20px;
+  margin-right: 80px;
+  margin-bottom: 20px;
+  margin-left: 80px;
+}
+
+/* Responsive layout adjustments based on layout mode */
+.snapped .node-card {
+  margin-left: var(--node-margin-left, 20px);
+  margin-right: var(--node-margin-right, 260px);
+  width: var(--snapped-content-width, 70%);
+}
+
+/* Minimal layout - full width, no sidebars */
+.snapped[style*="--layout-mode: minimal"] .node-card {
+  margin-left: 0px !important;
+  margin-right: 0px !important;
+  width: 100vw !important;
+}
+
+/* Stacked layout - account for left sidebar */
+.snapped[style*="--layout-mode: stacked-left"] .node-card {
+  margin-left: var(--node-margin-left, 260px) !important;
+  margin-right: 0px !important;
+  width: var(--snapped-content-width, calc(100vw - 280px)) !important;
+}
+
+/* Dual sidebar layout - account for both sidebars */
+.snapped[style*="--layout-mode: dual-sidebar"] .node-card {
+  margin-left: 260px !important;
+  margin-right: 260px !important;
+  width: calc(100vw - 520px - 40px) !important;
 }
 
 .node-card:hover {
@@ -2954,14 +3342,58 @@ onBeforeUnmount(() => {
 /* Selected node styling */
 .selected .node-card {
   border-color: var(--node-color);
+  margin: 4px;  
   box-shadow: 0 0 0 2px var(--node-color-transparent), 0 8px 20px var(--node-shadow-color);
 }
 
-/* Enhanced glow effect */
-.branch-node.glow-highlight .node-card {
-  box-shadow: 0 0 15px 5px var(--node-glow-color), 0 4px 12px var(--node-shadow-color);
+/* Glow effect for selected but not snapped nodes (helps with arrow navigation) */
+.glow-highlight .node-card {
+  position: relative;
+  border-color: var(--node-color);
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
+.glow-highlight .node-card::after {
+  content: '';
+  position: absolute;
+  inset: -20px;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: 
+    inset 0 0 30px 10px var(--node-glow-color),
+    inset 0 0 60px 20px var(--node-glow-color);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.glow-highlight .node-card {
+  box-shadow: 
+    0 0 0 2px var(--node-color),
+    0 0 15px 5px var(--node-glow-color),
+    0 0 30px 10px var(--node-glow-color),
+    0 0 45px 15px var(--node-glow-color),
+    0 8px 20px var(--node-shadow-color);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 
+      0 0 0 2px var(--node-color),
+      0 0 15px 5px var(--node-glow-color),
+      0 0 30px 10px var(--node-glow-color),
+      0 0 45px 15px var(--node-glow-color),
+      0 8px 20px var(--node-shadow-color);
+  }
+  50% {
+    box-shadow: 
+      0 0 0 3px var(--node-color),
+      0 0 25px 8px var(--node-glow-color),
+      0 0 50px 15px var(--node-glow-color),
+      0 0 75px 25px var(--node-glow-color),
+      0 8px 25px var(--node-shadow-color);
+  }
+}
 
 /* Streaming effect overlays */
 .streaming .node-card::before,
@@ -3036,15 +3468,74 @@ onBeforeUnmount(() => {
 .node-card .text-sm,
 .node-card .text-xs,
 .node-card .badge,
-.node-card .text-base-content,
-.node-card .text-base-content\/60 {
+.node-card .text-base-content {
   color: var(--node-text-color) !important;
 }
 
 /* Semi-transparent text */
 .node-card .text-base-content\/60 {
   color: var(--node-text-color) !important;
+  opacity: 0.75; /* Increased from 0.6 for better contrast */
+}
+
+/* Improved contrast for input fields and buttons in all themes */
+.node-card input,
+.node-card textarea,
+.node-card .input,
+.node-card .textarea {
+  background-color: var(--input-bg-color) !important;
+  border-color: var(--input-border-color) !important;
+  color: var(--node-text-color) !important;
+}
+
+.node-card input::placeholder,
+.node-card textarea::placeholder {
+  color: var(--node-text-color) !important;
   opacity: 0.6;
+}
+
+.node-card button,
+.node-card .btn {
+  background-color: var(--button-bg-color) !important;
+  color: var(--node-text-color) !important;
+  border-color: var(--input-border-color) !important;
+}
+
+.node-card button:hover,
+.node-card .btn:hover {
+  background-color: var(--button-hover-bg-color) !important;
+}
+
+/* Improved contrast for icons and small elements */
+.node-card .icon,
+.node-card svg {
+  color: var(--node-text-color) !important;
+  opacity: 0.8;
+}
+
+/* Message containers - improved contrast */
+.node-card .message-container,
+.node-card .user-message,
+.node-card .ai-message {
+  background-color: var(--message-bg-color) !important;
+  color: var(--node-text-color) !important;
+  border: 1px solid var(--input-border-color) !important;
+}
+
+/* Ensure all text elements have proper contrast */
+.node-card h1, .node-card h2, .node-card h3, .node-card h4, .node-card h5, .node-card h6,
+.node-card p, .node-card span, .node-card div,
+.node-card .text-content {
+  color: var(--node-text-color) !important;
+}
+
+/* Status indicators and badges */
+.node-card .status-indicator,
+.node-card .badge,
+.node-card .chip {
+  background-color: var(--button-bg-color) !important;
+  color: var(--node-text-color) !important;
+  border: 1px solid var(--input-border-color) !important;
 }
 
 /* Badge animation */
@@ -3314,10 +3805,10 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  width: 100vw;
-  height: 100vh;
+  width: var(--snapped-width, 100vw);
+  height: var(--snapped-height, 100vh);
   z-index: 1000;
-  padding-top: 1rem;
+  padding-top: 5.5rem; /* More space for teleported header */
   padding-bottom: 2rem;
   pointer-events: auto;
   transform: scale(1) !important;
@@ -3336,7 +3827,6 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--snapped-backdrop);
   /* Use theme-specific backdrop */
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -3352,14 +3842,13 @@ onBeforeUnmount(() => {
   background: linear-gradient(to bottom, var(--node-color-transparent), rgba(var(--b1), 0.8)) !important;
   backdrop-filter: blur(16px) !important;
   border: 1px solid var(--node-border-color);
-  width: 100%;
+  width: var(--snapped-content-width, 70%) !important;
   display: flex !important;
   flex-direction: column !important;
-  height: calc(100vh - 8rem) !important;
-  max-height: calc(100vh - 8rem) !important;
-  max-width: 90%;
+  height: var(--snapped-content-height, calc(100vh - 8rem)) !important;
+  max-height: var(--snapped-content-height, calc(100vh - 8rem)) !important;
+  max-width: var(--snapped-content-width, 70%) !important;
   overflow-y: hidden !important;
-  display: flex;
   box-shadow: 0 8px 32px var(--node-shadow-color);
   border-radius: 1.25rem;
   color: var(--node-text-color) !important;
@@ -3576,14 +4065,14 @@ onBeforeUnmount(() => {
   }
 
   .snapped-card {
-    max-width: 98%;
+    max-width: 70% !important;
   }
 }
 
 /* UPDATED: Ensure proper spacing in snapped mode */
 .snapped-messages-container .message-container {
-  width: 100% !important;
-  max-width: 100% !important;
+  width: 70% !important;
+  max-width: 70% !important;
   margin: 0 0 1rem 0 !important;
   color: var(--node-text-color) !important;
 }
@@ -3704,6 +4193,36 @@ onBeforeUnmount(() => {
   
   .message-container {
     contain: strict;
+  }
+}
+
+/* Teleported Header Styles for Snapped Mode */
+.snapped-node-header {
+  height: 3rem;
+  transition: all 0.3s ease;
+  width: 50%;
+  justify-self: anchor-center;
+}
+
+/* Theme-aware styling for snapped header */
+.snapped-node-header {
+  --header-bg: rgba(var(--p), 0.85);
+  --header-text: var(--node-text-color);
+}
+
+/* Responsive adjustments for snapped header */
+@media (max-width: 768px) {
+  .snapped-node-header {
+    height: 2.5rem;
+    padding: 0 1rem;
+  }
+  
+  .snapped-node-header h2 {
+    font-size: 0.75rem;
+  }
+  
+  .snapped-node-header .flex {
+    gap: 0.5rem;
   }
 }
 </style>

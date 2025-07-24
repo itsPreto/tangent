@@ -50,19 +50,37 @@
       <ForceGraph
         v-else-if="!clusteringStatus.is_running && clusteringStatus.clusters && clusteringStatus.clusters.length > 0"
         ref="forceGraphRef" :clustering-status="clusteringStatus" :external-controls="true" :enable-3d="is3DEnabled"
-        :force-settings="forceSettings" :current-layout="currentLayout"
-        @select-workspace="handleSelectWorkspace" @update-stats="handleGraphStatsUpdate"
-        @update3-d-support="handle3DSupportUpdate" @update-fullscreen="handleFullscreenUpdate"
-        class="force-graph-main" />
+        :force-settings="forceSettings" :current-layout="currentLayout" @select-workspace="handleSelectWorkspace"
+        @update-stats="handleGraphStatsUpdate" @update3-d-support="handle3DSupportUpdate"
+        @update-fullscreen="handleFullscreenUpdate" class="force-graph-main" />
 
       <!-- Empty State -->
       <div v-else class="graph-placeholder">
         <GitBranch class="w-16 h-16 opacity-30" />
         <h3>No Graph Data Available</h3>
         <p>Start clustering analysis to visualize workspace relationships and topics.</p>
-        <button @click="startClustering" class="retry-btn">
-          Start Clustering Analysis
-        </button>
+
+        <!-- Requirements Check -->
+        <div v-if="workspaceCount !== null && workspaceCount >= 0" class="requirements-info">
+          <div class="requirement-item" :class="{ 'met': workspaceCount >= 2, 'not-met': workspaceCount < 2 }">
+            <span class="requirement-icon">{{ workspaceCount >= 2 ? '✓' : '✗' }}</span>
+            <span class="requirement-text">{{ workspaceCount }} workspace{{ workspaceCount !== 1 ? 's' : '' }}
+              available</span>
+          </div>
+          <div v-if="workspaceCount < 2" class="requirement-warning">
+            <span class="warning-icon">⚠️</span>
+            <span>At least 2 workspaces required for clustering analysis</span>
+          </div>
+          <div v-else-if="workspaceCount < 5" class="requirement-info-text">
+            <span class="info-icon">ℹ️</span>
+            <span>Limited clustering options with {{ workspaceCount }} workspaces</span>
+          </div>
+        </div>
+
+        <button @click="startClustering" class="retry-btn" :disabled="workspaceCount === null || workspaceCount < 2"
+          :class="{ 'disabled': workspaceCount === null || workspaceCount < 2 }">
+          {{ workspaceCount === null ? 'Loading...' : workspaceCount < 2 ? 'Insufficient Workspaces'
+            : 'Start Clustering Analysis' }} </button>
       </div>
     </div>
 
@@ -139,7 +157,8 @@
           <div class="info-section">
             <h3 class="info-title">Workspace Clustering & Visualization</h3>
             <p class="info-description">
-              Discover hidden patterns and relationships in your workspace data through intelligent clustering and interactive force-directed visualization.
+              Discover hidden patterns and relationships in your workspace data through intelligent clustering and
+              interactive force-directed visualization.
             </p>
           </div>
 
@@ -211,16 +230,12 @@
             <!-- Algorithm & Resolution Column -->
             <div class="control-column">
               <div class="algorithm-toggle">
-                <button 
-                  @click="clusteringSettings.algorithm = 'kmeans'" 
-                  :class="{ active: clusteringSettings.algorithm === 'kmeans' }"
-                  class="algo-btn">
+                <button @click="clusteringSettings.algorithm = 'kmeans'"
+                  :class="{ active: clusteringSettings.algorithm === 'kmeans' }" class="algo-btn">
                   K-Means
                 </button>
-                <button 
-                  @click="clusteringSettings.algorithm = 'dbscan'" 
-                  :class="{ active: clusteringSettings.algorithm === 'dbscan' }"
-                  class="algo-btn">
+                <button @click="clusteringSettings.algorithm = 'dbscan'"
+                  :class="{ active: clusteringSettings.algorithm === 'dbscan' }" class="algo-btn">
                   DBSCAN
                 </button>
               </div>
@@ -230,16 +245,10 @@
                 <label>Resolution</label>
                 <div class="resolution-slider-wrapper">
                   <span class="res-min">{{ clusterLimits.min }}</span>
-                  <input 
-                    v-model.number="multiResolutionState.currentResolution" 
-                    @input="switchToResolution($event.target.value)" 
-                    type="range" 
-                    :min="clusterLimits.min" 
-                    :max="clusterLimits.max" 
-                    step="1"
-                    class="compact-slider"
-                    :disabled="multiResolutionState.isLoadingResolution"
-                  />
+                  <input v-model.number="multiResolutionState.currentResolution"
+                    @input="switchToResolution($event.target.value)" type="range" :min="clusterLimits.min"
+                    :max="clusterLimits.max" step="1" class="compact-slider"
+                    :disabled="multiResolutionState.isLoadingResolution" />
                   <span class="res-max">{{ clusterLimits.max }}</span>
                   <span class="res-current">{{ multiResolutionState.currentResolution }}</span>
                 </div>
@@ -256,24 +265,15 @@
               <div v-if="clusteringSettings.algorithm === 'kmeans'" class="param-group">
                 <div class="compact-control">
                   <label>Clusters</label>
-                  <input 
-                    v-model.number="clusteringSettings.numClusters" 
-                    type="range" 
-                    min="2" 
-                    max="15" 
-                    step="1"
-                    class="compact-slider"
-                  />
+                  <input v-model.number="clusteringSettings.numClusters" type="range" min="2" max="15" step="1"
+                    class="compact-slider" />
                   <span class="value">{{ clusteringSettings.numClusters }}</span>
                 </div>
-                
+
                 <div class="quality-toggle">
-                  <button 
-                    v-for="quality in ['balanced', 'tight', 'separated']" 
-                    :key="quality"
+                  <button v-for="quality in ['balanced', 'tight', 'separated']" :key="quality"
                     @click="clusteringSettings.qualityTarget = quality"
-                    :class="{ active: clusteringSettings.qualityTarget === quality }"
-                    class="quality-btn">
+                    :class="{ active: clusteringSettings.qualityTarget === quality }" class="quality-btn">
                     {{ quality }}
                   </button>
                 </div>
@@ -283,27 +283,15 @@
               <div v-else class="param-group">
                 <div class="compact-control">
                   <label>ε</label>
-                  <input 
-                    v-model.number="clusteringSettings.dbscanEps" 
-                    type="range" 
-                    min="0.1" 
-                    max="2.0" 
-                    step="0.1"
-                    class="compact-slider"
-                  />
+                  <input v-model.number="clusteringSettings.dbscanEps" type="range" min="0.1" max="2.0" step="0.1"
+                    class="compact-slider" />
                   <span class="value">{{ clusteringSettings.dbscanEps.toFixed(1) }}</span>
                 </div>
-                
+
                 <div class="compact-control">
                   <label>Min</label>
-                  <input 
-                    v-model.number="clusteringSettings.dbscanMinSamples" 
-                    type="range" 
-                    min="2" 
-                    max="10" 
-                    step="1"
-                    class="compact-slider"
-                  />
+                  <input v-model.number="clusteringSettings.dbscanMinSamples" type="range" min="2" max="10" step="1"
+                    class="compact-slider" />
                   <span class="value">{{ clusteringSettings.dbscanMinSamples }}</span>
                 </div>
               </div>
@@ -317,30 +305,17 @@
                   <span class="toggle-slider"></span>
                   <span class="toggle-label">Auto-optimize</span>
                 </label>
-                
+
                 <div v-if="clusteringSettings.autoOptimize" class="optimize-range">
-                  <input 
-                    v-model.number="clusteringSettings.minClusters" 
-                    type="number" 
-                    min="2" 
-                    max="15" 
-                    class="mini-input"
-                  />
+                  <input v-model.number="clusteringSettings.minClusters" type="number" min="2" max="15"
+                    class="mini-input" />
                   <span>–</span>
-                  <input 
-                    v-model.number="clusteringSettings.maxClusters" 
-                    type="number" 
-                    min="2" 
-                    max="15" 
-                    class="mini-input"
-                  />
+                  <input v-model.number="clusteringSettings.maxClusters" type="number" min="2" max="15"
+                    class="mini-input" />
                 </div>
               </div>
 
-              <button 
-                @click="recomputeClusters" 
-                class="recompute-btn" 
-                :disabled="clusteringStatus.is_running">
+              <button @click="recomputeClusters" class="recompute-btn" :disabled="clusteringStatus.is_running">
                 <RefreshCw :size="14" />
                 {{ clusteringSettings.autoOptimize ? 'Optimize' : 'Recompute' }}
               </button>
@@ -430,7 +405,7 @@
                     <span class="cluster-count">{{ cluster.size || cluster.workspaces?.length || 0 }}</span>
                   </div>
                   <div class="cluster-bar-track">
-                    <div class="cluster-bar-fill" :style="{ 
+                    <div class="cluster-bar-fill" :style="{
                       width: (cluster.size || cluster.workspaces?.length || 0) / Math.max(...clusteringStatus.clusters.map(c => c.size || c.workspaces?.length || 0)) * 100 + '%',
                       backgroundColor: getClusterColor(index)
                     }"></div>
@@ -457,7 +432,8 @@
                 </div>
                 <div class="balance-metric">
                   <span class="metric-label">Balance Score</span>
-                  <span class="metric-value balance-score" :class="getBalanceScoreClass()">{{ getBalanceScore() }}</span>
+                  <span class="metric-value balance-score" :class="getBalanceScoreClass()">{{ getBalanceScore()
+                    }}</span>
                 </div>
               </div>
             </div>
@@ -474,7 +450,7 @@
                     </span>
                   </div>
                   <div class="coherence-bar">
-                    <div class="coherence-fill" :style="{ 
+                    <div class="coherence-fill" :style="{
                       width: getCoherenceScore(cluster) + '%',
                       backgroundColor: getCoherenceColor(getCoherenceScore(cluster))
                     }"></div>
@@ -492,7 +468,8 @@
             <div class="insights-section">
               <h4 class="insights-subtitle">Recommendations</h4>
               <div class="recommendations">
-                <div v-for="recommendation in getRecommendations()" :key="recommendation.id" class="recommendation-item">
+                <div v-for="recommendation in getRecommendations()" :key="recommendation.id"
+                  class="recommendation-item">
                   <div class="recommendation-icon">{{ recommendation.icon }}</div>
                   <div class="recommendation-content">
                     <div class="recommendation-title">{{ recommendation.title }}</div>
@@ -539,7 +516,7 @@
                     Export
                   </button>
                 </div>
-                
+
                 <div class="export-option">
                   <div class="export-info">
                     <div class="export-format">
@@ -553,7 +530,7 @@
                     Export
                   </button>
                 </div>
-                
+
                 <div class="export-option">
                   <div class="export-info">
                     <div class="export-format">
@@ -567,7 +544,7 @@
                     Export
                   </button>
                 </div>
-                
+
                 <div class="export-option">
                   <div class="export-info">
                     <div class="export-format">
@@ -583,7 +560,7 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Visualization Export Section -->
             <div class="export-section">
               <h4 class="export-subtitle">Visualization Export</h4>
@@ -601,7 +578,7 @@
                     Export
                   </button>
                 </div>
-                
+
                 <div class="export-option">
                   <div class="export-info">
                     <div class="export-format">
@@ -615,7 +592,7 @@
                     Export
                   </button>
                 </div>
-                
+
                 <div class="export-option">
                   <div class="export-info">
                     <div class="export-format">
@@ -631,7 +608,7 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Export Configuration -->
             <div class="export-section">
               <h4 class="export-subtitle">Export Settings</h4>
@@ -662,7 +639,7 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Batch Export -->
             <div class="export-section">
               <h4 class="export-subtitle">Batch Export</h4>
@@ -688,7 +665,7 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Empty state for export -->
           <div v-else class="export-placeholder">
             <Download class="w-12 h-12 opacity-30" />
@@ -774,7 +751,7 @@ const multiResolutionState = reactive({
 // Compute dynamic cluster limits based on workspace count
 const clusterLimits = computed(() => {
   const workspaceCount = clusteringStatus.total_workspaces || 0;
-  
+
   if (workspaceCount <= 10) {
     return { min: 2, max: 5 };
   } else if (workspaceCount <= 25) {
@@ -801,6 +778,7 @@ watch(clusterLimits, (newLimits) => {
 
 // Error handling
 const errorMessage = ref<string | null>(null);
+const workspaceCount = ref<number | null>(null);
 
 // Mock graph stats - would be real data in implementation
 const graphStats = ref({
@@ -885,14 +863,33 @@ const toggle3D = () => {
 const startClustering = async () => {
   try {
     errorMessage.value = null; // Clear any previous errors
+
+    // Ensure we have workspace count
+    if (workspaceCount.value === null || workspaceCount.value < 2) {
+      errorMessage.value = 'Cannot start clustering: insufficient workspaces or data not loaded yet.';
+      return;
+    }
+
+    // Adaptive clustering based on workspace count
+    const adaptiveNClusters = Math.min(5, Math.max(2, Math.floor(workspaceCount.value / 2)));
+
     await clusteringService.startClustering({
       method: 'kmeans',
-      n_clusters: 5
+      n_clusters: adaptiveNClusters
     });
-    console.log('Starting clustering process');
+    console.log(`Starting clustering process with ${adaptiveNClusters} clusters for ${workspaceCount.value} workspaces`);
   } catch (error) {
     console.error('Failed to start clustering:', error);
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to start clustering analysis';
+
+    // Parse specific error messages
+    const errorMsg = error instanceof Error ? error.message : 'Failed to start clustering analysis';
+    if (errorMsg.includes('should be >=')) {
+      errorMessage.value = `Not enough workspaces for clustering. You have ${workspaceCount.value} workspace(s) but need at least 2.`;
+    } else if (errorMsg.includes('No valid content')) {
+      errorMessage.value = 'Your workspaces don\'t contain enough content for analysis. Add more conversations first.';
+    } else {
+      errorMessage.value = errorMsg;
+    }
   }
 };
 
@@ -905,15 +902,28 @@ const retryClusteringWithError = async () => {
 const recomputeClusters = async () => {
   try {
     errorMessage.value = null;
-    
+
+    // Validate cluster count against workspace count
+    if (workspaceCount.value === null || workspaceCount.value < 2) {
+      errorMessage.value = 'Cannot start clustering: insufficient workspaces or data not loaded yet.';
+      return;
+    }
+
+    const maxPossibleClusters = Math.max(2, workspaceCount.value - 1);
+    const adjustedNumClusters = Math.min(clusteringSettings.numClusters, maxPossibleClusters);
+
+    if (adjustedNumClusters !== clusteringSettings.numClusters) {
+      console.warn(`Adjusted clusters from ${clusteringSettings.numClusters} to ${adjustedNumClusters} based on ${workspaceCount.value} workspaces`);
+    }
+
     // Prepare parameters including advanced settings
     const params: any = {
       method: clusteringSettings.algorithm as 'kmeans' | 'dbscan',
-      n_clusters: clusteringSettings.numClusters,
+      n_clusters: adjustedNumClusters,
       eps: clusteringSettings.dbscanEps,
       min_samples: clusteringSettings.dbscanMinSamples
     };
-    
+
     // Add auto-optimization parameters if enabled
     if (clusteringSettings.autoOptimize) {
       params.autoOptimize = true;
@@ -921,12 +931,12 @@ const recomputeClusters = async () => {
       params.maxClusters = clusteringSettings.maxClusters;
       params.qualityTarget = clusteringSettings.qualityTarget;
     }
-    
+
     console.log('Recomputing clusters with parameters:', params);
-    
+
     // Start clustering with all parameters
     await clusteringService.startClustering(params);
-    
+
   } catch (error) {
     console.error('Failed to recompute clusters:', error);
     errorMessage.value = error instanceof Error ? error.message : 'Failed to recompute clusters';
@@ -970,10 +980,10 @@ const checkCacheStatus = async () => {
 
 const switchToResolution = async (targetResolution: number) => {
   if (multiResolutionState.isLoadingResolution) return;
-  
+
   try {
     multiResolutionState.isLoadingResolution = true;
-    
+
     // Check if this resolution is already cached
     if (multiResolutionState.availableResolutions.includes(targetResolution)) {
       // Load from cache
@@ -983,17 +993,17 @@ const switchToResolution = async (targetResolution: number) => {
         clusteringStatus.clusters = result.clusters || [];
         multiResolutionState.currentResolution = targetResolution;
         localStorage.setItem('tangent_clustering_resolution', targetResolution.toString());
-        
+
         // Update graph stats
         graphStats.value.clusters = result.clusters?.length || 0;
-        graphStats.value.nodes = result.clusters?.reduce((total, cluster) => 
+        graphStats.value.nodes = result.clusters?.reduce((total, cluster) =>
           total + (cluster.size || cluster.workspaces?.length || 0), 0) || 0;
-        
+
         console.log(`Switched to ${targetResolution}-cluster resolution from cache`);
         return;
       }
     }
-    
+
     // Generate new resolution if not cached
     const response = await fetch('http://127.0.0.1:5050/api/clustering/multi-resolution', {
       method: 'POST',
@@ -1005,25 +1015,25 @@ const switchToResolution = async (targetResolution: number) => {
         min_samples: clusteringSettings.dbscanMinSamples
       })
     });
-    
+
     if (response.ok) {
       const result = await response.json();
       if (result.resolutions && result.resolutions[targetResolution]) {
         clusteringStatus.clusters = result.resolutions[targetResolution].clusters || [];
         multiResolutionState.currentResolution = targetResolution;
         localStorage.setItem('tangent_clustering_resolution', targetResolution.toString());
-        
+
         // Update available resolutions
         if (!multiResolutionState.availableResolutions.includes(targetResolution)) {
           multiResolutionState.availableResolutions.push(targetResolution);
           multiResolutionState.availableResolutions.sort((a, b) => a - b);
         }
-        
+
         // Update graph stats
         graphStats.value.clusters = result.resolutions[targetResolution].clusters?.length || 0;
-        graphStats.value.nodes = result.resolutions[targetResolution].clusters?.reduce((total, cluster) => 
+        graphStats.value.nodes = result.resolutions[targetResolution].clusters?.reduce((total, cluster) =>
           total + (cluster.size || cluster.workspaces?.length || 0), 0) || 0;
-        
+
         console.log(`Generated and switched to ${targetResolution}-cluster resolution`);
       }
     }
@@ -1039,17 +1049,17 @@ const generateMultipleResolutions = async () => {
   try {
     const limits = clusterLimits.value;
     const resolutions = [];
-    
+
     // Generate key resolution points
     for (let i = limits.min; i <= limits.max; i += Math.max(1, Math.floor((limits.max - limits.min) / 10))) {
       resolutions.push(i);
     }
-    
+
     // Always include the current resolution
     if (!resolutions.includes(multiResolutionState.currentResolution)) {
       resolutions.push(multiResolutionState.currentResolution);
     }
-    
+
     const response = await fetch('http://127.0.0.1:5050/api/clustering/multi-resolution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1060,7 +1070,7 @@ const generateMultipleResolutions = async () => {
         min_samples: clusteringSettings.dbscanMinSamples
       })
     });
-    
+
     if (response.ok) {
       const result = await response.json();
       multiResolutionState.availableResolutions = Object.keys(result.resolutions || {}).map(Number).sort((a, b) => a - b);
@@ -1134,14 +1144,14 @@ const getPhaseText = () => {
 
 // Insights panel methods
 const getTotalWorkspaces = () => {
-  return clusteringStatus.clusters?.reduce((total, cluster) => 
+  return clusteringStatus.clusters?.reduce((total, cluster) =>
     total + (cluster.size || cluster.workspaces?.length || 0), 0) || 0;
 };
 
 const getClusteringQuality = () => {
   // Mock clustering quality score (0-100)
   const balance = getBalanceScore();
-  const avgCoherence = clusteringStatus.clusters?.reduce((sum, cluster) => 
+  const avgCoherence = clusteringStatus.clusters?.reduce((sum, cluster) =>
     sum + getCoherenceScore(cluster), 0) / (clusteringStatus.clusters?.length || 1) || 0;
   return Math.round((balance + avgCoherence) / 2);
 };
@@ -1163,11 +1173,11 @@ const getAverageClusterSize = () => {
 const getBalanceScore = () => {
   const sizes = clusteringStatus.clusters?.map(c => c.size || c.workspaces?.length || 0) || [];
   if (sizes.length === 0) return 0;
-  
+
   const avg = sizes.reduce((sum, size) => sum + size, 0) / sizes.length;
   const variance = sizes.reduce((sum, size) => sum + Math.pow(size - avg, 2), 0) / sizes.length;
   const coefficient = Math.sqrt(variance) / avg;
-  
+
   // Convert to 0-100 scale (lower coefficient = higher balance)
   return Math.max(0, Math.min(100, Math.round(100 - (coefficient * 100))));
 };
@@ -1208,7 +1218,7 @@ const getClusterColor = (index: number) => {
 
 const getRecommendations = () => {
   const recommendations = [];
-  
+
   // Balance recommendation
   const balanceScore = getBalanceScore();
   if (balanceScore < 60) {
@@ -1220,9 +1230,9 @@ const getRecommendations = () => {
       action: 'adjustClusters'
     });
   }
-  
+
   // Coherence recommendation
-  const avgCoherence = clusteringStatus.clusters?.reduce((sum, cluster) => 
+  const avgCoherence = clusteringStatus.clusters?.reduce((sum, cluster) =>
     sum + getCoherenceScore(cluster), 0) / (clusteringStatus.clusters?.length || 1) || 0;
   if (avgCoherence < 70) {
     recommendations.push({
@@ -1233,7 +1243,7 @@ const getRecommendations = () => {
       action: 'optimizeCoherence'
     });
   }
-  
+
   // Auto-optimization recommendation
   if (!clusteringSettings.autoOptimize) {
     recommendations.push({
@@ -1244,7 +1254,7 @@ const getRecommendations = () => {
       action: 'enableAutoOptimize'
     });
   }
-  
+
   return recommendations;
 };
 
@@ -1268,7 +1278,7 @@ const exportData = async (type: string, format: string) => {
   try {
     let data: any;
     let filename: string;
-    
+
     switch (type) {
       case 'clusters':
         data = generateClustersData();
@@ -1289,7 +1299,7 @@ const exportData = async (type: string, format: string) => {
       default:
         throw new Error('Unknown export type');
     }
-    
+
     const formattedData = formatExportData(data, format);
     downloadFile(formattedData, filename, getMimeType(format));
   } catch (error) {
@@ -1303,10 +1313,10 @@ const exportVisualization = async (format: string) => {
     if (!forceGraphRef.value) {
       throw new Error('Graph visualization not available');
     }
-    
+
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `tangent-graph-${timestamp}.${format}`;
-    
+
     // This would interface with the ForceGraph component's export functionality
     // For now, we'll simulate the export
     const exportData = await simulateVisualizationExport(format);
@@ -1322,40 +1332,40 @@ const exportBatch = async () => {
     batchExportProgress.isExporting = true;
     batchExportProgress.progress = 0;
     batchExportProgress.totalSteps = 7;
-    
+
     const timestamp = new Date().toISOString().split('T')[0];
     const zipName = `tangent-complete-export-${timestamp}.zip`;
-    
+
     // Step 1: Export clusters data
     batchExportProgress.currentStep = 'Exporting cluster data...';
     await sleep(500);
     const clustersData = generateClustersData();
     batchExportProgress.progress = 15;
-    
+
     // Step 2: Export workspaces data
     batchExportProgress.currentStep = 'Exporting workspace data...';
     await sleep(500);
     const workspacesData = generateWorkspacesData();
     batchExportProgress.progress = 30;
-    
+
     // Step 3: Export relationships
     batchExportProgress.currentStep = 'Exporting relationships...';
     await sleep(500);
     const relationshipsData = generateRelationshipsData();
     batchExportProgress.progress = 45;
-    
+
     // Step 4: Export statistics
     batchExportProgress.currentStep = 'Generating statistics...';
     await sleep(500);
     const statisticsData = generateStatisticsData();
     batchExportProgress.progress = 60;
-    
+
     // Step 5: Export visualizations
     batchExportProgress.currentStep = 'Capturing visualizations...';
     await sleep(800);
     const visualizationData = await simulateVisualizationExport('png');
     batchExportProgress.progress = 80;
-    
+
     // Step 6: Create archive
     batchExportProgress.currentStep = 'Creating archive...';
     await sleep(500);
@@ -1367,13 +1377,13 @@ const exportBatch = async () => {
       visualization: visualizationData
     });
     batchExportProgress.progress = 95;
-    
+
     // Step 7: Download
     batchExportProgress.currentStep = 'Finalizing download...';
     await sleep(300);
     downloadFile(archiveData, zipName, 'application/zip');
     batchExportProgress.progress = 100;
-    
+
     // Reset after completion
     setTimeout(() => {
       batchExportProgress.isExporting = false;
@@ -1396,7 +1406,7 @@ const generateClustersData = () => {
     totalWorkspaces: getTotalWorkspaces(),
     qualityScore: getClusteringQuality()
   };
-  
+
   if (exportSettings.includeMetadata) {
     baseData.metadata = {
       exportDate: new Date().toISOString(),
@@ -1404,7 +1414,7 @@ const generateClustersData = () => {
       settings: clusteringSettings
     };
   }
-  
+
   if (exportSettings.includeStatistics) {
     baseData.statistics = {
       balanceScore: getBalanceScore(),
@@ -1417,20 +1427,20 @@ const generateClustersData = () => {
       })) || []
     };
   }
-  
+
   if (exportSettings.includeVisualizationSettings) {
     baseData.visualizationSettings = {
       layout: currentLayout.value,
       forceSettings: { ...forceSettings }
     };
   }
-  
+
   return baseData;
 };
 
 const generateWorkspacesData = () => {
   const workspaces = [];
-  
+
   clusteringStatus.clusters?.forEach((cluster, clusterIndex) => {
     cluster.workspaces?.forEach(workspace => {
       workspaces.push({
@@ -1450,13 +1460,13 @@ const generateWorkspacesData = () => {
       });
     });
   });
-  
+
   return { workspaces };
 };
 
 const generateRelationshipsData = () => {
   const relationships = [];
-  
+
   // Generate mock relationships between clusters and workspaces
   clusteringStatus.clusters?.forEach(cluster => {
     cluster.workspaces?.forEach(workspace => {
@@ -1473,7 +1483,7 @@ const generateRelationshipsData = () => {
       }
     });
   });
-  
+
   return { relationships };
 };
 
@@ -1594,7 +1604,7 @@ const createExportArchive = async (data: any) => {
 const calculateClusterVariance = () => {
   const sizes = clusteringStatus.clusters?.map(c => c.size || c.workspaces?.length || 0) || [];
   if (sizes.length === 0) return 0;
-  
+
   const avg = sizes.reduce((sum, size) => sum + size, 0) / sizes.length;
   return sizes.reduce((sum, size) => sum + Math.pow(size - avg, 2), 0) / sizes.length;
 };
@@ -1605,29 +1615,41 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 let statusUnsubscribe: (() => void) | null = null;
 
 onMounted(async () => {
+  // Fetch workspace count
+  try {
+    const response = await fetch('http://127.0.0.1:5050/chats');
+    if (response.ok) {
+      const chats = await response.json();
+      workspaceCount.value = chats.length;
+    }
+  } catch (error) {
+    console.error('Failed to fetch workspace count:', error);
+    workspaceCount.value = 0;
+  }
+
   // Subscribe to clustering status updates
   statusUnsubscribe = clusteringService.onStatusUpdate((status) => {
     Object.assign(clusteringStatus, status);
 
     // Handle clustering errors
     if (status.status_message && status.status_message.toLowerCase().includes('no valid content')) {
-      errorMessage.value = 'No workspace content found for clustering. Add some conversations with content first.';
+      errorMessage.value = `No meaningful content found for clustering analysis. Your ${workspaceCount.value || 'available'} workspace(s) may be empty or contain insufficient conversation data. Try adding more messages to your workspaces first.`;
       // Stop the clustering process
       clusteringStatus.is_running = false;
     } else if (status.status_message && status.status_message.toLowerCase().includes('error')) {
       errorMessage.value = status.status_message;
       clusteringStatus.is_running = false;
     }
-    
+
     // Update multi-resolution state when clustering completes
     if (!status.is_running && status.clusters && status.clusters.length > 0) {
       // Update current resolution to match actual cluster count
       multiResolutionState.currentResolution = status.clusters.length;
       localStorage.setItem('tangent_clustering_resolution', status.clusters.length.toString());
-      
+
       // Refresh cache status
       checkCacheStatus();
-      
+
       console.log('Clustering completed with', status.clusters.length, 'clusters');
     }
   });
@@ -1643,11 +1665,11 @@ onMounted(async () => {
 
   // Initialize multi-resolution cache status
   await checkCacheStatus();
-  
+
   // Load persisted resolution if available and different from current
   const savedResolution = parseInt(localStorage.getItem('tangent_clustering_resolution') || '5');
-  if (savedResolution !== multiResolutionState.currentResolution && 
-      clusteringStatus.clusters && clusteringStatus.clusters.length > 0) {
+  if (savedResolution !== multiResolutionState.currentResolution &&
+    clusteringStatus.clusters && clusteringStatus.clusters.length > 0) {
     // Try to load the saved resolution
     await switchToResolution(savedResolution);
   }
@@ -1718,7 +1740,6 @@ onBeforeUnmount(() => {
 }
 
 .theme-cmyk .control-panel {
-  background: rgba(8, 8, 15, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -1730,10 +1751,9 @@ onBeforeUnmount(() => {
   padding: 12px 16px;
   flex-wrap: wrap;
   gap: 8px;
+  align-self: center;
   min-width: 0;
   flex-direction: row;
-  justify-self: anchor-center;
-  align-content: space-around;
 }
 
 /* Theme-aware top controls */
@@ -2114,7 +2134,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.res-min, .res-max {
+.res-min,
+.res-max {
   font-size: 10px;
   color: oklch(var(--bc) / 0.5);
   min-width: 12px;
@@ -2255,11 +2276,11 @@ onBeforeUnmount(() => {
   transition: all 0.2s ease;
 }
 
-.toggle-switch input:checked + .toggle-slider {
+.toggle-switch input:checked+.toggle-slider {
   background: oklch(var(--p));
 }
 
-.toggle-switch input:checked + .toggle-slider::before {
+.toggle-switch input:checked+.toggle-slider::before {
   transform: translateX(16px);
   background: white;
 }
@@ -2468,8 +2489,15 @@ onBeforeUnmount(() => {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
 }
 
 /* Slide up animation */
@@ -2646,6 +2674,7 @@ onBeforeUnmount(() => {
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -2795,8 +2824,15 @@ onBeforeUnmount(() => {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Info Panel */
@@ -3713,8 +3749,13 @@ onBeforeUnmount(() => {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .batch-ready {
@@ -3782,5 +3823,72 @@ onBeforeUnmount(() => {
 .placeholder-btn:hover {
   background: oklch(var(--pf));
   transform: translateY(-1px);
+}
+
+/* Requirements Info Styling */
+.requirements-info {
+  margin: 16px 0;
+  padding: 12px;
+  background: rgba(var(--bc), 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(var(--bc), 0.1);
+}
+
+.requirement-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.requirement-item.met {
+  color: oklch(var(--su));
+}
+
+.requirement-item.not-met {
+  color: oklch(var(--er));
+}
+
+.requirement-icon {
+  font-weight: bold;
+  width: 16px;
+  text-align: center;
+}
+
+.requirement-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: oklch(var(--wa));
+  padding: 8px;
+  background: rgba(var(--wa), 0.1);
+  border-radius: 6px;
+  border-left: 3px solid oklch(var(--wa));
+}
+
+.requirement-info-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: oklch(var(--in));
+  padding: 8px;
+  background: rgba(var(--in), 0.1);
+  border-radius: 6px;
+  border-left: 3px solid oklch(var(--in));
+}
+
+.retry-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: oklch(var(--n));
+  color: oklch(var(--nc));
+}
+
+.retry-btn.disabled:hover {
+  transform: none;
+  background: oklch(var(--n));
 }
 </style>

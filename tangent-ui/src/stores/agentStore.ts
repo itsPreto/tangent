@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { ModelInfo } from '@/types/model';
+import { agentConfigAPI } from '@/services/agentConfigAPI';
 
 export interface AgentConfig {
   id: string;
@@ -19,7 +20,7 @@ export interface AgentConfig {
 }
 
 export const useAgentStore = defineStore('agents', () => {
-  // Load saved agent configs from localStorage
+  // Load saved agent configs from localStorage (fallback)
   const loadSavedConfigs = (): AgentConfig[] => {
     const saved = localStorage.getItem('agentConfigs');
     if (saved) {
@@ -30,6 +31,17 @@ export const useAgentStore = defineStore('agents', () => {
       }
     }
     return getDefaultConfigs();
+  };
+
+  // Load agent configs from API
+  const loadConfigsFromAPI = async (): Promise<AgentConfig[]> => {
+    try {
+      return await agentConfigAPI.getAllAgentConfigs();
+    } catch (error) {
+      console.error('Failed to load agent configs from API:', error);
+      // Fall back to localStorage
+      return loadSavedConfigs();
+    }
   };
 
   // Default agent configurations
@@ -78,9 +90,34 @@ export const useAgentStore = defineStore('agents', () => {
 
   const agentConfigs = ref<AgentConfig[]>(loadSavedConfigs());
 
-  // Save configs to localStorage whenever they change
+  // Save configs to localStorage whenever they change (fallback)
   const saveConfigs = () => {
     localStorage.setItem('agentConfigs', JSON.stringify(agentConfigs.value));
+  };
+
+  // Initialize configs from API or localStorage
+  const initializeConfigs = async () => {
+    try {
+      const apiConfigs = await loadConfigsFromAPI();
+      agentConfigs.value = apiConfigs;
+    } catch (error) {
+      console.error('Failed to initialize from API, using localStorage:', error);
+      agentConfigs.value = loadSavedConfigs();
+    }
+  };
+
+  // Sync config to API
+  const syncConfigToAPI = async (config: AgentConfig) => {
+    try {
+      if (config.id.startsWith('custom-')) {
+        // For custom agents, update via API
+        await agentConfigAPI.updateAgentConfig(config.id, config);
+      }
+    } catch (error) {
+      console.error('Failed to sync config to API:', error);
+      // Fall back to localStorage
+      saveConfigs();
+    }
   };
 
   // Computed getters for different agent types
@@ -164,26 +201,44 @@ export const useAgentStore = defineStore('agents', () => {
   };
 
   // Update an agent's configuration
-  const updateAgentConfig = (agentId: string, updates: Partial<AgentConfig>) => {
+  const updateAgentConfig = async (agentId: string, updates: Partial<AgentConfig>) => {
     const index = agentConfigs.value.findIndex(agent => agent.id === agentId);
     if (index !== -1) {
+      // Update local state immediately
       agentConfigs.value[index] = { ...agentConfigs.value[index], ...updates };
-      saveConfigs();
+      
+      // Try to sync to API
+      try {
+        await agentConfigAPI.updateAgentConfig(agentId, updates);
+      } catch (error) {
+        console.error('Failed to update agent config via API:', error);
+        // Fall back to localStorage
+        saveConfigs();
+      }
     }
   };
 
   // Set the model for a specific agent type
-  const setAgentModel = (type: 'text' | 'vision' | 'code' | 'router' | 'custom', model: ModelInfo) => {
-    // First try to find the default agent
-    let agent = agentConfigs.value.find(a => a.type === type && a.isDefault);
-    
-    // If not found, try to find any agent of this type (handles corrupted localStorage)
-    if (!agent) {
-      agent = agentConfigs.value.find(a => a.type === type);
-    }
-    
-    if (agent) {
-      updateAgentConfig(agent.id, { model, enabled: true, isDefault: true });
+  const setAgentModel = async (type: 'text' | 'vision' | 'code' | 'router' | 'custom', model: ModelInfo) => {
+    // Try to use API first
+    try {
+      await agentConfigAPI.setAgentModel(type, model);
+      // Refresh configs from API
+      await initializeConfigs();
+    } catch (error) {
+      console.error('Failed to set agent model via API, using local fallback:', error);
+      
+      // Fall back to local logic
+      let agent = agentConfigs.value.find(a => a.type === type && a.isDefault);
+      
+      // If not found, try to find any agent of this type (handles corrupted localStorage)
+      if (!agent) {
+        agent = agentConfigs.value.find(a => a.type === type);
+      }
+      
+      if (agent) {
+        await updateAgentConfig(agent.id, { model, enabled: true, isDefault: true });
+      }
     }
   };
 
@@ -247,12 +302,63 @@ export const useAgentStore = defineStore('agents', () => {
     return newAgent;
   };
 
+  // Create custom agent (compatible with ModelSelectorFeature)
+  const createCustomAgent = async (customData: { name: string; emoji?: string; color?: string }) => {
+    const newAgentData = {
+      name: customData.name,
+      description: `Custom agent: ${customData.name}`,
+      type: 'custom' as const,
+      model: null,
+      isDefault: false,
+      enabled: true,
+      priority: 50,
+      emoji: customData.emoji,
+      color: customData.color,
+      prompt: `You are ${customData.name}, a specialized AI assistant.`
+    };
+    
+    try {
+      // Try to create via API
+      const response = await agentConfigAPI.createAgentConfig(newAgentData);
+      
+      // Refresh configs from API to get the new agent
+      await initializeConfigs();
+      
+      // Find and return the newly created agent
+      const newAgent = agentConfigs.value.find(a => a.id === response.id);
+      return newAgent || newAgentData;
+    } catch (error) {
+      console.error('Failed to create custom agent via API, using local fallback:', error);
+      
+      // Fall back to local creation
+      const newAgent: AgentConfig = {
+        id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        ...newAgentData
+      };
+      
+      agentConfigs.value.push(newAgent);
+      saveConfigs();
+      return newAgent;
+    }
+  };
+
   // Remove a custom agent (can't remove default agents)
-  const removeAgent = (agentId: string) => {
+  const removeAgent = async (agentId: string) => {
     const agent = agentConfigs.value.find(a => a.id === agentId);
     if (agent && !agent.id.startsWith('default-')) {
-      agentConfigs.value = agentConfigs.value.filter(a => a.id !== agentId);
-      saveConfigs();
+      try {
+        // Try to delete via API
+        await agentConfigAPI.deleteAgentConfig(agentId);
+        
+        // Update local state
+        agentConfigs.value = agentConfigs.value.filter(a => a.id !== agentId);
+      } catch (error) {
+        console.error('Failed to remove agent via API, using local fallback:', error);
+        
+        // Fall back to local removal
+        agentConfigs.value = agentConfigs.value.filter(a => a.id !== agentId);
+        saveConfigs();
+      }
     }
   };
 
@@ -273,9 +379,11 @@ export const useAgentStore = defineStore('agents', () => {
     shouldShowAgentConfigurator,
     resetToDefaults,
     addCustomAgent,
+    createCustomAgent,
     removeAgent,
     createAgentType,
     updateAgentTriggers,
-    saveConfigs
+    saveConfigs,
+    initializeConfigs
   };
 });

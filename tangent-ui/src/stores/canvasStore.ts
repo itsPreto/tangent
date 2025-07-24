@@ -205,7 +205,38 @@ export const useCanvasStore = defineStore('canvas', () => {
         // ONLY restore if there are nodes.  An empty database should result
         // in an empty canvas state.
         if (state.nodes && state.nodes.length > 0) {
-          nodes.value = state.nodes;
+          // Apply coordinate migration to localStorage nodes
+          const migratedNodes = state.nodes.map(node => {
+            // Fix legacy negative Y coordinates and extreme X coordinates
+            const fixedY = node.y < 0 ? Math.max(node.y + 1000, 100) : node.y;
+            let fixedX = node.x;
+            
+            // Fix extreme X coordinates for left/right branch nodes
+            if (node.type === 'left-branch' && node.x < -500) {
+              fixedX = Math.max(node.x + 2000, 50);
+            } else if (node.type === 'right-branch' && node.x > 2000) {
+              fixedX = Math.min(node.x - 2000, 1500);
+            }
+            
+            if (node.y !== fixedY || node.x !== fixedX) {
+              console.log('[CanvasStore] Fixed localStorage extreme coordinates for node:', {
+                nodeId: node.id,
+                type: node.type,
+                originalX: node.x,
+                originalY: node.y,
+                fixedX: fixedX,
+                fixedY: fixedY
+              });
+            }
+            
+            return {
+              ...node,
+              x: fixedX,
+              y: fixedY
+            };
+          });
+          
+          nodes.value = migratedNodes;
           lastSavedWorkspaceId.value = state.lastSavedWorkspaceId;
           isOverviewMode.value = state.isOverviewMode ?? true; // Default to true if not present
         } else {
@@ -592,6 +623,47 @@ export const useCanvasStore = defineStore('canvas', () => {
         const parent = nodes.value.find(n => n.id === node.parentId);
         return { parent, child: node };
       });
+  });
+
+  // Branch indexing system - assigns sequential numbers starting from root (0)
+  const nodeIndices = computed(() => {
+    if (nodes.value.length === 0) return new Map();
+    
+    const indexMap = new Map<string, number>();
+    
+    // Find root node (node without parentId or type 'main')
+    const rootNode = nodes.value.find(n => !n.parentId || n.type === 'main');
+    if (!rootNode) return indexMap;
+    
+    // Breadth-first traversal to assign indices
+    const queue: { node: any, index: number }[] = [{ node: rootNode, index: 0 }];
+    let currentIndex = 0;
+    
+    while (queue.length > 0) {
+      const { node, index } = queue.shift()!;
+      indexMap.set(node.id, index);
+      
+      // Find all children of current node, sorted by creation time or position
+      const children = nodes.value
+        .filter(n => n.parentId === node.id)
+        .sort((a, b) => {
+          // Sort by branchMessageIndex first, then by x position, then by y position
+          if (a.branchMessageIndex !== b.branchMessageIndex) {
+            return (a.branchMessageIndex || 0) - (b.branchMessageIndex || 0);
+          }
+          if (a.x !== b.x) {
+            return a.x - b.x;
+          }
+          return a.y - b.y;
+        });
+      
+      // Add children to queue with sequential indices
+      children.forEach(child => {
+        queue.push({ node: child, index: ++currentIndex });
+      });
+    }
+    
+    return indexMap;
   });
 
   // Migration function: Convert parentId-based connections to new connection system
@@ -1787,18 +1859,25 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
-  const updateNodeDimensions = async (id: string, width: number, height: number) => {
+  const updateNodeDimensions = async (id: string, width: number | null, height: number | null) => {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
-      (node as any).customWidth = width;
-      (node as any).customHeight = height;
+      // Only update dimensions that are provided (non-null)
+      const updateData: any = {};
       
-      // Auto-save dimensions
-      if (chatStore.currentChatId) {
-        chatStore.autoSave(chatStore.currentChatId, id, { 
-          customWidth: width, 
-          customHeight: height 
-        });
+      if (width !== null) {
+        (node as any).customWidth = width;
+        updateData.customWidth = width;
+      }
+      
+      if (height !== null) {
+        (node as any).customHeight = height;
+        updateData.customHeight = height;
+      }
+      
+      // Auto-save dimensions (only save what was changed)
+      if (chatStore.currentChatId && Object.keys(updateData).length > 0) {
+        chatStore.autoSave(chatStore.currentChatId, id, updateData);
       }
     }
   };
@@ -1996,31 +2075,86 @@ export const useCanvasStore = defineStore('canvas', () => {
       const processNodes = (nodeData: any): Node[] => {
         // Check if nodeData is already a flat array (for compatibility)
         if (Array.isArray(nodeData)) {
-          return nodeData.map(node => ({
-            id: node.id,
-            type: node.type,
-            title: node.title,
-            x: node.x,
-            y: node.y,
-            parentId: node.parentId,
-            branchMessageIndex: node.branchMessageIndex,
-            messages: node.messages || [],
-            streamingContent: null,
-            modelParams: node.modelParams,
-            ...node.metadata
-          }));
+          return nodeData.map(node => {
+            // Fix legacy negative Y coordinates and extreme X coordinates
+            const fixedY = node.y < 0 ? Math.max(node.y + 1000, 100) : node.y;
+            let fixedX = node.x;
+            
+            // Fix extreme X coordinates for left/right branch nodes
+            if (node.type === 'left-branch' && node.x < -500) {
+              fixedX = Math.max(node.x + 2000, 50);
+            } else if (node.type === 'right-branch' && node.x > 2000) {
+              fixedX = Math.min(node.x - 2000, 1500);
+            }
+            
+            if (node.y !== fixedY || node.x !== fixedX) {
+              console.log('[CanvasStore] Fixed extreme coordinates for node:', {
+                nodeId: node.id,
+                type: node.type,
+                originalX: node.x,
+                originalY: node.y,
+                fixedX: fixedX,
+                fixedY: fixedY
+              });
+            }
+            
+            return {
+              id: node.id,
+              type: node.type,
+              title: node.title,
+              x: fixedX,
+              y: fixedY,
+              parentId: node.parentId,
+              branchMessageIndex: node.branchMessageIndex,
+              messages: node.messages || [],
+              streamingContent: null,
+              modelParams: node.modelParams,
+              ...node.metadata
+            };
+          });
         }
         
         // Handle hierarchical structure (single root node with children)
         const flattenNodes = (node: any): Node[] => {
           const children = node.children || [];
+          
+          // Fix legacy negative Y coordinates and extreme X coordinates
+          const fixedY = node.y < 0 ? Math.max(node.y + 1000, 100) : node.y;
+          let fixedX = node.x;
+          
+          // Fix extreme X coordinates for all nodes
+          if (node.x < -1000) {
+            // Move far-left nodes to reasonable position
+            fixedX = 50;
+          } else if (node.x > 3000) {
+            // Move far-right nodes to reasonable position
+            fixedX = 1500;
+          } else if (node.type === 'left-branch' && node.x > 900) {
+            // Left branches should be on the left side
+            fixedX = node.parentId ? -400 : node.x;
+          } else if (node.type === 'right-branch' && node.x < 100) {
+            // Right branches should be on the right side
+            fixedX = node.parentId ? 1200 : node.x;
+          }
+          
+          if (node.y !== fixedY || node.x !== fixedX) {
+            console.log('[CanvasStore] Fixed extreme coordinates for hierarchical node:', {
+              nodeId: node.id,
+              type: node.type,
+              originalX: node.x,
+              originalY: node.y,
+              fixedX: fixedX,
+              fixedY: fixedY
+            });
+          }
+          
           return [
             {
               id: node.id,
               type: node.type,
               title: node.title,
-              x: node.x,
-              y: node.y,
+              x: fixedX,
+              y: fixedY,
               parentId: node.parentId,
               branchMessageIndex: node.branchMessageIndex,
               messages: node.messages || [],
@@ -2060,6 +2194,10 @@ export const useCanvasStore = defineStore('canvas', () => {
 
       // Migrate connections after loading nodes
       migrateConnectionsToNewSystem();
+
+      // Emit event to notify canvas that workspace was loaded
+      console.log('[CanvasStore] Emitting workspace-loaded event for:', chatId, 'with', nodes.value.length, 'nodes');
+      emitter.emit('workspace-loaded', { chatId, nodeCount: nodes.value.length });
 
       return true;
     } catch (error) {
@@ -2335,6 +2473,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     nodeTopics,
     customApiUrl,
     connections,
+    nodeIndices,
     graphData,
     lastSavedWorkspaceId,
     isOverviewMode,

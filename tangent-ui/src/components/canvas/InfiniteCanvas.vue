@@ -97,9 +97,11 @@
 
       <!-- Detailed Workspace View (when a workspace is selected) -->
       <div v-if="!isWelcomeScreen && !isWorkspaceOverview" ref="canvasRef"
-        class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-pan-y"
+        class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-none"
         @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
-        @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" tabindex="0"
+        @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" 
+        @touchend="handleTouchEnd" @wheel="handleWheel" @gesturestart="handleGestureStart" 
+        @gesturechange="handleGestureChange" @gestureend="handleGestureEnd" tabindex="0"
         @keydown="handleKeyDown">
         
         <!-- Grid Layer (behind everything) -->
@@ -120,7 +122,7 @@
         />
 
         <!-- Canvas Transform Container -->
-        <div class="absolute transform-gpu" :style="transformStyle">
+        <div class="absolute transform-gpu" :style="transformStyle" style="z-index: 2;">
           <!-- SVG Layer for Connections and Drawing -->
           <svg class="absolute overflow-visible" style="z-index: 0;" :style="svgStyle">
             <defs>
@@ -357,7 +359,7 @@
             <!-- Original MainSplineConnector connections -->
             <template v-for="node in visibleNodes" :key="node.id">
               <MainSplineConnector
-                v-if="node.parentId && getParentNode(node.parentId)"
+                v-if="node.parentId && getParentNode(node.parentId) && !store.snappedNodeId"
                 :start-node="getParentNode(node.parentId)"
                 :end-node="node"
                 :zoom-level="zoom"
@@ -387,7 +389,7 @@
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 1">
             <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles text and media) -->
-              <BranchNode v-if="node.type === 'branch' || node.type === 'main' || node.type === 'media'" :node="node"
+              <BranchNode v-if="(node.type === 'branch' || node.type === 'main' || node.type === 'media') && (!store.snappedNodeId || store.snappedNodeId === node.id)" :node="node"
                 :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
@@ -401,7 +403,8 @@
                 @update-messages="(messages) => store.updateNodeMessages(node.id, messages)"
                 @connection-start="handleConnectionStart"
                 @connection-drag="handleConnectionDrag"
-                @connection-end="handleConnectionEnd" :style="{
+                @connection-end="handleConnectionEnd"
+                @reflectionSuggestionClick="handleReflectionSuggestionClick" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning
                     ? 'transform 0.3s ease-out'
@@ -409,7 +412,7 @@
                 }" />
 
               <!-- Web Node -->
-              <WebBranchNode v-else-if="node.type === 'web'" :node="node" :is-selected="isNodeFocused(node.id)"
+              <WebBranchNode v-else-if="node.type === 'web' && (!store.snappedNodeId || store.snappedNodeId === node.id)" :node="node" :is-selected="isNodeFocused(node.id)"
                 :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :modelType="modelType"
                 :zoom="zoom" :lod-level="getLODLevel(node.id)" :model-registry="modelRegistry"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
@@ -423,7 +426,7 @@
                 }" />
 
               <!-- Branch Node -->
-              <BranchNode v-else :node="node" :is-selected="isNodeFocused(node.id)"
+              <BranchNode v-else-if="!store.snappedNodeId || store.snappedNodeId === node.id" :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
@@ -434,10 +437,23 @@
                 @delete="() => handleNodeDelete(node.id)" @update-position="handleNodePositionUpdate"
                 @snap="handleNodeSnap" @unsnap="handleNodeUnsnap" @focus-input="handleFocusInput"
                 @expansion-change="handleNodeExpansionChange"
-                @update-messages="(messages) => store.updateNodeMessages(node.id, messages)" :style="{
+                @update-messages="(messages) => store.updateNodeMessages(node.id, messages)"
+                @reflectionSuggestionClick="handleReflectionSuggestionClick" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
                   transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
                 }" />
+
+              <!-- Branch Index Label -->
+              <BranchIndexLabel 
+                v-if="!store.snappedNodeId && store.nodeIndices.has(node.id)"
+                :node="node"
+                :node-index="store.nodeIndices.get(node.id)"
+                :zoom="zoom"
+                :style="{
+                  transform: `translate(${node.x}px, ${node.y}px)`,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
+                }"
+              />
             </template>
             
             <!-- Tool Call Nodes -->
@@ -501,7 +517,7 @@
 
     <!-- Bottom Docker -->
     <BottomDocker 
-      v-if="!isWelcomeScreen && !isWorkspaceOverview"
+      v-if="!isWelcomeScreen && !isWorkspaceOverview && !store.snappedNodeId"
       :curvature="curvature"
       :zoom="zoom"
       :pan-x="panX"
@@ -511,10 +527,12 @@
       :is-pan-mode="drawingStore.currentTool === 'hand'"
       :gesture-mode="gestureMode"
       :is-outside-bounds="isViewportOutsideBounds"
+      :is-arranging="isAutoArranging"
       @update:curvature="curvature = $event"
       @fit-to-view="autoFitNodes"
       @toggle-pan-mode="togglePanMode"
       @toggle-gesture-mode="toggleGestureMode"
+      @auto-arrange="handleAutoArrange"
     />
 
     <!-- Shape Properties Panel -->
@@ -537,6 +555,7 @@ import {
   PropType,
 } from "vue";
 import BranchNode from "./node/BranchNode.vue";
+import BranchIndexLabel from "./BranchIndexLabel.vue";
 import ToolCallNode from "./node/ToolCallNode.vue";
 import FileNode from "./node/FileNode.vue";
 import ExecutionNode from "./node/ExecutionNode.vue";
@@ -560,6 +579,7 @@ import type { ModelInfo } from '@/types/model';
 import { debounce } from 'lodash-es';
 import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download, Sparkles, Upload, ArrowRight } from "lucide-vue-next";
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
+import { autoArrangeService } from '@/services/autoArrangeService';
 
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
@@ -662,6 +682,11 @@ const props = defineProps({
     required: true,
     default: false,
   },
+  isWelcomeScreen: {
+    type: Boolean,
+    required: false,
+    default: true,
+  },
 });
 
 // Emits
@@ -670,6 +695,7 @@ const emit = defineEmits([
   "update:autoZoomEnabled",
   "update:isHeightLocked",
   "update:gestureMode",
+  "update:isWelcomeScreen",
   "workspace-opened",
   "snap",
   "unsnap",
@@ -728,6 +754,7 @@ const showFitButton = ref(false);
 
 const focusedTopicId = ref<string | null>(null);
 const isDraggingFile = ref(false);
+const isAutoArranging = ref(false);
 
 provide('performanceTestingActive', false);
 
@@ -839,7 +866,11 @@ const maxNodeCount = computed(() => {
 });
 
 
-const isWelcomeScreen = ref(true);
+// Use v-model for isWelcomeScreen to sync with parent App.vue
+const isWelcomeScreen = computed({
+  get: () => props.isWelcomeScreen,
+  set: (value) => emit("update:isWelcomeScreen", value),
+});
 const isWorkspaceOverview = ref(false);
 const expandingWorkspaceId = ref<string | null>(null);
 
@@ -1866,6 +1897,67 @@ const handleNodeDelete = async (nodeId: string) => {
   showNotification(`Deleted ${totalNodesToDelete} node${totalNodesToDelete === 1 ? '' : 's'} (Ctrl/Cmd+Z to undo)`);
 };
 
+// Auto-arrange nodes using clustering
+const handleAutoArrange = async () => {
+  if (isAutoArranging.value) return;
+  
+  try {
+    isAutoArranging.value = true;
+    
+    // Get current chat ID
+    const currentChatId = store.currentChatId;
+    if (!currentChatId) {
+      showNotification('No active workspace for auto-arrange');
+      return;
+    }
+    
+    // Calculate canvas bounds based on current viewport
+    const bounds = autoArrangeService.calculateCanvasBounds(
+      windowSize.value.width,
+      windowSize.value.height,
+      zoom.value
+    );
+    
+    // Call the auto-arrange service
+    const result = await autoArrangeService.autoArrangeNodes(currentChatId, {
+      method: 'kmeans', // Default to k-means clustering
+      canvas_bounds: bounds
+    });
+    
+    if (result.success && result.positions) {
+      // Enable transitions for smooth movement
+      store.isTransitioning = true;
+      
+      // Update node positions from clustering result
+      Object.entries(result.positions).forEach(([nodeId, position]) => {
+        store.updateNodePosition(nodeId, position);
+      });
+      
+      // Get cluster stats for notification
+      const stats = autoArrangeService.getClusterStats();
+      const message = stats 
+        ? `Arranged ${stats.totalNodes} nodes into ${stats.numClusters} clusters`
+        : 'Nodes auto-arranged successfully';
+      
+      showNotification(message);
+      
+      // Fit to view after arranging
+      setTimeout(() => {
+        autoFitNodes();
+        store.isTransitioning = false;
+      }, 500);
+      
+    } else {
+      showNotification(`Auto-arrange failed: ${result.error || 'Unknown error'}`);
+    }
+    
+  } catch (error) {
+    console.error('Error in auto-arrange:', error);
+    showNotification('Auto-arrange failed due to an error');
+  } finally {
+    isAutoArranging.value = false;
+  }
+};
 
 // Create new workspace - now goes to welcome screen
 const handleNewWorkspace = async () => {
@@ -2072,6 +2164,23 @@ const handleFocusInput = ({ nodeId }) => {
   panX.value = canvasCenterX - (inputCenterX - canvasRect.left) * targetZoom;
   panY.value = canvasCenterY - (inputCenterY - canvasRect.top) * targetZoom;
   zoom.value = targetZoom;
+};
+
+// Handle reflection suggestions from BranchNode
+const handleReflectionSuggestionClick = (suggestion: any) => {
+  // Find the SnappedNodeRightSidebar component and call its openReflectionModal method
+  const rightSidebar = document.querySelector('.snapped-sidebar.right-sidebar');
+  if (rightSidebar) {
+    // Find the Vue component instance - this is a simplified approach
+    // In a more robust implementation, we'd use refs or store communication
+    console.log('Opening reflection modal with suggestion:', suggestion);
+    
+    // For now, we'll store it and let the sidebar pick it up
+    // This could be improved with proper store management
+    if (window.__reflectionSidebarHandler) {
+      window.__reflectionSidebarHandler(suggestion);
+    }
+  }
 };
 
 // Workspace drag handling
@@ -2584,13 +2693,9 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
     expandedNodes.value = new Set(store.nodes.map(node => node.id));
     await nextTick();
 
-    // Check for auto-snapping after workspace loads
-    const autoSnapped = checkAndAutoSnapSingleBranch();
+    // Auto-snap will be handled by the 'workspace-loaded' event listener
+    // to avoid duplicate calls
     
-    // Auto-fit nodes if we didn't auto-snap
-    if (!autoSnapped) {
-      autoFitNodes();
-    }
     return;
   }
 
@@ -3249,7 +3354,19 @@ const createTemplateWorkspace = async (nodes, connections, mainNode) => {
     const mainX = mainNode ? mainNode.x : 0;
     const mainY = mainNode ? mainNode.y : 0;
     const startX = mainX + 800; // Start well to the right of main node
-    const startY = mainY - (Math.ceil(nodes.length / cols) * nodeSpacing) / 2; // Center vertically around main node
+    // Ensure nodes are positioned below the main node with positive Y coordinates
+    const totalHeight = Math.ceil(nodes.length / cols) * nodeSpacing;
+    const startY = Math.max(mainY - totalHeight / 2, 100); // Never go below Y=100
+    
+    console.log('[InfiniteCanvas] Multi-node layout calculation:', {
+      mainNode: { x: mainX, y: mainY },
+      nodeCount: nodes.length,
+      cols,
+      nodeSpacing,
+      totalHeight,
+      calculatedStartY: mainY - totalHeight / 2,
+      adjustedStartY: startY
+    })
     
     for (const [index, nodeData] of nodes.entries()) {
       const row = Math.floor(index / cols);
@@ -3325,7 +3442,10 @@ const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 80
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
-  store.isTransitioning = true;
+  // FIX: Do not enable CSS transitions for this manual, frame-by-frame animation.
+  // The 'isTransitioning' flag enables a 'transition' property in CSS, which
+  // conflicts with the requestAnimationFrame loop.
+  // store.isTransitioning = true; // REMOVED
   const bounds = calculateNodeBounds(node);
   const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
   const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
@@ -3384,7 +3504,7 @@ const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 80
         panX.value = targetScreenX - endWorldX * targetZoom;
         panY.value = targetScreenY - endWorldY * targetZoom;
 
-        store.isTransitioning = false;
+        // store.isTransitioning = false; // REMOVED
         resolve();
       }
     };
@@ -3425,23 +3545,33 @@ const centerOnNode = (nodeId) => {
 };
 
 // Check if workspace has only one branch node and auto-snap it
+let autoSnapInProgress = false;
 const checkAndAutoSnapSingleBranch = () => {
+  if (autoSnapInProgress) {
+    console.log('[InfiniteCanvas] Auto-snap already in progress, skipping');
+    return false;
+  }
+  
   console.log('[InfiniteCanvas] Checking for auto-snap condition');
+  autoSnapInProgress = true;
 
   if (!store.nodes || store.nodes.length === 0) {
     console.log('[InfiniteCanvas] No nodes found, skipping auto-snap');
+    autoSnapInProgress = false;
     return false;
   }
 
   // Don't auto-snap if something is already snapped
   if (store.snappedNodeId) {
     console.log('[InfiniteCanvas] Node already snapped, skipping auto-snap:', store.snappedNodeId);
+    autoSnapInProgress = false;
     return false;
   }
 
   // Don't auto-snap if we're in overview mode
   if (isWorkspaceOverview.value) {
     console.log('[InfiniteCanvas] In overview mode, skipping auto-snap');
+    autoSnapInProgress = false;
     return false;
   }
 
@@ -3450,23 +3580,30 @@ const checkAndAutoSnapSingleBranch = () => {
     nodeTypes: store.nodes.map(n => ({ id: n.id, type: n.type, parentId: n.parentId }))
   });
 
-  // Auto-snap if there's exactly one node total (only the main node)
+  // Only auto-snap if there's exactly one node total
   if (store.nodes.length === 1 && store.nodes[0].type === 'main') {
     const mainNode = store.nodes[0];
     console.log('[InfiniteCanvas] Auto-snapping single main node:', mainNode.id);
 
-    // Use nextTick to ensure DOM is ready before snapping
     nextTick(() => {
       setTimeout(() => {
-        // Tell the BranchNode to toggle snap using event bus
         emitter.emit('auto-snap-node', { nodeId: mainNode.id });
-      }, 500); // Small delay to ensure workspace transition is complete
+        autoSnapInProgress = false;
+      }, 500);
     });
 
     return true;
   }
 
+  // For multi-node workspaces, don't auto-snap
+  if (store.nodes.length > 1) {
+    console.log('[InfiniteCanvas] Multi-node workspace loaded, no auto-snap');
+    autoSnapInProgress = false;
+    return false; // Return false so other positioning logic can handle it
+  }
+
   console.log('[InfiniteCanvas] Auto-snap condition not met - found', store.nodes.length, 'total nodes');
+  autoSnapInProgress = false;
   return false;
 };
 
@@ -3935,6 +4072,28 @@ const handleTouchStart = (e: TouchEvent) => {
   }
 };
 
+const handleTouchEnd = (e: TouchEvent) => {
+  e.preventDefault();
+  isPanning.value = false;
+  lastPanPosition.value.lastDistance = null;
+};
+
+// Prevent browser navigation gestures (macOS trackpad swipes)
+const handleGestureStart = (e: any) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+
+const handleGestureChange = (e: any) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+
+const handleGestureEnd = (e: any) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+
 // Find closest node in a direction
 const findClosestNodeInDirection = (currentNode, direction) => {
   const currentCenter = getNodeCenter(currentNode);
@@ -4308,19 +4467,32 @@ const autoFitNodes = () => {
   // Adjust for RTS perspective - account for vertical compression
   const adjustedContentHeight = contentHeight * RTS_SCALE_Y;
 
-  const scaleX = rect.width / contentWidth;
+  // Reduce available width when right content panel is open (36vw panel)
+  const availableWidth = appStore.isRightContentPanelOpen 
+    ? rect.width * 0.64  // Use 64% of width (100% - 36% panel)
+    : rect.width;
+
+  const scaleX = availableWidth / contentWidth;
   const scaleY = rect.height / adjustedContentHeight;
 
   const newZoom = Math.min(scaleX, scaleY, 1);
-
+  
+  // Calculate content center position
   const centerX = (bounds.minX + bounds.maxX) / 2;
   const centerY = (bounds.minY + bounds.maxY) / 2;
+  
+  // Calculate target center position on screen
+  let targetCenterX = rect.width / 2;
+  if (appStore.isRightContentPanelOpen) {
+    // Center in the available 64% space (32% of total viewport width from left edge)
+    targetCenterX = rect.width * 0.32; // 64% / 2 = 32%
+  }
 
   isAutoZooming.value = true;
   store.isTransitioning = true;
 
   zoom.value = newZoom;
-  panX.value = rect.width / 2 - centerX * newZoom;
+  panX.value = targetCenterX - centerX * newZoom;
   panY.value = rect.height / 2 - centerY * newZoom;
 
   setTimeout(() => {
@@ -4830,6 +5002,98 @@ const isConnectionActive = (parentId, childId) => {
   return true;
 };
 
+// Canvas zoom entry animation for smooth transition from welcome screen
+const startCanvasZoomEntryAnimation = async () => {
+  if (!store.nodes || store.nodes.length === 0) return;
+  
+  console.log('[InfiniteCanvas] Starting canvas zoom entry animation');
+  
+  // Calculate bounds of all nodes
+  const padding = 100;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  store.nodes.forEach(node => {
+    const nodeWidth = 400; // Approximate node width
+    const nodeHeight = 300; // Approximate node height
+    
+    minX = Math.min(minX, node.x - nodeWidth / 2);
+    maxX = Math.max(maxX, node.x + nodeWidth / 2);
+    minY = Math.min(minY, node.y - nodeHeight / 2);
+    maxY = Math.max(maxY, node.y + nodeHeight / 2);
+  });
+  
+  // Calculate optimal zoom and center position
+  const sidePanelWidth = props.sidePanelOpen ? windowSize.value.width * 0.5 : 0;
+  const containerWidth = windowSize.value.width - sidePanelWidth;
+  const containerHeight = windowSize.value.height;
+  
+  const contentWidth = maxX - minX + padding * 2;
+  const contentHeight = maxY - minY + padding * 2;
+  
+  const optimalZoom = Math.min(
+    containerWidth / contentWidth,
+    containerHeight / contentHeight,
+    1.0 // Don't zoom in beyond 100%
+  );
+  
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  
+  // Start animation from maximum zoom at center
+  const startZoom = 3.0; // Start very zoomed in
+  const startX = centerX;
+  const startY = centerY;
+  
+  // Set initial state
+  viewport.value.zoom = startZoom;
+  viewport.value.x = -startX * startZoom + containerWidth / 2;
+  viewport.value.y = -startY * startZoom + containerHeight / 2;
+  
+  // Calculate target position
+  const targetX = -centerX * optimalZoom + containerWidth / 2;
+  const targetY = -centerY * optimalZoom + containerHeight / 2;
+  
+  // Animate to optimal zoom and position
+  const duration = 1500; // 1.5 seconds
+  const startTime = Date.now();
+  
+  const easeOutExpo = (t: number): number => {
+    return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  };
+  
+  const animate = () => {
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const easedProgress = easeOutExpo(progress);
+    
+    // Interpolate zoom and position
+    viewport.value.zoom = startZoom + (optimalZoom - startZoom) * easedProgress;
+    viewport.value.x = viewport.value.x + (targetX - viewport.value.x) * easedProgress * 0.1;
+    viewport.value.y = viewport.value.y + (targetY - viewport.value.y) * easedProgress * 0.1;
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Final position
+      viewport.value.zoom = optimalZoom;
+      viewport.value.x = targetX;
+      viewport.value.y = targetY;
+      
+      console.log('[InfiniteCanvas] Zoom entry animation completed');
+      
+      // Try auto-snap after animation completes
+      setTimeout(() => {
+        const autoSnapped = checkAndAutoSnapSingleBranch();
+        if (!autoSnapped && store.nodes.length > 0) {
+          // Animation already positioned optimally, no need for additional auto-fit
+        }
+      }, 100);
+    }
+  };
+  
+  requestAnimationFrame(animate);
+};
+
 // Listen for external workspace loads (from WorkspaceMenu, etc.)
 emitter.on('workspace-loaded-external', () => {
   console.log('[InfiniteCanvas] External workspace load detected, checking auto-snap');
@@ -4838,6 +5102,37 @@ emitter.on('workspace-loaded-external', () => {
       checkAndAutoSnapSingleBranch();
     }, 100); // Small delay to ensure nodes are loaded
   });
+});
+
+// Listen for workspace loads from canvas store (from ChatHistoryFeature, etc.)
+emitter.on('workspace-loaded', (data: { chatId: string; nodeCount: number }) => {
+  console.log(`[InfiniteCanvas] Workspace loaded from store: ${data.chatId} (${data.nodeCount} nodes)`);
+  
+  // Only transition if we're still on welcome screen (avoid double transitions)
+  if (isWelcomeScreen.value) {
+    console.log(`[InfiniteCanvas] Transitioning from welcome screen with zoom animation`);
+    isWelcomeScreen.value = false;
+    
+    // Start canvas zoom entry animation
+    nextTick(() => {
+      setTimeout(() => {
+        startCanvasZoomEntryAnimation();
+      }, 300); // Start zoom animation while exit animation is happening
+    });
+  } else {
+    // Normal workspace loading without zoom animation
+    nextTick(() => {
+      setTimeout(() => {
+        const autoSnapped = checkAndAutoSnapSingleBranch();
+        console.log(`[InfiniteCanvas] Auto-snap result: ${autoSnapped}`);
+        
+        // Auto-fit nodes if we didn't auto-snap
+        if (!autoSnapped && store.nodes.length > 0) {
+          autoFitNodes();
+        }
+      }, 100);
+    });
+  }
 });
 
 // Listen for node detach/attach events
@@ -5535,6 +5830,17 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
 </script>
 
 <style scoped>
+/* Prevent browser navigation gestures */
+.enhanced-infinite-canvas {
+  touch-action: none;
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
+  -webkit-overscroll-behavior: none;
+  -webkit-overscroll-behavior-x: none;
+  -webkit-overscroll-behavior-y: none;
+}
+
 /* Onboarding drag state */
 .onboarding-drag-active {
   background: oklch(from oklch(var(--p)) l c h / 0.05) !important;
@@ -5578,7 +5884,7 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
 /* Container Styles - Theme Aware Background */
 .canvas-background {
   /* Default seamless gradient background matching GridWorkspaceView */
-  background: linear-gradient(135deg,
+  background: linear-gradient(180deg,
       oklch(var(--b1)),
       oklch(var(--b1)),
       oklch(from oklch(var(--b2)) l c h / 0.3));
@@ -6010,11 +6316,171 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
   @apply absolute overflow-hidden;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, 
+  background: linear-gradient(180deg, 
     oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
-    oklch(from oklch(var(--b2)) l c h / 0.95) 100%);
+    oklch(from oklch(var(--p)) l c h / 0.95) 100%);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
               background 0.3s ease;
+  position: relative;
+}
+
+/* Theme-adaptive dotted grid background with gradient-aware contrast */
+.enhanced-infinite-canvas::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Create adaptive dots using mix-blend-mode for better contrast */
+  background-image: radial-gradient(circle at 1px 1px, currentColor 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: 0 0;
+  pointer-events: none;
+  z-index: 1;
+  /* Use mix-blend-mode for automatic contrast */
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  color: oklch(50% 0 0);
+}
+
+/* Enhanced contrast for specific themes */
+.enhanced-infinite-canvas::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Additional layer for better visibility */
+  background-image: 
+    radial-gradient(circle at 1px 1px, 
+      oklch(from oklch(var(--bc)) calc(l * 0.5) c h / 0.15) 1px, 
+      transparent 1px);
+  background-size: 20px 20px;
+  background-position: 10px 10px;
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: multiply;
+}
+
+/* Light themes - enhanced contrast dots */
+.theme-light .enhanced-infinite-canvas::before,
+.theme-cupcake .enhanced-infinite-canvas::before,
+.theme-bumblebee .enhanced-infinite-canvas::before,
+.theme-emerald .enhanced-infinite-canvas::before,
+.theme-corporate .enhanced-infinite-canvas::before,
+.theme-garden .enhanced-infinite-canvas::before,
+.theme-lofi .enhanced-infinite-canvas::before,
+.theme-pastel .enhanced-infinite-canvas::before,
+.theme-fantasy .enhanced-infinite-canvas::before,
+.theme-wireframe .enhanced-infinite-canvas::before,
+.theme-cmyk .enhanced-infinite-canvas::before,
+.theme-autumn .enhanced-infinite-canvas::before,
+.theme-valentine .enhanced-infinite-canvas::before,
+.theme-retro .enhanced-infinite-canvas::before,
+.theme-cyberpunk .enhanced-infinite-canvas::before,
+.theme-lemonade .enhanced-infinite-canvas::before,
+.theme-winter .enhanced-infinite-canvas::before,
+.theme-watermelon .enhanced-infinite-canvas::before {
+  color: oklch(20% 0 0);
+  opacity: 0.6;
+}
+
+.theme-light .enhanced-infinite-canvas::after,
+.theme-cupcake .enhanced-infinite-canvas::after,
+.theme-bumblebee .enhanced-infinite-canvas::after,
+.theme-emerald .enhanced-infinite-canvas::after,
+.theme-corporate .enhanced-infinite-canvas::after,
+.theme-garden .enhanced-infinite-canvas::after,
+.theme-lofi .enhanced-infinite-canvas::after,
+.theme-pastel .enhanced-infinite-canvas::after,
+.theme-fantasy .enhanced-infinite-canvas::after,
+.theme-wireframe .enhanced-infinite-canvas::after,
+.theme-cmyk .enhanced-infinite-canvas::after,
+.theme-autumn .enhanced-infinite-canvas::after,
+.theme-valentine .enhanced-infinite-canvas::after,
+.theme-retro .enhanced-infinite-canvas::after,
+.theme-cyberpunk .enhanced-infinite-canvas::after,
+.theme-lemonade .enhanced-infinite-canvas::after,
+.theme-winter .enhanced-infinite-canvas::after,
+.theme-watermelon .enhanced-infinite-canvas::after {
+  mix-blend-mode: multiply;
+  opacity: 0.3;
+}
+
+/* Override canvas background for watermelon theme */
+.theme-watermelon .enhanced-infinite-canvas {
+  background: linear-gradient(180deg, 
+    color-mix(in srgb, #FF1493 20%, transparent) 0%, 
+    color-mix(in srgb, #00CC66 25%, transparent) 100%) !important;
+}
+
+/* Special adjustments for high-contrast themes */
+.theme-cyberpunk .enhanced-infinite-canvas::before {
+  color: oklch(10% 0 0);
+  opacity: 0.8;
+}
+
+.theme-synthwave .enhanced-infinite-canvas::before,
+.theme-halloween .enhanced-infinite-canvas::before {
+  color: oklch(90% 0 0);
+  opacity: 0.5;
+}
+
+/* Ensure dots are visible on gradient backgrounds */
+@supports (background: oklch(from red l c h)) {
+  .enhanced-infinite-canvas::before {
+    background-image: 
+      radial-gradient(circle at 1px 1px, 
+        oklch(from oklch(var(--bc)) calc(50% + (l - 50%) * -0.5) c h / 0.4) 1px, 
+        transparent 1px);
+    mix-blend-mode: normal;
+    opacity: 1;
+  }
+  
+  .enhanced-infinite-canvas::after {
+    display: none;
+  }
+}
+
+/* Dark themes - enhanced contrast dots */
+.theme-dark .enhanced-infinite-canvas::before,
+.theme-synthwave .enhanced-infinite-canvas::before,
+.theme-halloween .enhanced-infinite-canvas::before,
+.theme-forest .enhanced-infinite-canvas::before,
+.theme-aqua .enhanced-infinite-canvas::before,
+.theme-black .enhanced-infinite-canvas::before,
+.theme-luxury .enhanced-infinite-canvas::before,
+.theme-dracula .enhanced-infinite-canvas::before,
+.theme-business .enhanced-infinite-canvas::before,
+.theme-acid .enhanced-infinite-canvas::before,
+.theme-night .enhanced-infinite-canvas::before,
+.theme-coffee .enhanced-infinite-canvas::before,
+.theme-dim .enhanced-infinite-canvas::before,
+.theme-nord .enhanced-infinite-canvas::before,
+.theme-sunset .enhanced-infinite-canvas::before {
+  color: oklch(80% 0 0);
+  opacity: 0.4;
+}
+
+.theme-dark .enhanced-infinite-canvas::after,
+.theme-synthwave .enhanced-infinite-canvas::after,
+.theme-halloween .enhanced-infinite-canvas::after,
+.theme-forest .enhanced-infinite-canvas::after,
+.theme-aqua .enhanced-infinite-canvas::after,
+.theme-black .enhanced-infinite-canvas::after,
+.theme-luxury .enhanced-infinite-canvas::after,
+.theme-dracula .enhanced-infinite-canvas::after,
+.theme-business .enhanced-infinite-canvas::after,
+.theme-acid .enhanced-infinite-canvas::after,
+.theme-night .enhanced-infinite-canvas::after,
+.theme-coffee .enhanced-infinite-canvas::after,
+.theme-dim .enhanced-infinite-canvas::after,
+.theme-nord .enhanced-infinite-canvas::after,
+.theme-sunset .enhanced-infinite-canvas::after {
+  mix-blend-mode: screen;
+  opacity: 0.2;
 }
 
 .enhanced-infinite-canvas.drag-over {

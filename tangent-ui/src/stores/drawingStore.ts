@@ -546,7 +546,7 @@ export const useDrawingStore = defineStore('drawing', () => {
       const lastPoint = shape.points[shape.points.length - 1];
       const isClosedShape = Math.sqrt(
         Math.pow(firstPoint.x - lastPoint.x, 2) + Math.pow(firstPoint.y - lastPoint.y, 2)
-      ) < 50; // Within 50 pixels is considered "closed"
+      ) < 100; // Within 100 pixels is considered "closed" - more lenient for hand-drawn shapes
       
       console.log('Shape closed check:', isClosedShape, 'Distance:', Math.sqrt(
         Math.pow(firstPoint.x - lastPoint.x, 2) + Math.pow(firstPoint.y - lastPoint.y, 2)
@@ -622,8 +622,108 @@ export const useDrawingStore = defineStore('drawing', () => {
       return true;
     }
     
+    // If no single closed shape found, try combining nearby pen strokes
+    console.log('No single closed shape found, trying to combine nearby strokes...');
+    
+    // Create a virtual canvas to render all pen strokes and detect enclosed areas
+    const virtualCanvas = document.createElement('canvas');
+    virtualCanvas.width = canvasElement.width || 2000;
+    virtualCanvas.height = canvasElement.height || 2000;
+    const ctx = virtualCanvas.getContext('2d');
+    
+    if (ctx) {
+      // Draw all pen strokes with thick lines to help connect gaps
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 5; // Thicker lines to bridge small gaps
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      penShapes.forEach(shape => {
+        if (!shape.points || shape.points.length < 2) return;
+        
+        ctx.beginPath();
+        ctx.moveTo(shape.points[0].x, shape.points[0].y);
+        
+        for (let i = 1; i < shape.points.length; i++) {
+          ctx.lineTo(shape.points[i].x, shape.points[i].y);
+        }
+        
+        ctx.stroke();
+      });
+      
+      // Check if the click point is in an enclosed area using flood fill
+      const imageData = ctx.getImageData(0, 0, virtualCanvas.width, virtualCanvas.height);
+      const clickIndex = (Math.floor(clickY) * virtualCanvas.width + Math.floor(clickX)) * 4;
+      
+      // If clicking on a line, no fill
+      if (imageData.data[clickIndex + 3] > 0) {
+        console.log('Clicked on a line, cannot fill');
+        return false;
+      }
+      
+      // Perform flood fill to find enclosed area
+      const filledPixels = floodFillArea(Math.floor(clickX), Math.floor(clickY), imageData, virtualCanvas.width, virtualCanvas.height);
+      
+      if (filledPixels.length > 50 && filledPixels.length < 500000) { // Reasonable area size
+        // Create a path from the filled area
+        const pathData = createPathFromPixels(filledPixels);
+        
+        const fillShape: DrawingShape = {
+          id: `fill-${Date.now()}-${Math.random()}`,
+          type: 'fill',
+          x: clickX,
+          y: clickY,
+          strokeColor: 'transparent',
+          fillColor: fillColor.value,
+          strokeWidth: 0,
+          opacity: opacity.value,
+          rotation: 0,
+          isSelected: false,
+          isLocked: false,
+          zIndex: shapes.value.length,
+          fillPath: pathData
+        };
+        
+        shapes.value.push(fillShape);
+        saveToHistory();
+        console.log('Created fill shape from combined strokes');
+        return true;
+      }
+    }
+    
     console.log('No suitable area found for filling');
     return false;
+  };
+  
+  // Helper function to perform flood fill and return filled pixels
+  const floodFillArea = (startX: number, startY: number, imageData: ImageData, width: number, height: number): { x: number; y: number }[] => {
+    const pixels = imageData.data;
+    const filledPixels: { x: number; y: number }[] = [];
+    const visited = new Set<string>();
+    const stack: [number, number][] = [[startX, startY]];
+    
+    while (stack.length > 0 && filledPixels.length < 500000) { // Prevent hanging on large areas
+      const [x, y] = stack.pop()!;
+      const key = `${x},${y}`;
+      
+      if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
+        continue;
+      }
+      
+      visited.add(key);
+      
+      const index = (y * width + x) * 4;
+      if (pixels[index + 3] > 0) { // Hit a boundary
+        continue;
+      }
+      
+      filledPixels.push({ x, y });
+      
+      // Add 4-connected neighbors
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+    
+    return filledPixels;
   };
 
   // Point-in-polygon test using ray casting algorithm

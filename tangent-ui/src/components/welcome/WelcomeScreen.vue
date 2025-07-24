@@ -2,6 +2,37 @@
   <div class="welcome-screen" :class="['theme-' + currentTheme, { 'drag-over': isDragOver }]"
     :style="[dynamicThemeStyles, welcomeScreenStyles]" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragOver"
     @dragleave.prevent="handleDragLeave" @drop.prevent="handleDrop">
+    
+    
+    <!-- Flowing Aurora Background -->
+    <div class="aurora-canvas">
+      <div class="aurora-layer aurora-layer-1"></div>
+      <div class="aurora-layer aurora-layer-2"></div>
+      <div class="aurora-layer aurora-layer-3"></div>
+      <div class="floating-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div class="orb orb-4"></div>
+      </div>
+      <!-- Floating Particles -->
+      <div class="particle-field">
+        <div class="particle particle-1"></div>
+        <div class="particle particle-2"></div>
+        <div class="particle particle-3"></div>
+        <div class="particle particle-4"></div>
+        <div class="particle particle-5"></div>
+        <div class="particle particle-6"></div>
+        <div class="particle particle-7"></div>
+        <div class="particle particle-8"></div>
+      </div>
+      <!-- Breathing Lights -->
+      <div class="breathing-lights">
+        <div class="breath-light breath-light-1"></div>
+        <div class="breath-light breath-light-2"></div>
+        <div class="breath-light breath-light-3"></div>
+      </div>
+    </div>
 
     <!-- Scrolling Layout Container -->
     <div class="scroll-container" ref="scrollContainer">
@@ -26,29 +57,37 @@
           <!-- Main Input Section -->
           <div class="input-section" :class="{ 'collapsed': isExpanded }">
             <!-- Claude Code Corner Label (outside container) -->
-            <div v-if="isClaudeCodeMode" class="claude-code-label">
-              <span class="text-xs font-semibold tracking-wider">CLAUDE CODE</span>
-            </div>
+            <Transition name="claude-label">
+              <div v-if="isClaudeCodeMode" class="claude-code-label">
+                <span class="text-xs font-semibold tracking-wider">CLAUDE CODE</span>
+              </div>
+            </Transition>
 
-            <div class="input-container" :class="{ 'claude-code-mode': isClaudeCodeMode, 'animate-entrance': true }">
-
-              <textarea v-model="userInput" ref="inputRef" class="main-input"
+            <div class="input-container" :class="{ 
+              'claude-code-mode': isClaudeCodeMode, 
+              'focused': isFocused,
+              'has-content': userInput.trim() !== ''
+            }">
+              <div class="input-wrapper">
+                <textarea v-model="userInput" ref="inputRef" class="main-input"
                 :placeholder="isClaudeCodeMode ? 'Describe your task or goal...' : 'What would you like to explore or work on today?'"
                 :rows="inputRows" @input="handleInputChange" @keydown="handleKeyDown" @focus="handleInputFocus"
                 @blur="handleInputBlur" />
               
 
               <!-- Claude Code Settings Panel (just tools) -->
-              <div v-if="isClaudeCodeMode" class="claude-code-settings">
-                <div class="tools-section">
-                  <div class="tools-compact">
-                    <label v-for="(enabled, tool) in claudeCodeSettings.tools" :key="tool" class="tool-toggle-compact">
-                      <input type="checkbox" v-model="claudeCodeSettings.tools[tool]" class="checkbox checkbox-xs" />
-                      <span class="tool-name-compact">{{ tool }}</span>
-                    </label>
+              <Transition name="claude-settings">
+                <div v-if="isClaudeCodeMode" class="claude-code-settings">
+                  <div class="tools-section">
+                    <div class="tools-compact">
+                      <label v-for="(enabled, tool) in claudeCodeSettings.tools" :key="tool" class="tool-toggle-compact">
+                        <input type="checkbox" v-model="claudeCodeSettings.tools[tool]" class="checkbox checkbox-xs" />
+                        <span class="tool-name-compact">{{ tool }}</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Transition>
 
               <div class="input-footer">
                 <div class="input-tools">
@@ -63,29 +102,28 @@
                     :class="{ 'active': isClaudeCodeMode }">
                     <Terminal :size="16" />
                   </button>
-                  <button @click="isExpanded = !isExpanded" class="tool-btn" title="Browse templates"
-                    :class="{ 'active': isExpanded }">
-                    <Search :size="16" />
-                  </button>
+                  <!-- Browse templates button removed -->
                 </div>
 
                 <!-- Claude Code Config Controls -->
-                <div v-if="isClaudeCodeMode" class="claude-config-controls">
-                  <div class="config-item">
-                    <span class="config-label">Dir:</span>
-                    <input type="text" v-model="claudeCodeSettings.workingDir" class="setting-input-compact"
-                      placeholder="/project/path" />
+                <Transition name="claude-controls">
+                  <div v-if="isClaudeCodeMode" class="claude-config-controls">
+                    <div class="config-item">
+                      <span class="config-label">Dir:</span>
+                      <input type="text" v-model="claudeCodeSettings.workingDir" class="setting-input-compact"
+                        placeholder="/project/path" />
+                    </div>
+                    <label class="toggle-compact">
+                      <input type="checkbox" v-model="claudeCodeSettings.autoSave" class="checkbox checkbox-xs" />
+                      <span>Auto-save</span>
+                    </label>
+                    <select v-model="claudeCodeSettings.permissions" class="select-compact">
+                      <option value="auto-allow">Auto-allow</option>
+                      <option value="prompt">Prompt</option>
+                      <option value="manual">Manual</option>
+                    </select>
                   </div>
-                  <label class="toggle-compact">
-                    <input type="checkbox" v-model="claudeCodeSettings.autoSave" class="checkbox checkbox-xs" />
-                    <span>Auto-save</span>
-                  </label>
-                  <select v-model="claudeCodeSettings.permissions" class="select-compact">
-                    <option value="auto-allow">Auto-allow</option>
-                    <option value="prompt">Prompt</option>
-                    <option value="manual">Manual</option>
-                  </select>
-                </div>
+                </Transition>
 
                 <button @click="generateWorkspace" :disabled="!userInput.trim() || isGenerating" class="generate-btn"
                   :class="{ 'claude-code-btn': isClaudeCodeMode }">
@@ -93,6 +131,7 @@
                   <span v-else>{{ isClaudeCodeMode ? 'Begin' : 'Generate' }}</span>
                   <ArrowRight :size="16" />
                 </button>
+              </div>
               </div>
             </div>
           </div>
@@ -135,7 +174,7 @@
               </div>
 
               <!-- Normal Templates Grid -->
-              <div v-else class="templates-container"
+              <div class="templates-container"
                 @mouseenter="activateTemplatesUnderline" @mouseleave="deactivateTemplatesUnderline">
                 <div class="templates-grid">
                   <div v-for="template in featuredTemplates.slice(0, maxTemplatesCount)" :key="template.id"
@@ -157,9 +196,18 @@
                 <span class="hover-underline" ref="workspacesTitle">workspaces:</span>
               </h2>
 
+              <!-- Workspace Search Bar -->
+              <div v-if="recentWorkspaces.length > 4" class="workspace-search-wrapper">
+                <WorkspaceSearchBar
+                  v-model="workspaceSearchQuery"
+                  :side-panel-open="false"
+                  :right-panel-open="false"
+                  :rag-panel-open="false"
+                />
+              </div>
               <div class="recent-grid"
                 @mouseenter="activateWorkspacesUnderline" @mouseleave="deactivateWorkspacesUnderline">
-                <div v-for="workspace in recentWorkspaces.slice(0, maxWorkspacesCount)" :key="workspace.id"
+                <div v-for="workspace in filteredWorkspaces.slice(0, maxWorkspacesCount)" :key="workspace.id"
                   @click="$emit('open-workspace', workspace.id)" class="recent-card">
                   <div class="recent-preview">
                     <div class="workspace-nodes">
@@ -176,16 +224,7 @@
             </div>
           </div>
 
-          <div class="template-actions" v-if="!isExpanded">
-            <button @click="expandTemplates" class="secondary-btn">
-              <Grid :size="16" />
-              Browse All Templates
-            </button>
-            <button @click="$emit('import-workspace')" class="secondary-btn">
-              <Upload :size="16" />
-              Import Existing
-            </button>
-          </div>
+          <!-- Template actions removed -->
         </div>
       </section>
 
@@ -238,13 +277,16 @@ import {
   Music,
   Home,
   Map,
-  DollarSign
+  DollarSign,
 } from 'lucide-vue-next'
 
 import SubscriptionPlans from '@/components/subscription/SubscriptionPlans.vue'
+import WorkspaceSearchBar from '@/components/workspace/WorkspaceSearchBar.vue'
 import { useThemeStore } from '@/stores/themeStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useUserStore } from '@/stores/userStore'
+import { useAppStore } from '@/stores/appStore'
+import emitter from '@/utils/eventBus'
 
 // Props & Emits
 // Props
@@ -269,6 +311,7 @@ const emit = defineEmits<{
 const themeStore = useThemeStore()
 const chatStore = useChatStore()
 const userStore = useUserStore()
+const appStore = useAppStore()
 
 // Reactive state
 const userInput = ref('')
@@ -285,6 +328,7 @@ const selectedCategory = ref('All')
 const isExpanded = ref(false)
 const isFocused = ref(false)
 const isDragOver = ref(false)
+const isExitingToWorkspace = ref(false)
 const isDragActive = ref(false)
 
 // Templates browser refs and state
@@ -347,27 +391,13 @@ const welcomeScreenStyles = computed(() => {
   let leftOffset = 0;
   let rightOffset = 0;
   
-  // Left sidebar offset
-  if (props.sidePanelOpen === true) {
-    leftOffset = 260; // Left sidebar expanded width
-  } else {
-    leftOffset = 60; // Left sidebar collapsed width
-  }
-  
-  // Right sidebar offset
+  // Account for feature panel when it's open
   if (props.rightPanelOpen === true) {
-    // Right content panel is open - account for both content panel AND sidebar
-    const contentPanelWidth = vw * 0.35;
-    const sidebarWidth = props.rightSidebarExpanded === true ? 180 : 60;
-    rightOffset = contentPanelWidth + sidebarWidth;
-  } else {
-    rightOffset = props.rightSidebarExpanded === true ? 180 : 60;
+    // Feature panel takes 35% of viewport width
+    rightOffset = vw * 0.35;
   }
   
   const calculatedWidth = vw - leftOffset - rightOffset;
-  
-  // Debug log (temporarily enabled)
-  // console.log('WelcomeScreen positioning:', { leftOffset, rightOffset, calculatedWidth, vw });
   
   return {
     left: `${leftOffset}px`,
@@ -474,6 +504,26 @@ const deactivateWorkspacesUnderline = () => {
     workspacesTitle.value.classList.remove('underline-active')
   }
 }
+
+
+const handleNavItemClick = (item: any) => {
+  console.log('Navigation item clicked:', item)
+  // Handle navigation logic here
+}
+
+const handleChatSelected = (chatId: string) => {
+  console.log('Chat selected:', chatId)
+  triggerWorkspaceExitAnimation()
+  setTimeout(() => {
+    emit('open-workspace', chatId)
+  }, 300) // Delay to allow exit animation to start
+}
+
+// Function to trigger the exit animation sequence
+const triggerWorkspaceExitAnimation = () => {
+  isExitingToWorkspace.value = true
+}
+
 
 // Force immediate CSS custom property updates for labels
 watch(() => themeStore.currentTheme, () => {
@@ -1472,9 +1522,23 @@ const getTemplateIcon = (iconName: string) => {
 }
 
 // Recent workspaces
+const workspaceSearchQuery = ref('')
 const recentWorkspaces = computed(() => {
   // Get recent workspaces from chat store
   return chatStore.recentWorkspaces || []
+})
+
+// Filtered workspaces based on search query
+const filteredWorkspaces = computed(() => {
+  if (!workspaceSearchQuery.value.trim()) {
+    return recentWorkspaces.value
+  }
+  
+  const query = workspaceSearchQuery.value.toLowerCase()
+  return recentWorkspaces.value.filter(workspace => {
+    return workspace.title?.toLowerCase().includes(query) ||
+           workspace.lastMessageContent?.toLowerCase().includes(query)
+  })
 })
 
 const formatDate = (date: string) => {
@@ -1624,6 +1688,7 @@ onMounted(() => {
     inputRef.value?.focus()
     setupResizeObserver()
     
+    
     // Handle sparkle icon animation completion for all three stars
     if (sparkleIconRef.value) {
       sparkleIconRef.value.addEventListener('animationend', (e) => {
@@ -1693,6 +1758,78 @@ watch(isExpanded, (newValue) => {
   }
 })
 
+// Watch for workspace exit transition to trigger full exit animation sequence
+watch(isExitingToWorkspace, (newValue) => {
+  if (newValue) {
+    const duration = '1.2s'
+    const easing = 'cubic-bezier(0.68, -0.55, 0.265, 1.55)'
+    
+    // Animate sparkle icons away
+    if (sparkleIconRef.value) {
+      sparkleIconRef.value.style.animation = `heroIconParabolicExit ${duration} ${easing} forwards`
+      sparkleIconRef.value.style.animationDelay = '0s'
+    }
+    if (sparkleIconMediumRef.value) {
+      sparkleIconMediumRef.value.style.animation = `heroIconParabolicExitMedium ${duration} ${easing} forwards`
+      sparkleIconMediumRef.value.style.animationDelay = '0.1s'
+    }
+    if (sparkleIconSmallRef.value) {
+      sparkleIconSmallRef.value.style.animation = `heroIconParabolicExitSmall ${duration} ${easing} forwards`
+      sparkleIconSmallRef.value.style.animationDelay = '0.2s'
+    }
+    
+    // Animate hero title away
+    const heroTitle = document.querySelector('.hero-title')
+    if (heroTitle) {
+      heroTitle.style.animation = `heroTitleFlyUp 0.8s ${easing} forwards`
+      heroTitle.style.animationDelay = '0.1s'
+    }
+    
+    // Animate input section away
+    const inputSection = document.querySelector('.input-section')
+    if (inputSection) {
+      inputSection.style.animation = `inputFlyUp 0.8s ${easing} forwards`
+      inputSection.style.animationDelay = '0.2s'
+    }
+    
+    // Animate template cards away (alternating left/right)
+    const templateCards = document.querySelectorAll('.template-card')
+    templateCards.forEach((card, index) => {
+      const isEven = index % 2 === 0
+      card.style.animation = `cardSlideOut${isEven ? 'Left' : 'Right'} 1.0s ${easing} forwards`
+      card.style.animationDelay = `${0.3 + index * 0.1}s`
+    })
+    
+    // Animate workspace cards away (alternating right/left)
+    const workspaceCards = document.querySelectorAll('.recent-card')
+    workspaceCards.forEach((card, index) => {
+      const isEven = index % 2 === 0
+      card.style.animation = `cardSlideOut${isEven ? 'Right' : 'Left'} 1.0s ${easing} forwards`
+      card.style.animationDelay = `${0.4 + index * 0.1}s`
+    })
+    
+    // Animate section titles and remaining content
+    const sectionTitles = document.querySelectorAll('.section-title')
+    sectionTitles.forEach((title, index) => {
+      title.style.animation = `contentFadeOutUp 0.6s ${easing} forwards`
+      title.style.animationDelay = `${0.5 + index * 0.1}s`
+    })
+    
+    // Fade out background elements
+    const auroraCanvas = document.querySelector('.aurora-canvas')
+    if (auroraCanvas) {
+      auroraCanvas.style.animation = `backgroundFadeOut 1.5s ease-out forwards`
+      auroraCanvas.style.animationDelay = '0.3s'
+    }
+  }
+})
+
+// Listen for external trigger to start exit animation (from App.vue floating dropdowns)
+emitter.on('trigger-workspace-exit-animation', () => {
+  console.log('[WelcomeScreen] External exit animation trigger received');
+  triggerWorkspaceExitAnimation();
+});
+
 // Expose inputRef for parent components
 defineExpose({
   inputRef
@@ -1703,6 +1840,7 @@ defineExpose({
 .welcome-screen {
   min-height: 100%;
   height: 100%;
+  width: 100%;
   background: linear-gradient(135deg, hsl(var(--b1)), hsl(var(--b2)));
   display: flex;
   flex-direction: column;
@@ -1753,6 +1891,293 @@ defineExpose({
   pointer-events: none;
 }
 
+/* Flowing Aurora Background */
+.aurora-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+  opacity: 0.7;
+}
+
+.aurora-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    45deg,
+    transparent 0%,
+    color-mix(in srgb, var(--theme-primary) 25%, transparent) 20%,
+    color-mix(in srgb, var(--theme-secondary) 30%, transparent) 40%,
+    color-mix(in srgb, var(--theme-accent) 20%, transparent) 60%,
+    transparent 80%
+  );
+  filter: blur(40px);
+  transform-origin: center;
+  mix-blend-mode: soft-light;
+}
+
+.aurora-layer-1 {
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    color-mix(in srgb, var(--theme-primary) 35%, transparent) 25%,
+    color-mix(in srgb, var(--theme-secondary) 20%, transparent) 50%,
+    transparent 75%
+  );
+  animation: auroraFlow1 20s ease-in-out infinite;
+  transform: scale(1.2) rotate(10deg);
+}
+
+.aurora-layer-2 {
+  background: linear-gradient(
+    60deg,
+    transparent 20%,
+    color-mix(in srgb, var(--theme-accent) 30%, transparent) 40%,
+    color-mix(in srgb, var(--theme-primary) 25%, transparent) 65%,
+    transparent 90%
+  );
+  animation: auroraFlow2 25s ease-in-out infinite;
+  animation-delay: -5s;
+  transform: scale(1.1) rotate(-15deg);
+}
+
+.aurora-layer-3 {
+  background: linear-gradient(
+    150deg,
+    transparent 10%,
+    color-mix(in srgb, var(--theme-secondary) 28%, transparent) 35%,
+    color-mix(in srgb, var(--theme-accent) 22%, transparent) 60%,
+    color-mix(in srgb, var(--theme-primary) 15%, transparent) 80%,
+    transparent 100%
+  );
+  animation: auroraFlow3 30s ease-in-out infinite;
+  animation-delay: -10s;
+  transform: scale(0.9) rotate(25deg);
+}
+
+/* Floating Orbs */
+.floating-orbs {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(3px);
+  mix-blend-mode: overlay;
+  opacity: 0.6;
+}
+
+.orb-1 {
+  width: 80px;
+  height: 80px;
+  top: 15%;
+  left: 20%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-primary) 40%, transparent),
+    transparent 70%
+  );
+  animation: orbFloat1 15s ease-in-out infinite;
+}
+
+.orb-2 {
+  width: 120px;
+  height: 120px;
+  top: 60%;
+  right: 25%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-secondary) 35%, transparent),
+    transparent 70%
+  );
+  animation: orbFloat2 18s ease-in-out infinite;
+  animation-delay: -3s;
+}
+
+.orb-3 {
+  width: 60px;
+  height: 60px;
+  bottom: 20%;
+  left: 15%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-accent) 45%, transparent),
+    transparent 70%
+  );
+  animation: orbFloat3 22s ease-in-out infinite;
+  animation-delay: -7s;
+}
+
+.orb-4 {
+  width: 100px;
+  height: 100px;
+  top: 30%;
+  right: 10%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-primary) 30%, color-mix(in srgb, var(--theme-accent) 20%, transparent)),
+    transparent 70%
+  );
+  animation: orbFloat4 20s ease-in-out infinite;
+  animation-delay: -12s;
+}
+
+/* Floating Particles */
+.particle-field {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: color-mix(in srgb, var(--theme-primary) 60%, transparent);
+  border-radius: 50%;
+  filter: blur(1px);
+  opacity: 0.8;
+}
+
+.particle-1 {
+  top: 10%;
+  left: 15%;
+  background: color-mix(in srgb, var(--theme-primary) 70%, transparent);
+  animation: particleDrift1 25s linear infinite;
+}
+
+.particle-2 {
+  top: 25%;
+  left: 70%;
+  background: color-mix(in srgb, var(--theme-secondary) 65%, transparent);
+  animation: particleDrift2 30s linear infinite;
+  animation-delay: -5s;
+}
+
+.particle-3 {
+  top: 45%;
+  left: 20%;
+  background: color-mix(in srgb, var(--theme-accent) 75%, transparent);
+  animation: particleDrift3 22s linear infinite;
+  animation-delay: -10s;
+}
+
+.particle-4 {
+  top: 60%;
+  left: 80%;
+  background: color-mix(in srgb, var(--theme-primary) 50%, transparent);
+  animation: particleDrift4 28s linear infinite;
+  animation-delay: -15s;
+}
+
+.particle-5 {
+  top: 75%;
+  left: 35%;
+  background: color-mix(in srgb, var(--theme-secondary) 80%, transparent);
+  animation: particleDrift1 35s linear infinite;
+  animation-delay: -20s;
+}
+
+.particle-6 {
+  top: 85%;
+  left: 65%;
+  background: color-mix(in srgb, var(--theme-accent) 55%, transparent);
+  animation: particleDrift2 20s linear infinite;
+  animation-delay: -8s;
+}
+
+.particle-7 {
+  top: 35%;
+  left: 90%;
+  background: color-mix(in srgb, var(--theme-primary) 45%, transparent);
+  animation: particleDrift3 32s linear infinite;
+  animation-delay: -12s;
+}
+
+.particle-8 {
+  top: 55%;
+  left: 5%;
+  background: color-mix(in srgb, var(--theme-secondary) 70%, transparent);
+  animation: particleDrift4 26s linear infinite;
+  animation-delay: -18s;
+}
+
+/* Breathing Lights */
+.breathing-lights {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.breath-light {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(20px);
+  mix-blend-mode: soft-light;
+  opacity: 0.3;
+}
+
+.breath-light-1 {
+  width: 200px;
+  height: 200px;
+  top: 5%;
+  right: 5%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-accent) 40%, transparent),
+    transparent 70%
+  );
+  animation: breathe 8s ease-in-out infinite;
+}
+
+.breath-light-2 {
+  width: 150px;
+  height: 150px;
+  bottom: 10%;
+  left: 10%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-secondary) 35%, transparent),
+    transparent 70%
+  );
+  animation: breathe 6s ease-in-out infinite;
+  animation-delay: -2s;
+}
+
+.breath-light-3 {
+  width: 180px;
+  height: 180px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-primary) 25%, transparent),
+    transparent 70%
+  );
+  animation: breathe 10s ease-in-out infinite;
+  animation-delay: -5s;
+}
+
+
 
 /* Header Actions */
 .welcome-header-actions {
@@ -1789,7 +2214,7 @@ defineExpose({
 /* Main Content */
 .welcome-content {
   flex: 1;
-  max-width: 80vw;
+  max-width: min(80vw, calc(100% - 4rem));
   margin: 0 auto;
   padding: 0rem 2rem 4rem;
   width: 100%;
@@ -2013,52 +2438,83 @@ defineExpose({
   font-size: 1rem;
 }
 
+/* CSS custom property for the rotating angle */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 .input-container {
-  background: linear-gradient(135deg, hsl(var(--b1) / 0.9), hsl(var(--b2) / 0.85));
-  border: 2px solid color-mix(in srgb, var(--theme-primary) 20%, transparent);
+  position: relative;
+  background: linear-gradient(135deg, hsl(var(--b1) / 0.95), hsl(var(--b2) / 0.9));
   border-radius: 1.5rem;
-  overflow: hidden;
-  transition: max-height 1.3s cubic-bezier(0.4, 0, 0.2, 1),
-    padding 1.3s cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 1.3s cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 1.3s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 1.3s cubic-bezier(0.4, 0, 0.2, 1),
-    background 1.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow:
-    0 8px 32px color-mix(in srgb, var(--theme-primary) 8%, transparent),
-    0 1px 0px hsl(var(--b1)),
-    inset 0 1px 0px hsl(var(--b2));
-  backdrop-filter: blur(12px);
-  max-height: 300px;
-}
-
-.input-container.animate-entrance {
-  /* Start slightly above, no opacity change */
-  animation: inputFlyDown 1.0s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
-  animation-delay: 0.2s;
-}
-
-.input-container:focus-within {
-  border-color: var(--theme-primary);
-  background: linear-gradient(135deg,
-      color-mix(in srgb, var(--theme-primary) 8%, hsl(var(--b1) / 0.95)),
-      color-mix(in srgb, var(--theme-secondary) 6%, hsl(var(--b1) / 0.9)),
-      color-mix(in srgb, var(--theme-accent) 4%, hsl(var(--b2) / 0.85)),
-      color-mix(in srgb, var(--theme-primary) 6%, hsl(var(--b1) / 0.92)));
+  padding: 3px;
   backdrop-filter: blur(16px);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--theme-primary) 15%, transparent),
-    0 12px 40px color-mix(in srgb, var(--theme-primary) 20%, transparent),
-    0 4px 20px color-mix(in srgb, var(--theme-secondary) 10%, transparent),
-    0 1px 0px var(--theme-primary),
-    inset 0 1px 0px rgba(255, 255, 255, 0.2),
-    inset 0 -1px 0px color-mix(in srgb, var(--theme-primary) 20%, transparent);
+  transition: all 0.3s ease;
+  max-height: 300px;
+  overflow: hidden;
+}
+
+/* Conic gradient border effect */
+.input-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1.5rem;
+  padding: 3px;
+  background: conic-gradient(
+    from var(--angle),
+    var(--theme-primary),
+    color-mix(in srgb, var(--theme-primary) 80%, var(--theme-secondary) 20%),
+    var(--theme-secondary),
+    color-mix(in srgb, var(--theme-secondary) 80%, var(--theme-accent) 20%),
+    var(--theme-accent),
+    color-mix(in srgb, var(--theme-accent) 80%, var(--theme-primary) 20%),
+    var(--theme-primary)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, 
+                linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: rotate 4s linear infinite;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+@keyframes rotate {
+  to {
+    --angle: 360deg;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  50% {
+    left: 100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* State 1: Unfocused & Empty - Default elevated state with shadows */
+.input-container:not(.has-content) {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-primary) 20%, transparent),
+              0 12px 40px color-mix(in srgb, var(--theme-primary) 30%, transparent);
   transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--theme-primary) 40%, transparent);
+}
+
+/* State 2: Focused & Empty - Add shimmer effect */
+.input-container.focused:not(.has-content) {
   position: relative;
   overflow: hidden;
 }
 
-.input-container:focus-within::before {
+.input-container.focused:not(.has-content)::after {
   content: '';
   position: absolute;
   top: 0;
@@ -2075,19 +2531,34 @@ defineExpose({
   z-index: 1;
 }
 
-@keyframes shimmer {
-  0% {
-    left: -100%;
-  }
-
-  50% {
-    left: 100%;
-  }
-
-  100% {
-    left: 100%;
-  }
+/* State 3: Focused & Has Content - Shadows, borders, transitions + conic gradient */
+.input-container.focused.has-content {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-primary) 20%, transparent),
+              0 12px 40px color-mix(in srgb, var(--theme-primary) 30%, transparent);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--theme-primary) 40%, transparent);
 }
+
+.input-container.focused.has-content::before {
+  opacity: 1;
+}
+
+/* State 4: Unfocused & Has Content - Only conic gradient */
+.input-container.has-content:not(.focused)::before {
+  opacity: 1;
+}
+
+/* Inner content wrapper */
+.input-wrapper {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(135deg, hsl(var(--b1) / 0.95), hsl(var(--b2) / 0.9));
+  border-radius: calc(1.5rem - 3px);
+  overflow: hidden;
+}
+
+
+
 
 .main-input {
   width: 100%;
@@ -2217,13 +2688,15 @@ defineExpose({
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 2rem;
-  background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
+  background: linear-gradient(90deg, var(--theme-primary) 0%, var(--theme-secondary) 50%, var(--theme-primary) 100%);
+  background-size: 200% 100%;
+  background-position: 0% 0%;
   color: white;
   border: none;
   border-radius: 0.75rem;
   font-weight: 600;
   font-size: 1rem;
-  transition: all 1.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s ease, background-position 1s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   box-shadow:
     0 4px 12px color-mix(in srgb, var(--theme-primary) 30%, transparent),
@@ -2247,6 +2720,11 @@ defineExpose({
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+/* When input has content, animate gradient to the right */
+.input-container.has-content .generate-btn {
+  background-position: 100% 0%;
 }
 
 /* Side by Side Layout */
@@ -2591,6 +3069,7 @@ defineExpose({
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 2rem;
+  margin-top: 60px;
   margin-bottom: 2rem;
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   height: 380px;
@@ -2616,11 +3095,19 @@ defineExpose({
   height: 120px;
 }
 
+.workspace-search-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
 .recent-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 2rem;
+  margin-top: 60px;
   margin-bottom: 2rem;
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   height: 380px;
@@ -3392,6 +3879,83 @@ defineExpose({
   }
 }
 
+/* Exit animations for workspace transitions */
+@keyframes cardSlideOutLeft {
+  0% {
+    transform: translateX(0) rotate(-15deg) skew(15deg) rotateY(0deg);
+    opacity: 1;
+    box-shadow: -15px 15px 15px rgba(0, 0, 0, 0.3);
+  }
+  
+  100% {
+    transform: translateX(-150vw) rotate(-45deg) skew(30deg) rotateY(90deg);
+    opacity: 0;
+    box-shadow: -5px 5px 5px rgba(0, 0, 0, 0);
+  }
+}
+
+@keyframes cardSlideOutRight {
+  0% {
+    transform: translateX(0) rotate(-15deg) skew(15deg) rotateY(0deg);
+    opacity: 1;
+    box-shadow: -15px 15px 15px rgba(0, 0, 0, 0.3);
+  }
+  
+  100% {
+    transform: translateX(150vw) rotate(-45deg) skew(30deg) rotateY(-90deg);
+    opacity: 0;
+    box-shadow: -5px 5px 5px rgba(0, 0, 0, 0);
+  }
+}
+
+@keyframes heroTitleFlyUp {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  
+  100% {
+    transform: translateY(-100px);
+    opacity: 0;
+  }
+}
+
+@keyframes inputFlyUp {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  
+  100% {
+    transform: translateY(-80px);
+    opacity: 0;
+  }
+}
+
+@keyframes contentFadeOutUp {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  
+  100% {
+    transform: translateY(-50px);
+    opacity: 0;
+  }
+}
+
+@keyframes backgroundFadeOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
 @keyframes cardFallIn {
   0% {
     transform: translateY(-100vh) rotate(-15deg) skew(15deg) rotateX(90deg);
@@ -3547,7 +4111,7 @@ defineExpose({
 
 .theme-halloween .hover-underline::after,
 .theme-halloween .hover-underline::before {
-  background: linear-gradient(to right, #7C3AED, #581C87, #3B82F6);
+  background: linear-gradient(to right, #FF6B1A, #2D1B69, #39FF14);
 }
 
 .theme-garden .hover-underline::after,
@@ -3645,6 +4209,11 @@ defineExpose({
   background: linear-gradient(to right, #0EA5E9, #84CC16, #10B981);
 }
 
+.theme-watermelon .hover-underline::after,
+.theme-watermelon .hover-underline::before {
+  background: linear-gradient(to right, #00FF88, #00CCFF, #FF1E9D);
+}
+
 /* Claude Code Mode Styles */
 .input-container.claude-code-mode {
   position: relative;
@@ -3687,10 +4256,6 @@ defineExpose({
   font-weight: 700;
   letter-spacing: 0.5px;
   z-index: 15;
-  animation: cascadeLabel 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  animation-delay: 0.1s;
-  opacity: 0;
-  transform: translateY(-20px) scale(0.8);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-primary) 30%, transparent);
 }
 
@@ -3712,11 +4277,7 @@ defineExpose({
 .claude-code-settings {
   border-top: 1px solid hsl(var(--b3) / 0.2);
   background: linear-gradient(135deg, hsl(var(--b2) / 0.3), hsl(var(--b3) / 0.2));
-  animation: cascadeSettings 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: 0.25s;
-  opacity: 0;
-  transform: translateY(-15px);
-  max-height: 0;
+  max-height: 400px;
   overflow: hidden;
 }
 
@@ -3781,19 +4342,11 @@ defineExpose({
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 0.75rem;
-  animation: cascadeTool 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  opacity: 0;
-  transform: translateY(-8px) scale(0.9);
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
-/* Staggered delays for individual tools */
-.tool-toggle-compact:nth-child(1) { animation-delay: 0.35s; }
-.tool-toggle-compact:nth-child(2) { animation-delay: 0.4s; }
-.tool-toggle-compact:nth-child(3) { animation-delay: 0.45s; }
-.tool-toggle-compact:nth-child(4) { animation-delay: 0.5s; }
-.tool-toggle-compact:nth-child(5) { animation-delay: 0.55s; }
-.tool-toggle-compact:nth-child(6) { animation-delay: 0.6s; }
-.tool-toggle-compact:nth-child(7) { animation-delay: 0.65s; }
+/* Remove individual tool delays - let Vue transitions handle timing */
 
 @keyframes cascadeTool {
   0% {
@@ -3863,10 +4416,6 @@ defineExpose({
 .claude-config-controls {
   display: flex;
   gap: 8px;
-  animation: cascadeControls 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: 0.45s;
-  opacity: 0;
-  transform: translateY(-10px);
 }
 
 @keyframes cascadeControls {
@@ -3925,6 +4474,109 @@ defineExpose({
   }
   100% {
     transform: scale(1) translateY(0);
+  }
+}
+
+/* Vue Transition Classes for smooth exits */
+
+/* Claude Label Transitions */
+.claude-label-enter-active {
+  transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition-delay: 0.1s;
+}
+
+.claude-label-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.claude-label-enter-from,
+.claude-label-leave-to {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.8);
+}
+
+@keyframes cascadeLabelExit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.8);
+  }
+}
+
+/* Claude Settings Transitions */
+.claude-settings-enter-active {
+  animation: cascadeSettings 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: 0.25s;
+}
+
+.claude-settings-enter-active .tool-toggle-compact {
+  animation: cascadeTool 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.9);
+}
+
+.claude-settings-enter-active .tool-toggle-compact:nth-child(1) { animation-delay: 0.35s; }
+.claude-settings-enter-active .tool-toggle-compact:nth-child(2) { animation-delay: 0.4s; }
+.claude-settings-enter-active .tool-toggle-compact:nth-child(3) { animation-delay: 0.45s; }
+.claude-settings-enter-active .tool-toggle-compact:nth-child(4) { animation-delay: 0.5s; }
+.claude-settings-enter-active .tool-toggle-compact:nth-child(5) { animation-delay: 0.55s; }
+.claude-settings-enter-active .tool-toggle-compact:nth-child(6) { animation-delay: 0.6s; }
+.claude-settings-enter-active .tool-toggle-compact:nth-child(7) { animation-delay: 0.65s; }
+
+.claude-settings-leave-active {
+  animation: cascadeSettingsExit 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.claude-settings-enter-from,
+.claude-settings-leave-to {
+  opacity: 0;
+  transform: translateY(-15px);
+}
+
+.claude-settings-enter-from .tool-toggle-compact,
+.claude-settings-leave-to .tool-toggle-compact {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.9);
+}
+
+@keyframes cascadeSettingsExit {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+}
+
+/* Claude Controls Transitions */
+.claude-controls-enter-active {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-delay: 0.45s;
+}
+
+.claude-controls-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.claude-controls-enter-from,
+.claude-controls-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+@keyframes cascadeControlsExit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
   }
 }
 
@@ -4008,5 +4660,180 @@ defineExpose({
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Aurora Flow Animations */
+@keyframes auroraFlow1 {
+  0%, 100% {
+    transform: scale(1.2) rotate(10deg) translateX(0) translateY(0);
+    opacity: 0.6;
+  }
+  25% {
+    transform: scale(1.3) rotate(15deg) translateX(20px) translateY(-30px);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1) rotate(5deg) translateX(-10px) translateY(20px);
+    opacity: 0.5;
+  }
+  75% {
+    transform: scale(1.25) rotate(20deg) translateX(30px) translateY(-15px);
+    opacity: 0.7;
+  }
+}
+
+@keyframes auroraFlow2 {
+  0%, 100% {
+    transform: scale(1.1) rotate(-15deg) translateX(0) translateY(0);
+    opacity: 0.7;
+  }
+  33% {
+    transform: scale(1.0) rotate(-10deg) translateX(-25px) translateY(35px);
+    opacity: 0.5;
+  }
+  66% {
+    transform: scale(1.2) rotate(-20deg) translateX(15px) translateY(-25px);
+    opacity: 0.8;
+  }
+}
+
+@keyframes auroraFlow3 {
+  0%, 100% {
+    transform: scale(0.9) rotate(25deg) translateX(0) translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: scale(1.0) rotate(30deg) translateX(40px) translateY(20px);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(0.85) rotate(20deg) translateX(-30px) translateY(-40px);
+    opacity: 0.6;
+  }
+}
+
+/* Orb Float Animations */
+@keyframes orbFloat1 {
+  0%, 100% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  25% {
+    transform: translateX(30px) translateY(-20px) scale(1.1);
+  }
+  50% {
+    transform: translateX(-15px) translateY(40px) scale(0.9);
+  }
+  75% {
+    transform: translateX(25px) translateY(15px) scale(1.05);
+  }
+}
+
+@keyframes orbFloat2 {
+  0%, 100% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  33% {
+    transform: translateX(-40px) translateY(25px) scale(1.2);
+  }
+  66% {
+    transform: translateX(20px) translateY(-35px) scale(0.8);
+  }
+}
+
+@keyframes orbFloat3 {
+  0%, 100% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  40% {
+    transform: translateX(50px) translateY(-30px) scale(1.3);
+  }
+  80% {
+    transform: translateX(-20px) translateY(10px) scale(0.7);
+  }
+}
+
+@keyframes orbFloat4 {
+  0%, 100% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  20% {
+    transform: translateX(-30px) translateY(45px) scale(1.1);
+  }
+  60% {
+    transform: translateX(35px) translateY(-20px) scale(0.9);
+  }
+  80% {
+    transform: translateX(10px) translateY(30px) scale(1.15);
+  }
+}
+
+/* Particle Drift Animations */
+@keyframes particleDrift1 {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+    opacity: 0;
+  }
+  10%, 90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(200px) translateY(-50px) scale(0.5);
+    opacity: 0;
+  }
+}
+
+@keyframes particleDrift2 {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+    opacity: 0;
+  }
+  15%, 85% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateX(-150px) translateY(80px) scale(0.8);
+    opacity: 0;
+  }
+}
+
+@keyframes particleDrift3 {
+  0% {
+    transform: translateX(0) translateY(0) scale(0.5);
+    opacity: 0;
+  }
+  20%, 80% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(100px) translateY(-120px) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes particleDrift4 {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+    opacity: 0;
+  }
+  25%, 75% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(-200px) translateY(-80px) scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* Breathing Light Animation */
+@keyframes breathe {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.2);
+  }
+}
+
 
 </style>

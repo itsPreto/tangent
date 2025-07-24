@@ -159,23 +159,26 @@
     </div>
 
     <!-- 3D Force Graph Container -->
-    <div v-if="is3DSupported && props.enable3d && forceGraphData" class="vue-force-graph-3d">
-      <VueForceGraph3D
-        ref="forceGraph3DRef"
-        :graphData="forceGraphData"
-        :backgroundColor="getThemeAwareColors().backgroundColor"
-        :nodeColor="nodeColorFunction"
-        :linkColor="getThemeAwareColors().linkColor"
-        :nodeLabel="nodeLabelFunction"
-        :nodeVal="nodeValFunction"
-        :linkWidth="1"
-        :nodeRelSize="4"
-        :enableNodeDrag="true"
-        :controlType="'orbit'"
-        :width="containerWidth"
-        :height="containerHeight"
-        @nodeClick="handleNodeClick"
-      />
+    <div v-if="is3DSupported && props.enable3d && forceGraphData" class="vue-force-graph-3d-wrapper">
+      <div class="vue-force-graph-3d">
+        <VueForceGraph3D
+          ref="forceGraph3DRef"
+          :graphData="forceGraphData"
+          :backgroundColor="getThemeAwareColors().backgroundColor"
+          :nodeColor="nodeColorFunction"
+          :linkColor="getThemeAwareColors().linkColor"
+          :nodeLabel="nodeLabelFunction"
+          :nodeVal="nodeValFunction"
+          :linkWidth="1"
+          :nodeRelSize="4"
+          :enableNodeDrag="true"
+          :controlType="'orbit'"
+          :width="containerWidth"
+          :height="containerHeight"
+          @nodeClick="handleNodeClick"
+          @onEngineStop="handleEngineStop"
+        />
+      </div>
     </div>
 
     <!-- SVG Container -->
@@ -318,7 +321,7 @@ interface ThemeColors {
   };
 }
 
-type ThemeName = 'light' | 'dark' | 'cupcake' | 'bumblebee' | 'emerald' | 'corporate' | 'synthwave' | 'retro' | 'cyberpunk' | 'valentine' | 'halloween' | 'garden' | 'forest' | 'aqua' | 'lofi' | 'pastel' | 'fantasy' | 'wireframe' | 'black' | 'luxury' | 'dracula' | 'cmyk' | 'autumn' | 'business' | 'acid' | 'lemonade' | 'night' | 'coffee' | 'winter';
+type ThemeName = 'light' | 'dark' | 'cupcake' | 'bumblebee' | 'emerald' | 'corporate' | 'synthwave' | 'retro' | 'cyberpunk' | 'valentine' | 'halloween' | 'garden' | 'forest' | 'aqua' | 'lofi' | 'pastel' | 'fantasy' | 'wireframe' | 'black' | 'luxury' | 'dracula' | 'cmyk' | 'autumn' | 'business' | 'acid' | 'lemonade' | 'night' | 'coffee' | 'winter' | 'watermelon' | 'neon';
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
@@ -364,6 +367,7 @@ const is3DSupported = ref(false);
 const forceGraphData = ref<any>(null);
 const containerWidth = ref(800);
 const containerHeight = ref(600);
+const resizeObserver = ref<ResizeObserver | null>(null);
 
 // vue-force-graph functions
 const nodeColorFunction = (node: any) => {
@@ -662,11 +666,122 @@ const themeColorMaps: Record<ThemeName, ThemeColors> = {
     linkColor: '#64748B',
     backgroundColor: '#0F172A',
     backgroundGradient: { from: '#0F172A', to: '#1E293B' }
+  },
+  watermelon: {
+    topicColors: ['#FF1493', '#00CC66', '#00AAFF', '#FF4081', '#4CAF50', '#2196F3', '#E91E63', '#009688'],
+    workspaceColor: '#FF1493',
+    linkColor: '#666666',
+    backgroundColor: '#F8F8F8',
+    backgroundGradient: { from: '#F8F8F8', to: '#E8F5E8' }
+  },
+  neon: {
+    topicColors: ['#FF79C6', '#BD93F9', '#50FA7B', '#FFB86C', '#F1FA8C', '#8BE9FD', '#FF5555', '#6272A4'],
+    workspaceColor: '#FF79C6',
+    linkColor: '#6272A4',
+    backgroundColor: '#1A1A2E',
+    backgroundGradient: { from: '#1A1A2E', to: '#16213E' }
   }
 };
 
 // Use ThemeStore for reactive theme detection
 const themeStore = useThemeStore();
+
+// Calculate color contrast ratio (WCAG standard)
+const getContrastRatio = (color1: string, color2: string): number => {
+  const getLuminance = (hex: string): number => {
+    const rgb = hexToRgb(hex);
+    const [r, g, b] = [rgb.r, rgb.g, rgb.b].map(c => {
+      c = c / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  
+  const lum1 = getLuminance(color1);
+  const lum2 = getLuminance(color2);
+  const brightest = Math.max(lum1, lum2);
+  const darkest = Math.min(lum1, lum2);
+  
+  return (brightest + 0.05) / (darkest + 0.05);
+};
+
+// Convert hex to RGB
+const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : { r: 0, g: 0, b: 0 };
+};
+
+// Adjust color brightness for better contrast
+const adjustColorForContrast = (color: string, backgroundColor: string, minContrast: number = 4.5): string => {
+  let adjustedColor = color;
+  let attempts = 0;
+  const maxAttempts = 20;
+  
+  while (getContrastRatio(adjustedColor, backgroundColor) < minContrast && attempts < maxAttempts) {
+    const rgb = hexToRgb(adjustedColor);
+    const bgRgb = hexToRgb(backgroundColor);
+    const bgLuminance = (bgRgb.r * 0.299 + bgRgb.g * 0.587 + bgRgb.b * 0.114) / 255;
+    
+    // If background is dark, make color brighter; if background is light, make color darker
+    const factor = bgLuminance > 0.5 ? 0.85 : 1.15;
+    
+    const newR = Math.min(255, Math.max(0, Math.round(rgb.r * factor)));
+    const newG = Math.min(255, Math.max(0, Math.round(rgb.g * factor)));
+    const newB = Math.min(255, Math.max(0, Math.round(rgb.b * factor)));
+    
+    adjustedColor = `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+    attempts++;
+  }
+  
+  return adjustedColor;
+};
+
+// Generate high-contrast color palette for any theme
+const generateHighContrastPalette = (backgroundColor: string, baseColors: string[]): string[] => {
+  return baseColors.map(color => adjustColorForContrast(color, backgroundColor, 4.5));
+};
+
+// Special handling for themes with extreme contrast issues
+const applyThemeSpecificFixes = (theme: ThemeName, colors: ThemeColors): ThemeColors => {
+  const bgLuminance = (() => {
+    const rgb = hexToRgb(colors.backgroundGradient.from);
+    return (rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114) / 255;
+  })();
+  
+  // For very dark themes, ensure minimum brightness
+  if (bgLuminance < 0.1 && ['black', 'cyberpunk', 'acid', 'night'].includes(theme)) {
+    return {
+      ...colors,
+      topicColors: colors.topicColors.map(color => {
+        const rgb = hexToRgb(color);
+        const minBrightness = 180; // Ensure minimum brightness
+        return `#${Math.max(rgb.r, minBrightness).toString(16).padStart(2, '0')}${Math.max(rgb.g, minBrightness).toString(16).padStart(2, '0')}${Math.max(rgb.b, minBrightness).toString(16).padStart(2, '0')}`;
+      }),
+      linkColor: adjustColorForContrast('#888888', colors.backgroundColor, 3.5),
+      workspaceColor: adjustColorForContrast('#FFFFFF', colors.backgroundColor, 5.0)
+    };
+  }
+  
+  // For very light themes, ensure maximum darkness
+  if (bgLuminance > 0.9 && ['light', 'cupcake', 'wireframe', 'pastel'].includes(theme)) {
+    return {
+      ...colors,
+      topicColors: colors.topicColors.map(color => {
+        const rgb = hexToRgb(color);
+        const maxBrightness = 100; // Ensure maximum darkness
+        return `#${Math.min(rgb.r, maxBrightness).toString(16).padStart(2, '0')}${Math.min(rgb.g, maxBrightness).toString(16).padStart(2, '0')}${Math.min(rgb.b, maxBrightness).toString(16).padStart(2, '0')}`;
+      }),
+      linkColor: adjustColorForContrast('#333333', colors.backgroundColor, 3.5),
+      workspaceColor: adjustColorForContrast('#000000', colors.backgroundColor, 5.0)
+    };
+  }
+  
+  return colors;
+};
 
 // Enhanced color scheme that adapts to all themes (using DOM since ThemeToggle bypasses store)
 const getThemeAwareColors = (): ThemeColors => {
@@ -680,10 +795,39 @@ const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 
 console.log('D3ForceGraph: Initial theme from DOM:', currentTheme.value);
 console.log('D3ForceGraph: Initial theme from store:', themeStore.currentTheme);
 
-// Enhanced color scheme that adapts to all themes
+// Enhanced color scheme that adapts to all themes with dynamic contrast
 const getThemeAwareColorsFromDOM = (): ThemeColors => {
   const theme = currentTheme.value as ThemeName;
-  return themeColorMaps[theme] || themeColorMaps.light;
+  const baseThemeColors = themeColorMaps[theme] || themeColorMaps.light;
+  
+  // Generate high-contrast colors based on background
+  const backgroundColor = baseThemeColors.backgroundColor;
+  const backgroundGradient = baseThemeColors.backgroundGradient;
+  
+  // Use the primary gradient color for contrast calculations
+  const primaryBgColor = backgroundGradient.from;
+  
+  // Generate high-contrast topic colors
+  const highContrastTopicColors = generateHighContrastPalette(primaryBgColor, baseThemeColors.topicColors);
+  
+  // Adjust link color for better contrast
+  const adjustedLinkColor = adjustColorForContrast(baseThemeColors.linkColor, primaryBgColor, 3.0); // Lower contrast requirement for links
+  
+  // Adjust workspace color for better contrast  
+  const adjustedWorkspaceColor = adjustColorForContrast(baseThemeColors.workspaceColor, primaryBgColor, 4.5);
+  
+  const adaptiveColors = {
+    topicColors: highContrastTopicColors,
+    workspaceColor: adjustedWorkspaceColor,
+    linkColor: adjustedLinkColor,
+    backgroundColor: backgroundColor,
+    backgroundGradient: backgroundGradient
+  };
+  
+  // Apply theme-specific fixes for extreme cases
+  const finalColors = applyThemeSpecificFixes(theme, adaptiveColors);
+  
+  return finalColors;
 };
 
 // Update theme from DOM and recreate visualization
@@ -1056,9 +1200,9 @@ const createVisualization = async () => {
 };
 
 const createVueForceGraphData = (data: VisualizationData, width: number, height: number) => {
-  // Ensure we use the actual container dimensions, not full screen
-  const actualWidth = Math.min(containerRef.value?.clientWidth || width || 800, 800);
-  const actualHeight = Math.min(containerRef.value?.clientHeight || height || 600, 600);
+  // Use the actual container dimensions
+  const actualWidth = containerRef.value?.clientWidth || width || 800;
+  const actualHeight = containerRef.value?.clientHeight || height || 600;
   
   containerWidth.value = actualWidth;
   containerHeight.value = actualHeight;
@@ -1480,11 +1624,79 @@ const handleNodeClick = (node: any) => {
   }
 };
 
+// Force 3D canvas to container size - SAFER APPROACH
+const force3DCanvasSize = () => {
+  if (!containerRef.value || !is3DSupported.value || !props.enable3d) return;
+  
+  const container = containerRef.value;
+  const canvases = container.querySelectorAll('canvas');
+  
+  if (canvases.length > 0) {
+    const targetWidth = container.clientWidth;
+    const targetHeight = container.clientHeight;
+    
+    // Update component dimensions first
+    containerWidth.value = targetWidth;
+    containerHeight.value = targetHeight;
+    
+    canvases.forEach((canvas, index) => {
+      // Less aggressive approach - don't mess with canvas dimensions directly
+      canvas.style.maxWidth = `${targetWidth}px`;
+      canvas.style.maxHeight = `${targetHeight}px`;
+      canvas.style.position = 'relative';
+      
+      // Force the parent div to be the right size
+      const parentDiv = canvas.parentElement;
+      if (parentDiv) {
+        parentDiv.style.width = `${targetWidth}px`;
+        parentDiv.style.height = `${targetHeight}px`;
+        parentDiv.style.maxWidth = `${targetWidth}px`;
+        parentDiv.style.maxHeight = `${targetHeight}px`;
+        parentDiv.style.overflow = 'hidden';
+        parentDiv.style.position = 'relative';
+      }
+    });
+    
+    // Try to call the component's resize methods
+    if (forceGraph3DRef.value) {
+      try {
+        if (typeof forceGraph3DRef.value.width === 'function') {
+          forceGraph3DRef.value.width(targetWidth);
+        }
+        if (typeof forceGraph3DRef.value.height === 'function') {  
+          forceGraph3DRef.value.height(targetHeight);
+        }
+        if (typeof forceGraph3DRef.value.refresh === 'function') {
+          forceGraph3DRef.value.refresh();
+        }
+      } catch (e) {
+        console.log('Component method calls failed:', e);
+      }
+    }
+  }
+};
+
+// Handle engine stop event
+const handleEngineStop = () => {
+  console.log('3D Engine stopped');
+  // Don't force canvas size immediately after engine stops
+  setTimeout(() => {
+    console.log('3D Engine: Checking canvas after engine stop');
+    if (containerRef.value && containerRef.value.querySelector('canvas')) {
+      console.log('3D Engine: Canvas still exists, gentle resize');
+      force3DCanvasSize();
+    }
+  }, 1000);
+};
+
 // Center the 3D graph
 const center3DGraph = () => {
   if (!forceGraph3DRef.value || !forceGraphData.value || !containerRef.value) return;
   
   try {
+    // Force canvas size first
+    force3DCanvasSize();
+    
     // Wait a bit for the graph to render
     setTimeout(() => {
       // Get actual container dimensions
@@ -1564,8 +1776,8 @@ const handleResize = () => {
   nextTick(() => {
     // Update container dimensions for 3D graph
     if (containerRef.value && props.enable3d && forceGraphData.value) {
-      const newWidth = Math.min(containerRef.value.clientWidth, 800);
-      const newHeight = Math.min(containerRef.value.clientHeight, 600);
+      const newWidth = containerRef.value.clientWidth;
+      const newHeight = containerRef.value.clientHeight;
       
       if (newWidth !== containerWidth.value || newHeight !== containerHeight.value) {
         containerWidth.value = newWidth;
@@ -1615,10 +1827,45 @@ watch(() => props.enable3d, (newEnable3D, oldEnable3D) => {
 watch(() => forceGraphData.value, (newData) => {
   if (newData && props.enable3d) {
     console.log('ForceGraph: 3D data ready, should render now');
-    // Center the graph after a delay to ensure it's fully rendered
+    
+    // Immediate size enforcement
+    nextTick(() => {
+      force3DCanvasSize();
+      
+      // Also try to override the component's renderer
+      if (forceGraph3DRef.value && containerRef.value) {
+        const targetWidth = containerRef.value.clientWidth;
+        const targetHeight = containerRef.value.clientHeight;
+        
+        // Try to access the renderer directly
+        try {
+          const component = forceGraph3DRef.value;
+          if (component.renderer && component.renderer.setSize) {
+            console.log('Overriding renderer size to:', targetWidth, 'x', targetHeight);
+            component.renderer.setSize(targetWidth, targetHeight);
+          }
+          if (component.camera && component.camera.aspect) {
+            component.camera.aspect = targetWidth / targetHeight;
+            component.camera.updateProjectionMatrix();
+          }
+        } catch (e) {
+          console.log('Could not override renderer:', e);
+        }
+      }
+    });
+    
+    // Center the graph and force size after a delay to ensure it's fully rendered
     setTimeout(() => {
+      force3DCanvasSize();
       center3DGraph();
     }, 1000);
+    
+    // Only force size once more after a delay
+    setTimeout(() => {
+      if (containerRef.value && containerRef.value.querySelector('canvas')) {
+        force3DCanvasSize();
+      }
+    }, 2000);
   }
 });
 
@@ -1716,12 +1963,40 @@ const initThreeJS = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  // Initialize Three.js for 3D support
+  await initThreeJS();
+  
   // Enable 3D support since we're using vue-force-graph
   is3DSupported.value = true;
   emit('update3DSupport', true);
   
   document.addEventListener('fullscreenchange', handleFullscreenChange);
   window.addEventListener('resize', handleResize);
+  
+  // Set up mutation observer to watch for canvas creation
+  if (containerRef.value) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === 1) {
+            const canvas = (node as Element).querySelector('canvas') || 
+                          (node.nodeName === 'CANVAS' ? node as HTMLCanvasElement : null);
+            if (canvas) {
+              setTimeout(() => force3DCanvasSize(), 500);
+            }
+          }
+        });
+      });
+    });
+    
+    observer.observe(containerRef.value, {
+      childList: true,
+      subtree: true
+    });
+    
+    // Store observer for cleanup
+    resizeObserver.value = observer as any;
+  }
   
   // Set up theme change observer (since ThemeToggle bypasses ThemeStore)
   themeObserver = new MutationObserver((mutations) => {
@@ -1749,6 +2024,11 @@ onBeforeUnmount(() => {
     themeObserver = null;
   }
   
+  // Cleanup mutation observer
+  if (resizeObserver.value) {
+    resizeObserver.value.disconnect();
+  }
+  
   // Cleanup 3D resources
   if (animationId) {
     cancelAnimationFrame(animationId);
@@ -1774,17 +2054,49 @@ onBeforeUnmount(() => {
   contain: layout style size;
 }
 
+.vue-force-graph-3d-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 .vue-force-graph-3d {
-  @apply absolute top-0 left-0 w-full h-full;
+  position: relative;
+  width: 100%;
+  height: 100%;
   z-index: 10;
   overflow: hidden;
   max-width: 100%;
   max-height: 100%;
+  contain: layout style size;
 }
 
 .vue-force-graph-3d > div {
   width: 100% !important;
   height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+.vue-force-graph-3d canvas {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  clip-path: inset(0) !important;
+}
+
+/* Nuclear option - clip anything that tries to exceed bounds */
+.vue-force-graph-3d-wrapper {
+  clip-path: inset(0) !important;
+  clip: rect(0, 100%, 100%, 0) !important;
+}
+
+.vue-force-graph-3d-wrapper * {
   max-width: 100% !important;
   max-height: 100% !important;
 }

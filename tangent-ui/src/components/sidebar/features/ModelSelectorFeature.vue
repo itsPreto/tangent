@@ -292,6 +292,7 @@ import {
 import { useModelStore } from '@/stores/modelStore';
 import { useAgentStore } from '@/stores/agentStore';
 import { useThemeColors } from '@/composables/useThemeColors';
+import { agentConfigAPI } from '@/services/agentConfigAPI';
 
 // Import provider icons
 import ollamaIcon from '@/assets/ollama.jpeg';
@@ -610,27 +611,57 @@ const removeCustomAgent = (agentId: string) => {
   agentStore.removeAgent(agentId);
 };
 
-const updateSystemMessage = () => {
+const updateSystemMessage = async () => {
   if (selectedAgent.value) {
-    localStorage.setItem(`systemMessage_${selectedAgent.value}`, systemMessages[selectedAgent.value]);
+    try {
+      // Try to update via API
+      await agentConfigAPI.setSystemMessage(selectedAgent.value, systemMessages[selectedAgent.value]);
+    } catch (error) {
+      console.error('Failed to update system message via API, using localStorage fallback:', error);
+      // Fall back to localStorage
+      localStorage.setItem(`systemMessage_${selectedAgent.value}`, systemMessages[selectedAgent.value]);
+    }
   }
 };
 
-const updateTTSSettings = () => {
-  localStorage.setItem('ttsEnabled', JSON.stringify(ttsSettings.enabled));
-  localStorage.setItem('ttsVoice', ttsSettings.voice);
-  localStorage.setItem('ttsSpeed', ttsSettings.speed.toString());
-  localStorage.setItem('ttsAutoRead', JSON.stringify(ttsSettings.autoRead));
+const updateTTSSettings = async () => {
+  try {
+    // Try to update via API
+    await agentConfigAPI.setPreference('tts_enabled', ttsSettings.enabled, 'tts');
+    await agentConfigAPI.setPreference('tts_voice', ttsSettings.voice, 'tts');
+    await agentConfigAPI.setPreference('tts_speed', ttsSettings.speed, 'tts');
+    await agentConfigAPI.setPreference('tts_auto_read', ttsSettings.autoRead, 'tts');
+  } catch (error) {
+    console.error('Failed to update TTS settings via API, using localStorage fallback:', error);
+    // Fall back to localStorage
+    localStorage.setItem('ttsEnabled', JSON.stringify(ttsSettings.enabled));
+    localStorage.setItem('ttsVoice', ttsSettings.voice);
+    localStorage.setItem('ttsSpeed', ttsSettings.speed.toString());
+    localStorage.setItem('ttsAutoRead', JSON.stringify(ttsSettings.autoRead));
+  }
 };
 
-const updateWhisperSettings = () => {
-  localStorage.setItem('whisperEnabled', JSON.stringify(whisperSettings.enabled));
-  localStorage.setItem('whisperModel', whisperSettings.model);
-  localStorage.setItem('whisperLanguage', whisperSettings.language);
-  localStorage.setItem('whisperThreads', whisperSettings.threads.toString());
-  localStorage.setItem('whisperTranslate', JSON.stringify(whisperSettings.translate));
-  localStorage.setItem('whisperDiarize', JSON.stringify(whisperSettings.diarize));
-  localStorage.setItem('whisperTimestamps', JSON.stringify(whisperSettings.timestamps));
+const updateWhisperSettings = async () => {
+  try {
+    // Try to update via API
+    await agentConfigAPI.setPreference('whisper_enabled', whisperSettings.enabled, 'whisper');
+    await agentConfigAPI.setPreference('whisper_model', whisperSettings.model, 'whisper');
+    await agentConfigAPI.setPreference('whisper_language', whisperSettings.language, 'whisper');
+    await agentConfigAPI.setPreference('whisper_threads', whisperSettings.threads, 'whisper');
+    await agentConfigAPI.setPreference('whisper_translate', whisperSettings.translate, 'whisper');
+    await agentConfigAPI.setPreference('whisper_diarize', whisperSettings.diarize, 'whisper');
+    await agentConfigAPI.setPreference('whisper_timestamps', whisperSettings.timestamps, 'whisper');
+  } catch (error) {
+    console.error('Failed to update Whisper settings via API, using localStorage fallback:', error);
+    // Fall back to localStorage
+    localStorage.setItem('whisperEnabled', JSON.stringify(whisperSettings.enabled));
+    localStorage.setItem('whisperModel', whisperSettings.model);
+    localStorage.setItem('whisperLanguage', whisperSettings.language);
+    localStorage.setItem('whisperThreads', whisperSettings.threads.toString());
+    localStorage.setItem('whisperTranslate', JSON.stringify(whisperSettings.translate));
+    localStorage.setItem('whisperDiarize', JSON.stringify(whisperSettings.diarize));
+    localStorage.setItem('whisperTimestamps', JSON.stringify(whisperSettings.timestamps));
+  }
 };
 
 const toggleFilter = (filterId: string) => {
@@ -641,20 +672,40 @@ const toggleFilter = (filterId: string) => {
   }
 };
 
-const isModelFavorite = (model: any) => {
-  const favorites = JSON.parse(localStorage.getItem('favoriteModels') || '[]');
-  return favorites.some((fav: any) => fav.id === model.id);
+const favoriteModels = ref<any[]>([]);
+
+const loadFavoriteModels = async () => {
+  try {
+    // Try to load from API
+    const preferences = await agentConfigAPI.getPreferences('models');
+    favoriteModels.value = preferences.favorite_models || [];
+  } catch (error) {
+    console.error('Failed to load favorite models from API, using localStorage fallback:', error);
+    // Fall back to localStorage
+    favoriteModels.value = JSON.parse(localStorage.getItem('favoriteModels') || '[]');
+  }
 };
 
-const toggleFavorite = (model: any) => {
-  const favorites = JSON.parse(localStorage.getItem('favoriteModels') || '[]');
-  const index = favorites.findIndex((fav: any) => fav.id === model.id);
+const isModelFavorite = (model: any) => {
+  return favoriteModels.value.some((fav: any) => fav.id === model.id);
+};
+
+const toggleFavorite = async (model: any) => {
+  const index = favoriteModels.value.findIndex((fav: any) => fav.id === model.id);
   if (index >= 0) {
-    favorites.splice(index, 1);
+    favoriteModels.value.splice(index, 1);
   } else {
-    favorites.push(model);
+    favoriteModels.value.push(model);
   }
-  localStorage.setItem('favoriteModels', JSON.stringify(favorites));
+  
+  try {
+    // Try to update via API
+    await agentConfigAPI.setPreference('favorite_models', favoriteModels.value, 'models');
+  } catch (error) {
+    console.error('Failed to update favorite models via API, using localStorage fallback:', error);
+    // Fall back to localStorage
+    localStorage.setItem('favoriteModels', JSON.stringify(favoriteModels.value));
+  }
 };
 
 const formatContext = (contextLength: number) => {
@@ -712,10 +763,53 @@ const fetchTTSVoices = async () => {
 };
 
 // Initialize
-onMounted(() => {
+onMounted(async () => {
   refreshModels();
   fetchTTSVoices();
+  
+  // Initialize agent store from API
+  try {
+    await agentStore.initializeConfigs();
+  } catch (error) {
+    console.error('Failed to initialize agent configs from API:', error);
+  }
+  
+  // Load favorite models from API
+  await loadFavoriteModels();
+  
+  // Load other settings from API
+  await loadSettingsFromAPI();
 });
+
+// Load settings from API with localStorage fallback
+const loadSettingsFromAPI = async () => {
+  try {
+    // Load system messages
+    const systemMessagesData = await agentConfigAPI.getSystemMessages();
+    Object.assign(systemMessages, systemMessagesData);
+    
+    // Load TTS preferences
+    const ttsPrefs = await agentConfigAPI.getPreferences('tts');
+    if (ttsPrefs.tts_enabled !== undefined) ttsSettings.enabled = ttsPrefs.tts_enabled;
+    if (ttsPrefs.tts_voice !== undefined) ttsSettings.voice = ttsPrefs.tts_voice;
+    if (ttsPrefs.tts_speed !== undefined) ttsSettings.speed = ttsPrefs.tts_speed;
+    if (ttsPrefs.tts_auto_read !== undefined) ttsSettings.autoRead = ttsPrefs.tts_auto_read;
+    
+    // Load Whisper preferences
+    const whisperPrefs = await agentConfigAPI.getPreferences('whisper');
+    if (whisperPrefs.whisper_enabled !== undefined) whisperSettings.enabled = whisperPrefs.whisper_enabled;
+    if (whisperPrefs.whisper_model !== undefined) whisperSettings.model = whisperPrefs.whisper_model;
+    if (whisperPrefs.whisper_language !== undefined) whisperSettings.language = whisperPrefs.whisper_language;
+    if (whisperPrefs.whisper_threads !== undefined) whisperSettings.threads = whisperPrefs.whisper_threads;
+    if (whisperPrefs.whisper_translate !== undefined) whisperSettings.translate = whisperPrefs.whisper_translate;
+    if (whisperPrefs.whisper_diarize !== undefined) whisperSettings.diarize = whisperPrefs.whisper_diarize;
+    if (whisperPrefs.whisper_timestamps !== undefined) whisperSettings.timestamps = whisperPrefs.whisper_timestamps;
+    
+  } catch (error) {
+    console.error('Failed to load settings from API, using localStorage fallback:', error);
+    // Settings are already initialized from localStorage in their declarations
+  }
+};
 </script>
 
 <style scoped>
@@ -1581,7 +1675,6 @@ input:checked + .toggle-slider:before {
   display: flex;
   align-items: center;
   flex: 1;
-  max-width: 300px;
 }
 
 .search-icon {

@@ -9,11 +9,18 @@
       <!-- Panel Header -->
       <div class="panel-header" :style="headerStyle">
         <div class="header-content">
-          <div class="feature-info">
-            <div class="feature-icon" :style="getFeatureIconStyle()">
-              <component :is="featureConfig?.icon" :size="20" :style="{ color: featureConfig?.color }" />
-            </div>
-            <h2 class="panel-title">{{ featureConfig?.label }}</h2>
+          <!-- Feature Tabs -->
+          <div class="feature-tabs">
+            <button
+              v-for="feature in availableFeatures"
+              :key="feature.id"
+              :class="['feature-tab', { 'active': feature.id === activeFeature }]"
+              @click="handleFeatureSwitch(feature.id)"
+              :style="getFeatureTabStyle(feature)"
+              :title="feature.description"
+            >
+              <component :is="feature.icon" :size="18" />
+            </button>
           </div>
           
           <button class="close-button" @click="handleClose" :style="closeButtonStyle">
@@ -74,6 +81,7 @@ import { computed } from 'vue';
 import { X, Settings, Code, Bot, TestTube, Database, FileText, GitBranch, LayoutGrid, MessageSquare, Palette } from 'lucide-vue-next';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAppStore } from '@/stores/appStore';
+import { useCanvasStore } from '@/stores/canvasStore';
 import { useThemeColors } from '@/composables/useThemeColors';
 
 // AgentConfigurator extracted features
@@ -99,11 +107,13 @@ const emit = defineEmits<{
   'document-selected': [document: any];
   'document-dragged': [document: any, event: DragEvent];
   'open-workspace': [instance: any];
+  'feature-switch': [featureId: string];
 }>();
 
 // Stores
 const themeStore = useThemeStore();
 const appStore = useAppStore();
+const canvasStore = useCanvasStore();
 
 // Theme composable
 const { currentTheme, isDarkTheme, themeColors, forceLightText, getTextColor } = useThemeColors();
@@ -151,38 +161,105 @@ const featureConfig = computed(() => {
   return props.activeFeature ? featureConfigs[props.activeFeature] : null;
 });
 
+// Available features for tabs (excluding 'themes' as it's handled inline)
+const availableFeatures = computed(() => [
+  { 
+    id: 'model-selector', 
+    icon: Bot, 
+    label: 'Models', 
+    color: themeColors.value.primary,
+    description: 'Model selector and agent configuration'
+  },
+  { 
+    id: 'sandpack', 
+    icon: Code, 
+    label: 'Code Editor', 
+    color: themeColors.value.primary,
+    description: 'Code editor + preview + relic manager'
+  },
+  { 
+    id: 'claude-code', 
+    icon: Settings, 
+    label: 'Claude Code', 
+    color: themeColors.value.primary,
+    description: 'Claude Code instance management'
+  },
+  { 
+    id: 'force-graph', 
+    icon: GitBranch, 
+    label: 'Clusters', 
+    color: themeColors.value.primary,
+    description: 'Interactive workspace relationships graph'
+  },
+  { 
+    id: 'testing', 
+    icon: TestTube, 
+    label: 'Testing', 
+    color: themeColors.value.primary,
+    description: 'Model testing and evaluation suite'
+  },
+  { 
+    id: 'documents', 
+    icon: FileText, 
+    label: 'Documents', 
+    color: themeColors.value.primary,
+    description: 'RAG document panel and management'
+  }
+]);
+
 // Methods
 const handleClose = () => {
+  // Emit back-to-features instead of close to return to features list
   emit('close');
+};
+
+const handleFeatureSwitch = (featureId: string) => {
+  emit('feature-switch', featureId);
+};
+
+const getFeatureTabStyle = (feature: any) => {
+  const isActive = feature.id === props.activeFeature;
+  return {
+    backgroundColor: isActive ? `${feature.color}20` : 'transparent',
+    borderColor: isActive ? `${feature.color}40` : 'transparent',
+    color: isActive ? feature.color : (forceLightText.value ? 'rgba(255, 255, 255, 0.7)' : (isDarkTheme.value ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)')),
+    transition: 'all 0.2s ease'
+  };
 };
 
 // Computed styles
 const panelStyle = computed(() => {
-  let backgroundColor = isDarkTheme.value ? 'rgba(15, 15, 15, 1)' : 'rgba(250, 250, 250, 1)';
-  let borderColor = isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)';
+  // Reduce opacity when a node is snapped to let aurora background show through
+  const isNodeSnapped = !!canvasStore.snappedNodeId;
+  const opacityMultiplier = isNodeSnapped ? 0.6 : 1.0;
+  
+  let backgroundColor = isDarkTheme.value ? `rgba(15, 15, 15, ${0.85 * opacityMultiplier})` : `rgba(250, 250, 250, ${0.9 * opacityMultiplier})`;
+  let borderColor = isDarkTheme.value ? `rgba(80, 80, 80, ${0.3 * opacityMultiplier})` : `rgba(200, 200, 200, ${0.3 * opacityMultiplier})`;
   
   // Theme-specific adjustments
   if (currentTheme.value === 'cyberpunk') {
-    backgroundColor = 'rgba(10, 10, 20, 1)';
+    backgroundColor = `rgba(10, 10, 20, ${0.85 * opacityMultiplier})`;
     borderColor = `${themeColors.value.primary}40`;
   } else if (currentTheme.value === 'synthwave') {
-    backgroundColor = 'rgba(20, 5, 30, 1)';
+    backgroundColor = `rgba(20, 5, 30, ${0.85 * opacityMultiplier})`;
     borderColor = `${themeColors.value.secondary}40`;
   } else if (currentTheme.value === 'cmyk') {
-    backgroundColor = 'rgba(8, 8, 15, 1)';
+    backgroundColor = `rgba(8, 8, 15, ${0.85 * opacityMultiplier})`;
     borderColor = `${themeColors.value.primary}40`;
   }
 
   return {
+    backgroundColor,
+    borderColor,
+    backdropFilter: isNodeSnapped ? 'blur(8px)' : 'blur(12px)',
     color: forceLightText.value ? 'rgba(255, 255, 255, 0.95)' : getTextColor(),
-    transition: 'background-color 0.3s ease, color 0.3s ease'
+    transition: 'background-color 0.3s ease, color 0.3s ease, backdrop-filter 0.3s ease'
   };
 });
 
 const headerStyle = computed(() => {
   return {
     borderBottom: `1px solid ${isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)'}`,
-    backgroundColor: isDarkTheme.value ? 'rgba(20, 20, 20, 0.5)' : 'rgba(240, 240, 240, 0.5)'
   };
 });
 
@@ -205,7 +282,7 @@ const getFeatureIconStyle = () => {
 
 // Dynamic panel positioning based on right sidebar expansion
 const panelPositionStyle = computed(() => {
-  const rightSidebarWidth = appStore.isRightSidebarExpanded ? 180 : 60;
+  const rightSidebarWidth = appStore.isRightSidebarExpanded ? 180 : 0;
   return {
     right: `${rightSidebarWidth}px`
   };
@@ -219,7 +296,7 @@ const panelPositionStyle = computed(() => {
   border-top-left-radius: 16px;
   top: 0;
   height: 100vh;
-  width: 35vw;
+  width: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -237,7 +314,6 @@ const panelPositionStyle = computed(() => {
 /* Force light text for dark themes */
 .feature-content-panel.theme-dark,
 .feature-content-panel.theme-synthwave,
-.feature-content-panel.theme-cyberpunk,
 .feature-content-panel.theme-halloween,
 .feature-content-panel.theme-forest,
 .feature-content-panel.theme-aqua,
@@ -245,9 +321,7 @@ const panelPositionStyle = computed(() => {
 .feature-content-panel.theme-luxury,
 .feature-content-panel.theme-neon,
 .feature-content-panel.theme-dracula,
-.feature-content-panel.theme-cmyk,
 .feature-content-panel.theme-business,
-.feature-content-panel.theme-acid,
 .feature-content-panel.theme-night,
 .feature-content-panel.theme-coffee {
   color: rgba(255, 255, 255, 0.95);
@@ -286,6 +360,12 @@ const panelPositionStyle = computed(() => {
   color: rgba(255, 255, 255, 0.95) !important;
 }
 
+.feature-content-panel.theme-cmyk,
+.feature-content-panel.theme-cyberpunk,
+.feature-content-panel.theme-acid {
+  color: rgba(14, 14, 14, 0.95) !important;
+}
+
 .panel-header {
   padding: 20px;
   flex-shrink: 0;
@@ -295,6 +375,51 @@ const panelPositionStyle = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+}
+
+.feature-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  justify-content: space-around;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.feature-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.feature-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  min-width: fit-content;
+}
+
+.feature-tab:hover {
+  background-color: rgba(128, 128, 128, 0.1);
+  transform: translateY(-1px);
+}
+
+.feature-tab.active {
+  font-weight: 600;
+}
+
+.tab-label {
+  font-size: 12px;
 }
 
 .feature-info {
@@ -331,6 +456,7 @@ const panelPositionStyle = computed(() => {
 
 .panel-content {
   flex: 1;
+  backdrop-filter: blur(60px);
   overflow-y: auto;
   min-height: 0;
 }
