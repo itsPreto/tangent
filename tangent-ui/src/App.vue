@@ -1,14 +1,16 @@
 <template>
   <div class="min-h-screen bg-background app-container" :class="['theme-' + currentTheme, { 'settings-open': appStore.isSettingsOverlayOpen }]">
 
-    <!-- Global Floating Buttons -->
-    <div 
-      class="floating-buttons-overlay" 
-      :class="{ 'zen-mode': zenMode, 'show-zen-buttons': showZenButtons }"
-      @mouseleave="handleOverlayMouseLeave"
-    >
-      <!-- Floating Corner Buttons -->
-      <FloatingCornerButton
+    <!-- Global Floating Buttons (only show after user submits first prompt) -->
+    <Transition name="floating-buttons-fade">
+      <div 
+        v-if="!isOnWelcomeScreen"
+        class="floating-buttons-overlay" 
+        :class="{ 'zen-mode': zenMode, 'show-zen-buttons': showZenButtons }"
+        @mouseleave="handleOverlayMouseLeave"
+      >
+        <!-- Floating Corner Buttons -->
+        <FloatingCornerButton
         :icon="Menu"
         position="top-left"
         title="Navigation Menu"
@@ -41,6 +43,7 @@
           :dropdownState="dropdownState === 'collapsed' ? 'features-list' : dropdownState"
           :selectedFeature="selectedFeature"
           :nodeId="currentNodeId"
+          :selectedToolCall="selectedToolCall"
           :isRightContentPanelOpen="appStore.isRightContentPanelOpen"
           @feature-clicked="handleRightFeatureClick"
           @feature-hovered="handleFeatureHover"
@@ -53,22 +56,13 @@
         />
       </FloatingCornerButton>
 
-      <!-- Bottom Corner Buttons -->
-      <!-- <SimpleFloatingButton
-        :icon="HelpCircle"
-        position="bottom-left" 
-        title="Help & Tips"
-        @click="handleHelpButtonClick"
-        @mouseenter="showZenButtons = true; clearHideTimer()"
-        @mouseleave="startHideTimer"
-      /> -->
-
-      <!-- Hot Corners for Zen Mode -->
-      <div v-if="zenMode" class="hot-corner top-left" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
-      <div v-if="zenMode" class="hot-corner top-right" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
-      <div v-if="zenMode" class="hot-corner bottom-left" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
-      <div v-if="zenMode" class="hot-corner bottom-right" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
-    </div>
+        <!-- Hot Corners for Zen Mode -->
+        <div v-if="zenMode" class="hot-corner top-left" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+        <div v-if="zenMode" class="hot-corner top-right" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+        <div v-if="zenMode" class="hot-corner bottom-left" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+        <div v-if="zenMode" class="hot-corner bottom-right" @mouseenter="showZenButtons = true; clearHideTimer()" @mouseleave="startHideTimer"></div>
+      </div>
+    </Transition>
 
     <!-- Main Content Layout -->
     <div 
@@ -96,7 +90,8 @@
           :is-welcome-screen-controlled="isOnWelcomeScreenState"
           @node-selected="handleNodeSelected" @update-filter-state="handleFilterStateUpdate" 
           @update-graph-stats="handleGraphStatsUpdate" @update-3d-support="handle3DSupportUpdate"
-          @update-fullscreen="handleFullscreenUpdate" />
+          @update-fullscreen="handleFullscreenUpdate" @tool-call-selected="handleToolCallSelected"
+          @update:zen-mode="handleZenModeUpdate" />
       </div>
     </div>
 
@@ -159,12 +154,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, provide, watch, nextTick } from 'vue';
-import { Plus, ArrowLeft, Settings, ChevronRight, ZoomIn, Move, Search, HelpCircle, UploadCloud, Eye, Menu, MoreVertical, FileText, Terminal, X, FolderOpen } from 'lucide-vue-next';
+import { Settings, Search, Menu } from 'lucide-vue-next';
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
-import FeatureContentPanel from './components/sidebar/FeatureContentPanel.vue';
 import FloatingCornerButton from './components/ui/FloatingCornerButton.vue';
-import SimpleFloatingButton from './components/ui/SimpleFloatingButton.vue';
 import LeftNavigationDropdown from './components/ui/LeftNavigationDropdown.vue';
 import RightFeaturesDropdown from './components/ui/RightFeaturesDropdown.vue';
 import SlidingFooter from './components/ui/SlidingFooter.vue';
@@ -180,7 +173,6 @@ import type { Node } from '@/types/message';
 import type { ModelInfo } from '@/types/model';
 
 const gestureMode = ref<'scroll' | 'zoom'>('scroll');
-const anthropicApiKey = ref(localStorage.getItem('anthropicApiKey') || '');
 
 // Feature panel state
 const isFeaturePanelOpen = ref(false);
@@ -190,18 +182,13 @@ const activeFeature = ref<string | null>(null);
 const dropdownState = ref<'collapsed' | 'features-list' | 'feature-content'>('collapsed');
 const selectedFeature = ref<string | null>(null);
 const currentNodeId = ref<string | null>(null);
+const selectedToolCall = ref<any | null>(null);
 
 // Canvas and workspace state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
 
 // Computed props for InfiniteCanvas in dual sidebar mode
-const effectiveSidePanelOpen = computed(() => {
-  return appStore.isLeftSidebarExpanded || appStore.isRightContentPanelOpen;
-});
 
-const effectiveRightPanelOpen = computed(() => {
-  return appStore.isRightContentPanelOpen;
-});
 
 // Computed positioning for UI elements in dual sidebar mode
 const effectiveLeftMargin = computed(() => {
@@ -238,10 +225,6 @@ const effectiveRightMargin = computed(() => {
 });
 
 // Dual sidebar event handlers
-const handleLeftNavItemClick = (item: any) => {
-  console.log('Left nav item clicked:', item);
-  // Navigation logic is handled in the LeftNavigationSidebar component
-};
 
 const handleRightFeatureClick = (feature: any) => {
   console.log('Right feature clicked:', feature);
@@ -285,10 +268,6 @@ const handleWorkspaceOpen = (event: any) => {
   // Handle workspace opening if needed
 };
 
-const closeFeaturePanel = () => {
-  isFeaturePanelOpen.value = false;
-  activeFeature.value = null;
-};
 provide('canvasRef', canvasRef);
 const canvasZoom = ref(1);
 
@@ -297,9 +276,6 @@ const windowSize = ref({
   innerWidth: 0
 });
 
-const showLogo = computed(() => {
-  return (canvasRef.value?.workspaces && canvasRef.value.workspaces.length !== 0) || false;
-});
 
 // Stores
 const canvasStore = useCanvasStore();
@@ -310,9 +286,6 @@ const themeStore = useThemeStore();
 const agentStore = useAgentStore();
 
 // Onboarding state - hide UI components when no workspaces exist
-const isOnboarding = computed(() => {
-  return chatStore.chats.length === 0 && !chatStore.isLoading;
-});
 
 // Theme awareness - use reactive theme store
 const currentTheme = computed(() => themeStore.currentTheme);
@@ -326,7 +299,6 @@ const zenHideTimer = ref<number | null>(null);
 const zenMode = ref(false); // Track if we're in zen mode (separate from visibility)
 
 // Theme observer
-let themeObserver;
 
 const selectedNode = ref<Node | null>(null);
 
@@ -334,14 +306,12 @@ const selectedNode = ref<Node | null>(null);
 const modelType = ref<string>(''); // Initialize to empty string
 const openRouterApiKey = ref('');
 const geminiApiKey = ref('');
-const customApiUrl = ref<string | null>(null);
 
 // Model badge hover scrolling state
 const isHovering = ref(false);
 const currentDisplayModel = ref<ModelInfo | null>(null);
 const hoveredModel = ref<ModelInfo | null>(null);
 const showConfirmDialog = ref(false);
-const allModels = ref<ModelInfo[]>([]);
 const originalModel = ref<ModelInfo | null>(null);
 
 // Initialize from local storage *after* defining the refs
@@ -397,23 +367,23 @@ const isInOverview = computed(() => {
 });
 
 // Shared welcome screen state to avoid component recreation issues
-const isOnWelcomeScreenState = ref(true);
+const isOnWelcomeScreenState = ref(false);
 
 const isOnWelcomeScreen = computed(() => {
-  // Use shared state instead of relying on canvas component state
-  return isOnWelcomeScreenState.value;
+  // Use isWelcomeScreen as the primary indicator
+  const showingWelcome = canvasRef.value?.isWelcomeScreen ?? true;
+  console.log('isOnWelcomeScreen check:', { 
+    showingWelcome,
+    canvasRefExists: !!canvasRef.value 
+  });
+  // We're on welcome screen based on the canvas state
+  return showingWelcome;
 });
 
 // Floating button states
 const isLeftDropdownOpen = ref(false);
 const isRightDropdownOpen = ref(false);
 
-const toggleLeftDropdown = () => {
-  isLeftDropdownOpen.value = !isLeftDropdownOpen.value;
-  if (isLeftDropdownOpen.value) {
-    isRightDropdownOpen.value = false;
-  }
-};
 
 const toggleRightDropdown = () => {
   if (dropdownState.value === 'collapsed') {
@@ -456,12 +426,9 @@ const handleNavItemClick = (item: any) => {
   
   // Handle navigation logic
   if (item.id === 'home') {
-    // Return to welcome screen for new workspace creation
-    isOnWelcomeScreenState.value = true;
-    
-    // If we're currently in a workspace, trigger return to overview
-    if (canvasRef.value && !canvasRef.value.isWorkspaceOverview) {
-      canvasRef.value.returnToOverview();
+    // Clear current workspace to show canvas input container
+    if (canvasRef.value) {
+      canvasRef.value.handleNewWorkspace();
     }
   }
 };
@@ -485,14 +452,8 @@ const handleChatSelected = async (chatId: string) => {
   }
 };
 
-const handleFeatureClick = (feature: any) => {
-  console.log('Feature clicked:', feature);
-  closeRightDropdown();
-  // Handle feature activation
-  appStore.setActiveRightFeature(feature);
-};
 
-const handleFeatureHover = (feature: any) => {
+const handleFeatureHover = () => {
   // Handle feature hover if needed
 };
 
@@ -502,54 +463,15 @@ const handleThemeSelected = (theme: string) => {
 };
 
 // Event handlers for bottom corner buttons
-const handleHelpButtonClick = () => {
-  console.log('Help button clicked');
-  appStore.openSlidingFooter();
-};
 
-const handleSettingsButtonClick = () => {
-  console.log('Settings button clicked');
-  appStore.openSettingsOverlay();
-};
 
 // Responsive breakpoints based on available space in dual sidebar mode
-const availableWidth = computed(() => {
-  const leftSidebarExpanded = appStore.isLeftSidebarExpanded;
-  const rightContentPanelOpen = appStore.isRightContentPanelOpen;
-  
-  // Calculate remaining space as percentage
-  const leftWidth = leftSidebarExpanded ? 260 : 60; // px
-  const rightWidth = 60; // right sidebar is always 60px
-  const contentPanelWidth = rightContentPanelOpen ? 35 : 0; // vw
-  
-  // Rough calculation: convert to percentage of viewport
-  const fixedWidthPx = leftWidth + rightWidth; // Fixed pixel widths
-  const viewportWidthPx = window.innerWidth || 1200; // Fallback for SSR
-  const fixedWidthPercent = (fixedWidthPx / viewportWidthPx) * 100;
-  
-  return Math.max(20, 100 - fixedWidthPercent - contentPanelWidth);
-});
 
 // Responsive modes
-const isUltraCompact = computed(() => availableWidth.value <= 25);
-const isCompactMode = computed(() => availableWidth.value <= 50);
 
 // Dynamic classes for responsive design
-const topControlsClasses = computed(() => ({
-  'ultra-compact': isUltraCompact.value,
-  'compact': isCompactMode.value && !isUltraCompact.value,
-  'normal': !isCompactMode.value
-}));
 
-const compactButtonClasses = computed(() => ({
-  'px-2': isCompactMode.value,
-  'px-3': !isCompactMode.value
-}));
 
-const iconSizeClasses = computed(() => ({
-  'w-4 h-4': !isCompactMode.value,
-  'w-3.5 h-3.5': isCompactMode.value
-}));
 
 // Theme-based dynamic styles
 const isDarkTheme = computed(() => {
@@ -561,167 +483,17 @@ const themeColors = computed(() => {
 });
 
 // Dynamic style objects for theme-aware components
-const sidePanelStyle = computed(() => {
-  const baseStyles = {
-  };
 
-  // Theme-specific adjustments
-  if (currentTheme.value === 'cyberpunk') {
-    return {
-      ...baseStyles,
-      boxShadow: `inset 0px 1px 20px 2px ${themeColors.value.primary}50, 0 0 15px ${themeColors.value.secondary}30`,
-      borderRight: `2px solid ${themeColors.value.primary}80`,
-      background: `linear-gradient(135deg, rgba(0,0,0,0.9), ${adjustColorOpacity(themeColors.value.primary, 0.1)})`
-    };
-  }
-
-  if (currentTheme.value === 'synthwave') {
-    return {
-      ...baseStyles,
-      boxShadow: `inset 0px 1px 25px 2px ${themeColors.value.secondary}40`,
-      background: `linear-gradient(to bottom, rgba(20,10,30,0.9), rgba(80,30,110,0.7))`
-    };
-  }
-
-  return baseStyles;
-});
-
-const toggleButtonStyle = computed(() => {
-  const isCyberpunk = currentTheme.value === 'cyberpunk';
-  const isSynthwave = currentTheme.value === 'synthwave';
-  const isAqua = currentTheme.value === 'aqua';
-
-  let styles = {
-    backgroundColor: isDarkTheme.value ? 'rgba(30, 30, 30, 0.8)' : 'rgba(255, 255, 255, 0.8)',
-    backdropFilter: 'blur(10px)',
-    borderColor: isDarkTheme.value ? 'rgba(80, 80, 80, 0.5)' : 'rgba(200, 200, 200, 0.5)',
-    color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)'
-  };
-
-  if (isCyberpunk) {
-    styles = {
-      ...styles,
-      backgroundColor: 'rgba(20, 20, 30, 0.9)',
-      borderColor: `${themeColors.value.primary}80`,
-      boxShadow: `0 0 8px ${themeColors.value.primary}60`,
-      color: themeColors.value.primary
-    };
-  } else if (isSynthwave) {
-    styles = {
-      ...styles,
-      backgroundColor: 'rgba(40, 20, 60, 0.8)',
-      borderColor: `${themeColors.value.secondary}70`,
-      boxShadow: `0 0 12px ${themeColors.value.secondary}40`
-    };
-  } else if (isAqua) {
-    styles = {
-      ...styles,
-      backgroundColor: 'rgba(0, 60, 90, 0.7)',
-      borderColor: `${themeColors.value.primary}90`,
-      boxShadow: `0 0 10px ${themeColors.value.primary}30`
-    };
-  }
-
-  return styles;
-});
 
 // Flexbox canvas wrapper style for dual sidebar mode
-const getFlexCanvasWrapperStyle = computed(() => {
-  const ragPanelOpen = appStore.isRAGPanelOpen;
-  
-  return {
-    height: ragPanelOpen ? '80vh' : '100vh',
-    marginBottom: ragPanelOpen ? '20vh' : '0',
-    position: 'relative',
-    overflow: 'hidden'
-  };
-});
 
 // Top controls style for dual sidebar flexbox mode
-const flexTopControlsStyle = computed(() => {
-  return {
-    padding: isUltraCompact.value ? '0.5rem 1rem' : '1rem',
-    backdropFilter: 'blur(4px)',
-    borderBottom: isDarkTheme.value ? '1px solid rgba(80, 80, 80, 0.3)' : '1px solid rgba(200, 200, 200, 0.3)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: isCompactMode.value ? '0.5rem' : '1rem'
-  };
-});
 
 
-const dropdownStyle = computed(() => {
-  return {
-    backgroundColor: isDarkTheme.value ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(8px)',
-    borderColor: isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)',
-    boxShadow: isDarkTheme.value
-      ? '0 10px 25px rgba(0, 0, 0, 0.5)'
-      : '0 10px 25px rgba(0, 0, 0, 0.15)'
-  };
-});
 
-const buttonStyles = computed(() => {
-  const primary = themeColors.value.primary;
-  const secondary = themeColors.value.secondary;
 
-  // Get background color and text color based on theme
-  let bgColor = isDarkTheme.value ? 'rgba(30, 30, 30, 0.7)' : 'rgba(245, 245, 245, 0.7)';
-  let borderColor = isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)';
-  let textColor = isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)';
 
-  // Theme-specific adjustments
-  if (currentTheme.value === 'cyberpunk') {
-    bgColor = 'rgba(20, 20, 30, 0.8)';
-    borderColor = `${primary}70`;
-    textColor = primary;
-  } else if (currentTheme.value === 'synthwave') {
-    bgColor = 'rgba(40, 20, 60, 0.7)';
-    borderColor = `${secondary}60`;
-    textColor = secondary;
-  } else if (currentTheme.value === 'aqua') {
-    bgColor = 'rgba(0, 60, 90, 0.6)';
-    borderColor = `${primary}80`;
-    textColor = primary;
-  }
 
-  return {
-    backgroundColor: bgColor,
-    borderColor: borderColor,
-    color: textColor,
-  };
-});
-
-const modelBadgeStyle = computed(() => {
-  const primary = themeColors.value.primary;
-
-  return {
-    backgroundColor: adjustColorOpacity(primary, 0.2),
-    color: isDarkTheme.value ? 'white' : 'black',
-    border: `1px solid ${adjustColorOpacity(primary, 0.4)}`
-  };
-});
-
-const confirmDialogStyle = computed(() => {
-  return {
-    backgroundColor: isDarkTheme.value ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(8px)',
-    borderColor: isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)',
-    boxShadow: isDarkTheme.value
-      ? '0 10px 25px rgba(0, 0, 0, 0.5)'
-      : '0 10px 25px rgba(0, 0, 0, 0.15)'
-  };
-});
-
-const controlButtonStyle = computed(() => {
-  return {
-    backgroundColor: isDarkTheme.value ? 'rgba(30, 30, 30, 0.8)' : 'rgba(245, 245, 245, 0.8)',
-    backdropFilter: 'blur(5px)',
-    borderColor: isDarkTheme.value ? 'rgba(80, 80, 80, 0.3)' : 'rgba(200, 200, 200, 0.3)',
-    color: isDarkTheme.value ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)'
-  };
-});
 
 const overviewTitleStyle = computed(() => {
   return {
@@ -735,7 +507,6 @@ const overviewTitleStyle = computed(() => {
 const isImporting = ref(false);
 const importProgress = ref(0);
 const importStatus = ref('');
-const fileInput = ref<HTMLInputElement | null>(null);
 
 const progressOverlayStyle = computed(() => {
   return {
@@ -763,206 +534,19 @@ const progressBarStyle = computed(() => {
   };
 });
 
-const triggerFileSelect = () => {
-  fileInput.value?.click();
-};
 
 // Helper functions
-function adjustColorOpacity(hexColor: string, opacity: number): string {
-  // Convert hex to rgb
-  let r, g, b;
-
-  // Check if it's a valid hex color
-  if (!/^#([A-Fa-f0-9]{3}){1,2}$/.test(hexColor)) {
-    // Return a fallback if not a valid hex
-    return `rgba(128, 128, 128, ${opacity})`;
-  }
-
-  // Convert short hex to full form
-  const hex = hexColor.replace('#', '');
-  if (hex.length === 3) {
-    r = parseInt(hex.charAt(0) + hex.charAt(0), 16);
-    g = parseInt(hex.charAt(1) + hex.charAt(1), 16);
-    b = parseInt(hex.charAt(2) + hex.charAt(2), 16);
-  } else {
-    r = parseInt(hex.substring(0, 2), 16);
-    g = parseInt(hex.substring(2, 4), 16);
-    b = parseInt(hex.substring(4, 6), 16);
-  }
-
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-}
 
 
-const handleModelSelected = (model: ModelInfo) => {
-  // Update the code agent with the selected model
-  agentStore.setAgentModel('code', model);
-  modelType.value = model.source;
-  localStorage.setItem('selectedModel', JSON.stringify(model));
-  localStorage.setItem('modelType', model.source);
-};
 
-const handleApiKeySaved = ({ provider, apiKey }: { provider: string, apiKey: string }) => {
-  // Update local API key references
-  switch (provider) {
-    case 'openrouter':
-      openRouterApiKey.value = apiKey;
-      break;
-    case 'anthropic':
-      anthropicApiKey.value = apiKey;
-      break;
-    case 'gemini':
-      geminiApiKey.value = apiKey;
-      break;
-  }
-};
 
-const handleOpenWorkspace = async (workspaceId: string) => {
-  console.log('App: Opening workspace from agent configurator:', workspaceId);
-  
-  // Get reference to the canvas component
-  const canvasRef = document.querySelector('.infinite-canvas');
-  if (canvasRef && canvasRef.handleWorkspaceSelect) {
-    await canvasRef.handleWorkspaceSelect(workspaceId);
-  } else {
-    // Fallback: emit the event that other components listen to
-    emitter.emit('open-workspace', workspaceId);
-  }
-};
 
 // Model hover scrolling functions
-const initializeAllModels = () => {
-  const models: ModelInfo[] = [];
-
-  // Combine all models from different providers (access .value since they are refs)
-  if (modelStore.ollamaModels) models.push(...modelStore.ollamaModels);
-  if (modelStore.openRouterModels) models.push(...modelStore.openRouterModels);
-  if (modelStore.googleModels) models.push(...modelStore.googleModels);
-  if (modelStore.anthropicModels) models.push(...modelStore.anthropicModels);
-  if (modelStore.openaiModels) models.push(...modelStore.openaiModels);
-
-  console.log('Models found:', {
-    ollama: modelStore.ollamaModels?.length || 0,
-    openRouter: modelStore.openRouterModels?.length || 0,
-    google: modelStore.googleModels?.length || 0,
-    anthropic: modelStore.anthropicModels?.length || 0,
-    openai: modelStore.openaiModels?.length || 0,
-    total: models.length
-  });
-
-  allModels.value = models;
-};
-
-const startHoverScrolling = async () => {
-  isHovering.value = true;
-
-  // Try to load models that are likely to be available
-  // Only load Ollama for now since that's what the current model appears to be
-  if (!modelStore.ollamaModels.length && selectedModel.value?.source === 'ollama') {
-    try {
-      await modelStore.initializeProvider('ollama');
-    } catch (error) {
-      // Silently handle error - will fall back to test models
-    }
-  }
-
-  initializeAllModels();
-
-  // If we still don't have models, create a test list for demonstration
-  if (allModels.value.length === 0) {
-    const testModels: ModelInfo[] = [];
-
-    // Add the current model if it exists
-    if (selectedModel.value) {
-      testModels.push(selectedModel.value);
-    }
-
-    // Add some common test models for demonstration
-    testModels.push(
-      {
-        id: 'llama3.2:3b',
-        name: 'Llama 3.2 3B',
-        source: 'ollama' as const,
-        provider: 'Ollama',
-        isFree: true
-      },
-      {
-        id: 'llama3.2:1b',
-        name: 'Llama 3.2 1B',
-        source: 'ollama' as const,
-        provider: 'Ollama',
-        isFree: true
-      },
-      {
-        id: 'qwen2.5:7b',
-        name: 'Qwen 2.5 7B',
-        source: 'ollama' as const,
-        provider: 'Ollama',
-        isFree: true
-      }
-    );
-
-    allModels.value = testModels;
-  }
-
-  if (selectedModel.value) {
-    currentDisplayModel.value = selectedModel.value;
-    originalModel.value = selectedModel.value; // Store the original model
-  }
-};
-
-const stopHoverScrolling = () => {
-  isHovering.value = false;
-
-  // Don't auto-close dialog - only reset display if no dialog is showing
-  if (!showConfirmDialog.value) {
-    // Reset to original selected model
-    if (selectedModel.value) {
-      currentDisplayModel.value = selectedModel.value;
-    }
-    hoveredModel.value = null;
-    originalModel.value = null;
-  }
-};
 
 
-const handleScrollOnBadge = (event: WheelEvent) => {
-  if (!allModels.value.length || !isHovering.value) return;
 
-  const currentIndex = allModels.value.findIndex(
-    model => model.id === currentDisplayModel.value?.id
-  );
 
-  let nextIndex;
-  if (event.deltaY > 0) {
-    // Scroll down - next model
-    nextIndex = (currentIndex + 1) % allModels.value.length;
-  } else {
-    // Scroll up - previous model
-    nextIndex = currentIndex <= 0 ? allModels.value.length - 1 : currentIndex - 1;
-  }
 
-  const nextModel = allModels.value[nextIndex];
-  currentDisplayModel.value = nextModel;
-  hoveredModel.value = nextModel;
-
-  // Check if we've scrolled away from the original model
-  if (nextModel?.id !== originalModel.value?.id) {
-    // Show dialog immediately when scrolling away from original
-    showConfirmDialog.value = true;
-  } else {
-    // Hide dialog when scrolling back to original
-    showConfirmDialog.value = false;
-  }
-};
-
-const confirmModelSwitch = () => {
-  if (hoveredModel.value) {
-    handleModelSelected(hoveredModel.value);
-  }
-  showConfirmDialog.value = false;
-  isHovering.value = false;
-};
 
 const cancelModelSwitch = () => {
   showConfirmDialog.value = false;
@@ -1072,91 +656,43 @@ const exitZenMode = () => {
   clearHideTimer();
 };
 
+const handleZenModeUpdate = (isZen: boolean) => {
+  if (isZen) {
+    enterZenMode();
+  } else {
+    exitZenMode();
+  }
+};
+
 const handleOverlayMouseLeave = () => {
   if (zenMode.value && showZenButtons.value) {
     startHideTimer();
   }
 };
 
-const handleBackToWorkspaces = () => {
-  if (canvasRef.value) {
-    canvasRef.value.returnToOverview()
-  }
-};
 
 const showOverviewTitle = computed(() => {
   return isInOverview.value;
 });
 
 // Workspace controls state
-const workspaceViewMode = ref('grid');
-const workspaceSortBy = ref('recent');
-const workspaceCardSize = ref(240);
 const workspaceHasActiveFilters = ref(false);
 const workspaceActiveFilterCount = ref(0);
 
 // Graph-specific controls
 const workspaceGraphStats = ref({ topics: 0, workspaces: 0 });
-const workspaceGraphLayout = ref('radial');
-const workspaceShowGraphControls = ref(false);
 const workspaceIs3DSupported = ref(false);
 const workspaceIsFullscreen = ref(false);
 
 // Workspace controls methods
-const updateWorkspaceViewMode = (mode: string) => {
-  workspaceViewMode.value = mode;
-  // Pass to InfiniteCanvas/GridWorkspaceView
-  if (canvasRef.value) {
-    canvasRef.value.updateWorkspaceViewMode?.(mode);
-  }
-};
 
-const updateWorkspaceSortBy = (sortBy: string) => {
-  workspaceSortBy.value = sortBy;
-  if (canvasRef.value) {
-    canvasRef.value.updateWorkspaceSortBy?.(sortBy);
-  }
-};
 
-const updateWorkspaceCardSize = (size: number) => {
-  workspaceCardSize.value = size;
-  if (canvasRef.value) {
-    canvasRef.value.updateWorkspaceCardSize?.(size);
-  }
-};
 
-const toggleWorkspaceFilters = () => {
-  if (canvasRef.value) {
-    canvasRef.value.toggleWorkspaceFilters?.();
-  }
-};
 
 // Graph control methods
-const updateWorkspaceGraphLayout = (layout: string) => {
-  workspaceGraphLayout.value = layout;
-  if (canvasRef.value) {
-    canvasRef.value.updateGraphLayout?.(layout);
-  }
-};
 
-const toggleWorkspaceGraphControls = () => {
-  workspaceShowGraphControls.value = !workspaceShowGraphControls.value;
-  if (canvasRef.value) {
-    canvasRef.value.toggleGraphControls?.();
-  }
-};
 
-const resetWorkspaceGraph = () => {
-  if (canvasRef.value) {
-    canvasRef.value.resetGraph?.();
-  }
-};
 
-const toggleWorkspaceFullscreen = () => {
-  if (canvasRef.value) {
-    canvasRef.value.toggleFullscreen?.();
-  }
-};
 
 const handleFilterStateUpdate = ({ hasFilters, count }: { hasFilters: boolean; count: number }) => {
   workspaceHasActiveFilters.value = hasFilters;
@@ -1179,165 +715,20 @@ const handleNodeSelected = (node: Node) => {
   selectedNode.value = node;
 };
 
-const handleWorkspaceLoaded = () => {
-  canvasRef.value?.autoFitNodes();
-};
-
-
-const workspaceMenuRef = ref<any>(null);
-
-const handleShowAllWorkspaces = () => {
-  if (canvasRef.value) {
-    canvasRef.value.showWorkspaceOverview();
-  }
-};
-
-const handleNewWorkspace = async () => {
-  // Start with an animation that signals creation
-  const createAnimation = document.createElement('div');
-  createAnimation.className = 'workspace-creation-animation';
-  document.body.appendChild(createAnimation);
-
-  // Animate outward
-  setTimeout(() => {
-    createAnimation.classList.add('expand');
-
-    // Clear any existing snapped nodes
-    if (canvasStore.snappedNodeId) {
-      canvasStore.popSnappedNode();
-    }
-
-    setTimeout(async () => {
-      document.body.removeChild(createAnimation);
-
-      // Clear the current workspace with a fade transition
-      await canvasStore.clearCurrentWorkspace();
-
-      // Create new workspace with a nice entrance animation
-      const newWorkspaceId = await canvasStore.createNewWorkspace();
-
-      if (newWorkspaceId) {
-        // Refresh the workspaces list
-        await chatStore.loadChats();
-        await canvasStore.loadChatState(newWorkspaceId);
-
-        // Get the ID of the newly created root node
-        const rootNodeId = canvasStore.nodes[0]?.id;
-        if (rootNodeId) {
-          // Center and snap to the root node with custom easing
-          nextTick(() => {
-            if (canvasRef.value) {
-              canvasRef.value.centerAndSnapNode(rootNodeId, true);
-            }
-          });
-        }
-      }
-    }, 400);
-  }, 10);
-};
-
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const files = target.files;
-
-  if (!files || files.length === 0) {
-    return;
-  }
-
-  const file = files[0];
-  if (!file.name || !file.name.endsWith('.json')) {
-    alert('Please select a JSON file.');
-    return;
-  }
-
-  // Clear existing state before import
-  await canvasStore.clearCurrentWorkspace();
-
-  // Ensure we're in overview mode BEFORE starting the import
-  if (canvasRef.value) {
-    await canvasRef.value.returnToOverview();
-  }
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const response = await fetch('http://127.0.0.1:5050/api/process', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to process file');
-    }
-
-    const data = await response.json();
-    if (data.messages && Array.isArray(data.messages)) {
-      // Group messages by chat_id
-      const chatGroups = data.messages.reduce((groups, message) => {
-        const chatId = message.chat_id;
-        if (!groups[chatId]) {
-          groups[chatId] = [];
-        }
-        groups[chatId].push(message);
-        return groups;
-      }, {});
-
-      // Process each chat group sequentially with visual feedback
-      let processed = 0;
-      const total = Object.keys(chatGroups).length;
-
-      for (const [chatId, messages] of Object.entries(chatGroups)) {
-        processed++;
-
-        // Create workspace and immediately show it
-        const firstMessage = messages[0];
-        const workspace = {
-          id: chatId,
-          title: firstMessage.chat_name,
-          nodeCount: messages.length,
-          lastUpdated: new Date().toISOString(),
-          x: 100 + Math.random() * 200,
-          y: 100 + Math.random() * 200,
-          status: 'active',
-          tags: [],
-          color: '#ffffff',
-          isFavorite: false
-        };
-
-        // Add workspace and wait for UI update
-        await canvasStore.addWorkspaceToOverview(workspace);
-
-        // Force a UI update
-        await nextTick();
-
-        // Process messages
-        await canvasStore.importWorkspaceMessages(messages);
-
-        // Let the UI catch up
-        await nextTick();
-
-        // Update auto-fit for smooth visual feedback
-        if (canvasRef.value) {
-          canvasRef.value.autoFitNodes();
-        }
-      }
-
-      // Final refresh of chat list
-      await chatStore.loadChats();
-
-    } else {
-      console.error("Unexpected response format:", data);
-      alert('Failed to process the chat data. Check the console for details.');
-    }
-
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    alert('Error uploading file: ' + (error instanceof Error ? error.message : String(error)));
-  } finally {
-    target.value = ''; // Reset the file input
-  }
+const handleToolCallSelected = (toolCall: any) => {
+  // Set the selected tool call
+  selectedToolCall.value = toolCall;
+  
+  // Open the Claude Code feature panel
+  selectedFeature.value = 'claude-code';
+  dropdownState.value = 'feature-content';
+  
+  // Ensure the right panel is open
+  isRightDropdownOpen.value = true;
+  isFeaturePanelOpen.value = true;
+  appStore.isRightContentPanelOpen = true;
+  
+  console.log('Tool call selected:', toolCall);
 };
 
 const handleNavigateToCodeBubble = async (data: {
@@ -1350,7 +741,6 @@ const handleNavigateToCodeBubble = async (data: {
   try {
     // 1. First, check if we're already in this workspace
     const chatStore = useChatStore();
-    const canvasStore = useCanvasStore();
     const inSameWorkspace = chatStore.currentChatId === data.chatId;
 
     // If we need to change workspaces, go back to overview first
@@ -1393,21 +783,13 @@ const handleNavigateToCodeBubble = async (data: {
 // Note: Drag and drop handlers removed - archive uploads now handled by ArchiveUpload component
 
 // RAG Document Panel event handlers
-const handleDocumentSelected = (document: any) => {
-  console.log('Document selected:', document);
-  // TODO: Handle document selection for context
-};
 
-const handleDocumentDragged = (document: any, event: DragEvent) => {
-  console.log('Document dragged:', document);
-  // TODO: Handle document drag to create new nodes with context
-};
 
 
 // Theme is now managed reactively by the theme store
 
 // Watchers and lifecycle hooks
-watch(() => canvasRef.value?.workspaces, (newWorkspaces) => {
+watch(() => canvasRef.value?.workspaces, () => {
   // This will trigger a recompute of showLogo when workspaces change
 }, { deep: true });
 
@@ -2277,5 +1659,65 @@ onBeforeUnmount(() => {
 .floating-buttons-overlay.zen-mode :deep(.floating-corner-button.morphing) *,
 .floating-buttons-overlay.zen-mode :deep(.floating-corner-button.morphed) * {
   pointer-events: auto !important;
+}
+
+/* Smooth transition for floating buttons when they first appear */
+.floating-buttons-fade-enter-active {
+  transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.floating-buttons-fade-leave-active {
+  transition: all 0.6s cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+
+.floating-buttons-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.floating-buttons-fade-enter-to {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.floating-buttons-fade-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.floating-buttons-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+/* Zen mode Docker transitions */
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(-100%);
+}
+
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(-100%);
+}
+
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.slide-down-enter-from {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
 }
 </style>

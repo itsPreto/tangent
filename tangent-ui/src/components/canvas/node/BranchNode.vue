@@ -1,9 +1,10 @@
 <template>
-  <div class="pointer-events-auto absolute transition-all duration-300 branch-node branch-node-container" ref="nodeElement"
-    :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :data-right-sidebar-expanded="isRightSidebarExpanded" :class="[
-      'theme-' + currentTheme,
-      {
-        'selected': isSelected,
+  <div :class="[
+    'pointer-events-auto absolute branch-node branch-node-container',
+    'theme-' + currentTheme,
+    { 
+      'transition-all duration-300': shouldHaveTransitions,
+      'selected': isSelected,
         'glow-highlight': shouldGlow,
         'streaming': node.streamingContent,
         'active': isStreaming,
@@ -13,7 +14,9 @@
         'transition-snap': isTransitioningSnap,
         'right-content-panel-open': appStore.isRightContentPanelOpen
       }
-    ]" @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
+    ]" ref="nodeElement"
+    :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :data-right-sidebar-expanded="isRightSidebarExpanded"
+    @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
     @dragover="supportsVision ? handleDragOver : undefined" @drop="supportsVision ? handleDrop : undefined"
     @wheel="handleNodeWheel"
     :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle, dropTargetStyle, snappedLayoutStyle]">
@@ -51,8 +54,8 @@
 
     <!-- Preview LOD: Shows last message preview -->  
     <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-lg border backdrop-blur-sm p-4 transition-all duration-300" :style="{
-      backgroundColor: baseColorSet.value.transparent,
-      borderColor: baseColorSet.value.base
+      backgroundColor: baseColorSet?.value?.transparent || 'rgba(255, 255, 255, 0.1)',
+      borderColor: baseColorSet?.value?.base || 'rgba(255, 255, 255, 0.2)'
     }">
       <div class="flex flex-col h-full">
         <!-- Title and message count -->
@@ -75,6 +78,26 @@
             No messages yet
           </div>
         </div>
+      </div>
+    </div>
+    
+    <!-- Compact LOD: Small card with title only -->
+    <div v-else-if="shouldShowCompact" class="w-[100px] h-[100px] rounded-lg border backdrop-blur-sm p-2 transition-all duration-300 flex flex-col items-center justify-center" :style="{
+      backgroundColor: baseColorSet?.value?.transparent || 'rgba(255, 255, 255, 0.1)',
+      borderColor: baseColorSet?.value?.base || 'rgba(255, 255, 255, 0.2)'
+    }">
+      <div class="text-xs font-medium text-center text-base-content truncate w-full">
+        {{ node.title || "Untitled" }}
+      </div>
+      <div class="text-xs text-base-content/60 mt-1">
+        {{ node.messages?.length || 0 }}
+      </div>
+    </div>
+    
+    <!-- Cluster LOD: Tiny square with index -->
+    <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded bg-primary/20 border border-primary/40 flex items-center justify-center transition-all duration-300">
+      <div class="text-xs font-bold text-primary" style="font-size: 10px; transform: scale(1.2);">
+        {{ canvasStore.nodeIndices.get(node.id) || '?' }}
       </div>
     </div>
     
@@ -675,12 +698,21 @@ interface BranchNodeProps {  // Use a dedicated interface
   isRightPanelOpen?: boolean;
   isRightSidebarExpanded?: boolean;
   supportsVision?: boolean;
-  lodLevel?: 'block' | 'preview' | 'full';
+  lodLevel?: 'block' | 'preview' | 'full' | 'compact' | 'cluster';
   isPotentialDropTarget?: boolean;
   isInvalidDropTarget?: boolean;
+  disableEntranceAnimation?: boolean;
 }
 
 const props = defineProps<BranchNodeProps>();
+
+// Track if component has mounted to prevent entrance animations
+const hasMounted = ref(false);
+
+// Only enable transitions after mounting and when not disabled
+const shouldHaveTransitions = computed(() => {
+  return hasMounted.value && !props.disableEntranceAnimation;
+});
 
 // Initialize layout composable for responsive snapped node layout
 const {
@@ -729,6 +761,22 @@ const isDragging = ref(false);
 const dragStartPosition = ref({ x: 0, y: 0 });
 const DRAG_THRESHOLD = 5;
 const isStreaming = ref(false);
+
+// Helper methods for workspace nodes
+const formatDate = (dateString) => {
+  if (!dateString) return 'Unknown';
+  const date = new Date(dateString);
+  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const enterWorkspace = () => {
+  if (props.node?.isWorkspace && props.node?.id) {
+    // Navigate to this workspace
+    console.log('Entering workspace:', props.node.id);
+    // This would trigger navigation to the workspace
+    emit('enter-workspace', props.node.id);
+  }
+};
 const fadeTimeout = ref<number | null>(null);
 const lastModel = ref<ModelInfo | undefined>(undefined);
 const wasRecentlyDragging = ref(false);
@@ -956,16 +1004,28 @@ let abortController: AbortController | null = null;
 const isMediaProcessing = ref(false);
 const isAutoCaptioning = ref(false);
 
-// Simplified LOD System - just 2 levels
+// Enhanced LOD System - 5 levels
 const shouldShowFullDetail = computed(() => {
   return props.lodLevel === 'full' || props.lodLevel === undefined;
 });
 const shouldShowPreview = computed(() => {
   return props.lodLevel === 'preview';
 });
+const shouldShowCompact = computed(() => {
+  return props.lodLevel === 'compact';
+});
+const shouldShowCluster = computed(() => {
+  return props.lodLevel === 'cluster';
+});
 
 // Node dimensions for connection handles
 const nodeWidth = computed(() => {
+  if (shouldShowCluster.value) {
+    return 20; // Tiny cluster squares
+  }
+  if (shouldShowCompact.value) {
+    return 100; // Compact card width
+  }
   if (shouldShowPreview.value) {
     return 480; // Preview width
   }
@@ -977,6 +1037,12 @@ const nodeWidth = computed(() => {
 });
 
 const nodeHeight = computed(() => {
+  if (shouldShowCluster.value) {
+    return 20; // Tiny cluster squares
+  }
+  if (shouldShowCompact.value) {
+    return 100; // Compact card height
+  }
   if (shouldShowPreview.value) {
     return 120; // Preview height
   }
@@ -993,8 +1059,8 @@ const nodeHeight = computed(() => {
 
 // Last message and preview for preview LOD
 const lastMessage = computed(() => {
-  if (!node.value?.messages || node.value.messages.length === 0) return null;
-  return node.value.messages[node.value.messages.length - 1];
+  if (!props.node?.messages || props.node.messages.length === 0) return null;
+  return props.node.messages[props.node.messages.length - 1];
 });
 
 const lastMessagePreview = computed(() => {
@@ -1718,9 +1784,9 @@ const nodePositionStyle = computed(() => {
 
   // Normal positioning
   const style: any = {
-    transform: `translate3d(${props.node.x}px, ${props.node.y}px, 0) scale(${props.zoom})`,
+    transform: `translate3d(${props.node.x || 0}px, ${props.node.y || 0}px, 0) scale(${props.zoom})`,
     transformOrigin: '0 0',
-    transition: 'none',
+    transition: shouldHaveTransitions.value ? 'transform 0.3s ease-out' : 'none',
     // Higher z-index for selected nodes to bring them to front
     zIndex: props.isSelected ? 100 : 10
   };
@@ -3116,6 +3182,11 @@ onMounted(() => {
   if (!props.node.title) {
     isEditing.value = true;
   }
+
+  // Enable transitions after a short delay to prevent entrance animations
+  setTimeout(() => {
+    hasMounted.value = true;
+  }, 50);
 
   // Restore autoTTS preference from localStorage
   const savedAutoTTS = localStorage.getItem(`autoTTS_${props.node.id}`);

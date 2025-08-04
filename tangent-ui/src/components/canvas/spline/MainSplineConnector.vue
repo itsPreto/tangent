@@ -38,7 +38,7 @@
     
     <!-- Interactive connection circle at start point -->
     <g 
-      v-if="!isDragging"
+      v-if="!isDragging && shouldShowConnectionCircle"
       :transform="`translate(${connectionPoint.x}, ${connectionPoint.y})`"
       @mouseenter="handleConnectionHover(true)"
       @mouseleave="handleConnectionHover(false)"
@@ -361,37 +361,45 @@ const connectionPoints = computed(() => {
   const isSourceExpanded = Boolean(props.isSourceNodeExpanded)
   const isLeft = isLeftBranch.value
   
-  console.log('[MainSplineConnector] Node coordinates:', {
-    startNode: { 
-      id: props.startNode?.id, 
-      x: startNodeX, 
-      y: startNodeY,
-      type: props.startNode?.type
-    },
-    endNode: { 
-      id: props.endNode?.id, 
-      x: endNodeX, 
-      y: endNodeY,
-      type: props.endNode?.type
-    }
-  })
+  // console.log('[MainSplineConnector] Node coordinates and dimensions:', {
+  //   startNode: { 
+  //     id: props.startNode?.id, 
+  //     x: startNodeX, 
+  //     y: startNodeY,
+  //     type: props.startNode?.type,
+  //     cardWidth: startCardWidth,
+  //     cardHeight: startCardHeight
+  //   },
+  //   endNode: { 
+  //     id: props.endNode?.id, 
+  //     x: endNodeX, 
+  //     y: endNodeY,
+  //     type: props.endNode?.type,
+  //     cardWidth: endCardWidth,
+  //     cardHeight: endCardHeight
+  //   }
+  // })
   
   const idx = Number(props.endNode?.branchMessageIndex) || 0
   
   // Calculate yOff based on specific LOD level
   let yOff;
   switch (props.startLodLevel) {
-    case 'block':
-      // Very small spacing for block LOD
-      yOff = isSourceExpanded ? Math.min(idx * 15 + 8, startCardHeight / 2) : startCardHeight / 2;
+    case 'cluster':
+      // Cluster LOD: tiny squares, connect from center
+      yOff = startCardHeight / 2;
       break;
-    case 'summary':
-      // Medium spacing for summary LOD
-      yOff = isSourceExpanded ? Math.min(idx * 30 + 15, startCardHeight / 2) : startCardHeight / 2;
+    case 'compact':
+      // Compact LOD: small cards, connect from center
+      yOff = startCardHeight / 2;
+      break;
+    case 'preview':
+      // Preview LOD: medium cards, connect from center with slight offset
+      yOff = isSourceExpanded ? Math.min(idx * 20 + 15, startCardHeight / 2) : startCardHeight / 2;
       break;
     case 'full':
     default:
-      // Full spacing for full LOD
+      // Full LOD: large cards, full spacing calculation
       yOff = isSourceExpanded ? idx * 120 + 40 : 40;
       break;
   }
@@ -410,17 +418,36 @@ const connectionPoints = computed(() => {
     }
   } else {
     // Normal connection to the actual end node with card offset
+    // Adjust connection point based on end node LOD level
+    let endY;
+    switch (props.endLodLevel) {
+      case 'cluster':
+      case 'compact':
+        // Connect to center for small nodes
+        endY = endNodeY + endCardHeight / 2;
+        break;
+      case 'preview':
+        // Connect slightly above center for preview nodes
+        endY = endNodeY + endCardHeight * 0.4;
+        break;
+      case 'full':
+      default:
+        // Connect to center for full nodes
+        endY = endNodeY + endCardHeight / 2;
+        break;
+    }
+    
     endPoint = {
       x: endNodeX + (isLeft ? endCardWidth - 1 : 1), // Stop 1px before the edge
-      y: endNodeY + endCardHeight / 2
+      y: endY
     }
   }
 
-  console.log('[MainSplineConnector] Final connection points:', {
-    startPoint,
-    endPoint,
-    SVGPath: `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C...${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`
-  })
+  // console.log('[MainSplineConnector] Final connection points:', {
+  //   startPoint,
+  //   endPoint,
+  //   SVGPath: `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C...${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`
+  // })
 
   return { startPoint, endPoint }
 })
@@ -490,11 +517,43 @@ const reversedPathData = computed(() => {
 
 // Styling - consistent across all zoom levels
 const strokeWidth = computed(() => {
-  return baseStroke * 1.5 // Always use the active stroke width
+  // Implement spline LOD based on connected nodes
+  const endLOD = props.endLodLevel
+  const startLOD = props.startLodLevel
+  
+  // If either connected node is in cluster LOD, use very thin splines
+  if (endLOD === 'cluster' || startLOD === 'cluster') {
+    return baseStroke * 0.3 // Ultra-thin for cluster view
+  }
+  
+  // If either node is in compact LOD, use thin splines  
+  if (endLOD === 'compact' || startLOD === 'compact') {
+    return baseStroke * 0.7 // Thinner for compact view
+  }
+  
+  // If either node is in preview LOD, use medium splines
+  if (endLOD === 'preview' || startLOD === 'preview') {
+    return baseStroke * 1.0 // Normal thickness for preview
+  }
+  
+  // Full LOD uses thick splines
+  return baseStroke * 1.5 // Thick splines for full detail
 })
 
 const dashPattern = computed(() => {
-  return "4 6" // Consistent dash pattern regardless of zoom
+  const endLOD = props.endLodLevel
+  const startLOD = props.startLodLevel
+  
+  // Adjust dash pattern based on LOD level
+  if (endLOD === 'cluster' || startLOD === 'cluster') {
+    return "2 4" // Smaller dashes for cluster view
+  }
+  
+  if (endLOD === 'compact' || startLOD === 'compact') {
+    return "3 5" // Medium dashes for compact view
+  }
+  
+  return "4 6" // Default dash pattern for preview and full LOD
 })
 
 // Connection point at the end node connection
@@ -505,6 +564,24 @@ const connectionPoint = computed(() => {
 
 // Connection circle color
 const connectionCircleColor = computed(() => activePathColor.value)
+
+// Show connection circle based on LOD levels
+const shouldShowConnectionCircle = computed(() => {
+  const endLOD = props.endLodLevel
+  const startLOD = props.startLodLevel
+  
+  // Hide connection circles for cluster and compact views
+  if (endLOD === 'cluster' || startLOD === 'cluster') {
+    return false
+  }
+  
+  if (endLOD === 'compact' || startLOD === 'compact') {
+    return false
+  }
+  
+  // Show connection circles for preview and full LOD
+  return true
+})
 
 const fontSize = computed(() => {
   // Scale font size inversely with zoom level to maintain readability

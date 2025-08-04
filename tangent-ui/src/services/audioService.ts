@@ -41,6 +41,16 @@ class AudioRecordingService {
   private processor: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   
+  // Dual recorder approach for seamless audio
+  private chunkTimer: number | null = null;
+  private primaryRecorder: MediaRecorder | null = null;
+  private secondaryRecorder: MediaRecorder | null = null;
+  private primaryChunks: Blob[] = [];
+  private secondaryChunks: Blob[] = [];
+  private activeSide: 'primary' | 'secondary' = 'primary';
+  private manualStop: boolean = false;
+  private processingQueue: Promise<void> = Promise.resolve();
+  
   // Speech detection state
   private speechStartTime: number | null = null;
   private lastSpeechTime: number = 0;
@@ -152,29 +162,28 @@ class AudioRecordingService {
       this.speechStartTime = null;
       this.lastSpeechTime = 0;
       this.silenceStartTime = null;
+      this.manualStop = false; // Reset manual stop flag when starting
 
-      // Create MediaRecorder
-      this.mediaRecorder = new MediaRecorder(this.audioStream!, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-
-      // Set up event handlers
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this.audioChunks.push(event.data);
-        }
-      };
-
-      this.mediaRecorder.onstop = () => {
-        this.handleRecordingStop();
-      };
-
-      // Start recording
-      this.mediaRecorder.start(100); // Collect data every 100ms
-
-      // Set up continuous mode if specified
       if (this.state.value.currentMode.type === 'continuous') {
-        this.setupContinuousMode();
+        // Continuous mode: use dual recorder approach
+        this.setupDualRecording();
+      } else {
+        // Manual mode: traditional approach
+        this.mediaRecorder = new MediaRecorder(this.audioStream!, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
+
+        this.mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            this.audioChunks.push(event.data);
+          }
+        };
+
+        this.mediaRecorder.onstop = () => {
+          this.handleRecordingStop();
+        };
+
+        this.mediaRecorder.start(100);
       }
 
       return true;
@@ -188,8 +197,32 @@ class AudioRecordingService {
   }
 
   public async stopRecording(): Promise<void> {
-    if (this.mediaRecorder && this.state.value.isRecording) {
-      this.mediaRecorder.stop();
+    if (this.state.value.isRecording) {
+      // Set manual stop flag
+      this.manualStop = true;
+      
+      // Clear chunk timer first
+      if (this.chunkTimer) {
+        clearInterval(this.chunkTimer);
+        this.chunkTimer = null;
+      }
+      
+      // Stop the appropriate recorders
+      if (this.state.value.currentMode.type === 'continuous') {
+        if (this.primaryRecorder) {
+          try { this.primaryRecorder.stop(); } catch (e) {}
+          this.primaryRecorder = null;
+        }
+        if (this.secondaryRecorder) {
+          try { this.secondaryRecorder.stop(); } catch (e) {}
+          this.secondaryRecorder = null;
+        }
+        this.primaryChunks = [];
+        this.secondaryChunks = [];
+      } else if (this.mediaRecorder) {
+        this.mediaRecorder.stop();
+      }
+      
       this.state.value.isRecording = false;
       this.cleanupContinuousMode();
     }
@@ -283,6 +316,129 @@ class AudioRecordingService {
     } finally {
       this.state.value.isProcessing = false;
     }
+  }
+
+  private setupDualRecording(): void {
+    // Create two recorders that will alternate
+    this.primaryRecorder = new MediaRecorder(this.audioStream!, {
+      mimeType: 'audio/webm;codecs=opus'
+    });
+    
+    this.secondaryRecorder = new MediaRecorder(this.audioStream!, {
+      mimeType: 'audio/webm;codecs=opus'
+    });
+
+    // Set up data handlers
+    this.primaryRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        this.primaryChunks.push(event.data);
+      }
+    };
+
+    this.secondaryRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        this.secondaryChunks.push(event.data);
+      }
+    };
+
+    // Set up stop handlers to process audio
+    this.primaryRecorder.onstop = () => {
+      this.processRecorderChunks('primary');
+    };
+
+    this.secondaryRecorder.onstop = () => {
+      this.processRecorderChunks('secondary');
+    };
+
+    // Start with primary recorder
+    this.primaryRecorder.start(100);
+    this.activeSide = 'primary';
+    
+    // Set up alternating pattern
+    this.setupAlternatingRecording();
+  }
+
+  private setupAlternatingRecording(): void {
+    // Every 2 seconds, switch recorders with overlap
+    this.chunkTimer = setInterval(async () => {
+      if (this.state.value.isRecording && !this.manualStop) {
+        await this.switchRecorders();
+      }
+    }, 2000) as unknown as number;
+  }
+
+  private async switchRecorders(): Promise<void> {
+    if (this.manualStop) return;
+
+    try {
+      if (this.activeSide === 'primary' && this.primaryRecorder && this.secondaryRecorder) {
+        // Start secondary before stopping primary (overlap)
+        this.secondaryRecorder.start(100);
+        
+        // Wait a bit for overlap
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Stop primary
+        this.primaryRecorder.stop();
+        this.activeSide = 'secondary';
+        
+      } else if (this.activeSide === 'secondary' && this.primaryRecorder && this.secondaryRecorder) {
+        // Start primary before stopping secondary (overlap)
+        this.primaryRecorder.start(100);
+        
+        // Wait a bit for overlap
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Stop secondary
+        this.secondaryRecorder.stop();
+        this.activeSide = 'primary';
+      }
+    } catch (error) {
+      console.warn('Recorder switch error:', error);
+    }
+  }
+
+  private async processRecorderChunks(side: 'primary' | 'secondary'): Promise<void> {
+    // Queue processing to avoid race conditions
+    this.processingQueue = this.processingQueue.then(async () => {
+      const chunks = side === 'primary' ? this.primaryChunks : this.secondaryChunks;
+      
+      if (chunks.length === 0) return;
+
+      try {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm;codecs=opus' });
+        
+        // Clear chunks for next recording
+        if (side === 'primary') {
+          this.primaryChunks = [];
+        } else {
+          this.secondaryChunks = [];
+        }
+        
+        // Send for transcription
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'chunk.webm');
+        formData.append('mode', 'manual');
+
+        const response = await fetch('http://localhost:5050/api/transcribe-audio', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const result: TranscriptionResult = await response.json();
+          if (result.text.trim()) {
+            this.state.value.transcription = result.text;
+            
+            if (this.onTranscription) {
+              this.onTranscription(result.text);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Chunk processing error:', error);
+      }
+    });
   }
 
   private setupContinuousMode(): void {
@@ -439,6 +595,8 @@ class AudioRecordingService {
     return hasEnergy && hasVoiceSpectrum && hasVoiceZCR;
   }
 
+  // Removed addSilencePadding - using duration-based chunking instead
+
   private async handleContinuousStop(reason: string): Promise<void> {
     console.log(`Enhanced VAD: Continuous recording stopped: ${reason}`);
     await this.stopRecording();
@@ -482,11 +640,25 @@ class AudioRecordingService {
       clearTimeout(this.speechDetectionTimer);
       this.speechDetectionTimer = null;
     }
+    if (this.chunkTimer) {
+      clearInterval(this.chunkTimer);
+      this.chunkTimer = null;
+    }
   }
 
   public cleanup(): void {
     this.cleanupTimers();
     this.cleanupContinuousMode();
+    
+    if (this.primaryRecorder) {
+      try { this.primaryRecorder.stop(); } catch (e) {}
+      this.primaryRecorder = null;
+    }
+    
+    if (this.secondaryRecorder) {
+      try { this.secondaryRecorder.stop(); } catch (e) {}
+      this.secondaryRecorder = null;
+    }
     
     if (this.mediaRecorder && this.state.value.isRecording) {
       this.mediaRecorder.stop();
@@ -497,9 +669,12 @@ class AudioRecordingService {
       this.audioStream = null;
     }
 
+    this.primaryChunks = [];
+    this.secondaryChunks = [];
     this.state.value.isRecording = false;
     this.state.value.isProcessing = false;
     this.state.value.isSpeechDetected = false;
+    this.manualStop = false;
   }
 
   public reset(): void {
@@ -508,6 +683,8 @@ class AudioRecordingService {
     
     // Clear all audio data
     this.audioChunks = [];
+    this.primaryChunks = [];
+    this.secondaryChunks = [];
     this.state.value.audioBlob = null;
     this.state.value.transcription = '';
     this.state.value.error = null;
@@ -520,6 +697,8 @@ class AudioRecordingService {
     
     // Reset all internal state
     this.mediaRecorder = null;
+    this.primaryRecorder = null;
+    this.secondaryRecorder = null;
     this.processor = null;
     this.source = null;
     this.speechStartTime = null;
@@ -533,6 +712,7 @@ class AudioRecordingService {
     this.adaptiveThreshold = 0.5;
     this.conversationPauseStart = null;
     this.speechSegments = [];
+    this.manualStop = false;
     
     console.log('AudioService: Complete reset performed');
   }

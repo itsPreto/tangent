@@ -880,23 +880,30 @@ export const useCanvasStore = defineStore('canvas', () => {
     return newNode;
   };
 
-  const createToolCallBranch = (parentNodeId: string, toolCall: any) => {
+  const createToolCallCompact = (parentNodeId: string, toolCall: any) => {
     const parentNode = nodes.value.find(n => n.id === parentNodeId);
     if (!parentNode) return null;
 
-    // Generate position to the right of parent node
+    // Calculate position in a spiral pattern around the parent node to avoid overlap
+    const existingToolNodes = nodes.value.filter(n => 
+      n.type === 'tool-call-compact' && n.parentId === parentNodeId
+    );
+    const index = existingToolNodes.length;
+    const radius = 150 + (Math.floor(index / 6) * 60); // Increase radius for each ring
+    const angle = (index % 6) * (Math.PI * 2 / 6); // 6 nodes per ring
+    
     const position = {
-      x: parentNode.x + CARD_WIDTH + 100,
-      y: parentNode.y + (Math.random() * 200 - 100) // Add some randomness to avoid overlap
+      x: parentNode.x + Math.cos(angle) * radius,
+      y: parentNode.y + Math.sin(angle) * radius
     };
 
-    // Create a unique ID for the tool call branch
-    const toolCallBranchId = `${parentNodeId}_tool_${toolCall.id}`;
+    // Create a unique ID for the compact tool call node
+    const toolCallCompactId = `${parentNodeId}_tool_${toolCall.id}`;
 
-    const toolCallBranch = {
-      id: toolCallBranchId,
+    const toolCallCompact = {
+      id: toolCallCompactId,
       parentId: parentNodeId,
-      type: 'tool-call-branch',
+      type: 'tool-call-compact',
       x: position.x,
       y: position.y,
       toolCall,
@@ -904,17 +911,17 @@ export const useCanvasStore = defineStore('canvas', () => {
     };
 
     // Add to nodes array
-    nodes.value.push(toolCallBranch);
+    nodes.value.push(toolCallCompact);
 
-    // Create connection in the new system if auto-creation is enabled
+    // Create lightweight connection (visual line only, no heavy connection logic)
     if (autoCreateConnections.value) {
-      const connectionId = generateConnectionId(parentNodeId, toolCallBranchId);
+      const connectionId = generateConnectionId(parentNodeId, toolCallCompactId);
       const connection: Connection = {
         id: connectionId,
         startNodeId: parentNodeId,
-        endNodeId: toolCallBranchId,
-        typeId: 'default-curved',
-        label: connectionLabels.value.get(`${parentNodeId}-${toolCallBranchId}`) || undefined,
+        endNodeId: toolCallCompactId,
+        typeId: 'tool-connection', // Use a lighter connection type for tools
+        label: undefined, // No labels for tool connections to reduce clutter
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -922,17 +929,17 @@ export const useCanvasStore = defineStore('canvas', () => {
       connectionStore.addConnection(connection);
     }
 
-    return toolCallBranch;
+    return toolCallCompact;
   };
 
-  // Remove tool call branch and return to main session
-  const removeToolCallBranch = (branchId: string) => {
-    const index = nodes.value.findIndex(n => n.id === branchId);
+  // Remove tool call compact node
+  const removeToolCallCompact = (compactId: string) => {
+    const index = nodes.value.findIndex(n => n.id === compactId);
     if (index !== -1) {
       nodes.value.splice(index, 1);
       
       // Remove the connection from the connection store
-      connectionStore.removeConnectionsByNodeId(branchId);
+      connectionStore.removeConnectionsByNodeId(compactId);
     }
   };
 
@@ -2098,7 +2105,7 @@ export const useCanvasStore = defineStore('canvas', () => {
               });
             }
             
-            return {
+            const processedNode = {
               id: node.id,
               type: node.type,
               title: node.title,
@@ -2111,6 +2118,33 @@ export const useCanvasStore = defineStore('canvas', () => {
               modelParams: node.modelParams,
               ...node.metadata
             };
+            
+            // Handle tool-call-compact nodes - extract toolCall from metadata
+            if (node.type === 'tool-call-compact') {
+              console.log('[CanvasStore] Processing compact node:', { 
+                nodeId: node.id, 
+                metadata: node.metadata,
+                hasToolCall: !!node.metadata?.toolCall 
+              });
+              
+              if (node.metadata?.toolCall) {
+                processedNode.toolCall = node.metadata.toolCall;
+                processedNode.isTemporary = node.metadata.isTemporary || true;
+              } else {
+                console.warn('[CanvasStore] Compact node missing toolCall:', node);
+                // Create a fallback toolCall to prevent crashes
+                processedNode.toolCall = {
+                  id: node.id,
+                  tool_name: 'Unknown',
+                  parameters: {},
+                  status: 'success',
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                };
+              }
+            }
+            
+            return processedNode;
           });
         }
         
@@ -2148,20 +2182,47 @@ export const useCanvasStore = defineStore('canvas', () => {
             });
           }
           
+          const processedNode = {
+            id: node.id,
+            type: node.type,
+            title: node.title,
+            x: fixedX,
+            y: fixedY,
+            parentId: node.parentId,
+            branchMessageIndex: node.branchMessageIndex,
+            messages: node.messages || [],
+            streamingContent: null,
+            modelParams: node.modelParams,
+            ...node.metadata
+          };
+          
+          // Handle tool-call-compact nodes - extract toolCall from metadata
+          if (node.type === 'tool-call-compact') {
+            console.log('[CanvasStore] Processing compact node (hierarchical):', { 
+              nodeId: node.id, 
+              metadata: node.metadata,
+              hasToolCall: !!node.metadata?.toolCall 
+            });
+            
+            if (node.metadata?.toolCall) {
+              processedNode.toolCall = node.metadata.toolCall;
+              processedNode.isTemporary = node.metadata.isTemporary || true;
+            } else {
+              console.warn('[CanvasStore] Compact node missing toolCall (hierarchical):', node);
+              // Create a fallback toolCall to prevent crashes
+              processedNode.toolCall = {
+                id: node.id,
+                tool_name: 'Unknown',
+                parameters: {},
+                status: 'success',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+            }
+          }
+          
           return [
-            {
-              id: node.id,
-              type: node.type,
-              title: node.title,
-              x: fixedX,
-              y: fixedY,
-              parentId: node.parentId,
-              branchMessageIndex: node.branchMessageIndex,
-              messages: node.messages || [],
-              streamingContent: null,
-              modelParams: node.modelParams,
-              ...node.metadata
-            },
+            processedNode,
             ...children.flatMap(flattenNodes)
           ];
         };
@@ -2487,8 +2548,8 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     // Updated methods
     addNode,
-    createToolCallBranch,
-    removeToolCallBranch,
+    createToolCallCompact,
+    removeToolCallCompact,
     updateNodePosition,
     removeNode,
     updateNodeTitle,

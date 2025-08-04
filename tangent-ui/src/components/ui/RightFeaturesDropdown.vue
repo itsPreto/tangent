@@ -108,6 +108,7 @@
             :is-open="true"
             :active-feature="selectedFeature"
             :node-id="nodeId"
+            :selected-tool-call="selectedToolCall"
             @close="$emit('close')"
             @feature-switch="handleFeatureSwitch"
             @panel-opened="$emit('panel-opened')"
@@ -140,12 +141,14 @@ interface Props {
   dropdownState: 'collapsed' | 'features-list' | 'feature-content'
   selectedFeature?: string | null
   nodeId?: string | null
+  selectedToolCall?: any | null
   isRightContentPanelOpen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   selectedFeature: null,
   nodeId: null,
+  selectedToolCall: null,
   isRightContentPanelOpen: false
 })
 

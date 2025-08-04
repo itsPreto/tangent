@@ -30,6 +30,18 @@ interface ClusteringParams {
   min_samples?: number;
 }
 
+interface TopicIsland {
+  id: string;
+  title: string;
+  description: string;
+  x: number;
+  y: number;
+  radius: number;
+  workspaces: ClusterWorkspace[];
+  color: string;
+  commonTags: Array<{ id: string; name: string; color: string }>;
+}
+
 class ClusteringService {
   private baseUrl = 'http://127.0.0.1:5050/api';
   private statusPollingInterval: number | null = null;
@@ -176,6 +188,121 @@ class ClusteringService {
   }
 
   /**
+   * Search topics using cosine similarity
+   */
+  async searchTopicsBySimilarity(query: string, limit: number = 10): Promise<ClusterResult[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/clustering/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: query,
+          limit: limit
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to search topics');
+      }
+
+      const data = await response.json();
+      return data.results || [];
+    } catch (error) {
+      console.error('Error searching topics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Assign workspace to topic
+   */
+  async assignWorkspaceToTopic(workspaceId: string, topicId: string, createNew: boolean = false): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/clustering/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          topic_id: topicId,
+          create_new: createNew
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to assign workspace to topic');
+      }
+    } catch (error) {
+      console.error('Error assigning workspace to topic:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get topic islands for spatial visualization
+   */
+  async getTopicIslands(): Promise<TopicIsland[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/clustering/islands`);
+      if (!response.ok) {
+        throw new Error('Failed to get topic islands');
+      }
+      const data = await response.json();
+      return data.islands || [];
+    } catch (error) {
+      console.error('Error getting topic islands:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update workspace position within topic island
+   */
+  async updateWorkspacePosition(workspaceId: string, x: number, y: number, topicId?: string): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/clustering/position`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          x: x,
+          y: y,
+          topic_id: topicId
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update workspace position');
+      }
+    } catch (error) {
+      console.error('Error updating workspace position:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate topic clusters if none exist
+   */
+  async generateInitialClusters(): Promise<void> {
+    try {
+      // Start clustering with default parameters
+      await this.startClustering({
+        method: 'kmeans',
+        n_clusters: 8 // Default number of topic islands
+      });
+    } catch (error) {
+      console.error('Error generating initial clusters:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Cleanup when service is destroyed
    */
   destroy(): void {
@@ -188,4 +315,4 @@ class ClusteringService {
 export const clusteringService = new ClusteringService();
 
 // Types for external use
-export type { ClusteringStatus, ClusterResult, ClusterWorkspace, ClusteringParams };
+export type { ClusteringStatus, ClusterResult, ClusterWorkspace, ClusteringParams, TopicIsland };

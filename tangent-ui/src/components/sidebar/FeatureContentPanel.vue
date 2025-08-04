@@ -48,6 +48,7 @@
         <ClaudeCodeManagementFeature 
           v-else-if="activeFeature === 'claude-code'"
           :node-id="nodeId"
+          :selected-tool-call="selectedToolCall"
           @open-workspace="$emit('open-workspace', $event)" />
         
         <!-- Testing Feature -->
@@ -98,6 +99,7 @@ const props = defineProps<{
   isOpen: boolean;
   activeFeature: string | null;
   nodeId?: string;
+  selectedToolCall?: any;
 }>();
 
 const emit = defineEmits<{
