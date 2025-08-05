@@ -4303,6 +4303,47 @@ def get_execution_nodes_for_node(node_id):
         logger.error(f"Error getting execution nodes for node {node_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
+@api_routes.route('/tool-calls/migrate', methods=['POST'])
+def migrate_tool_calls():
+    """Migrate tool calls from existing workspaces"""
+    try:
+        from migrate_tool_calls import ToolCallMigrator
+        
+        # Get parameters from request
+        data = request.get_json() or {}
+        dry_run = data.get('dry_run', False)
+        workspace_id = data.get('workspace_id', None)
+        
+        # Create migrator
+        migrator = ToolCallMigrator(app)
+        
+        if workspace_id:
+            # Process single workspace
+            chat = chat_service.get_chat(workspace_id)
+            if not chat:
+                return jsonify({'error': f'Workspace {workspace_id} not found'}), 404
+            
+            # Convert to SQLAlchemy model for migrator
+            from ChatPersistenceService import Chat
+            chat_model = Chat.query.get(workspace_id)
+            if chat_model:
+                migrator.process_chat(chat_model, dry_run)
+            else:
+                return jsonify({'error': f'Workspace {workspace_id} not found in database'}), 404
+        else:
+            # Process all workspaces
+            migrator.run_migration(dry_run)
+        
+        return jsonify({
+            'success': True,
+            'stats': migrator.stats,
+            'dry_run': dry_run
+        })
+    
+    except Exception as e:
+        logger.error(f"Error during tool call migration: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @api_routes.route('/execution-nodes/<execution_id>/terminate', methods=['POST'])
 def terminate_execution(execution_id):
     """Terminate a running execution"""

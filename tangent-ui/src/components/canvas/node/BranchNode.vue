@@ -3910,7 +3910,7 @@ onBeforeUnmount(() => {
 
 /* Snapped card styling */
 .snapped-card {
-  background: linear-gradient(to bottom, var(--node-color-transparent), rgba(var(--b1), 0.8)) !important;
+  /* background: linear-gradient(to bottom, var(--node-color-transparent), rgba(var(--b1), 0.8)) !important; */
   backdrop-filter: blur(16px) !important;
   border: 1px solid var(--node-border-color);
   width: var(--snapped-content-width, 70%) !important;

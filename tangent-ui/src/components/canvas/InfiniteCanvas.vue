@@ -92,6 +92,30 @@
         />
       </Transition>
 
+      <!-- LOD Lock Indicator -->
+      <Transition name="fade">
+        <div 
+          v-if="isLODLocked" 
+          class="fixed top-4 right-4 z-50 bg-primary/90 text-primary-content px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm border border-primary/20"
+        >
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            <span class="text-sm font-medium">LOD Locked: {{ lockedLODLevel.toUpperCase() }}</span>
+            <button 
+              @click="toggleLODLock"
+              class="ml-2 hover:bg-primary-content/10 rounded p-1 transition-colors"
+              title="Click to unlock LOD (or press L)"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </Transition>
+
       
       <!-- Distance Indicator -->
       <Transition name="distance-fade">
@@ -286,14 +310,83 @@
                 stroke="rgba(59, 130, 246, 0.8)" 
                 stroke-width="2"
                 stroke-dasharray="5,5"
-                class="selection-boundary"
-                :style="{ 
-                  pointerEvents: drawingStore.currentTool === 'cursor' ? 'auto' : 'none',
-                  cursor: drawingStore.currentTool === 'cursor' ? 'move' : 'default'
-                }"
+                class="selection-boundary cursor-move hover:fill-opacity-20 transition-all"
+                style="pointer-events: auto;"
                 @mousedown="handleSelectionBoundaryMouseDown($event)">
                 <animate attributeName="stroke-dashoffset" values="0;10" dur="1s" repeatCount="indefinite" />
               </rect>
+              
+              <!-- Node Selection Boundary -->
+              <g v-if="selectedNodeIds.size > 1" class="node-selection-group">
+                <rect
+                  :x="nodeSelectionBounds.x" :y="nodeSelectionBounds.y" 
+                  :width="nodeSelectionBounds.width" :height="nodeSelectionBounds.height"
+                  fill="rgba(34, 197, 94, 0.1)" 
+                  stroke="rgba(34, 197, 94, 0.9)" 
+                  stroke-width="2"
+                  stroke-dasharray="6,3"
+                  class="node-selection-boundary cursor-move hover:fill-opacity-20 transition-all"
+                  style="pointer-events: auto;"
+                  @mousedown="handleNodeSelectionBoundaryMouseDown($event)"
+                  @click="(e) => console.log('Boundary clicked!', e)">
+                  <animate attributeName="stroke-dashoffset" values="0;9" dur="1s" repeatCount="indefinite" />
+                </rect>
+                
+                <!-- Collapse Button -->
+                <g class="collapse-button" :transform="`translate(${nodeSelectionBounds.x + nodeSelectionBounds.width - 30}, ${nodeSelectionBounds.y + 10})`">
+                  <circle
+                    r="15"
+                    fill="rgba(34, 197, 94, 0.9)"
+                    stroke="rgba(255, 255, 255, 0.9)"
+                    stroke-width="2"
+                    class="collapse-btn cursor-pointer hover:fill-opacity-80 transition-all"
+                    @click="handleCollapseButtonClick($event)"
+                  />
+                  <text
+                    text-anchor="middle"
+                    dy="1"
+                    fill="white"
+                    font-size="10"
+                    font-weight="bold"
+                    class="collapse-btn-text cursor-pointer"
+                    @click="handleCollapseButtonClick($event)"
+                  >
+                    ⟐
+                  </text>
+                  
+                  <!-- Tooltip background -->
+                  <rect
+                    x="-25"
+                    y="-35"
+                    width="50"
+                    height="18"
+                    fill="rgba(0, 0, 0, 0.8)"
+                    rx="4"
+                    class="tooltip-bg opacity-0 hover:opacity-100 transition-opacity pointer-events-none"
+                  />
+                  <text
+                    text-anchor="middle"
+                    y="-24"
+                    fill="white"
+                    font-size="10"
+                    class="tooltip-text opacity-0 hover:opacity-100 transition-opacity pointer-events-none"
+                  >
+                    Collapse
+                  </text>
+                </g>
+                
+                <!-- Selection counter -->
+                <text
+                  :x="nodeSelectionBounds.x + 10"
+                  :y="nodeSelectionBounds.y - 5"
+                  fill="rgba(34, 197, 94, 0.9)"
+                  font-size="12"
+                  font-weight="600"
+                  class="selection-counter"
+                >
+                  {{ selectedNodeIds.size }} nodes selected
+                </text>
+              </g>
               
               <!-- Resize Handles for Single Selected Shape -->
               <g v-if="drawingStore.hasSelection && drawingStore.selectedShapeIds.length === 1 && drawingStore.currentTool === 'cursor'">
@@ -374,7 +467,7 @@
               </g>
             </g>
             
-            <!-- Connections Layer (above drawing shapes) -->
+            <!-- Connections Layer (above drawing shapes) - Hide at cluster zoom -->
             <!-- Original MainSplineConnector connections -->
             <template v-for="node in visibleNodes" :key="node.id">
               <MainSplineConnector
@@ -401,6 +494,37 @@
               />
             </template>
 
+            <!-- Tool Grouping Rectangles (rendered early so they don't block interactive elements) -->
+            <g v-if="toolGroups.length > 0" class="tool-grouping-layer">
+              <g v-for="group in toolGroups" :key="group.toolName" class="tool-group">
+                <rect
+                  :x="group.x"
+                  :y="group.y" 
+                  :width="group.width"
+                  :height="group.height"
+                  :fill="group.color"
+                  :stroke="group.color"
+                  stroke-width="2"
+                  opacity="0.1"
+                  stroke-opacity="0.4"
+                  rx="8"
+                  class="tool-group-rect hover:opacity-20 transition-opacity cursor-move"
+                  @mousedown="handleToolGroupRectMouseDown($event, group)"
+                />
+                <text
+                  :x="group.x + 10"
+                  :y="group.y - 5"
+                  :fill="group.color"
+                  font-size="12"
+                  font-weight="600"
+                  class="tool-group-label"
+                >
+                  {{ group.toolName }} ({{ group.nodes.length }})
+                </text>
+              </g>
+            </g>
+
+
             <!-- Workspace Overview Dots (visual reference at low zoom) -->
             <g v-if="workspaceOverviewDots.length > 0" class="workspace-overview-layer">
               <g v-for="workspace in workspaceOverviewDots" :key="workspace.id" class="workspace-overview-dot">
@@ -415,42 +539,64 @@
                   class="cursor-pointer hover:opacity-80 transition-opacity"
                   @click="navigateToWorkspace(workspace)"
                 />
+                <!-- Background for title text -->
+                <rect
+                  :x="workspace.x - (workspace.title.length * Math.max(12, Math.min(48, 16 / zoom))) / 3"
+                  :y="workspace.y + Math.max(35, workspace.nodeCount * 3 + 15) - Math.max(12, Math.min(48, 16 / zoom)) / 2"
+                  :width="(workspace.title.length * Math.max(12, Math.min(48, 16 / zoom))) / 1.5"
+                  :height="Math.max(12, Math.min(48, 16 / zoom)) + 4"
+                  fill="rgba(0, 0, 0, 0.8)"
+                  rx="4"
+                  class="pointer-events-none"
+                  :transform="`rotate(${workspace.rotation || 0} ${workspace.x} ${workspace.y + Math.max(35, workspace.nodeCount * 3 + 15)})`"
+                />
                 <text
                   :x="workspace.x"
                   :y="workspace.y + Math.max(35, workspace.nodeCount * 3 + 15)"
                   text-anchor="middle"
-                  fill="#1F2937"
-                  font-size="14"
-                  font-weight="600"
-                  class="pointer-events-none"
+                  dominant-baseline="middle"
+                  fill="white"
+                  :font-size="Math.max(12, Math.min(48, 16 / zoom))"
+                  :transform="`rotate(${workspace.rotation || 0} ${workspace.x} ${workspace.y + Math.max(35, workspace.nodeCount * 3 + 15)})`"
+                  font-weight="700"
+                  class="pointer-events-none workspace-title"
+                  style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);"
                 >
                   {{ workspace.title }}
-                </text>
-                <text
-                  :x="workspace.x" 
-                  :y="workspace.y + Math.max(50, workspace.nodeCount * 3 + 30)"
-                  text-anchor="middle"
-                  fill="#6B7280"
-                  font-size="12"
-                  class="pointer-events-none"
-                >
-                  {{ workspace.nodeCount }} nodes
                 </text>
               </g>
             </g>
 
-            <!-- Topic Islands Layer (for cluster LOD) -->
-            <TopicIslandView
+            <!-- Selection Box -->
+            <rect
+              v-if="selectionBoxRect"
+              :x="selectionBoxRect.x"
+              :y="selectionBoxRect.y"
+              :width="selectionBoxRect.width"
+              :height="selectionBoxRect.height"
+              fill="rgba(59, 130, 246, 0.1)"
+              stroke="#3B82F6"
+              stroke-width="2"
+              stroke-dasharray="5,5"
+              class="selection-box"
+            />
+
+            <!-- Topic Islands Layer (for cluster LOD) - REMOVED: Just show individual workspace nodes -->
+            <!-- <TopicIslandView
               :zoom-level="zoom"
               :viewport-bounds="viewportReturn.getViewportBounds(canvasRef)"
+              :cluster-data="clusterViewData"
+              :is-lod-locked="isLODLocked"
+              :locked-lod-level="lockedLODLevel"
               @navigate-to-island="handleNavigateToIsland"
               @zoom-to-overview="handleZoomToOverview"
-            />
+              @navigate-to-workspace="handleNavigateToWorkspace"
+            /> -->
           </svg>
 
           <!-- Original spline connections restored -->
 
-          <!-- Nodes Layer -->
+          <!-- Nodes Layer - Hide at cluster zoom -->
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 1">
             <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles all node types from all workspaces) -->
@@ -828,6 +974,7 @@ const connectionLayer = ref(null);
 const expandedNodes = ref(new Set());
 const connectionLabels = ref(new Map());
 const isPanning = ref(false);
+const isTransitioning = ref(false);
 const curvature = ref(0.5); // Spline curvature (0 = straight, 1 = very curvy)
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
@@ -839,8 +986,8 @@ const focusedTopicId = ref<string | null>(null);
 
 // Workspace overview dots (visual reference only at low zoom)
 const workspaceOverviewDots = computed(() => {
-  if (zoom.value > 0.15 || allWorkspaceNodes.value.length === 0) {
-    return []; // Only show at very low zoom
+  if (zoom.value >= 0.20 || allWorkspaceNodes.value.length === 0) {
+    return []; // Only show below 20% zoom
   }
   
   // Group workspace nodes by workspaceId to create overview dots
@@ -857,8 +1004,8 @@ const workspaceOverviewDots = computed(() => {
     workspaceGroups.get(node.workspaceId).nodes.push(node);
   });
   
-  // Calculate center position for each workspace
-  return Array.from(workspaceGroups.values()).map(workspace => {
+  // Calculate center position and rotation for each workspace
+  const workspaceDots = Array.from(workspaceGroups.values()).map((workspace, index) => {
     let centerX = 0, centerY = 0;
     workspace.nodes.forEach(node => {
       centerX += node.x || 0;
@@ -867,14 +1014,33 @@ const workspaceOverviewDots = computed(() => {
     centerX /= workspace.nodes.length;
     centerY /= workspace.nodes.length;
     
-    return {
+    // Calculate rotation angle based on spiral position
+    // Find the workspace index from the center (0,0)
+    const angle = Math.atan2(centerY, centerX);
+    const rotationDegrees = (angle * 180 / Math.PI) + 90; // +90 to align with spiral direction
+    
+    const workspaceInfo = {
+      id: workspace.id,
+      title: workspace.title,
+      x: centerX,
+      y: centerY,
+      nodeCount: workspace.nodes.length,
+      rotation: rotationDegrees
+    };
+    
+    // Update persistent workspace positions for LOD system
+    allWorkspacePositions.value.set(workspace.id, {
       id: workspace.id,
       title: workspace.title,
       x: centerX,
       y: centerY,
       nodeCount: workspace.nodes.length
-    };
+    });
+    
+    return workspaceInfo;
   });
+  
+  return workspaceDots;
 });
 
 // WASD Panning state
@@ -888,17 +1054,989 @@ let panAnimationFrame: number | null = null;
 // Track current focused workspace for island navigation
 const currentWorkspaceId = ref<string | null>(null);
 
+// Tool grouping state
+const showToolGrouping = ref<boolean>(false);
+
+// Use existing selectionRect for drag selection
+const selectionBoxRect = computed(() => {
+  if (!selectionRect.value.isActive) return null;
+  
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return null;
+  
+  // Convert screen coordinates to canvas coordinates
+  const startX = (selectionRect.value.startX - rect.left - panX.value) / zoom.value;
+  const startY = (selectionRect.value.startY - rect.top - panY.value) / zoom.value;
+  const currentX = (selectionRect.value.currentX - rect.left - panX.value) / zoom.value;
+  const currentY = (selectionRect.value.currentY - rect.top - panY.value) / zoom.value;
+  
+  const minX = Math.min(startX, currentX);
+  const minY = Math.min(startY, currentY);
+  const maxX = Math.max(startX, currentX);
+  const maxY = Math.max(startY, currentY);
+  
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+});
+
+// Node selection bounds for multi-selected nodes
+const nodeSelectionBounds = computed(() => {
+  if (selectedNodeIds.value.size < 2) {
+    console.log('NodeSelectionBounds: Not enough nodes selected:', selectedNodeIds.value.size);
+    return null;
+  }
+  
+  const selectedNodes = Array.from(selectedNodeIds.value)
+    .map(id => store.nodes.find(n => n.id === id))
+    .filter(node => node);
+    
+  if (selectedNodes.length < 2) {
+    console.log('NodeSelectionBounds: Not enough valid nodes found:', selectedNodes.length);
+    return null;
+  }
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  selectedNodes.forEach(node => {
+    const dimensions = getEffectiveCardDimensions(node);
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x + dimensions.width);
+    maxY = Math.max(maxY, node.y + dimensions.height);
+  });
+  
+  // Add some padding around the selection
+  const padding = 15;
+  const width = maxX - minX + padding * 2;
+  const height = maxY - minY + padding * 2;
+  
+  // Shift left and up by 15%
+  const leftShift = width * 0.15;
+  const upShift = height * 0.15;
+  
+  const bounds = {
+    x: minX - padding - leftShift,
+    y: minY - padding - upShift,
+    width: width,
+    height: height
+  };
+  
+  console.log('NodeSelectionBounds: Calculated bounds for', selectedNodes.length, 'nodes:', bounds);
+  return bounds;
+});
+
+// Cached cluster view data to prevent recomputation during pan
+const cachedClusterViewData = ref(null);
+const lastClusterDataUpdate = ref(0);
+
+// Cache for all nodes from all chats (used in cluster view)
+const allNodesCache = ref(new Map());
+const lastAllNodesUpdate = ref(0);
+// Cache positioned nodes to avoid expensive recalculation during panning
+const positionedNodesCache = ref([]);
+const lastPositionUpdate = ref(0);
+
+// This function is no longer needed - nodes should stay at their natural positions
+// Keeping it for now to avoid breaking references, but it just returns nodes as-is
+
+// Position nodes around their topic islands for cluster view
+const positionNodesAroundTopicIslands = (allNodes) => {
+  // Get cluster view data to know topic positions
+  const clusterData = cachedClusterViewData.value;
+  if (!clusterData || clusterData.length === 0) {
+    console.log('[DEBUG] No cluster data available for positioning');
+    return allNodes;
+  }
+
+  // Create a map of chatId to topic island position
+  const topicPositions = new Map();
+  clusterData.forEach(topic => {
+    topic.workspaces.forEach(workspace => {
+      topicPositions.set(workspace.id, {
+        topicX: topic.x,
+        topicY: topic.y,
+        workspaceX: workspace.x,
+        workspaceY: workspace.y
+      });
+    });
+  });
+
+  console.log(`[DEBUG] Created position map for ${topicPositions.size} workspaces`);
+
+  // Repositioned nodes
+  let positionFoundCount = 0;
+  let noPositionCount = 0;
+  const repositionedNodes = allNodes.map(node => {
+    const position = topicPositions.get(node.chatId);
+    if (!position) {
+      // If we can't find the workspace position, keep original coordinates
+      console.log(`[DEBUG] No position found for node ${node.id} in chat ${node.chatId}`);
+      noPositionCount++;
+      return node;
+    }
+
+    positionFoundCount++;
+    
+    // Calculate relative position of node within its original workspace
+    // Assume nodes were originally positioned around 0,0 or find the workspace center
+    const originalX = node.x || 0;
+    const originalY = node.y || 0;
+    
+    // Scale down the original layout to fit around the workspace position
+    const scale = 0.1; // Make nodes much smaller relative to their island
+    const scaledX = originalX * scale;
+    const scaledY = originalY * scale;
+    
+    // Position around the workspace location with some offset to spread them out
+    const offsetRadius = 80; // Distance from workspace center
+    const angle = Math.random() * 2 * Math.PI; // Random angle for better distribution
+    const offsetX = Math.cos(angle) * offsetRadius * Math.random();
+    const offsetY = Math.sin(angle) * offsetRadius * Math.random();
+    
+    const newX = position.workspaceX + scaledX + offsetX;
+    const newY = position.workspaceY + scaledY + offsetY;
+
+    return {
+      ...node,
+      x: newX,
+      y: newY,
+      // Store original coordinates for potential restoration
+      originalX: originalX,
+      originalY: originalY
+    };
+  });
+
+  console.log(`[DEBUG] Repositioned ${repositionedNodes.length} nodes: ${positionFoundCount} positioned, ${noPositionCount} kept original`);
+  return repositionedNodes;
+};
+
+// Load all nodes from all chats for cluster view
+const loadAllNodes = async () => {
+  if (Date.now() - lastAllNodesUpdate.value < 1000) return; // Throttle to 1 second
+  
+  // console.log('[DEBUG] loadAllNodes called');
+  try {
+    const allWorkspaces = chatStore.chats || [];
+    // console.log(`[DEBUG] Found ${allWorkspaces.length} workspaces to load nodes from`);
+    // console.log(`[DEBUG] First 3 workspace positions:`, allWorkspaces.slice(0,3).map(w => ({id: w.id, title: w.title, x: w.x, y: w.y})));
+    
+    const nodePromises = allWorkspaces.map(async (workspace) => {
+      try {
+        // console.log(`[DEBUG] Loading nodes for workspace ${workspace.id} (${workspace.title})`);
+        const response = await fetch(`http://127.0.0.1:5050/chats/${workspace.id}`);
+        if (!response.ok) {
+          console.warn(`[DEBUG] Failed to load chat data for ${workspace.id}: ${response.status}`);
+          return [];
+        }
+        const chatData = await response.json();
+        
+        // Extract nodes from the chat data, flattening the hierarchical structure
+        const extractNodes = (node) => {
+          const nodes = [node];
+          if (node.children && Array.isArray(node.children)) {
+            node.children.forEach(child => {
+              nodes.push(...extractNodes(child));
+            });
+          }
+          return nodes;
+        };
+        
+        // Check if chatData has nodes property and what type it is
+        let nodes = [];
+        if (chatData.nodes) {
+          if (Array.isArray(chatData.nodes)) {
+            // If it's an array, flatten all nodes
+            nodes = chatData.nodes.flatMap(extractNodes);
+          } else if (typeof chatData.nodes === 'object' && chatData.nodes.id) {
+            // If it's a single root node object, extract all nodes from it
+            nodes = extractNodes(chatData.nodes);
+            // console.log(`[DEBUG] Extracted nodes from single root node for ${workspace.id}`);
+          } else {
+            console.warn(`[DEBUG] Unexpected nodes structure for ${workspace.id}:`, typeof chatData.nodes, chatData.nodes);
+          }
+        } else {
+          console.warn(`[DEBUG] No nodes property found in chatData for ${workspace.id}`, Object.keys(chatData));
+        }
+        
+        // console.log(`[DEBUG] Loaded ${nodes.length} nodes from workspace ${workspace.id}`);
+        return nodes;
+      } catch (error) {
+        console.warn(`Failed to load nodes for workspace ${workspace.id}:`, error);
+        return [];
+      }
+    });
+    
+    const allNodesArrays = await Promise.all(nodePromises);
+    const newCache = new Map();
+    let totalNodes = 0;
+    
+    // Store nodes by chat ID and position them relative to their workspace's grid position
+    allWorkspaces.forEach((workspace, index) => {
+      const nodes = allNodesArrays[index];
+      if (nodes.length > 0) {
+        // Find the workspace's actual grid position from allWorkspaceNodes
+        const workspaceNode = allWorkspaceNodes.value.find(n => n.workspaceId === workspace.id);
+        const workspaceX = workspaceNode?.x || workspace.x || 0;
+        const workspaceY = workspaceNode?.y || workspace.y || 0;
+        
+        console.log(`[DEBUG] Positioning workspace ${workspace.title} at (${workspaceX}, ${workspaceY})`);
+        
+        // Position nodes relative to their workspace's grid coordinates
+        const offsetNodes = nodes.map(node => ({
+          ...node,
+          x: (node.x || 0) + workspaceX,
+          y: (node.y || 0) + workspaceY,
+          workspaceId: workspace.id,
+          workspaceTitle: workspace.title
+        }));
+        
+        newCache.set(workspace.id, offsetNodes);
+        totalNodes += offsetNodes.length;
+      }
+    });
+    
+    // console.log(`[DEBUG] Successfully cached ${totalNodes} total nodes from ${newCache.size} workspaces`);
+    allNodesCache.value = newCache;
+    lastAllNodesUpdate.value = Date.now();
+    // Clear positioned nodes cache since we have new data
+    positionedNodesCache.value = [];
+    lastPositionUpdate.value = 0;
+  } catch (error) {
+    console.error('Failed to load all nodes for cluster view:', error);
+  }
+};
+
+// Only update cluster data when necessary (not during pan/zoom)
+const updateClusterViewData = () => {
+  // Skip if we're not in cluster view
+  if (zoom.value > 0.10) {
+    cachedClusterViewData.value = null;
+    return;
+  }
+  
+  // Skip if panning or data was recently updated
+  if (isPanning.value || Date.now() - lastClusterDataUpdate.value < 100) {
+    return;
+  }
+  
+  // Get all chats (workspaces)
+  const allWorkspaces = chatStore.chats || [];
+  
+  // Group workspaces by topic (you can enhance this with real topic classification)
+  const topicGroups = new Map();
+  
+  allWorkspaces.forEach((workspace) => {
+    // For now, use a simple heuristic to assign topics
+    // You can enhance this with proper topic classification
+    let topicName = 'General';
+    
+    // Simple keyword-based topic assignment
+    const title = workspace.title.toLowerCase();
+    if (title.includes('code') || title.includes('programming') || title.includes('development')) {
+      topicName = 'Development';
+    } else if (title.includes('design') || title.includes('ui') || title.includes('ux')) {
+      topicName = 'Design';
+    } else if (title.includes('data') || title.includes('analysis') || title.includes('research')) {
+      topicName = 'Research';
+    } else if (title.includes('project') || title.includes('management') || title.includes('planning')) {
+      topicName = 'Project Management';
+    }
+    
+    if (!topicGroups.has(topicName)) {
+      topicGroups.set(topicName, []);
+    }
+    
+    // Get branch count for this workspace
+    const workspaceNodes = store.nodes.filter(node => node.chatId === workspace.id);
+    const branchCount = workspaceNodes.length;
+    
+    topicGroups.get(topicName).push({
+      id: workspace.id,
+      title: workspace.title,
+      branchCount,
+      nodes: workspaceNodes
+    });
+  });
+  
+  // Convert to array with positioning
+  const topics = [];
+  let topicIndex = 0;
+  
+  topicGroups.forEach((workspaces, topicName) => {
+    // Position topics in a circle
+    const angle = (topicIndex / topicGroups.size) * 2 * Math.PI;
+    const topicRadius = 800; // Distance from center
+    const topicX = Math.cos(angle) * topicRadius;
+    const topicY = Math.sin(angle) * topicRadius;
+    
+    topics.push({
+      id: `topic-${topicIndex}`,
+      name: topicName,
+      x: topicX,
+      y: topicY,
+      workspaces: workspaces.map((workspace, workspaceIndex) => {
+        // Position workspaces around their topic center
+        const workspaceAngle = (workspaceIndex / workspaces.length) * 2 * Math.PI;
+        const workspaceRadius = 200;
+        
+        return {
+          ...workspace,
+          x: topicX + Math.cos(workspaceAngle) * workspaceRadius,
+          y: topicY + Math.sin(workspaceAngle) * workspaceRadius
+        };
+      })
+    });
+    
+    topicIndex++;
+  });
+  
+  // Cache the result
+  cachedClusterViewData.value = topics;
+  lastClusterDataUpdate.value = Date.now();
+};
+
+// Computed property that returns cached data
+const clusterViewData = computed(() => {
+  // Only show in cluster view
+  if (zoom.value > 0.10) return null;
+  
+  // Update cache if needed (but not during pan)
+  if (!cachedClusterViewData.value && !isPanning.value) {
+    updateClusterViewData();
+  }
+  
+  return cachedClusterViewData.value;
+});
+
+// Load all workspace nodes when chats change
+watch(() => chatStore.chats, () => {
+  // Simply reload all nodes when workspaces change
+  if (!isPanning.value && !isTransitioning.value) {
+    allNodesCache.value.clear();
+    loadAllNodes();
+  }
+}, { deep: true });
+
+// Zoom change detection for transition state
+watch(() => zoom.value, (newZoom, oldZoom) => {
+  // Detect significant zoom changes for transition state
+  const significantChange = Math.abs(newZoom - oldZoom) > 0.05;
+  if (significantChange) {
+    isTransitioning.value = true;
+    // Clear transition flag after animation completes
+    setTimeout(() => {
+      isTransitioning.value = false;
+    }, 300);
+  }
+}, { flush: 'post' });
+
+// Group tool nodes by type
+const toolGroups = computed(() => {
+  if (!showToolGrouping.value) return [];
+  
+  const groups = new Map();
+  
+  visibleNodes.value.forEach(node => {
+    // Check if node is a tool call node
+    if (node.type === 'tool-call-compact' || node.messages?.some(msg => msg.tool_calls)) {
+      // Extract tool name from the node
+      let toolName = '';
+      
+      if (node.messages && node.messages.length > 0) {
+        // Find the last message with tool calls
+        const toolMessage = node.messages.find(msg => msg.tool_calls && msg.tool_calls.length > 0);
+        if (toolMessage && toolMessage.tool_calls && toolMessage.tool_calls[0]) {
+          const functionName = toolMessage.tool_calls[0].function?.name || '';
+          
+          // Map function names to readable tool categories
+          switch (functionName) {
+            case 'Task':
+              toolName = 'Agent Tasks';
+              break;
+            case 'Read':
+            case 'NotebookRead':
+              toolName = 'Read Tools';
+              break;
+            case 'Write':
+            case 'MultiEdit':
+            case 'Edit':
+            case 'NotebookEdit':
+              toolName = 'Write & Edit Tools';
+              break;
+            case 'Bash':
+              toolName = 'Bash Commands';
+              break;
+            case 'WebFetch':
+              toolName = 'Web Fetch';
+              break;
+            case 'WebSearch':
+              toolName = 'Web Search';
+              break;
+            case 'Grep':
+              toolName = 'Search (Grep)';
+              break;
+            case 'Glob':
+              toolName = 'File Patterns (Glob)';
+              break;
+            case 'LS':
+              toolName = 'Directory Listing';
+              break;
+            case 'TodoWrite':
+              toolName = 'Task Management';
+              break;
+            default:
+              toolName = functionName ? `${functionName} Tool` : 'Other Tools';
+          }
+        }
+      }
+      
+      // Also check node title for tool names (fallback)
+      if (!toolName && node.title) {
+        const title = node.title.toLowerCase();
+        if (title.includes('agent task') || title.includes('task tool')) toolName = 'Agent Tasks';
+        else if (title.includes('read') && !title.includes('write')) toolName = 'Read Tools';
+        else if (title.includes('write') || title.includes('edit') || title.includes('multiedit')) toolName = 'Write & Edit Tools';
+        else if (title.includes('bash') || title.includes('command')) toolName = 'Bash Commands';
+        else if (title.includes('webfetch') || title.includes('web fetch')) toolName = 'Web Fetch';
+        else if (title.includes('websearch') || title.includes('web search')) toolName = 'Web Search';
+        else if (title.includes('grep') || title.includes('search')) toolName = 'Search (Grep)';
+        else if (title.includes('glob') || title.includes('pattern')) toolName = 'File Patterns (Glob)';
+        else if (title.includes('ls') || title.includes('list') || title.includes('directory')) toolName = 'Directory Listing';
+        else if (title.includes('todo') || title.includes('task management')) toolName = 'Task Management';
+        else toolName = 'Other Tools';
+      }
+      
+      if (!toolName) toolName = 'Other Tools';
+      
+      if (!groups.has(toolName)) {
+        groups.set(toolName, []);
+      }
+      groups.get(toolName).push(node);
+    }
+  });
+  
+  // Convert to array and use fixed positions
+  return Array.from(groups.entries()).map(([toolName, nodes]) => {
+    if (nodes.length < 2) return null; // Don't group single nodes
+    
+    // Use fixed group positions if available (prevents movement during drag)
+    const fixedPos = fixedGroupPositions.value.get(toolName);
+    if (fixedPos) {
+      return {
+        toolName,
+        nodes,
+        x: fixedPos.x,
+        y: fixedPos.y,
+        width: fixedPos.width,
+        height: fixedPos.height,
+        color: getToolGroupColor(toolName)
+      };
+    }
+    
+    // Fallback calculation if no fixed position (initial setup)
+    const groupWidth = 1000; // Fixed width for consistency
+    const nodesPerRow = Math.min(Math.ceil(Math.sqrt(nodes.length + 1)), 4);
+    const rows = Math.ceil(nodes.length / nodesPerRow);
+    const nodeSpacing = 200;
+    const groupHeight = Math.max(300, rows * (nodeSpacing * 0.6) + 160); // Dynamic height based on content
+    
+    // Find the main Claude Code session node for positioning reference
+    const mainNode = store.nodes.find(node => 
+      !node.parentId || 
+      node.messages?.some(msg => msg.role === 'user' && !msg.tool_calls)
+    );
+    
+    if (!mainNode) return null;
+    
+    const mainNodeX = mainNode.x || 0;
+    const mainNodeY = mainNode.y || 0;
+    
+    // Calculate position based on tool type index (for systematic vertical stacking)
+    const toolTypes = Array.from(groups.keys());
+    const typeIndex = toolTypes.indexOf(toolName);
+    
+    const rightOffset = 700;
+    const groupSpacing = 50;
+    const previousGroupsHeight = toolTypes.slice(0, typeIndex).reduce((totalHeight, prevToolName) => {
+      const prevNodes = groups.get(prevToolName) || [];
+      const prevRows = Math.ceil(prevNodes.length / nodesPerRow);
+      const prevHeight = Math.max(300, prevRows * (nodeSpacing * 0.6) + 160);
+      return totalHeight + prevHeight + groupSpacing;
+    }, 0);
+    
+    const x = mainNodeX + rightOffset;
+    const y = mainNodeY - 100 + previousGroupsHeight;
+    
+    return {
+      toolName,
+      nodes,
+      x,
+      y,
+      width: groupWidth,
+      height: groupHeight,
+      color: getToolGroupColor(toolName)
+    };
+  }).filter(group => group !== null);
+});
+
+// Get color for tool group
+const getToolGroupColor = (toolName: string): string => {
+  const colors = {
+    'Agent Tasks': '#FF6B6B',
+    'Read Tools': '#4ECDC4', 
+    'Write & Edit Tools': '#45B7D1',
+    'Bash Commands': '#FFEAA7',
+    'Web Fetch': '#DDA0DD',
+    'Web Search': '#98D8C8',
+    'Search (Grep)': '#F7DC6F',
+    'File Patterns (Glob)': '#BB8FCE',
+    'Directory Listing': '#85C1E9',
+    'Task Management': '#90EE90',
+    'Other Tools': '#C0C0C0'
+  };
+  
+  // Handle dynamic tool names (e.g., "SomeTool Tool")
+  if (!colors[toolName] && toolName.endsWith(' Tool')) {
+    return '#B19CD9'; // Light purple for unknown specific tools
+  }
+  
+  return colors[toolName] || '#C0C0C0';
+};
+
+// Store fixed group positions to prevent recalculation during drag
+const fixedGroupPositions = ref(new Map());
+
+// Organize tool nodes to the right based on branch depth/index
+const organizeToolNodes = () => {
+  if (!showToolGrouping.value) return;
+  
+  // Find the main Claude Code session node (usually the root/first node)
+  const mainNode = store.nodes.find(node => 
+    !node.parentId || 
+    node.messages?.some(msg => msg.role === 'user' && !msg.tool_calls)
+  );
+  
+  if (!mainNode) return;
+  
+  const mainNodeX = mainNode.x || 0;
+  const mainNodeY = mainNode.y || 0;
+  
+  // Group tool nodes by their tool type and calculate new positions
+  const toolNodesByType = new Map();
+  
+  store.nodes.forEach(node => {
+    // Skip if not a tool node
+    if (!node.type?.includes('tool-call') && !node.messages?.some(msg => msg.tool_calls)) {
+      return;
+    }
+    
+    // Calculate branch depth (distance from main node)
+    const branchDepth = calculateBranchDepth(node, mainNode);
+    
+    // Extract tool name using the same logic as toolGroups
+    let toolName = 'Other Tools';
+    
+    if (node.messages && node.messages.length > 0) {
+      const toolMessage = node.messages.find(msg => msg.tool_calls && msg.tool_calls.length > 0);
+      if (toolMessage && toolMessage.tool_calls && toolMessage.tool_calls[0]) {
+        const functionName = toolMessage.tool_calls[0].function?.name || '';
+        
+        switch (functionName) {
+          case 'Task':
+            toolName = 'Agent Tasks';
+            break;
+          case 'Read':
+          case 'NotebookRead':
+            toolName = 'Read Tools';
+            break;
+          case 'Write':
+          case 'MultiEdit':
+          case 'Edit':
+          case 'NotebookEdit':
+            toolName = 'Write & Edit Tools';
+            break;
+          case 'Bash':
+            toolName = 'Bash Commands';
+            break;
+          case 'WebFetch':
+            toolName = 'Web Fetch';
+            break;
+          case 'WebSearch':
+            toolName = 'Web Search';
+            break;
+          case 'Grep':
+            toolName = 'Search (Grep)';
+            break;
+          case 'Glob':
+            toolName = 'File Patterns (Glob)';
+            break;
+          case 'LS':
+            toolName = 'Directory Listing';
+            break;
+          case 'TodoWrite':
+            toolName = 'Task Management';
+            break;
+          default:
+            toolName = functionName ? `${functionName} Tool` : 'Other Tools';
+        }
+      }
+    }
+    
+    // Fallback to title-based detection
+    if (toolName === 'Other Tools' && node.title) {
+      const title = node.title.toLowerCase();
+      if (title.includes('agent task') || title.includes('task tool')) toolName = 'Agent Tasks';
+      else if (title.includes('read') && !title.includes('write')) toolName = 'Read Tools';
+      else if (title.includes('write') || title.includes('edit') || title.includes('multiedit')) toolName = 'Write & Edit Tools';
+      else if (title.includes('bash') || title.includes('command')) toolName = 'Bash Commands';
+      else if (title.includes('webfetch') || title.includes('web fetch')) toolName = 'Web Fetch';
+      else if (title.includes('websearch') || title.includes('web search')) toolName = 'Web Search';
+      else if (title.includes('grep') || title.includes('search')) toolName = 'Search (Grep)';
+      else if (title.includes('glob') || title.includes('pattern')) toolName = 'File Patterns (Glob)';
+      else if (title.includes('ls') || title.includes('list') || title.includes('directory')) toolName = 'Directory Listing';
+      else if (title.includes('todo') || title.includes('task management')) toolName = 'Task Management';
+    }
+    
+    if (!toolNodesByType.has(toolName)) {
+      toolNodesByType.set(toolName, []);
+    }
+    
+    toolNodesByType.get(toolName).push({ node, branchDepth });
+  });
+  
+  // Clear and recalculate fixed group positions
+  fixedGroupPositions.value.clear();
+  
+  // Position tool nodes in organized rectangles
+  let currentGroupY = mainNodeY - 100; // Start slightly above main node
+  let currentRightOffset = 700; // Distance to the right of main session (will increase for waterfall)
+  const groupWidth = 1000; // Width of each tool group rectangle
+  const groupHeight = 300; // Base height for each group
+  const nodeSpacing = 200; // Space between nodes within group
+  const groupSpacing = 50; // Space between different tool groups
+  const waterfallHorizontalStep = 150; // How much each group shifts right
+  
+  let groupIndex = 0;
+  toolNodesByType.forEach((toolNodes, toolName) => {
+    if (toolNodes.length === 0) return;
+    
+    // Sort by branch depth for systematic organization
+    toolNodes.sort((a, b) => a.branchDepth - b.branchDepth);
+    
+    // Calculate grid layout within the rectangle with better spacing
+    const nodesPerRow = Math.min(Math.ceil(Math.sqrt(toolNodes.length)), 3); // Max 3 per row for better spacing
+    const rows = Math.ceil(toolNodes.length / nodesPerRow);
+    const nodeWidth = 300; // Approximate node width
+    const nodeHeight = 200; // Approximate node height
+    const horizontalSpacing = nodeWidth + 80; // Space between node centers horizontally
+    const verticalSpacing = nodeHeight + 60; // Space between node centers vertically
+    const leftPadding = 60;
+    const topPadding = 100; // Space for group label
+    
+    // Calculate actual group dimensions based on content
+    const actualGroupWidth = Math.max(groupWidth, leftPadding * 2 + (nodesPerRow * horizontalSpacing));
+    const actualGroupHeight = Math.max(groupHeight, topPadding + (rows * verticalSpacing) + 60);
+    
+    // Position nodes in a grid within the rectangle (waterfall layout)
+    const groupStartX = mainNodeX + currentRightOffset;
+    const groupStartY = currentGroupY;
+    
+    // Store fixed group position
+    fixedGroupPositions.value.set(toolName, {
+      x: groupStartX,
+      y: groupStartY,
+      width: actualGroupWidth,
+      height: actualGroupHeight
+    });
+    
+    toolNodes.forEach((toolNodeData, index) => {
+      const { node } = toolNodeData;
+      
+      const row = Math.floor(index / nodesPerRow);
+      const col = index % nodesPerRow;
+      
+      // Calculate systematic position within the group rectangle with proper spacing
+      const nodeX = groupStartX + leftPadding + (col * horizontalSpacing);
+      const nodeY = groupStartY + topPadding + (row * verticalSpacing);
+      
+      // Update node position only if not currently being dragged
+      if (!store.isDragging && !isMultiDragging.value) {
+        node.x = nodeX;
+        node.y = nodeY;
+      }
+    });
+    
+    // Move to next group position - waterfall layout (diagonal staggering)
+    currentGroupY += actualGroupHeight + groupSpacing;
+    currentRightOffset += waterfallHorizontalStep; // Each group shifts right for waterfall effect
+    groupIndex++;
+  });
+};
+
+// Calculate branch depth (how far a node is from the main session)
+const calculateBranchDepth = (node: any, mainNode: any): number => {
+  if (node.id === mainNode.id) return 0;
+  
+  let depth = 0;
+  let currentNode = node;
+  const visited = new Set();
+  
+  while (currentNode && currentNode.parentId && !visited.has(currentNode.id)) {
+    visited.add(currentNode.id);
+    const parent = store.nodes.find(n => n.id === currentNode.parentId);
+    if (!parent) break;
+    depth++;
+    currentNode = parent;
+    if (currentNode.id === mainNode.id) break;
+  }
+  
+  return depth;
+};
+
+
 // Navigate to a workspace overview dot
-const navigateToWorkspace = (workspace: any) => {
+const navigateToWorkspace = async (workspace: any) => {
   console.log('Navigate to workspace:', workspace);
   
-  // Animate to workspace center with appropriate zoom
-  const targetZoom = 0.5; // Good zoom level to see workspace detail
-  const duration = 800; // Animation duration
-  
-  // Center on workspace position
-  centerOnPointWithAnimation(workspace.x, workspace.y, targetZoom, duration);
+  try {
+    // Load the workspace data
+    const chatData = await chatStore.loadChat(workspace.id);
+    if (!chatData) {
+      console.error('Failed to load workspace:', workspace.id);
+      return;
+    }
+    
+    // Load the conversation structure into the canvas
+    await store.loadChatState(workspace.id);
+    
+    // Switch out of workspace overview mode
+    isWorkspaceOverview.value = false;
+    
+    // Get the FULL LOD coordinates from fresh chat data (not current summary positions)
+    const fullChatData = await chatStore.loadChat(workspace.id);
+    if (fullChatData?.nodes) {
+      // Find main node in the full chat data structure
+      const findMainNodeInFullData = (nodeData: any): any => {
+        if (!nodeData) return null;
+        if (nodeData.parentId === null || nodeData.parentId === undefined) {
+          return nodeData;
+        }
+        // If it's an array, find the node without parentId
+        if (Array.isArray(nodeData)) {
+          return nodeData.find(n => n.parentId === null || n.parentId === undefined);
+        }
+        return null;
+      };
+      
+      const fullMainNode = findMainNodeInFullData(fullChatData.nodes);
+      if (fullMainNode) {
+        console.log('Centering on full LOD main node:', { x: fullMainNode.x, y: fullMainNode.y });
+        const targetZoom = 0.8; // Good zoom level to see conversation detail
+        const duration = 800; // Animation duration
+        
+        centerOnPointWithAnimation(fullMainNode.x, fullMainNode.y, targetZoom, duration);
+      } else {
+        // Fallback to workspace center
+        console.log('No main node found, centering on workspace center');
+        const targetZoom = 0.5; 
+        const duration = 800;
+        centerOnPointWithAnimation(workspace.x, workspace.y, targetZoom, duration);
+      }
+    } else {
+      // Fallback to workspace center
+      const targetZoom = 0.5; 
+      const duration = 800;
+      centerOnPointWithAnimation(workspace.x, workspace.y, targetZoom, duration);
+    }
+    
+    console.log('Successfully navigated to workspace:', workspace.title);
+  } catch (error) {
+    console.error('Error navigating to workspace:', error);
+  }
 };
+
+// Export canvas positioning data for debugging
+const exportCanvasMetadata = () => {
+  const metadata = {
+    timestamp: new Date().toISOString(),
+    zoom: zoom.value,
+    pan: { x: panX.value, y: panY.value },
+    workspaces: [],
+    workspaceOverviewDots: [],
+    branchNodes: [],
+    toolNodes: []
+  };
+
+  // Export workspace positions from chatStore
+  if (chatStore.chats) {
+    metadata.workspaces = chatStore.chats.map(workspace => ({
+      id: workspace.id,
+      title: workspace.title,
+      x: workspace.x || 0,
+      y: workspace.y || 0,
+      nodeCount: workspace.nodeCount || 0
+    }));
+  }
+
+  // Export workspace overview dots (the ones that show at <15% zoom)
+  if (workspaceOverviewDots.value) {
+    metadata.workspaceOverviewDots = workspaceOverviewDots.value.map(dot => ({
+      id: dot.id,
+      title: dot.title,
+      x: dot.x,
+      y: dot.y,
+      nodeCount: dot.nodeCount
+    }));
+  }
+
+  // Export all cached nodes (branch nodes) with their workspace associations
+  allNodesCache.value.forEach((nodes, workspaceId) => {
+    const workspace = chatStore.chats?.find(w => w.id === workspaceId);
+    nodes.forEach(node => {
+      if (node.type === 'tool-call-compact') {
+        metadata.toolNodes.push({
+          id: node.id,
+          workspaceId: workspaceId,
+          workspaceTitle: workspace?.title || 'Unknown',
+          type: node.type,
+          x: node.x || 0,
+          y: node.y || 0,
+          parentId: node.parentId
+        });
+      } else {
+        metadata.branchNodes.push({
+          id: node.id,
+          workspaceId: workspaceId,
+          workspaceTitle: workspace?.title || 'Unknown',
+          type: node.type,
+          x: node.x || 0,
+          y: node.y || 0,
+          parentId: node.parentId,
+          isMainNode: node.type === 'main' || !node.parentId
+        });
+      }
+    });
+  });
+
+  // Create downloadable JSON
+  const jsonString = JSON.stringify(metadata, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `canvas-metadata-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  console.log('Canvas metadata exported:', metadata);
+  return metadata;
+};
+
+const exportViewportElements = () => {
+  const viewport = viewportReturn.getViewportBounds(canvasRef.value);
+  const metadata = {
+    timestamp: new Date().toISOString(),
+    zoom: zoom.value,
+    pan: { x: panX.value, y: panY.value },
+    viewport: viewport ? {
+      x: viewport.x,
+      y: viewport.y,
+      width: viewport.width,
+      height: viewport.height
+    } : null,
+    visibleNodes: [],
+    visibleConnections: [],
+    workspaceDotsVisible: zoom.value < 0.20,
+    workspaceDots: [],
+    renderingStats: {
+      totalNodesInCache: 0,
+      visibleNodesRendered: 0,
+      totalConnectionsInStore: store.connections.length,
+      visibleConnectionsRendered: 0
+    }
+  };
+
+  // Count total nodes in cache
+  allNodesCache.value.forEach((nodes) => {
+    metadata.renderingStats.totalNodesInCache += nodes.length;
+  });
+
+  // Export visible nodes (currently being rendered)
+  if (visibleNodes.value.length > 0) {
+    metadata.visibleNodes = visibleNodes.value.map(node => ({
+      id: node.id,
+      type: node.type,
+      x: node.x || 0,
+      y: node.y || 0,
+      workspaceId: node.workspaceId || node.chatId,
+      parentId: node.parentId,
+      isInViewport: viewport ? viewportReturn.isNodeInViewport({
+        x: node.x || 0,
+        y: node.y || 0,
+        width: node.type === 'tool-call-compact' ? 120 : 400,
+        height: node.type === 'tool-call-compact' ? 40 : 300
+      }, canvasRef.value, 500) : false
+    }));
+    metadata.renderingStats.visibleNodesRendered = visibleNodes.value.length;
+  }
+
+  // Export visible connections (currently being rendered)
+  if (visibleConnections.value.length > 0) {
+    metadata.visibleConnections = visibleConnections.value.map(conn => ({
+      id: conn.id,
+      parentId: conn.parent.id,
+      childId: conn.child.id,
+      parentPos: { x: conn.parent.x || 0, y: conn.parent.y || 0 },
+      childPos: { x: conn.child.x || 0, y: conn.child.y || 0 }
+    }));
+    metadata.renderingStats.visibleConnectionsRendered = visibleConnections.value.length;
+  }
+
+  // Export workspace dots if they're being shown (below 20% zoom)
+  if (zoom.value < 0.20 && workspaceOverviewDots.value) {
+    metadata.workspaceDots = workspaceOverviewDots.value.map(dot => ({
+      id: dot.id,
+      title: dot.title,
+      x: dot.x,
+      y: dot.y,
+      nodeCount: dot.nodeCount,
+      isInViewport: viewport ? viewportReturn.isNodeInViewport({
+        x: dot.x,
+        y: dot.y,
+        width: 100,
+        height: 100
+      }, canvasRef.value, 500) : false
+    }));
+  }
+
+  // Create downloadable JSON
+  const jsonString = JSON.stringify(metadata, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `viewport-elements-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  console.log('Viewport elements exported:', metadata);
+  console.log(`Rendering ${metadata.renderingStats.visibleNodesRendered} nodes out of ${metadata.renderingStats.totalNodesInCache} total cached nodes`);
+  return metadata;
+};
+
+// Make export function available globally for testing
+window.exportCanvasMetadata = exportCanvasMetadata;
+window.exportViewportElements = exportViewportElements;
 
 // Determine which workspace island is currently in focus based on viewport center
 const updateCurrentWorkspace = () => {
@@ -1016,11 +2154,46 @@ const initializePortalAnimations = () => {
 };
 
 // Zoom constants - Updated for enhanced LOD system
-const ZOOM_MIN = 0.05; // 5% minimum zoom
+const ZOOM_MIN = 0.02; // 2% minimum zoom to allow cluster view at 10%
 const ZOOM_MAX = 2;
 const ZOOM_CLUSTER_VIEW = 0.08; // 8% zoom for cluster topic view
 const ZOOM_SENSITIVITY = 0.005;
 const PAN_SENSITIVITY = 1.0;
+
+// LOD Lock System
+const isLODLocked = ref(false);
+const lockedLODLevel = ref('full'); // Store the locked LOD level
+
+// Toggle LOD lock
+const toggleLODLock = () => {
+  if (!isLODLocked.value) {
+    // Lock to current LOD level
+    const currentLOD = calculateLODLevel(zoom.value);
+    lockedLODLevel.value = currentLOD;
+    isLODLocked.value = true;
+    console.log(`[LOD Lock] Locked to ${currentLOD} LOD`);
+  } else {
+    // Unlock
+    isLODLocked.value = false;
+    console.log('[LOD Lock] Unlocked - LOD will change with zoom');
+  }
+};
+
+// Calculate LOD level based on zoom (separate from locked state)
+const calculateLODLevel = (zoomLevel) => {
+  if (zoomLevel <= 0.10) return 'cluster';
+  if (zoomLevel < LOD_PREVIEW_THRESHOLD) return 'compact';
+  if (zoomLevel < LOD_FULL_THRESHOLD) return 'preview';
+  return 'full';
+};
+
+// Get current LOD level respecting lock state
+const getCurrentLODLevel = () => {
+  if (isLODLocked.value) {
+    return lockedLODLevel.value;
+  }
+  return calculateLODLevel(zoom.value);
+};
 
 // LOD thresholds
 const LOD_FULL_THRESHOLD = 0.60; // 60%+ for full detail
@@ -1039,6 +2212,7 @@ const selectedNodeIds = ref(new Set());
 const isMultiDragging = ref(false);
 const multiDragStartPositions = ref(new Map());
 const multiDragShapePositions = ref(new Map());
+
 
 // Selection rectangle state
 const selectionRect = ref({
@@ -1065,6 +2239,15 @@ const resizeState = ref({
   handle: null as string | null,
   startMousePos: { x: 0, y: 0 },
   originalShape: null as any
+});
+
+// Tool group dragging state
+const toolGroupDragState = ref({
+  isDragging: false,
+  activeToolGroup: null as any,
+  startMousePos: { x: 0, y: 0 },
+  startNodePositions: new Map<string, { x: number; y: number }>(),
+  startGroupPosition: { x: 0, y: 0 }
 });
 
 // Calculate max node count 
@@ -1243,6 +2426,11 @@ const getLODLevel = (nodeId: string) => {
   // Always use full detail for snapped nodes
   if (isNodeSnapped) {
     return 'full';
+  }
+  
+  // If LOD is locked, return the locked level (except for snapped nodes)
+  if (isLODLocked.value) {
+    return lockedLODLevel.value;
   }
   
   const currentZoom = zoom.value;
@@ -1937,15 +3125,29 @@ const loadAllWorkspaces = async () => {
             // Convert single node structure to array for consistency
             const nodes = Array.isArray(chatData.nodes) ? chatData.nodes : [chatData.nodes];
             
-            // Position workspaces in a more organic grid pattern (not circular)
-            const gridSize = Math.ceil(Math.sqrt(data.chats.length));
-            const col = workspaceIndex % gridSize;
-            const row = Math.floor(workspaceIndex / gridSize);
+            // Position workspaces in a spiral pattern
+            const spiralRadius = 4000; // Base radius for spiral
+            const spiralSpacing = 800; // Space between spiral turns
             
-            // Spread them out with some randomness
-            const baseSpacing = 1200;
-            const islandCenterX = (col - gridSize/2) * baseSpacing + (Math.random() - 0.5) * 400;
-            const islandCenterY = (row - gridSize/2) * baseSpacing + (Math.random() - 0.5) * 400;
+            let islandCenterX = 0;
+            let islandCenterY = 0;
+            
+            if (workspaceIndex === 0) {
+              // First workspace at center
+              islandCenterX = 0;
+              islandCenterY = 0;
+            } else {
+              // Calculate spiral position for other workspaces
+              const angle = workspaceIndex * 0.5; // Radians per step (controls spiral tightness)
+              const radius = spiralRadius + (workspaceIndex * spiralSpacing * 0.3); // Expand outward
+              
+              islandCenterX = Math.cos(angle) * radius;
+              islandCenterY = Math.sin(angle) * radius;
+            }
+            
+            // Add slight randomness to avoid perfect alignment
+            islandCenterX += (Math.random() - 0.5) * 400;
+            islandCenterY += (Math.random() - 0.5) * 400;
             
             // Offset nodes within each workspace island
             nodes.forEach((node, nodeIndex) => {
@@ -1979,6 +3181,102 @@ const loadAllWorkspaces = async () => {
   }
 };
 
+// Persistent workspace positions (independent of zoom level)
+const allWorkspacePositions = ref<Map<string, {id: string, title: string, x: number, y: number, nodeCount: number}>>(new Map());
+
+// Get workspace nodes that are in the current viewport (for LOD 20-60% zoom)
+const getWorkspaceNodesInViewport = () => {
+  if (!canvasRef.value) return [];
+  
+  // Get viewport bounds
+  const viewport = viewportReturn.getViewportBounds(canvasRef.value);
+  if (!viewport) return [];
+  
+  const nodesToRender = [];
+  
+  // Use persistent workspace positions instead of workspaceOverviewDots
+  allWorkspacePositions.value.forEach(workspace => {
+    // Very generous detection radius for mid-zoom levels
+    const workspaceRadius = Math.max(3000, workspace.nodeCount * 100);
+    
+    // Check if workspace center is anywhere near viewport (very generous)
+    const isInViewport = (
+      workspace.x + workspaceRadius >= viewport.left &&
+      workspace.x - workspaceRadius <= viewport.right &&
+      workspace.y + workspaceRadius >= viewport.top &&
+      workspace.y - workspaceRadius <= viewport.bottom
+    );
+    
+    if (isInViewport) {
+      // Get cached nodes for this workspace
+      const workspaceNodes = allNodesCache.value.get(workspace.id);
+      if (workspaceNodes) {
+        console.log(`[LOD] Loading ${workspaceNodes.length} nodes for workspace: ${workspace.title}`);
+        nodesToRender.push(...workspaceNodes);
+      } else {
+        // Load workspace nodes if not cached
+        console.log(`[LOD] Cache miss - loading workspace: ${workspace.title}`);
+        loadWorkspaceNodesIntoCache(workspace.id);
+      }
+    } else {
+      console.log(`[LOD] Workspace ${workspace.title} not in viewport - radius: ${workspaceRadius}, pos: (${workspace.x}, ${workspace.y})`);
+    }
+  });
+  
+  console.log(`[LOD] Total nodes to render from workspaces: ${nodesToRender.length}`);
+  
+  return nodesToRender;
+};
+
+// Load workspace nodes into cache for viewport-based LOD
+const loadWorkspaceNodesIntoCache = async (workspaceId: string) => {
+  if (allNodesCache.value.has(workspaceId)) return; // Already cached
+  
+  try {
+    const response = await fetch(`http://127.0.0.1:5050/chats/${workspaceId}`);
+    if (!response.ok) return;
+    
+    const chatData = await response.json();
+    if (!chatData?.nodes) return;
+    
+    // Convert hierarchical structure to flat array
+    const flattenNodes = (nodeData: any, parentId: string | null = null): any[] => {
+      if (!nodeData) return [];
+      
+      const nodes = [];
+      const processNode = (node: any, parent: string | null) => {
+        const flatNode = {
+          id: node.id,
+          type: node.type,
+          title: node.title,
+          x: node.x,
+          y: node.y,
+          parentId: parent,
+          branchMessageIndex: node.branchMessageIndex,
+          messages: node.messages || [],
+          metadata: node.metadata || {},
+          workspaceId: workspaceId
+        };
+        nodes.push(flatNode);
+        
+        if (node.children && Array.isArray(node.children)) {
+          node.children.forEach(child => processNode(child, node.id));
+        }
+      };
+      
+      processNode(nodeData, parentId);
+      return nodes;
+    };
+    
+    const workspaceNodes = flattenNodes(chatData.nodes);
+    allNodesCache.value.set(workspaceId, workspaceNodes);
+    
+    console.log(`[LOD] Loaded ${workspaceNodes.length} nodes for workspace ${workspaceId}`);
+  } catch (error) {
+    console.error(`[LOD] Failed to load workspace ${workspaceId}:`, error);
+  }
+};
+
 // Cached viewport bounds to avoid recalculation
 let cachedViewport: any = null;
 let lastViewportUpdate = 0;
@@ -1990,23 +3288,102 @@ const visibleNodes = computed(() => {
     return store.nodes.filter(node => node.id === store.snappedNodeId);
   }
   
-  // Use regular store nodes for normal interaction
-  // Workspace overview is only visual reference at low zoom
-  const nodesToRender = store.nodes;
-  
-  // Apply viewport culling for performance
-  if (!canvasRef.value || nodesToRender.length === 0) {
-    return nodesToRender; // Fallback to all nodes if canvas ref not available
+  // Below 20% zoom: Don't show individual nodes, only workspace dots will be shown
+  if (zoom.value < 0.20) {
+    return [];
   }
   
-  // Get viewport bounds
-  const viewport = viewportReturn.getViewportBounds(canvasRef.value);
-  if (!viewport) {
-    return nodesToRender; // Fallback if viewport calculation fails
+  // 20-60% zoom: Show detailed nodes only for workspaces in viewport
+  if (zoom.value >= 0.20 && zoom.value < 0.60) {
+    const workspaceNodes = getWorkspaceNodesInViewport();
+    console.log(`[LOD 20-60%] Showing ${workspaceNodes.length} workspace nodes at ${Math.round(zoom.value * 100)}% zoom`);
+    
+    // Apply viewport culling but with generous buffer for mid-zoom level
+    if (!canvasRef.value || workspaceNodes.length === 0) {
+      return workspaceNodes;
+    }
+    
+    const viewport = viewportReturn.getViewportBounds(canvasRef.value);
+    if (!viewport) {
+      return workspaceNodes;
+    }
+    
+    // More generous buffer for mid-zoom levels
+    const GENEROUS_BUFFER = 2000;
+    
+    const culledNodes = workspaceNodes.filter(node => {
+      const nodeBounds = {
+        x: node.x || 0,
+        y: node.y || 0,
+        width: node.type === 'tool-call-compact' ? 120 : 400,
+        height: node.type === 'tool-call-compact' ? 40 : 300
+      };
+      
+      return viewportReturn.isNodeInViewport(nodeBounds, canvasRef.value, GENEROUS_BUFFER);
+    });
+    
+    console.log(`[LOD 20-60%] After viewport culling: ${culledNodes.length} nodes (${workspaceNodes.length - culledNodes.length} culled)`);
+    return culledNodes;
+  }
+  
+  // Above 60% zoom: Show all nodes from current workspace or all cached nodes
+  // PERFORMANCE: Cache the allNodes computation and only rebuild when necessary
+  let nodesToRender = [];
+  
+  // Only rebuild allNodes if cache changed or during non-animation states
+  if (!isPanning.value && !isTransitioning.value) {
+    const allNodes = [];
+    allNodesCache.value.forEach((nodes, chatId) => {
+      allNodes.push(...nodes);
+    });
+    
+    nodesToRender = allNodes.length > 0 ? allNodes : store.nodes;
+    
+    // IMPORTANT: Sync the store.nodes with the rendered nodes so interactions work
+    // Only sync when lengths differ to avoid expensive operations
+    if (allNodes.length > 0 && store.nodes.length !== allNodes.length) {
+      store.nodes.splice(0, store.nodes.length, ...allNodes);
+    }
+  } else {
+    // During animation, use already synced store.nodes to avoid expensive recomputation
+    nodesToRender = store.nodes;
+  }
+  
+  // Load all nodes if cache is empty (but don't spam this)
+  if (allNodesCache.value.size === 0 && !isPanning.value && !isTransitioning.value) {
+    loadAllNodes();
+  }
+  
+  // PERFORMANCE: Skip expensive filtering during pan/zoom animations
+  if (isPanning.value || isTransitioning.value) {
+    return nodesToRender;
+  }
+  
+  // Filter out tool-call-compact nodes at very low zoom for better performance
+  if (zoom.value <= 0.15) {
+    nodesToRender = nodesToRender.filter(node => node.type !== 'tool-call-compact');
+  }
+  
+  // Apply viewport culling for performance (only when not animating)
+  if (!canvasRef.value || nodesToRender.length === 0) {
+    return nodesToRender;
+  }
+  
+  // Use cached viewport if available to avoid expensive recalculation
+  const now = Date.now();
+  if (now - lastViewportUpdate < VIEWPORT_CACHE_MS && cachedViewport) {
+    // Use cached viewport
+  } else {
+    cachedViewport = viewportReturn.getViewportBounds(canvasRef.value);
+    lastViewportUpdate = now;
+  }
+  
+  if (!cachedViewport) {
+    return nodesToRender;
   }
   
   // Filter nodes based on viewport + buffer zone
-  const VIEWPORT_BUFFER = 500; // Buffer zone in pixels
+  const VIEWPORT_BUFFER = 500;
   
   return nodesToRender.filter(node => {
     const nodeBounds = {
@@ -2026,6 +3403,11 @@ const visibleConnections = computed(() => {
     return store.connections;
   }
 
+  // Below 20% zoom: Don't show connections, only workspace dots
+  if (zoom.value < 0.20) {
+    return [];
+  }
+
   const visibleNodeIds = new Set(visibleNodes.value.map(node => node.id));
   return store.connections.filter(connection => 
     visibleNodeIds.has(connection.parent.id) || visibleNodeIds.has(connection.child.id)
@@ -2033,26 +3415,43 @@ const visibleConnections = computed(() => {
 });
 
 // Update intersection observer when nodes change
+// PERFORMANCE: Throttled watcher to prevent excessive DOM queries during zoom
+let intersectionUpdatePending = false;
 watch(
-  () => store.nodes,
-  (newNodes) => {
-    // Update intersection observer for new nodes
-    nextTick(() => {
-      newNodes.forEach(node => {
-        const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
-        if (nodeElement && !intersectionVisibleNodes.value.has(node.id)) {
-          observe(nodeElement, node.id);
-        }
-      });
+  () => visibleNodes.value.map(node => node.id).join(','),
+  (newVisibleNodeIds, oldVisibleNodeIds) => {
+    // Only process if actually changed and not empty
+    if (!newVisibleNodeIds || newVisibleNodeIds === oldVisibleNodeIds) return;
+    
+    // Skip during pan/zoom animations to prevent stuttering
+    if (isPanning.value || isTransitioning.value) return;
+    
+    const currentVisibleNodes = visibleNodes.value;
+    if (currentVisibleNodes.length === 0) return;
+    
+    // Throttle intersection observer updates
+    if (!intersectionUpdatePending) {
+      intersectionUpdatePending = true;
+      requestAnimationFrame(() => {
+        nextTick(() => {
+          currentVisibleNodes.forEach(node => {
+            const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+            if (nodeElement && !intersectionVisibleNodes.value.has(node.id)) {
+              observe(nodeElement, node.id);
+            }
+          });
 
-      // Update visible nodes set from intersection observer
-      const visibleIds = getVisibleElementIds();
-      intersectionVisibleNodes.value = new Set(visibleIds.filter(id => 
-        newNodes.some(node => node.id === id)
-      ));
-    });
-  },
-  { deep: true, immediate: true }
+          // Update visible nodes set from intersection observer
+          const visibleIds = getVisibleElementIds();
+          intersectionVisibleNodes.value = new Set(visibleIds.filter(id => 
+            currentVisibleNodes.some(node => node.id === id)
+          ));
+          
+          intersectionUpdatePending = false;
+        });
+      });
+    }
+  }
 );
 
 // Coordinate conversion helpers
@@ -2488,6 +3887,51 @@ const centerAndSnapNode = (nodeId: string) => {
     setTimeout(() => {
       store.isTransitioning = false;
     }, 300);
+  });
+};
+
+// Center on a specific point with animation
+const centerOnPointWithAnimation = async (worldX, worldY, targetZoom = 0.6, duration = 800) => {
+  const rect = canvasRef.value.getBoundingClientRect();
+  const startPanX = panX.value;
+  const startPanY = panY.value;
+  const startZoom = zoom.value;
+  
+  return new Promise((resolve) => {
+    const startTime = performance.now();
+    
+    const startWorldX = (rect.width / 2 - startPanX) / startZoom;
+    const startWorldY = (rect.height / 2 - startPanY) / startZoom;
+    const endWorldX = worldX;
+    const endWorldY = worldY;
+    
+    const targetScreenX = rect.width / 2;
+    const targetScreenY = rect.height / 2;
+    
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const easeOut = 1 - Math.pow(1 - progress, 2);
+      
+      const currentZoom = startZoom + (targetZoom - startZoom) * easeOut;
+      const currentWorldX = startWorldX + (endWorldX - startWorldX) * easeOut;
+      const currentWorldY = startWorldY + (endWorldY - startWorldY) * easeOut;
+      
+      panX.value = targetScreenX - currentWorldX * currentZoom;
+      panY.value = targetScreenY - currentWorldY * currentZoom;
+      zoom.value = currentZoom;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        zoom.value = targetZoom;
+        panX.value = targetScreenX - endWorldX * targetZoom;
+        panY.value = targetScreenY - endWorldY * targetZoom;
+        resolve();
+      }
+    };
+    
+    requestAnimationFrame(animate);
   });
 };
 
@@ -3049,12 +4493,27 @@ const handleDrop = async (e: DragEvent) => {
   });
 };
 
+// Cache for parent node lookups to improve performance
+const parentNodeCache = new Map();
+
 // Helper functions for MainSplineConnector
 const getParentNode = (parentId: string) => {
-  const parentNode = visibleNodes.value.find(node => node.id === parentId);
-  if (!parentNode) {
-    console.log('[getParentNode] Could not find parent node:', { parentId, visibleNodeIds: visibleNodes.value.map(n => n.id) });
+  // Check cache first
+  if (parentNodeCache.has(parentId)) {
+    const cached = parentNodeCache.get(parentId);
+    // Verify the cached node is still visible
+    if (visibleNodes.value.some(n => n.id === cached.id)) {
+      return cached;
+    }
+    // Clear invalid cache entry
+    parentNodeCache.delete(parentId);
   }
+  
+  const parentNode = visibleNodes.value.find(node => node.id === parentId);
+  if (parentNode) {
+    parentNodeCache.set(parentId, parentNode);
+  }
+  // Remove console.log to reduce noise during panning
   return parentNode;
 };
 
@@ -4384,6 +5843,29 @@ const handleMouseUp = (e) => {
     return;
   }
   
+  // Handle tool group drag end
+  if (toolGroupDragState.value.isDragging) {
+    const group = toolGroupDragState.value.activeToolGroup;
+    
+    if (group && chatStore.currentChatId) {
+      // Save the node positions to the backend after dragging
+      group.nodes.forEach(node => {
+        chatStore.updateNode(chatStore.currentChatId, node.id, { 
+          x: node.x, 
+          y: node.y 
+        });
+      });
+      
+      console.log('Tool group drag completed. Saved positions for', group.nodes.length, 'nodes in group:', group.toolName);
+    }
+    
+    // Reset drag state
+    toolGroupDragState.value.isDragging = false;
+    toolGroupDragState.value.activeToolGroup = null;
+    toolGroupDragState.value.startNodePositions.clear();
+    return;
+  }
+  
   if (workspaceDragState.value.isDragging) {
     const { activeId } = workspaceDragState.value;
     if (activeId) {
@@ -4553,6 +6035,7 @@ const handleCanvasMouseDown = (e) => {
     // Clicked on empty canvas
     if (isShiftPressed.value) {
       // Start selection rectangle
+      console.log('Starting selection rectangle with shift pressed');
       selectionRect.value.isActive = true;
       selectionRect.value.startX = e.clientX;
       selectionRect.value.startY = e.clientY;
@@ -4752,6 +6235,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
     keysPressed.value.add(key);
     startPanAnimation();
+    return;
+  }
+
+  // LOD Lock toggle (L key)
+  if (!isEditing && e.key.toLowerCase() === 'l') {
+    e.preventDefault();
+    toggleLODLock();
     return;
   }
 
@@ -5168,7 +6658,8 @@ const autoFitNodes = (disableTransition = false) => {
     !autoZoomEnabled.value ||
     store.isDragging ||
     isPanning.value ||
-    workspaceDragState.value.isDragging
+    workspaceDragState.value.isDragging ||
+    toolGroupDragState.value.isDragging
   ) {
     console.log('[autoFitNodes] Skipped due to conditions');
     return;
@@ -5446,7 +6937,7 @@ const handleMouseMove = (e) => {
   // Update mouse position for coordinate system display
   mousePosition.value = { x: e.clientX, y: e.clientY };
 
-  const worldMousePos = screenToWorld(e.clientX, e.clientY);
+  const worldMousePos = getCanvasPosition(e);
   
   // Handle shape resizing
   if (resizeState.value.isResizing) {
@@ -5492,7 +6983,41 @@ const handleMouseMove = (e) => {
     return;
   }
 
+  // Handle tool group dragging
+  if (toolGroupDragState.value.isDragging && toolGroupDragState.value.activeToolGroup) {
+    const canvasPos = getCanvasPosition(e);
+    const deltaX = canvasPos.x - toolGroupDragState.value.startMousePos.x;
+    const deltaY = canvasPos.y - toolGroupDragState.value.startMousePos.y;
+    
+    const group = toolGroupDragState.value.activeToolGroup;
+    
+    // Update the group position
+    const newGroupX = toolGroupDragState.value.startGroupPosition.x + deltaX;
+    const newGroupY = toolGroupDragState.value.startGroupPosition.y + deltaY;
+    
+    // Update the fixed group position
+    fixedGroupPositions.value.set(group.toolName, {
+      x: newGroupX,
+      y: newGroupY,
+      width: group.width,
+      height: group.height
+    });
+    
+    // Move all nodes in the tool group
+    group.nodes.forEach(node => {
+      const startPos = toolGroupDragState.value.startNodePositions.get(node.id);
+      if (startPos) {
+        const newX = startPos.x + deltaX;
+        const newY = startPos.y + deltaY;
+        store.updateNodePosition(node.id, { x: newX, y: newY });
+      }
+    });
+    
+    return;
+  }
+
   if (isMultiDragging.value && dragStartPosition.value) {
+    console.log('Multi-dragging active, delta:', worldMousePos.x - dragStartPosition.value.x, worldMousePos.y - dragStartPosition.value.y);
     // Handle multi-node dragging (and unified node+shape dragging)
     const deltaX = worldMousePos.x - dragStartPosition.value.x;
     const deltaY = worldMousePos.y - dragStartPosition.value.y;
@@ -5562,7 +7087,7 @@ const handleMouseMove = (e) => {
   }
   
   // Check viewport return during any drag operations (non-panning, since panning is handled at the top)
-  if (store.isDragging || isMultiDragging.value || shapeDragState.value.isDragging || workspaceDragState.value.isDragging) {
+  if (store.isDragging || isMultiDragging.value || shapeDragState.value.isDragging || workspaceDragState.value.isDragging || toolGroupDragState.value.isDragging) {
     viewportReturn.checkNodeVisibilityImmediate(canvasRef.value);
   }
 };
@@ -5602,9 +7127,11 @@ const updateSelectionFromRect = () => {
   });
   
   // Update node selection
+  console.log('Found', nodesInRect.length, 'nodes in selection rect');
   selectedNodeIds.value.clear();
   nodesInRect.forEach(node => {
     selectedNodeIds.value.add(node.id);
+    console.log('Selected node:', node.id, node.title);
   });
   
   // Find drawing shapes that intersect with the selection rectangle
@@ -5974,6 +7501,16 @@ onMounted(async () => {
 
     // Setup theme watcher for grid
     setupThemeWatcher();
+    
+    // Listen for tool grouping toggle
+    const handleToolGroupingChange = (e: CustomEvent) => {
+      showToolGrouping.value = e.detail.showToolGrouping;
+      if (showToolGrouping.value) {
+        // Organize tool nodes when grouping is enabled
+        setTimeout(() => organizeToolNodes(), 100);
+      }
+    };
+    document.addEventListener('tool-grouping-changed', handleToolGroupingChange);
 
     // Initialize model registry
     updateModelRegistry();
@@ -6114,6 +7651,15 @@ const setupThemeWatcher = () => {
 
 // Theme watcher is now setup in the main onMounted hook above
 
+// Debug: Watch selectedNodeIds changes
+watch(() => selectedNodeIds.value.size, (newSize, oldSize) => {
+  console.log(`Selected nodes changed: ${oldSize} -> ${newSize}`, Array.from(selectedNodeIds.value));
+  if (newSize > 1) {
+    console.log('Should show selection boundary for', newSize, 'nodes');
+    console.log('nodeSelectionBounds computed:', nodeSelectionBounds.value);
+  }
+});
+
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeyDown);
   window.removeEventListener("keyup", handleKeyUp);
@@ -6176,6 +7722,11 @@ function handleToolCallCompactDoubleClick(toolCall) {
 
 // Load tool call data when nodes become visible - debounced to prevent excessive API calls
 const debouncedFetchToolCallData = debounce((newNodes) => {
+  // Skip if transitioning to prevent API bombardment during zoom animations
+  if (isTransitioning.value) {
+    return;
+  }
+  
   newNodes.forEach(node => {
     // Only fetch if we haven't already fetched for this node
     const hasToolCalls = toolCallStore.toolCalls.has(node.id);
@@ -6187,19 +7738,29 @@ const debouncedFetchToolCallData = debounce((newNodes) => {
       toolCallStore.fetchAllForNode(node.id)
     }
   })
-}, 500); // 500ms debounce
+}, 1000); // 1000ms debounce for better performance during rapid changes
 
 // Clean up debounced function on unmount
 onBeforeUnmount(() => {
   debouncedFetchToolCallData.cancel();
 });
 
-watch(visibleNodes, (newNodes) => {
-  // Only fetch when not dragging to avoid spamming API during drag operations
-  if (!store.isDragging && !isPanning.value) {
-    debouncedFetchToolCallData(newNodes);
+// Optimized watcher - only clear cache and fetch when node IDs actually change
+watch(
+  () => visibleNodes.value.length > 0 ? visibleNodes.value.map(n => n.id).sort().join(',') : '',
+  (newNodeIds, oldNodeIds) => {
+    // Only process if node IDs actually changed
+    if (!newNodeIds || newNodeIds === oldNodeIds) return;
+    
+    // Clear parent node cache when visible nodes change
+    parentNodeCache.clear();
+    
+    // Only fetch when not dragging, panning, or transitioning to avoid spamming API
+    if (!store.isDragging && !isPanning.value && !isTransitioning.value) {
+      debouncedFetchToolCallData(visibleNodes.value);
+    }
   }
-}, { deep: true });
+);
 
 // Drawing functionality
 const getCanvasPosition = (e: MouseEvent) => {
@@ -6261,6 +7822,115 @@ const handleSelectionBoundaryMouseDown = (event: MouseEvent) => {
   startShapeDragging(event);
 };
 
+// Node selection boundary handler
+const handleNodeSelectionBoundaryMouseDown = (event: MouseEvent) => {
+  event.stopPropagation();
+  
+  console.log('Node selection boundary clicked! Selected nodes:', selectedNodeIds.value.size);
+  
+  // Start multi-node dragging
+  if (selectedNodeIds.value.size > 1) {
+    isMultiDragging.value = true;
+    multiDragStartPositions.value.clear();
+    multiDragShapePositions.value.clear();
+    
+    // Store starting positions for all selected nodes
+    selectedNodeIds.value.forEach(nodeId => {
+      const node = store.nodes.find(n => n.id === nodeId);
+      if (node) {
+        multiDragStartPositions.value.set(nodeId, { x: node.x, y: node.y });
+      }
+    });
+    
+    // Store starting positions for all selected shapes too (unified dragging)
+    drawingStore.selectedShapes.forEach(shape => {
+      if (shape.type === 'pen' && shape.points) {
+        multiDragShapePositions.value.set(shape.id, {
+          x: shape.x,
+          y: shape.y,
+          points: shape.points.map(p => ({ x: p.x, y: p.y }))
+        });
+      } else {
+        multiDragShapePositions.value.set(shape.id, { x: shape.x, y: shape.y });
+      }
+    });
+
+    // This is crucial - set the drag start position for mouse move calculations
+    const canvasPos = getCanvasPosition(event);
+    dragStartPosition.value = { x: canvasPos.x, y: canvasPos.y };
+    console.log('Started multi-node drag from position:', dragStartPosition.value);
+  }
+};
+
+// Handle double-click on node selection boundary to collapse into collection
+const handleNodeSelectionBoundaryDoubleClick = (event: MouseEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  
+  if (selectedNodeIds.value.size < 2) return;
+  
+  console.log('Double-clicked boundary, collapsing', selectedNodeIds.value.size, 'nodes');
+  
+  // Calculate center position of selected nodes
+  const selectedNodes = Array.from(selectedNodeIds.value)
+    .map(id => store.nodes.find(n => n.id === id))
+    .filter(node => node);
+    
+  if (selectedNodes.length < 2) return;
+  
+  let centerX = 0, centerY = 0;
+  selectedNodes.forEach(node => {
+    centerX += node.x + 150; // Approximate center of node
+    centerY += node.y + 100;
+  });
+  centerX /= selectedNodes.length;
+  centerY /= selectedNodes.length;
+  
+  // Create collapsed collection
+  const collectionId = nextCollectionId.value++;
+  collapsedCollections.value.set(collectionId, {
+    nodeIds: new Set(selectedNodeIds.value),
+    position: { x: centerX, y: centerY },
+    currentIndex: 0,
+    title: `Collection (${selectedNodes.length} nodes)`
+  });
+  
+  // Hide selected nodes (make them invisible but keep in store)
+  selectedNodeIds.value.forEach(nodeId => {
+    const node = store.nodes.find(n => n.id === nodeId);
+    if (node) {
+      node.isCollapsed = true; // Add a flag to track collapsed state
+    }
+  });
+  
+  // Clear selection
+  selectedNodeIds.value.clear();
+  
+  console.log('Created collection', collectionId, 'at position', centerX, centerY);
+};
+
+// Handle tool group rectangle mouse down for dragging
+const handleToolGroupRectMouseDown = (event: MouseEvent, group: any) => {
+  event.stopPropagation();
+  
+  console.log('Tool group rectangle clicked for dragging:', group.toolName);
+  
+  // Start dragging the tool group and its nodes
+  const canvasPos = getCanvasPosition(event);
+  toolGroupDragState.value.isDragging = true;
+  toolGroupDragState.value.activeToolGroup = group;
+  toolGroupDragState.value.startMousePos = { x: canvasPos.x, y: canvasPos.y };
+  toolGroupDragState.value.startGroupPosition = { x: group.x, y: group.y };
+  
+  // Store starting positions of all nodes in this tool group
+  toolGroupDragState.value.startNodePositions.clear();
+  group.nodes.forEach(node => {
+    toolGroupDragState.value.startNodePositions.set(node.id, { x: node.x, y: node.y });
+  });
+};
+
+
+
 const startShapeDragging = (event: MouseEvent) => {
   // Start dragging
   const canvasPos = getCanvasPosition(event);
@@ -6294,6 +7964,32 @@ const startShapeDragging = (event: MouseEvent) => {
       shapeDragState.value.startNodePositions.set(nodeId, { x: node.x, y: node.y });
     }
   });
+};
+
+// Tool group drag handlers
+const handleToolGroupMouseDown = (event: MouseEvent, group: any) => {
+  // Only handle tool group dragging if not using selection functionality
+  if (isShiftPressed.value) {
+    // Let the canvas handle selection rectangle
+    return;
+  }
+  
+  event.stopPropagation();
+  
+  // Start dragging the tool group and its nodes
+  const canvasPos = getCanvasPosition(event);
+  toolGroupDragState.value.isDragging = true;
+  toolGroupDragState.value.activeToolGroup = group;
+  toolGroupDragState.value.startMousePos = { x: canvasPos.x, y: canvasPos.y };
+  toolGroupDragState.value.startGroupPosition = { x: group.x, y: group.y };
+  
+  // Store starting positions of all nodes in this tool group
+  toolGroupDragState.value.startNodePositions.clear();
+  group.nodes.forEach(node => {
+    toolGroupDragState.value.startNodePositions.set(node.id, { x: node.x, y: node.y });
+  });
+  
+  console.log('Started dragging tool group:', group.toolName, 'with', group.nodes.length, 'nodes');
 };
 
 // Shape resize handlers
@@ -6609,6 +8305,12 @@ const handleZoomToOverview = () => {
     console.error('Error zooming to overview:', error)
   }
 }
+
+const handleNavigateToWorkspace = (workspaceId: string) => {
+  console.log('Navigating to workspace:', workspaceId);
+  // Navigate to the workspace
+  router.push(`/chat/${workspaceId}`);
+};
 </script>
 
 <style scoped>
@@ -7634,6 +9336,6 @@ const handleZoomToOverview = () => {
 }
 
 .selection-boundary {
-  pointer-events: none;
+  /* pointer-events controlled by inline styles */
 }
 </style>

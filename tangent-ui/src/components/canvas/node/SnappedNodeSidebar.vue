@@ -219,7 +219,7 @@ onMounted(() => {
   top: 20px;
   width: 240px;
   /* height set dynamically via :style binding */
-  background: var(--sidebar-bg-color, rgba(var(--b1), 0.8));
+  /* background: var(--sidebar-bg-color, rgba(var(--b1), 0.8)); */
   backdrop-filter: blur(16px);
   border: 1px solid var(--sidebar-border-color, var(--node-border-color));
   border-radius: 1rem;

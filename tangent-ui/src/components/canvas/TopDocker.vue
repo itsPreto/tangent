@@ -162,6 +162,23 @@
         <span class="tool-number">0</span>
       </button>
 
+      <div class="w-px h-6 bg-base-300 mx-1"></div>
+
+      <!-- Tool Grouping toggle -->
+      <button 
+        @click="toggleToolGrouping"
+        :class="['tool-button', { 'active': showToolGrouping }]"
+        title="Group Similar Tools"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7H5m14 14H5"/>
+          <rect x="3" y="4" width="18" height="3" rx="1" stroke-width="1" fill="none"/>
+          <rect x="3" y="10" width="18" height="3" rx="1" stroke-width="1" fill="none"/>
+          <rect x="3" y="16" width="18" height="3" rx="1" stroke-width="1" fill="none"/>
+        </svg>
+      </button>
+
+
       <!-- More tools -->
       <button 
         @click="setTool('more')"
@@ -390,6 +407,9 @@ const dockerStyle = computed(() => {
 // Current tool state
 const currentTool = ref<string>('cursor');
 
+// Tool grouping state
+const showToolGrouping = ref<boolean>(false);
+
 // Customization panel state
 const showCustomizationPanel = computed(() => {
   return ['rectangle', 'circle', 'diamond', 'line', 'arrow', 'pen', 'text', 'fill'].includes(currentTool.value);
@@ -414,6 +434,15 @@ const setTool = (tool: string) => {
   // Emit tool change event
   document.dispatchEvent(new CustomEvent('drawing-tool-changed', {
     detail: { tool }
+  }));
+};
+
+// Toggle tool grouping
+const toggleToolGrouping = () => {
+  showToolGrouping.value = !showToolGrouping.value;
+  // Emit event to InfiniteCanvas to show/hide tool grouping
+  document.dispatchEvent(new CustomEvent('tool-grouping-changed', {
+    detail: { showToolGrouping: showToolGrouping.value }
   }));
 };
 

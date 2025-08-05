@@ -68,15 +68,6 @@
     
 
 
-    <!-- Hidden path for text alignment -->
-    <path
-      :id="pathId"
-      :d="isLeftBranch ? reversedPathData : pathData"
-      :key="pathId"
-      fill="none"
-      stroke="none"
-      pointer-events="none"
-    />
 
     <!-- Enhanced glow path (always visible with constant intensity) -->
     <path
@@ -95,67 +86,7 @@
       }"
     />
 
-    <!-- Label with contrast background -->
-    <g class="label-container" v-if="hasLabel" style="pointer-events: all; z-index: 10;">
-      
-      <!-- A single, clean text element. -->
-      <text class="text-container" style="pointer-events: all;">
-        <textPath
-          :href="`#${pathId}`"
-          :key="`textpath-${pathId}`"
-          startOffset="50%"
-          text-anchor="middle"
-          :class="{ reversed: isLeftBranch }"
-        >
-          <tspan
-            :dy="-15"
-            class="label-text"
-            :style="{
-              fontSize: `${fontSize}px`,
-              fontWeight: 600,
-              fill: getLabelColor(),
-              pointerEvents: 'all',
-              cursor: 'pointer',
-              ...(shouldUseNeonGlow() ? {
-                filter: `drop-shadow(0 0 2px ${glowColor})`
-              } : {})
-            }"
-            @dblclick.stop="handleLabelDoubleClick"
-          >
-            {{ getLabelText() }}
-          </tspan>
-        </textPath>
-      </text>
-
-      <!-- Inline editor -->
-      <foreignObject
-        v-if="isEditing"
-        :x="labelPosition.x"
-        :y="labelPosition.y"
-        :width="300 / Math.max(props.zoomLevel, 0.1)"
-        :height="50 / Math.max(props.zoomLevel, 0.1)"
-        @dblclick.stop
-        style="z-index: 20; pointer-events: all;"
-      >
-        <div xmlns="http://www.w3.org/2000/svg" class="flex items-center justify-center w-full h-full">
-          <input
-            ref="inputRef"
-            v-model="labelInput"
-            @blur="handleLabelBlur"
-            @keydown="handleKeyDown"
-            class="px-3 py-2 text-center w-full rounded border"
-            :style="{
-              fontSize: `${fontSize}px`,
-              color: getLabelColor(),
-              backgroundColor: getInputBackgroundColor(),
-              borderColor: activePathColor,
-              boxShadow: `0 0 0 2px ${hexToRgba(activePathColor, 0.4)}`,
-              pointerEvents: 'auto'
-            }"
-          />
-        </div>
-      </foreignObject>
-    </g>
+    <!-- Labels completely removed -->
     
   </g>
 </template>
@@ -190,10 +121,6 @@ const props = defineProps({
 })
 
 // State
-const isEditing = ref(false)
-const labelInput = ref('')
-const customLabel = ref('')
-const inputRef = ref<HTMLInputElement | null>(null)
 const isHovered = ref(false)
 const isConnectionHovered = ref(false)
 const isDragging = ref(false)
@@ -206,13 +133,9 @@ const currentThemeName = ref<ThemeName>('light')
 const isThemeDark = ref(false)
 
 
-// Visibility state
-let isVisible = true
 
 // Constants
 const baseStroke = 2
-const baseFontSize = 14
-const labelOffset = 12
 
 // Dynamic theme-based colors
 const themeColors = computed(() => {
@@ -583,15 +506,6 @@ const shouldShowConnectionCircle = computed(() => {
   return true
 })
 
-const fontSize = computed(() => {
-  // Scale font size inversely with zoom level to maintain readability
-  return baseFontSize / Math.max(props.zoomLevel, 0.1) // Prevent division by zero
-})
-
-// Compute unique path ID based on node positions
-const pathId = computed(() => {
-  return `connection-path-${props.startNode.id}-${props.endNode.id}-${Math.round(props.startNode.x)}-${Math.round(props.startNode.y)}-${Math.round(props.endNode.x)}-${Math.round(props.endNode.y)}`
-})
 
 // Gradient coordinates for directional flow from parent to child
 const gradientCoords = computed(() => {
@@ -696,262 +610,10 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-// Get input background color based on theme
-function getInputBackgroundColor(): string {
-  switch (currentThemeName.value) {
-    // Light themes
-    case 'light':
-    case 'corporate':
-    case 'emerald':
-      return 'rgba(255, 255, 255, 0.95)'
-    case 'cupcake':
-      return 'rgba(255, 245, 250, 0.95)'
-    case 'bumblebee':
-      return 'rgba(255, 250, 240, 0.95)'
-    case 'pastel':
-      return 'rgba(250, 245, 255, 0.95)'
-    case 'garden':
-    case 'lemonade':
-      return 'rgba(245, 255, 245, 0.95)'
-    case 'lofi':
-    case 'wireframe':
-      return 'rgba(250, 250, 250, 0.95)'
-    case 'fantasy':
-      return 'rgba(255, 245, 245, 0.95)'
-      
-    // Dark themes
-    case 'dark':
-    case 'business':
-      return 'rgba(30, 30, 40, 0.95)'
-    case 'synthwave':
-      return 'rgba(20, 10, 40, 0.95)'
-    case 'cyberpunk':
-      return 'rgba(10, 20, 30, 0.95)'
-    case 'acid':
-      return 'rgba(20, 20, 10, 0.95)'
-    case 'retro':
-    case 'autumn':
-      return 'rgba(40, 30, 20, 0.95)'
-    case 'valentine':
-    case 'dracula':
-      return 'rgba(40, 20, 30, 0.95)'
-    case 'halloween':
-      return 'rgba(30, 20, 10, 0.95)'
-    case 'forest':
-    case 'aqua':
-      return 'rgba(10, 30, 30, 0.95)'
-    case 'black':
-      return 'rgba(20, 20, 20, 0.95)'
-    case 'luxury':
-      return 'rgba(30, 25, 15, 0.95)'
-    case 'cmyk':
-      return 'rgba(20, 20, 30, 0.95)'
-    case 'night':
-      return 'rgba(20, 20, 40, 0.95)'
-    case 'coffee':
-      return 'rgba(30, 25, 20, 0.95)'
-    case 'winter':
-      return 'rgba(20, 30, 40, 0.95)'
-      
-    default:
-      return isLightBackground.value ? 'rgba(255, 255, 255, 0.95)' : 'rgba(30, 30, 30, 0.95)'
-  }
-}
 
-// Get label color with proper contrast for all themes
-function getLabelColor(): string {
-  const colors = themeColors.value
-  
-  // Helper function to calculate luminance
-  function getLuminance(hex: string): number {
-    const r = parseInt(hex.slice(1, 3), 16) / 255
-    const g = parseInt(hex.slice(3, 5), 16) / 255
-    const b = parseInt(hex.slice(5, 7), 16) / 255
-    
-    const toLinear = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-    
-    return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
-  }
-  
-  // Helper function to calculate contrast ratio
-  function getContrastRatio(color1: string, color2: string): number {
-    const lum1 = getLuminance(color1)
-    const lum2 = getLuminance(color2)
-    const brightest = Math.max(lum1, lum2)
-    const darkest = Math.min(lum1, lum2)
-    return (brightest + 0.05) / (darkest + 0.05)
-  }
-  
-  // Get candidate colors for each theme
-  const candidateColors = []
-  
-  // For light themes, prefer darker colors
-  if (!isThemeDark.value) {
-    candidateColors.push('#000000', '#333333', '#555555', colors.primary, colors.secondary)
-    // Add darker variants of theme colors
-    candidateColors.push(darkenColor(colors.primary, 0.3))
-    candidateColors.push(darkenColor(colors.secondary, 0.3))
-  } else {
-    // For dark themes, prefer lighter colors  
-    candidateColors.push('#FFFFFF', '#CCCCCC', '#AAAAAA', colors.primary, colors.secondary, colors.accent)
-    // Add lighter variants of theme colors
-    candidateColors.push(lightenColor(colors.primary, 0.3))
-    candidateColors.push(lightenColor(colors.secondary, 0.3))
-    candidateColors.push(lightenColor(colors.accent, 0.3))
-  }
-  
-  // Special overrides for problematic themes
-  switch (currentThemeName.value) {
-    case 'bumblebee':
-      candidateColors.unshift('#181830', '#000000') // Dark colors for yellow background
-      break
-    case 'cyberpunk':
-      candidateColors.unshift('#00FFFF', '#FFFFFF') // Cyan or white for contrast
-      break
-    case 'synthwave':
-      candidateColors.unshift('#FF00FF', '#00FFFF') // Bright magenta/cyan
-      break
-    case 'acid':
-      candidateColors.unshift('#FFFF00', '#00FF00') // Bright yellow/green
-      break
-    case 'valentine':
-      candidateColors.unshift('#FFB6C1', '#FFFFFF') // Light pink or white
-      break
-    case 'halloween':
-      candidateColors.unshift('#FF8C00', '#FFFFFF') // Orange or white
-      break
-    case 'luxury':
-      candidateColors.unshift('#FFD700', '#FFFFFF') // Gold or white
-      break
-  }
-  
-  // Try to get background color from CSS custom properties or fallback
-  const backgroundColor = isThemeDark.value ? '#1a1a1a' : '#ffffff'
-  
-  // Find the color with best contrast (minimum 4.5:1 for accessibility)
-  let bestColor = candidateColors[0]
-  let bestContrast = getContrastRatio(bestColor, backgroundColor)
-  
-  for (const color of candidateColors) {
-    const contrast = getContrastRatio(color, backgroundColor)
-    if (contrast > bestContrast) {
-      bestColor = color
-      bestContrast = contrast
-    }
-  }
-  
-  // Ensure minimum contrast - if none meet the threshold, use black or white
-  if (bestContrast < 4.5) {
-    const blackContrast = getContrastRatio('#000000', backgroundColor)
-    const whiteContrast = getContrastRatio('#FFFFFF', backgroundColor)
-    bestColor = blackContrast > whiteContrast ? '#000000' : '#FFFFFF'
-  }
-  
-  return bestColor
-}
 
-// Helper functions for color manipulation
-function darkenColor(hex: string, amount: number): string {
-  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount))
-  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount))
-  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount))
-  return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`
-}
-
-function lightenColor(hex: string, amount: number): string {
-  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + (255 - parseInt(hex.slice(1, 3), 16)) * amount)
-  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + (255 - parseInt(hex.slice(3, 5), 16)) * amount)
-  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + (255 - parseInt(hex.slice(5, 7), 16)) * amount)
-  return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`
-}
-
-// Label content
-const hasLabel = computed(() => {
-  return customLabel.value || 
-         canvasStore.getConnectionLabel(props.startNode.id, props.endNode.id) || 
-         getDefaultLabel()
-})
-
-function getDefaultLabel() {
-  const idx = props.endNode.branchMessageIndex ?? 0
-  const msg = props.startNode.messages?.[idx]?.content ?? ''
-  const words = msg.split(' ').slice(0, 3).join(' ')
-  return words.length > 20 ? `${words.slice(0, 20)}…` : words || ''
-}
-
-function getLabelText() {
-  if (customLabel.value) return customLabel.value
-  
-  // Check for stored connection label first
-  const storedLabel = canvasStore.getConnectionLabel(props.startNode.id, props.endNode.id)
-  if (storedLabel) return storedLabel
-  
-  const defaultLabel = getDefaultLabel()
-  return defaultLabel || `Branch ${(props.endNode.branchMessageIndex ?? 0) + 1}`
-}
-
-const inputWidth = computed(() => {
-  const w = labelInput.value.length * fontSize.value * 0.6
-  return Math.max(50 / Math.max(props.zoomLevel, 0.1), Math.min(300 / Math.max(props.zoomLevel, 0.1), w / Math.max(props.zoomLevel, 0.1)))
-})
-const inputHeight = computed(() => fontSize.value * 1.5 / Math.max(props.zoomLevel, 0.1))
-
-const labelPosition = computed(() => {
-  const { startPoint, endPoint } = connectionPoints.value
-  const midX =
-    startPoint.x + (endPoint.x - startPoint.x) / 2 +
-    (isLeftBranch.value ? -inputWidth.value : 0)
-  const midY =
-    startPoint.y + (endPoint.y - startPoint.y) / 2 -
-    inputHeight.value / 2 -
-    labelOffset
-  return { x: midX, y: midY }
-})
-
-function calculateLabelPosition() {
-  return labelPosition.value
-}
 
 // Event handlers
-function handleLabelDoubleClick(e: MouseEvent) {
-  e.stopPropagation()
-  e.preventDefault()
-  if (!isEditing.value) {
-    isEditing.value = true
-    labelInput.value = customLabel.value || getLabelText()
-    nextTick(() => inputRef.value?.focus())
-  }
-}
-
-function handleLabelBlur() {
-  if (labelInput.value.trim()) customLabel.value = labelInput.value.trim()
-  isEditing.value = false
-}
-
-function handleKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Enter') handleLabelBlur()
-  else if (e.key === 'Escape') isEditing.value = false
-}
-
-// Simple double-click handler
-function handleSimpleDoubleClick(e: MouseEvent) {
-  e.stopPropagation()
-  e.preventDefault()
-  
-  console.log('Spline double-clicked!')
-  
-  // If no custom label exists, create a default one
-  if (!customLabel.value && !getDefaultLabel()) {
-    customLabel.value = `Branch ${(props.endNode.branchMessageIndex ?? 0) + 1}`
-  }
-  
-  // Trigger label editing
-  if (!isEditing.value) {
-    isEditing.value = true
-    labelInput.value = customLabel.value || getLabelText()
-    nextTick(() => inputRef.value?.focus())
-  }
-}
 
 // Calculate visual stroke width based on state
 function getVisualStrokeWidth() {
@@ -961,19 +623,6 @@ function getVisualStrokeWidth() {
 }
 
 
-// Setup intersection observer
-function setupObserver() {
-  if (typeof IntersectionObserver === 'undefined') return
-  const id = pathId.value
-  const svg = document.querySelector(`#${id}`)?.closest('svg')
-  if (!svg) return
-  const obs = new IntersectionObserver(
-    es => (isVisible = es[0].isIntersecting),
-    { threshold: 0.1 }
-  )
-  obs.observe(svg)
-  return () => obs.disconnect()
-}
 
 // Performance optimized watch - only update when positions actually change
 let lastPositions = { sx: 0, sy: 0, ex: 0, ey: 0 }
@@ -1008,8 +657,6 @@ watch(
 
 // Lifecycle
 onMounted(() => {
-  const stopObs = setupObserver()
-  
   // Enhanced theme detection with full theme name support
   const updateTheme = () => {
     const theme = document.documentElement.getAttribute('data-theme') as ThemeName || 'light'
@@ -1027,13 +674,6 @@ onMounted(() => {
   // Initial theme check
   updateTheme()
   
-  // Listen for spline double-click events from interaction layer
-  const handleInteractionLayerClick = (data: any) => {
-    if (data.parentId === props.startNode.id && data.childId === props.endNode.id) {
-      handleSimpleDoubleClick(new MouseEvent('dblclick'))
-    }
-  }
-  
   // Listen for spline hover events from interaction layer
   const handleInteractionLayerHover = (data: any) => {
     if (data.parentId === props.startNode.id && data.childId === props.endNode.id) {
@@ -1041,13 +681,10 @@ onMounted(() => {
     }
   }
   
-  emitter.on('spline-double-click', handleInteractionLayerClick)
   emitter.on('spline-hover', handleInteractionLayerHover)
 
   onBeforeUnmount(() => {
-    stopObs && stopObs()
     themeObserver.disconnect()
-    emitter.off('spline-double-click', handleInteractionLayerClick)
     emitter.off('spline-hover', handleInteractionLayerHover)
   })
 })

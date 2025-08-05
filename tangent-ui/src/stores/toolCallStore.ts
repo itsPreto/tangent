@@ -1,6 +1,48 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
+// Simple request queue to prevent API request bombardment
+class RequestQueue {
+  private queue: Array<() => Promise<any>> = []
+  private activeRequests = 0
+  private maxConcurrent: number
+
+  constructor(maxConcurrent = 3) {
+    this.maxConcurrent = maxConcurrent
+  }
+
+  async add<T>(requestFn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await requestFn()
+          resolve(result)
+        } catch (error) {
+          reject(error)
+        }
+      })
+      this.processQueue()
+    })
+  }
+
+  private async processQueue() {
+    if (this.activeRequests >= this.maxConcurrent || this.queue.length === 0) {
+      return
+    }
+
+    this.activeRequests++
+    const request = this.queue.shift()!
+    
+    try {
+      await request()
+    } finally {
+      this.activeRequests--
+      // Process next request in queue
+      this.processQueue()
+    }
+  }
+}
+
 export interface ToolCall {
   id: string
   node_id: string
@@ -75,6 +117,9 @@ export interface ClaudeCodeSession {
 }
 
 export const useToolCallStore = defineStore('toolCall', () => {
+  // Request queue to prevent API bombardment
+  const requestQueue = new RequestQueue(3) // Max 3 concurrent requests
+  
   // State
   const toolCalls = ref<Map<string, ToolCall[]>>(new Map()) // node_id -> tool_calls[]
   const fileNodes = ref<Map<string, FileNode[]>>(new Map()) // node_id -> file_nodes[]
@@ -113,63 +158,99 @@ export const useToolCallStore = defineStore('toolCall', () => {
 
   // Actions
   async function fetchToolCallsForNode(nodeId: string) {
-    try {
-      loading.value = true
-      error.value = null
-      
-      const response = await fetch(`http://127.0.0.1:5050/api/tool-calls/node/${nodeId}`)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      toolCalls.value.set(nodeId, data)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to fetch tool calls'
-      console.error('Error fetching tool calls:', err)
-    } finally {
-      loading.value = false
+    // Check if already cached to prevent duplicate requests
+    if (toolCalls.value.has(nodeId)) {
+      return
     }
+
+    return requestQueue.add(async () => {
+      // Double-check cache after queuing (another request might have completed)
+      if (toolCalls.value.has(nodeId)) {
+        return
+      }
+
+      try {
+        loading.value = true
+        error.value = null
+        
+        const response = await fetch(`http://127.0.0.1:5050/api/tool-calls/node/${nodeId}`)
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        toolCalls.value.set(nodeId, data)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to fetch tool calls'
+        console.error('Error fetching tool calls:', err)
+      } finally {
+        loading.value = false
+      }
+    })
   }
 
   async function fetchFileNodesForNode(nodeId: string) {
-    try {
-      loading.value = true
-      error.value = null
-      
-      const response = await fetch(`http://127.0.0.1:5050/api/file-nodes/node/${nodeId}`)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      fileNodes.value.set(nodeId, data)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to fetch file nodes'
-      console.error('Error fetching file nodes:', err)
-    } finally {
-      loading.value = false
+    // Check if already cached to prevent duplicate requests
+    if (fileNodes.value.has(nodeId)) {
+      return
     }
+
+    return requestQueue.add(async () => {
+      // Double-check cache after queuing (another request might have completed)
+      if (fileNodes.value.has(nodeId)) {
+        return
+      }
+
+      try {
+        loading.value = true
+        error.value = null
+        
+        const response = await fetch(`http://127.0.0.1:5050/api/file-nodes/node/${nodeId}`)
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        fileNodes.value.set(nodeId, data)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to fetch file nodes'
+        console.error('Error fetching file nodes:', err)
+      } finally {
+        loading.value = false
+      }
+    })
   }
 
   async function fetchExecutionNodesForNode(nodeId: string) {
-    try {
-      loading.value = true
-      error.value = null
-      
-      const response = await fetch(`http://127.0.0.1:5050/api/execution-nodes/node/${nodeId}`)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      executionNodes.value.set(nodeId, data)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to fetch execution nodes'
-      console.error('Error fetching execution nodes:', err)
-    } finally {
-      loading.value = false
+    // Check if already cached to prevent duplicate requests
+    if (executionNodes.value.has(nodeId)) {
+      return
     }
+
+    return requestQueue.add(async () => {
+      // Double-check cache after queuing (another request might have completed)
+      if (executionNodes.value.has(nodeId)) {
+        return
+      }
+
+      try {
+        loading.value = true
+        error.value = null
+        
+        const response = await fetch(`http://127.0.0.1:5050/api/execution-nodes/node/${nodeId}`)
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        executionNodes.value.set(nodeId, data)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to fetch execution nodes'
+        console.error('Error fetching execution nodes:', err)
+      } finally {
+        loading.value = false
+      }
+    })
   }
 
   async function fetchAllForNode(nodeId: string) {

@@ -1,205 +1,201 @@
 <template>
-  <!-- Topic Islands View - Rendered at cluster LOD (<1% zoom) -->
-  <g v-if="showTopicIslands" class="topic-islands-layer">
-    <!-- Background gradient for knowledge universe feel -->
+  <!-- Cluster View - 3-level hierarchy: Topics -> Workspaces -> Branches -->
+  <g v-if="showClusterView && clusterData" class="cluster-view-layer">
+    <!-- Background gradient -->
     <defs>
-      <radialGradient id="universe-gradient" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" :stop-color="baseColorSet?.primary || '#6366F1'" stop-opacity="0.1" />
-        <stop offset="70%" :stop-color="baseColorSet?.secondary || '#8B5CF6'" stop-opacity="0.05" />
+      <radialGradient id="cluster-gradient" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" :stop-color="baseColorSet?.primary || '#6366F1'" stop-opacity="0.05" />
         <stop offset="100%" stop-color="transparent" />
       </radialGradient>
-      
-      <!-- Island glow effects -->
-      <filter v-for="island in topicIslands" :key="`glow-${island.id}`" 
-              :id="`island-glow-${island.id}`" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
-        <feMerge> 
-          <feMergeNode in="coloredBlur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
 
     <!-- Universe background -->
     <circle
       :cx="canvasCenter.x"
       :cy="canvasCenter.y" 
-      :r="universeRadius"
-      fill="url(#universe-gradient)"
+      :r="2000"
+      fill="url(#cluster-gradient)"
       opacity="0.6"
     />
 
-    <!-- Connection lines between related islands -->
-    <g class="island-connections">
-      <line
-        v-for="connection in islandConnections"
-        :key="`connection-${connection.from}-${connection.to}`"
-        :x1="connection.x1"
-        :y1="connection.y1"
-        :x2="connection.x2"
-        :y2="connection.y2"
-        :stroke="baseColorSet?.accent || '#10B981'"
-        stroke-width="2"
-        stroke-opacity="0.3"
-        stroke-dasharray="5,10"
-      />
-    </g>
-
-    <!-- Topic Clusters and Connected Workspaces -->
-    <g v-for="island in topicIslands" :key="island.id" class="topic-cluster">
-      <!-- Connections from topic cluster to workspaces -->
-      <g class="workspace-connections">
-        <line
-          v-for="(workspace, index) in island.workspaces"
-          :key="`connection-${workspace.id}`"
-          :x1="island.x"
-          :y1="island.y"
-          :x2="getWorkspacePosition(island, index).x"
-          :y2="getWorkspacePosition(island, index).y"
-          :stroke="island.color"
-          stroke-width="1"
-          stroke-opacity="0.4"
-          class="workspace-connection"
-        />
-      </g>
+    <!-- Topic Islands with 3-level hierarchy -->
+    <g v-for="topic in clusterData" :key="topic.id" class="topic-island">
       
-      <!-- Individual workspace circles -->
-      <g class="workspace-circles">
-        <circle
-          v-for="(workspace, index) in island.workspaces"
-          :key="workspace.id"
-          :cx="getWorkspacePosition(island, index).x"
-          :cy="getWorkspacePosition(island, index).y"
-          :r="8"
-          :fill="island.color"
-          :opacity="hoveredIsland?.id === island.id ? 0.9 : 0.7"
-          :stroke="island.color"
-          stroke-width="1"
-          stroke-opacity="0.8"
-          class="workspace-circle transition-all duration-300 cursor-pointer"
-          @click="navigateToWorkspace(workspace)"
-          @mouseenter="onWorkspaceHover(workspace, true)"
-          @mouseleave="onWorkspaceHover(workspace, false)"
-        />
-      </g>
-      
-      <!-- Topic cluster center -->
-      <g 
-        class="topic-cluster-center"
-        @click="navigateToIsland(island)"
-        @mouseenter="onIslandHover(island, true)"
-        @mouseleave="onIslandHover(island, false)"
-        style="cursor: pointer;"
-      >
-        <!-- Topic cluster base -->
-        <circle
-          :cx="island.x"
-          :cy="island.y"
-          :r="25"
-          :fill="island.color"
-          :opacity="hoveredIsland?.id === island.id ? 0.3 : 0.2"
-          :stroke="island.color"
-          :stroke-width="hoveredIsland?.id === island.id ? 3 : 2"
-          :stroke-opacity="hoveredIsland?.id === island.id ? 0.9 : 0.6"
-          class="transition-all duration-300"
+      <!-- Topic Center (Level 1) - Star shape -->
+      <g class="topic-center">
+        <!-- Star shape for topic center -->
+        <path
+          :d="getStarPath(topic.x, topic.y, 25, 12)"
+          fill="white"
+          stroke="#4A90E2" 
+          stroke-width="3"
+          class="topic-star cursor-pointer hover:fill-opacity-90 transition-all"
+          @click="navigateToTopic(topic)"
         />
         
-        <!-- Topic cluster core -->
-        <circle
-          :cx="island.x"
-          :cy="island.y"
-          :r="15"
-          :fill="island.color"
-          :opacity="hoveredIsland?.id === island.id ? 0.6 : 0.4"
-          class="transition-all duration-300"
-        />
+        <!-- Topic label -->
+        <text
+          :x="topic.x"
+          :y="topic.y + 45"
+          text-anchor="middle"
+          fill="#1F2937"
+          font-size="14"
+          font-weight="bold"
+          class="topic-label"
+        >
+          {{ topic.name }}
+        </text>
       </g>
 
-      <!-- Island label -->
-      <text
-        :x="island.x"
-        :y="island.y + 45"
-        text-anchor="middle"
-        :fill="baseColorSet?.content || '#1F2937'"
-        font-size="12"
-        font-weight="600"
-        :opacity="hoveredIsland?.id === island.id ? 1 : 0.8"
-        class="transition-all duration-300"
-      >
-        {{ island.title }}
-      </text>
+      <!-- Workspaces (Level 2) -->
+      <g v-for="workspace in topic.workspaces" :key="workspace.id" class="workspace-node">
+        
+        <!-- Connection from topic to workspace -->
+        <line
+          :x1="topic.x"
+          :y1="topic.y"
+          :x2="workspace.x"
+          :y2="workspace.y"
+          stroke="#4A90E2"
+          stroke-width="2"
+          stroke-opacity="0.6"
+          class="topic-workspace-connection"
+        />
+        
+        <!-- Workspace circle -->
+        <circle
+          :cx="workspace.x"
+          :cy="workspace.y"
+          :r="Math.max(15, workspace.branchCount * 2)"
+          fill="#34D399"
+          stroke="#059669"
+          stroke-width="2"
+          opacity="0.8"
+          class="workspace-circle cursor-pointer hover:opacity-100 transition-all"
+          @click="navigateToWorkspace(workspace.id)"
+        />
+        
+        <!-- Workspace title -->
+        <text
+          :x="workspace.x"
+          :y="workspace.y + Math.max(30, workspace.branchCount * 2 + 15)"
+          text-anchor="middle"
+          fill="#1F2937"
+          font-size="11"
+          font-weight="600"
+          class="workspace-label"
+        >
+          {{ workspace.title.length > 20 ? workspace.title.substring(0, 20) + '...' : workspace.title }}
+        </text>
+        
+        <!-- Branch count -->
+        <text
+          :x="workspace.x"
+          :y="workspace.y + Math.max(44, workspace.branchCount * 2 + 29)"
+          text-anchor="middle"
+          fill="#6B7280"
+          font-size="9"
+          class="branch-count"
+        >
+          {{ workspace.branchCount }} nodes
+        </text>
 
-      <!-- Workspace count -->
-      <text
-        :x="island.x"
-        :y="island.y + 60"
-        text-anchor="middle"
-        :fill="baseColorSet?.content || '#1F2937'"
-        font-size="10"
-        :opacity="hoveredIsland?.id === island.id ? 0.9 : 0.6"
-        class="transition-all duration-300"
-      >
-        {{ island.workspaces.length }} workspace{{ island.workspaces.length !== 1 ? 's' : '' }}
-      </text>
+        <!-- Branch nodes (Level 3) - Small dots around workspace -->
+        <g v-for="(node, index) in workspace.nodes.slice(0, Math.min(workspace.nodes.length, 8))" 
+           :key="node.id" class="branch-node">
+          
+          <!-- Connection from workspace to branch -->
+          <line
+            :x1="workspace.x"
+            :y1="workspace.y"
+            :x2="workspace.x + Math.cos((index / Math.min(workspace.nodes.length, 8)) * 2 * Math.PI) * (Math.max(15, workspace.branchCount * 2) + 25)"
+            :y2="workspace.y + Math.sin((index / Math.min(workspace.nodes.length, 8)) * 2 * Math.PI) * (Math.max(15, workspace.branchCount * 2) + 25)"
+            stroke="#34D399"
+            stroke-width="1"
+            stroke-opacity="0.4"
+            class="workspace-branch-connection"
+          />
+          
+          <!-- Branch dot -->
+          <circle
+            :cx="workspace.x + Math.cos((index / Math.min(workspace.nodes.length, 8)) * 2 * Math.PI) * (Math.max(15, workspace.branchCount * 2) + 25)"
+            :cy="workspace.y + Math.sin((index / Math.min(workspace.nodes.length, 8)) * 2 * Math.PI) * (Math.max(15, workspace.branchCount * 2) + 25)"
+            :r="4"
+            fill="#F59E0B"
+            stroke="#D97706"
+            stroke-width="1"
+            opacity="0.7"
+            class="branch-dot"
+          />
+        </g>
+        
+        <!-- Show "+" if there are more nodes -->
+        <text
+          v-if="workspace.nodes.length > 8"
+          :x="workspace.x + Math.cos(0) * (Math.max(15, workspace.branchCount * 2) + 40)"
+          :y="workspace.y + 4"
+          text-anchor="middle"
+          fill="#6B7280"
+          font-size="12"
+          font-weight="bold"
+          class="more-nodes-indicator"
+        >
+          +{{ workspace.nodes.length - 8 }}
+        </text>
+      </g>
     </g>
 
     <!-- Legend -->
-    <g class="topic-legend" :transform="`translate(${legendPosition.x}, ${legendPosition.y})`">
+    <g class="cluster-legend" :transform="`translate(${legendPosition.x}, ${legendPosition.y})`">
       <rect
-        x="-80"
-        y="-20"
-        width="160"
-        height="80"
+        x="-100"
+        y="-30"
+        width="200"
+        height="100"
         :fill="baseColorSet?.base100 || '#FFFFFF'"
         :stroke="baseColorSet?.base300 || '#D1D5DB'"
         stroke-width="1"
         rx="8"
-        opacity="0.9"
+        opacity="0.95"
       />
       
       <text
         x="0"
-        y="-5"
+        y="-10"
         text-anchor="middle"
         :fill="baseColorSet?.content || '#1F2937'"
-        font-size="12"
-        font-weight="600"
+        font-size="14"
+        font-weight="bold"
       >
-        Knowledge Universe
+        Knowledge Cluster View
       </text>
+      
+      <!-- Legend items -->
+      <g transform="translate(-80, 10)">
+        <path :d="getStarPath(0, 0, 8, 4)" fill="white" stroke="#4A90E2" stroke-width="1"/>
+        <text x="15" y="4" :fill="baseColorSet?.content || '#1F2937'" font-size="10">Topics</text>
+      </g>
+      
+      <g transform="translate(0, 10)">
+        <circle cx="0" cy="0" r="6" fill="#34D399" stroke="#059669" stroke-width="1"/>
+        <text x="15" y="4" :fill="baseColorSet?.content || '#1F2937'" font-size="10">Workspaces</text>
+      </g>
+      
+      <g transform="translate(-80, 30)">
+        <circle cx="0" cy="0" r="3" fill="#F59E0B" stroke="#D97706" stroke-width="1"/>
+        <text x="15" y="4" :fill="baseColorSet?.content || '#1F2937'" font-size="10">Branches</text>
+      </g>
       
       <text
         x="0"
-        y="10"
-        text-anchor="middle"
-        :fill="baseColorSet?.content || '#1F2937'"
-        font-size="10"
-        opacity="0.7"
-      >
-        {{ totalWorkspaces }} workspaces
-      </text>
-      
-      <text
-        x="0"
-        y="25"
-        text-anchor="middle"
-        :fill="baseColorSet?.content || '#1F2937'"
-        font-size="10"
-        opacity="0.7"
-      >
-        {{ topicIslands.length }} topic{{ topicIslands.length !== 1 ? 's' : '' }}
-      </text>
-      
-      <text
-        x="0"
-        y="45"
+        y="55"
         text-anchor="middle"
         :fill="baseColorSet?.accent || '#10B981'"
         font-size="9"
         class="cursor-pointer hover:opacity-80"
         @click="zoomToOverview"
       >
-        Click island to explore →
+        Click to zoom in →
       </text>
     </g>
   </g>
@@ -222,12 +218,29 @@ const props = defineProps<{
     centerX: number
     centerY: number
   } | null
+  clusterData: Array<{
+    id: string
+    name: string
+    x: number
+    y: number
+    workspaces: Array<{
+      id: string
+      title: string
+      branchCount: number
+      x: number
+      y: number
+      nodes: any[]
+    }>
+  }> | null
+  isLodLocked: boolean
+  lockedLodLevel: string
 }>()
 
 // Emits
 const emit = defineEmits<{
   navigateToIsland: [island: TopicIsland]
   zoomToOverview: []
+  navigateToWorkspace: [workspaceId: string]
 }>()
 
 // State
@@ -240,12 +253,20 @@ const isLoading = ref(true)
 const themeStore = useThemeStore()
 const baseColorSet = computed(() => themeStore.currentColorSet)
 
-// Show topic islands only at very low zoom (below workspace overview)
-const showTopicIslands = computed(() => {
-  const shouldShow = props.zoomLevel < 0.05 // Show below 5% zoom (lower than workspace overview)
-  if (shouldShow && topicIslands.value.length > 0) {
-    console.log('TopicIslandView: Showing islands at zoom:', props.zoomLevel, 'Islands:', topicIslands.value.length)
+// Show cluster view based on LOD level (respecting lock state)
+const showClusterView = computed(() => {
+  let shouldShow;
+  
+  // If LOD is locked, use the locked level
+  if (props.isLodLocked) {
+    shouldShow = props.lockedLodLevel === 'cluster' && props.clusterData && props.clusterData.length > 0
+    // console.log('TopicIslandView: LOD locked to', props.lockedLodLevel, 'showing cluster:', shouldShow)
+  } else {
+    // Normal zoom-based logic
+    shouldShow = props.zoomLevel <= 0.10 && props.clusterData && props.clusterData.length > 0
+    // console.log('TopicIslandView: Showing cluster view at zoom:', props.zoomLevel, 'Topics:', props.clusterData?.length || 0)
   }
+  
   return shouldShow
 })
 
@@ -347,9 +368,37 @@ const navigateToIsland = (island: TopicIsland) => {
   emit('navigateToIsland', island)
 }
 
-const navigateToWorkspace = (workspace: any) => {
-  console.log('Navigate to workspace:', workspace)
-  // TODO: Implement workspace navigation
+const navigateToWorkspace = (workspaceId: string) => {
+  console.log('Navigate to workspace:', workspaceId)
+  emit('navigateToWorkspace', workspaceId)
+}
+
+const navigateToTopic = (topic: any) => {
+  console.log('Navigate to topic:', topic.name)
+  // For now, just zoom to the topic area
+  // You could enhance this to focus on the topic cluster
+}
+
+// Generate star path for topic centers
+const getStarPath = (cx: number, cy: number, outerRadius: number, innerRadius: number) => {
+  const points = 5
+  let path = ''
+  
+  for (let i = 0; i < points * 2; i++) {
+    const angle = (i * Math.PI) / points
+    const radius = i % 2 === 0 ? outerRadius : innerRadius
+    const x = cx + Math.cos(angle - Math.PI / 2) * radius
+    const y = cy + Math.sin(angle - Math.PI / 2) * radius
+    
+    if (i === 0) {
+      path += `M ${x} ${y}`
+    } else {
+      path += ` L ${x} ${y}`
+    }
+  }
+  
+  path += ' Z'
+  return path
 }
 
 const zoomToOverview = () => {
@@ -442,16 +491,15 @@ const generateIslandColor = (index: number): string => {
 
 // Watch for zoom level changes to trigger initialization
 watch(() => props.zoomLevel, (newZoom) => {
-  console.log('TopicIslandView: Zoom changed to:', newZoom)
-  if (newZoom < 0.08 && topicIslands.value.length === 0 && !isLoading.value) {
-    console.log('TopicIslandView: Triggering initialization...')
+  // Only log significant zoom changes, not every frame
+  if (newZoom <= 0.10 && topicIslands.value.length === 0 && !isLoading.value) {
     initializeIslands()
   }
 }, { immediate: true })
 
 // Initialize on mount
 onMounted(() => {
-  if (showTopicIslands.value) {
+  if (showClusterView.value) {
     initializeIslands()
   }
 })

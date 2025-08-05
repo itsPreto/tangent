@@ -487,7 +487,7 @@ class ChatPersistenceService:
         # Enhanced node_to_dict function that uses the cached children
         def enhanced_node_to_dict(node):
             children = getattr(node, '_children_cache', [])
-            return {
+            node_dict = {
                 'id': node.id,
                 'chatId': node.chat_id,  # Add chatId for reflection system
                 'type': node.type,
@@ -500,6 +500,23 @@ class ChatPersistenceService:
                 'metadata': node.node_metadata or {},
                 'children': [enhanced_node_to_dict(child) for child in children]
             }
+            
+            # Add tool call data for tool-call-compact nodes
+            if node.type == 'tool-call-compact':
+                tool_call = ToolCall.query.filter_by(node_id=node.id).first()
+                if tool_call:
+                    node_dict['toolCall'] = {
+                        'id': tool_call.id,
+                        'tool_name': tool_call.tool_name,
+                        'parameters': tool_call.parameters,
+                        'status': tool_call.status,
+                        'result': tool_call.result,
+                        'error_message': tool_call.error_message,
+                        'created_at': tool_call.created_at.isoformat() if tool_call.created_at else None,
+                        'updated_at': tool_call.updated_at.isoformat() if tool_call.updated_at else None
+                    }
+            
+            return node_dict
         
         # Find the main node (root node with no parent)
         main_node = next((node for node in all_nodes if node.parent_id is None), None)
