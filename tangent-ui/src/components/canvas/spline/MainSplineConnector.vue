@@ -867,6 +867,11 @@ function lightenColor(hex: string, amount: number): string {
 
 // Label content
 const hasLabel = computed(() => {
+  // Hide labels when either node is in dot LOD
+  if (props.endLodLevel === 'dot' || props.startLodLevel === 'dot') {
+    return false
+  }
+  
   return customLabel.value || 
          canvasStore.getConnectionLabel(props.startNode.id, props.endNode.id) || 
          getDefaultLabel()

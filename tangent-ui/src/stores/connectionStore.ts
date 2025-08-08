@@ -282,6 +282,21 @@ export const useConnectionStore = defineStore('connection', () => {
     });
   };
   
+  // Clear all connections
+  const clearAllConnections = () => {
+    connectionsById.value = {};
+    connectionIds.value = [];
+    selectedConnectionIds.value = [];
+    hoveredConnectionId.value = null;
+    Object.keys(animationStates.value).forEach(id => {
+      const state = animationStates.value[id];
+      if (state?.animationFrameId) {
+        cancelAnimationFrame(state.animationFrameId);
+      }
+    });
+    animationStates.value = {};
+  };
+  
   // Utility functions
   const getConnectionById = (id: string) => connectionsById.value[id];
   const getConnectionTypeById = (id: string) => connectionTypesById.value[id];
@@ -335,6 +350,7 @@ export const useConnectionStore = defineStore('connection', () => {
     updateViewport,
     removeConnectionsByNodeId,
     updateConnectionPaths,
+    clearAllConnections,
     
     // Utilities
     getConnectionById,

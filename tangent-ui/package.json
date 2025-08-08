@@ -64,7 +64,8 @@
     "vue-draggable-plus": "^0.6.0",
     "vue-force-graph": "^0.1.2",
     "vue-prism-component": "^2.0.0",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",

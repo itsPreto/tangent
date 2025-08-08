@@ -94,7 +94,7 @@
 
       
       <!-- Distance Indicator -->
-      <Transition name="distance-fade">
+      <!-- <Transition name="distance-fade">
         <div 
           v-if="shouldShowDistanceIndicator"
           class="distance-indicator" 
@@ -120,7 +120,7 @@
           <div class="return-hint">Click to center content</div>
         </div>
         </div>
-      </Transition>
+      </Transition> -->
 
       <!-- Detailed Workspace View (when a workspace is selected) -->
       <div v-if="!isWorkspaceOverview"
@@ -393,59 +393,31 @@
                 :is-hovered="isConnectionHovered(node.parentId, node.id)"
                 :curvature="curvature"
                 :theme="currentTheme"
-                :stroke-width="2"
-                :connection-label="connectionLabels.get(`${node.parentId}-${node.id}`)"
+                :stroke-width="getLODLevel(node.id) === 'dot' || getLODLevel(node.parentId) === 'dot' ? 0.5 : 2"
+                :connection-label="''"
                 @label-update="(label) => setConnectionLabel(node.parentId, node.id, label)"
                 @connection-click="() => handleConnectionClick(node.parentId, node.id)"
                 @connection-hover="(hovered) => handleConnectionHover(node.parentId, node.id, hovered)"
               />
             </template>
 
-            <!-- Workspace Overview Dots (visual reference at low zoom) -->
-            <g v-if="workspaceOverviewDots.length > 0" class="workspace-overview-layer">
-              <g v-for="workspace in workspaceOverviewDots" :key="workspace.id" class="workspace-overview-dot">
-                <circle
-                  :cx="workspace.x"
-                  :cy="workspace.y"
-                  :r="Math.max(20, workspace.nodeCount * 3)"
-                  fill="#4ECDC4"
-                  opacity="0.6"
-                  stroke="#4ECDC4"
-                  stroke-width="2"
-                  class="cursor-pointer hover:opacity-80 transition-opacity"
-                  @click="navigateToWorkspace(workspace)"
-                />
-                <text
-                  :x="workspace.x"
-                  :y="workspace.y + Math.max(35, workspace.nodeCount * 3 + 15)"
-                  text-anchor="middle"
-                  fill="#1F2937"
-                  font-size="14"
-                  font-weight="600"
-                  class="pointer-events-none"
-                >
-                  {{ workspace.title }}
-                </text>
-                <text
-                  :x="workspace.x" 
-                  :y="workspace.y + Math.max(50, workspace.nodeCount * 3 + 30)"
-                  text-anchor="middle"
-                  fill="#6B7280"
-                  font-size="12"
-                  class="pointer-events-none"
-                >
-                  {{ workspace.nodeCount }} nodes
-                </text>
-              </g>
-            </g>
+            <!-- Dot LOD nodes rendering -->
+            <template v-for="node in visibleNodes" :key="`dot-${node.id}`">
+              <circle 
+                v-if="getLODLevel(node.id) === 'dot'" 
+                :cx="node.x + 25"
+                :cy="node.y + 25"
+                :r="25"
+                :fill="isNodeFocused(node.id) ? '#6366F1' : '#374151'"
+                :stroke="isNodeFocused(node.id) ? '#4F46E5' : '#9CA3AF'"
+                :stroke-width="4"
+                class="node-dot"
+                style="cursor: pointer;"
+                @click="(e) => handleDotClick(e, node.id)"
+                @mousedown="(e) => handleDotMouseDown(e, node)"
+              />
+            </template>
 
-            <!-- Topic Islands Layer (for cluster LOD) -->
-            <TopicIslandView
-              :zoom-level="zoom"
-              :viewport-bounds="viewportReturn.getViewportBounds(canvasRef)"
-              @navigate-to-island="handleNavigateToIsland"
-              @zoom-to-overview="handleZoomToOverview"
-            />
           </svg>
 
           <!-- Original spline connections restored -->
@@ -454,7 +426,7 @@
           <div class="absolute" :style="nodesLayerStyle" style="z-index: 1">
             <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles all node types from all workspaces) -->
-              <BranchNode v-if="(node.type === 'branch' || node.type === 'main' || node.type === 'media') && (!store.snappedNodeId || store.snappedNodeId === node.id)" :node="node"
+              <BranchNode v-if="(node.type === 'branch' || node.type === 'main' || node.type === 'media') && (!store.snappedNodeId || store.snappedNodeId === node.id) && getLODLevel(node.id) !== 'dot'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
@@ -477,7 +449,7 @@
                 }" />
 
               <!-- Web Node -->
-              <WebBranchNode v-else-if="node.type === 'web' && (!store.snappedNodeId || store.snappedNodeId === node.id)" :node="node" :is-selected="isNodeFocused(node.id)"
+              <WebBranchNode v-else-if="node.type === 'web' && (!store.snappedNodeId || store.snappedNodeId === node.id) && getLODLevel(node.id) !== 'dot'" :node="node" :is-selected="isNodeFocused(node.id)"
                 :selected-model="selectedModel" :open-router-api-key="openRouterApiKey" :modelType="modelType"
                 :zoom="zoom" :lod-level="getLODLevel(node.id)" :model-registry="modelRegistry"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
@@ -504,7 +476,7 @@
                 }" />
 
               <!-- Branch Node -->
-              <BranchNode v-else-if="!store.snappedNodeId || store.snappedNodeId === node.id" :node="node" :is-selected="isNodeFocused(node.id)"
+              <BranchNode v-else-if="(!store.snappedNodeId || store.snappedNodeId === node.id) && getLODLevel(node.id) !== 'dot'" :node="node" :is-selected="isNodeFocused(node.id)"
                 :is-snapped="store.snappedNodeId === node.id" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
@@ -524,7 +496,7 @@
 
               <!-- Branch Index Label -->
               <BranchIndexLabel 
-                v-if="!store.snappedNodeId && store.nodeIndices.has(node.id)"
+                v-if="getLODLevel(node.id) !== 'dot' && !store.snappedNodeId && store.nodeIndices.has(node.id)"
                 :node="node"
                 :node-index="store.nodeIndices.get(node.id)"
                 :zoom="zoom"
@@ -617,7 +589,6 @@ import WebBranchNode from "./node/WebBranchNode.vue";
 import MainSplineConnector from "./spline/MainSplineConnector.vue";
 import TopDocker from "./TopDocker.vue";
 import BottomDocker from "./BottomDocker.vue";
-import TopicIslandView from "./TopicIslandView.vue";
 import ShapePropertiesPanel from "./ShapePropertiesPanel.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -828,6 +799,7 @@ const connectionLayer = ref(null);
 const expandedNodes = ref(new Set());
 const connectionLabels = ref(new Map());
 const isPanning = ref(false);
+const wasJustDragging = ref(false); // Flag to prevent immediate re-selection after dragging
 const curvature = ref(0.5); // Spline curvature (0 = straight, 1 = very curvy)
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
@@ -838,44 +810,57 @@ const showFitButton = ref(false);
 const focusedTopicId = ref<string | null>(null);
 
 // Workspace overview dots (visual reference only at low zoom)
-const workspaceOverviewDots = computed(() => {
-  if (zoom.value > 0.15 || allWorkspaceNodes.value.length === 0) {
-    return []; // Only show at very low zoom
-  }
-  
-  // Group workspace nodes by workspaceId to create overview dots
-  const workspaceGroups = new Map();
-  allWorkspaceNodes.value.forEach(node => {
-    if (!node.workspaceId) return;
-    if (!workspaceGroups.has(node.workspaceId)) {
-      workspaceGroups.set(node.workspaceId, {
-        id: node.workspaceId,
-        title: node.workspaceTitle || `Workspace ${node.workspaceId}`,
-        nodes: []
-      });
+const getWorkspaceRootNode = (workspaceId: string) => {
+  return store.nodes.find(node =>
+    node.workspaceId === workspaceId &&
+    node.type === 'main' &&
+    node.metadata?.isRoot === true
+  );
+};
+
+// Computed property for topic nodes at very low zoom
+const topicNodes = computed(() => {
+  const nodes: any[] = [];
+  const topicMap = new Map<string, { rootNodeIds: Set<string>, sumX: number, sumY: number, count: number, titles: Set<string> }>();
+
+  // 1. Identify all workspace root nodes and group them by a simulated topic
+  chatStore.chats.value.forEach(chat => {
+    const rootNode = getWorkspaceRootNode(chat.id);
+    if (rootNode) {
+      // Simulate topic assignment: group by first word of workspace title
+      const topicKey = chat.title?.split(' ')[0]?.toLowerCase() || 'untitled';
+      
+      if (!topicMap.has(topicKey)) {
+        topicMap.set(topicKey, { rootNodeIds: new Set(), sumX: 0, sumY: 0, count: 0, titles: new Set() });
+      }
+      const topicData = topicMap.get(topicKey)!;
+      topicData.rootNodeIds.add(rootNode.id);
+      topicData.sumX += rootNode.x;
+      topicData.sumY += rootNode.y;
+      topicData.count++;
+      topicData.titles.add(topicKey.charAt(0).toUpperCase() + topicKey.slice(1)); // Capitalize first letter
     }
-    workspaceGroups.get(node.workspaceId).nodes.push(node);
   });
-  
-  // Calculate center position for each workspace
-  return Array.from(workspaceGroups.values()).map(workspace => {
-    let centerX = 0, centerY = 0;
-    workspace.nodes.forEach(node => {
-      centerX += node.x || 0;
-      centerY += node.y || 0;
-    });
-    centerX /= workspace.nodes.length;
-    centerY /= workspace.nodes.length;
+
+  // 2. Create a "topic" node for each group
+  topicMap.forEach((data, topicKey) => {
+    const centerX = data.sumX / data.count;
+    const centerY = data.sumY / data.count;
+    const topicTitle = Array.from(data.titles).join(' / '); // Combine titles if multiple
     
-    return {
-      id: workspace.id,
-      title: workspace.title,
+    nodes.push({
+      id: `topic-${topicKey}`,
+      type: 'topic', // Custom type for topic nodes
       x: centerX,
       y: centerY,
-      nodeCount: workspace.nodes.length
-    };
+      title: topicTitle,
+      nodeCount: data.rootNodeIds.size, // Number of workspaces in this topic
+    });
   });
+
+  return nodes;
 });
+
 
 // WASD Panning state
 const keysPressed = ref(new Set<string>());
@@ -888,17 +873,6 @@ let panAnimationFrame: number | null = null;
 // Track current focused workspace for island navigation
 const currentWorkspaceId = ref<string | null>(null);
 
-// Navigate to a workspace overview dot
-const navigateToWorkspace = (workspace: any) => {
-  console.log('Navigate to workspace:', workspace);
-  
-  // Animate to workspace center with appropriate zoom
-  const targetZoom = 0.5; // Good zoom level to see workspace detail
-  const duration = 800; // Animation duration
-  
-  // Center on workspace position
-  centerOnPointWithAnimation(workspace.x, workspace.y, targetZoom, duration);
-};
 
 // Determine which workspace island is currently in focus based on viewport center
 const updateCurrentWorkspace = () => {
@@ -1025,8 +999,7 @@ const PAN_SENSITIVITY = 1.0;
 // LOD thresholds
 const LOD_FULL_THRESHOLD = 0.60; // 60%+ for full detail
 const LOD_PREVIEW_THRESHOLD = 0.30; // 30-60% for preview
-const LOD_COMPACT_THRESHOLD = 0.05; // 5-30% for compact
-const LOD_CLUSTER_THRESHOLD = 0.01; // <1% for cluster view
+const LOD_COMPACT_THRESHOLD = 0.10; // 10%+ for compact
 
 // Simple Undo/Redo system for deletions and moves
 const undoStack = ref([]);
@@ -1235,49 +1208,31 @@ const cycleSnappedNodes = async (direction: string) => {
   }
 };
 
-// Enhanced LOD Level calculation based on zoom thresholds and viewport culling
-const getLODLevel = (nodeId: string) => {
+// Performance state tracking
+const isAnimating = ref(false);
+let animationTimeout: number | null = null;
+
+// Simplified high-performance LOD calculation
+const getLODLevel = (nodeId: string): string => {
   const isNodeSnapped = snappedNodeId.value === nodeId;
-  const isNodeFocusedState = focusedNodeId.value === nodeId;
   
-  // Always use full detail for snapped nodes
+  // Always use full detail for snapped nodes regardless of zoom level
+  // This prevents LOD changes during auto-center or zoom changes
   if (isNodeSnapped) {
     return 'full';
   }
   
   const currentZoom = zoom.value;
   
-  // Check if node is in viewport first (for performance)
-  const node = store.nodes.find(n => n.id === nodeId);
-  if (node && canvasRef.value) {
-    const nodeBounds = {
-      x: node.x || 0,
-      y: node.y || 0,
-      width: node.type === 'tool-call-compact' ? 120 : 400,
-      height: node.type === 'tool-call-compact' ? 40 : 300
-    };
-    
-    // If node is not in viewport, we can return a lighter LOD or skip rendering entirely
-    if (!viewportReturn.isNodeInViewport(nodeBounds, canvasRef.value, 500)) {
-      // Return lighter LOD for out-of-viewport nodes to reduce processing
-      if (currentZoom >= LOD_FULL_THRESHOLD) return 'preview';
-      if (currentZoom >= LOD_PREVIEW_THRESHOLD) return 'compact';
-      if (currentZoom >= LOD_COMPACT_THRESHOLD) return 'compact';
-      return 'cluster';
-    }
-  }
-  
-  // Zoom-based LOD for visible nodes
+  // Simple zoom-based LOD (no expensive viewport checking during zoom)
   if (currentZoom >= LOD_FULL_THRESHOLD) {
-    return 'full'; // 60%+ zoom
+    return 'full';
   } else if (currentZoom >= LOD_PREVIEW_THRESHOLD) {
-    return 'preview'; // 30-60% zoom
+    return 'preview';
   } else if (currentZoom >= LOD_COMPACT_THRESHOLD) {
-    return 'compact'; // 5-30% zoom
-  } else if (currentZoom >= LOD_CLUSTER_THRESHOLD) {
-    return 'compact'; // 1-5% zoom (still show compact cards)
+    return 'compact';
   } else {
-    return 'cluster'; // <1% zoom (cluster view)
+    return 'dot';
   }
 };
 
@@ -1306,11 +1261,20 @@ const getEffectiveCardDimensions = (node: any) => {
   let width = CARD_WIDTH; // 672px
   let height = CARD_HEIGHT; // 400px
   
+  // Handle dot LOD with very small dimensions
+  if (lodLevel === 'dot') {
+    return {
+      width: 50,
+      height: 50,
+      lodLevel: 'dot'
+    };
+  }
+  
   // Adjust dimensions based on LOD level
   switch (lodLevel) {
-    case 'cluster':
-      width = 20;  // Tiny cluster squares
-      height = 20;
+    case 'hidden':
+      width = 0;
+      height = 0;
       break;
     case 'compact':
       width = 100; // Small compact cards
@@ -1614,34 +1578,38 @@ const isVisionModelSelected = computed(() => {
   return modelStore.selectedModelCapabilities?.supportsVision || false;
 });
 
-// Enhanced computed styles with RTS perspective
+// Enhanced computed styles with hardware acceleration and performance optimizations
 const transformStyle = computed(() => {
   if (store.snappedNodeId !== null) {
     return {
-      transform: "none",
+      transform: "translate3d(0,0,0)", // Force hardware acceleration
       transformOrigin: "0 0",
       width: "100%",
       height: "100%",
       transition: "none",
+      willChange: "auto", // Reset will-change when not animating
     };
   }
 
   // Overview mode with RTS perspective adjustments
   if (isWorkspaceOverview.value) {
     return {
-      transform: `translate(${panX.value}px, ${panY.value}px)`,
+      transform: `translate3d(${panX.value}px, ${panY.value}px, 0)`, // Hardware accelerated
       transformOrigin: "0 0",
       transition: "transform 0.3s ease-out",
+      willChange: "transform", // Hint for optimization during transitions
     };
   }
 
-  // Regular mode: scale and translate
+  // Regular mode: scale and translate with hardware acceleration
   return {
-    transform: `scale(${zoom.value}) translate(${panX.value / zoom.value}px, ${panY.value / zoom.value}px)`,
+    transform: `scale(${zoom.value}) translate3d(${panX.value / zoom.value}px, ${panY.value / zoom.value}px, 0)`,
     transformOrigin: "0 0",
     width: "100000px",
     height: "100000px",
     transition: store.isTransitioning ? "transform 0.3s ease-out" : "none",
+    willChange: "auto", // Keep simple
+    backfaceVisibility: "hidden", // Prevent flickering during transforms
   };
 });
 
@@ -1743,7 +1711,7 @@ const renderGrid = () => {
   const currentPanY = panY.value;
   
   // Skip grid if zoom is too low (performance optimization)
-  if (currentZoom < 0.1) return;
+  if (currentZoom < 0.05) return;
   
   // Calculate grid spacing based on zoom level
   const baseGridSize = GRID_SIZE * currentZoom;
@@ -1972,41 +1940,43 @@ const loadAllWorkspaces = async () => {
       }
       
       allWorkspaceNodes.value = allNodes;
+      
+      // CRITICAL: Set the canvas store nodes to show all workspace nodes
+      store.nodes = allNodes;
       console.log('Loaded', allNodes.length, 'nodes from', data.chats.length, 'workspaces');
+      console.log('[loadAllWorkspaces] Set store.nodes to', store.nodes.length, 'nodes');
     }
   } catch (error) {
     console.error('Error loading all workspaces:', error);
   }
 };
 
-// Cached viewport bounds to avoid recalculation
-let cachedViewport: any = null;
-let lastViewportUpdate = 0;
-const VIEWPORT_CACHE_MS = 16; // Cache for ~1 frame (60fps)
-
+// Simple, fast visibleNodes without complex caching
 const visibleNodes = computed(() => {
   // If snapped node exists, only show that node's children
   if (store.snappedNodeId !== null) {
     return store.nodes.filter(node => node.id === store.snappedNodeId);
   }
   
-  // Use regular store nodes for normal interaction
-  // Workspace overview is only visual reference at low zoom
+  // For small numbers of nodes (like 4), just return all nodes
+  // Viewport culling optimization only helps with many nodes
+  if (store.nodes.length <= 10) {
+    return store.nodes;
+  }
+  
+  // Only do viewport culling for larger node counts
   const nodesToRender = store.nodes;
   
-  // Apply viewport culling for performance
   if (!canvasRef.value || nodesToRender.length === 0) {
-    return nodesToRender; // Fallback to all nodes if canvas ref not available
+    return nodesToRender;
   }
   
-  // Get viewport bounds
   const viewport = viewportReturn.getViewportBounds(canvasRef.value);
   if (!viewport) {
-    return nodesToRender; // Fallback if viewport calculation fails
+    return nodesToRender;
   }
   
-  // Filter nodes based on viewport + buffer zone
-  const VIEWPORT_BUFFER = 500; // Buffer zone in pixels
+  const VIEWPORT_BUFFER = 500;
   
   return nodesToRender.filter(node => {
     const nodeBounds = {
@@ -2375,8 +2345,9 @@ const handleNewWorkspace = async () => {
     isPortalClicked.value = false;
   }, 1000);
   
+  // Clear any snapped node state before creating new workspace
   if (store.snappedNodeId) {
-    store.popSnappedNode()
+    store.unsnapNode(store.snappedNodeId);
   }
   await store.clearCurrentWorkspace();
 
@@ -2678,16 +2649,46 @@ const calculateRequiredZoom = (bounds, containerRect) => {
 
 // Handle node selection
 const handleNodeSelect = async (nodeId: string) => {
+  console.log(`[handleNodeSelect] Called for node ${nodeId}, current zoom: ${zoom.value}, LOD: ${getLODLevel(nodeId)}`);
+  
+  // Reset multi-drag and wasJustDragging flags if this is a centering request
+  // These flags are meant for actual drag operations, not centering clicks
+  if (isMultiDragging.value) {
+    console.log(`[handleNodeSelect] Clearing multi-drag state for centering`);
+    isMultiDragging.value = false;
+  }
+  
+  if (wasJustDragging.value) {
+    console.log(`[handleNodeSelect] Clearing wasJustDragging state for centering`);  
+    wasJustDragging.value = false;
+  }
+  
+  // Only check for actual ongoing drags, not flags that prevent centering
+  if (store.isDragging || shapeDragState.value.isDragging || workspaceDragState.value.isDragging) {
+    console.log(`[handleNodeSelect] Skipping due to active drag operation`);
+    return;
+  }
+
   store.isTransitioning = false;
   
   const node = store.nodes.find((n) => n.id === nodeId);
-  if (!node) return;
+  if (!node) {
+    console.log(`[handleNodeSelect] Node ${nodeId} not found`);
+    return;
+  }
 
   const rect = canvasRef.value?.getBoundingClientRect();
-  if (!rect) return;
+  if (!rect) {
+    console.log(`[handleNodeSelect] Canvas rect not found`);
+    return;
+  }
 
+  console.log(`[handleNodeSelect] Proceeding with centering on node at: ${node.x}, ${node.y}`);
+  
   const bounds = calculateNodeBounds(node);
   const targetZoom = calculateRequiredZoom(bounds, rect);
+  
+  console.log(`[handleNodeSelect] Calculated bounds:`, bounds, `Target zoom: ${targetZoom}`);
 
   await centerOnNodeWithAnimation(nodeId, targetZoom, 600);
   
@@ -2701,10 +2702,16 @@ const calculateNodeBounds = (node) => {
 
     return store.nodes.reduce(
       (acc, node) => {
-        // Get proper dimensions for the node type
-        const dimensions = getEffectiveCardDimensions(node);
-        let nodeWidth = dimensions.width;
-        let nodeHeight = dimensions.height;
+        // For centering purposes, use full card dimensions regardless of LOD
+        // This ensures dot LOD nodes can still be centered properly
+        let nodeWidth = CARD_WIDTH;
+        let nodeHeight = CARD_HEIGHT;
+        
+        // Handle special node types
+        if (node.type === 'tool-call-compact') {
+          nodeWidth = 120;
+          nodeHeight = 40;
+        }
 
         // Try to get actual DOM dimensions if available, but fallback to calculated dimensions
         const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
@@ -2716,7 +2723,7 @@ const calculateNodeBounds = (node) => {
           }
         }
 
-        // Use custom width if available, otherwise use the calculated effective width
+        // Use custom width if available, otherwise use the calculated full width
         nodeWidth = node.customWidth || nodeWidth;
         
         return {
@@ -2805,9 +2812,10 @@ const handleWheel = (e: WheelEvent) => {
 
   e.preventDefault();
   resetInactivityTimer();
+  
+  // Simple performance optimization
 
   // Using global constants
-
   const rect = canvasRef.value.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
@@ -2930,9 +2938,12 @@ watch(
 );
 
 // Watch for pan/zoom changes to update fit button visibility
-// PERFORMANCE: Add throttling to prevent excessive distance checks
+// PERFORMANCE: Skip during animations to prevent lag
 let distanceCheckPending = false;
 watch([panX, panY, zoom], () => {
+  // Skip expensive operations during node focus animations
+  if (isAnimating.value) return;
+  
   if (!distanceCheckPending) {
     distanceCheckPending = true;
     requestAnimationFrame(() => {
@@ -3051,10 +3062,21 @@ const handleDrop = async (e: DragEvent) => {
 
 // Helper functions for MainSplineConnector
 const getParentNode = (parentId: string) => {
-  const parentNode = visibleNodes.value.find(node => node.id === parentId);
+  // First try to find in visible nodes for performance
+  let parentNode = visibleNodes.value.find(node => node.id === parentId);
+  
+  // If not found in visible nodes, check all nodes in the store
   if (!parentNode) {
-    console.log('[getParentNode] Could not find parent node:', { parentId, visibleNodeIds: visibleNodes.value.map(n => n.id) });
+    parentNode = store.nodes.find(node => node.id === parentId);
+    if (!parentNode) {
+      console.log('[getParentNode] Could not find parent node:', { 
+        parentId, 
+        visibleNodeIds: visibleNodes.value.map(n => n.id),
+        allNodeIds: store.nodes.map(n => n.id) 
+      });
+    }
   }
+  
   return parentNode;
 };
 
@@ -3182,6 +3204,12 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
     isWelcomeScreen.value = false;
     isWorkspaceOverview.value = false;
     console.log('After state change (no node) - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
+    
+    // Clear any snapped node state before loading new workspace
+    if (store.snappedNodeId) {
+      store.unsnapNode(store.snappedNodeId);
+    }
+    
     await store.loadChatState(workspaceId);
     expandedNodes.value = new Set(store.nodes.map(node => node.id));
     await nextTick();
@@ -3210,6 +3238,11 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
   isWelcomeScreen.value = false;
   isWorkspaceOverview.value = false;
   console.log('After state change (with node) - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
+
+  // Clear any snapped node state before loading new workspace
+  if (store.snappedNodeId) {
+    store.unsnapNode(store.snappedNodeId);
+  }
 
   await store.loadChatState(workspaceId);
   expandedNodes.value = new Set(store.nodes.map(node => node.id));
@@ -3776,6 +3809,11 @@ const handleGenerateWorkspace = async (userInput: string, template?: any, claude
       // DON'T clear workspace - we need to keep the main node that was just created
       // store.clearCurrentWorkspace();
       
+      // Clear any snapped node state before loading workspace
+      if (store.snappedNodeId) {
+        store.unsnapNode(store.snappedNodeId);
+      }
+      
       // Wait for the chat to be loaded and get the main node
       await store.loadChatState(chatId);
       await nextTick();
@@ -3989,12 +4027,11 @@ const createTemplateWorkspace = async (nodes, connections, mainNode) => {
 };
 
 
-// in enhanced-infinite-canvas.vue
-
-// Center on a specific node with a smooth, direct (non-curved) animation
 const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 800) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
+
+  isAnimating.value = true;
 
   const bounds = calculateNodeBounds(node);
   const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
@@ -4010,37 +4047,24 @@ const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 80
   return new Promise((resolve) => {
     const startTime = performance.now();
     
-    // --- FIX: The core logic change starts here ---
-
-    // 1. Define the start and end points of the animation in WORLD coordinates.
-    //    This ensures the camera's focus point travels in a straight line.
-
-    // The world point at the center of the screen at the START of the animation.
     const startWorldX = (rect.width / 2 - startPanX) / startZoom;
     const startWorldY = (rect.height / 2 - startPanY) / startZoom;
 
-    // The world point we want to be at the center of the screen at the END of the animation.
     const endWorldX = nodeCenterX;
     const endWorldY = nodeCenterY;
     
-    // The final on-screen position for the target
     const targetScreenX = rect.width / 2;
     const targetScreenY = rect.height / 2;
     
     const animate = (currentTime) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      // Apply easing to progress
       const easeOut = 1 - Math.pow(1 - progress, 2);
       
-      // 2. Interpolate the zoom level and the viewport's center point in WORLD space.
-      // IMPORTANT: Use the same easing for all values to maintain straight path
       const currentZoom = startZoom + (targetZoom - startZoom) * easeOut;
       const currentWorldX = startWorldX + (endWorldX - startWorldX) * easeOut;
       const currentWorldY = startWorldY + (endWorldY - startWorldY) * easeOut;
       
-      // 3. Calculate the new pan values for the current frame.
-      //    The pan is calculated to place the `currentWorld` point at the `targetScreen` position.
       panX.value = targetScreenX - currentWorldX * currentZoom;
       panY.value = targetScreenY - currentWorldY * currentZoom;
       zoom.value = currentZoom;
@@ -4049,12 +4073,12 @@ const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 80
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        // On the final frame, set the exact target values to prevent rounding errors.
         zoom.value = targetZoom;
         panX.value = targetScreenX - endWorldX * targetZoom;
         panY.value = targetScreenY - endWorldY * targetZoom;
 
-        // store.isTransitioning = false; // REMOVED
+        isAnimating.value = false;
+        
         resolve();
       }
     };
@@ -4482,6 +4506,12 @@ const handleMouseUp = (e) => {
   store.isDragging = false;
   store.activeNode = null;
   isPanning.value = false;
+
+  // Set wasJustDragging flag to prevent immediate re-selection/centering
+  wasJustDragging.value = true;
+  setTimeout(() => {
+    wasJustDragging.value = false;
+  }, 50); // Short delay to allow click event to process before flag resets
   
   // Handle selection rectangle completion
   if (selectionRect.value.isActive) {
@@ -5168,7 +5198,8 @@ const autoFitNodes = (disableTransition = false) => {
     !autoZoomEnabled.value ||
     store.isDragging ||
     isPanning.value ||
-    workspaceDragState.value.isDragging
+    workspaceDragState.value.isDragging ||
+    store.snappedNodeId !== null // Added: Do not auto-fit if a node is snapped
   ) {
     console.log('[autoFitNodes] Skipped due to conditions');
     return;
@@ -5382,9 +5413,105 @@ const toggleFullscreen = () => {
   }
 };
 
+// Flag to prevent duplicate zoom initialization
+const initialZoomHandledByApp = ref(false);
+
+// Check if mock data exists and auto-load all nodes
+const checkAndLoadAllNodes = async () => {
+  try {
+    // Check if there are multiple workspaces with mock data
+    const response = await fetch('http://127.0.0.1:5050/api/all-nodes');
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.totalNodes > 0 && data.totalWorkspaces > 1) {
+        console.log(`[checkAndLoadAllNodes] Found ${data.totalNodes} nodes across ${data.totalWorkspaces} workspaces - auto-loading all nodes`);
+        
+        // Load all nodes instead of showing workspace overview
+        const result = await store.loadAllNodesMode();
+        if (result.success) {
+          console.log(`[checkAndLoadAllNodes] Successfully loaded ${result.totalNodes} nodes for performance testing`);
+          
+          // Force exit workspace overview mode to show all loaded nodes
+          isWorkspaceOverview.value = false;
+          
+          return true;
+        }
+      }
+    }
+  } catch (error) {
+    console.log('[checkAndLoadAllNodes] No mock data or error:', error);
+  }
+  return false;
+};
+
+// Method to set initial optimal zoom without transitions
+const setInitialOptimalZoom = async () => {
+  console.log('[setInitialOptimalZoom] Called from App.vue');
+  initialZoomHandledByApp.value = true;
+  
+  await nextTick();
+  const rect = canvasRef.value?.getBoundingClientRect();
+  
+  if (rect && store.nodes.length > 0) {
+    const bounds = calculateNodeBounds();
+    if (bounds) {
+      const contentWidth = bounds.maxX - bounds.minX + 400; // Add padding
+      const contentHeight = bounds.maxY - bounds.minY + 400; // Add padding
+      
+      // Reduce available width when right content panel is open
+      const availableWidth = appStore.isRightContentPanelOpen 
+        ? rect.width * 0.64  // Use 64% of width (100% - 36% panel)
+        : rect.width;
+      
+      const scaleX = availableWidth / contentWidth;
+      const scaleY = rect.height / contentHeight;
+      const optimalZoom = Math.min(scaleX, scaleY, 1.0); // Don't zoom in beyond 100%
+      
+      // Calculate center position
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerY = (bounds.minY + bounds.maxY) / 2;
+      const targetPanX = rect.width / 2 - centerX * optimalZoom;
+      const targetPanY = rect.height / 2 - centerY * optimalZoom;
+      
+      // Set values directly for immediate positioning without transition
+      zoom.value = optimalZoom;
+      panX.value = targetPanX;
+      panY.value = targetPanY;
+      
+      console.log('[setInitialOptimalZoom] Set optimal zoom:', {
+        optimalZoom,
+        bounds,
+        targetPanX,
+        targetPanY
+      });
+    }
+  } else if (isWelcomeScreen.value) {
+    // For welcome screen, center on input container
+    const NEW_CHAT_X = -3000;
+    const NEW_CHAT_Y = -3000;
+    const targetZoom = 1.2;
+    
+    if (rect) {
+      const targetPanX = rect.width / 2 - NEW_CHAT_X * targetZoom;
+      const targetPanY = rect.height / 2 - NEW_CHAT_Y * targetZoom;
+      
+      zoom.value = targetZoom;
+      panX.value = targetPanX;
+      panY.value = targetPanY;
+      
+      console.log('[setInitialOptimalZoom] Set welcome screen zoom:', {
+        targetZoom,
+        targetPanX,
+        targetPanY
+      });
+    }
+  }
+};
+
 // Expose methods to parent component
 defineExpose({
   autoFitNodes,
+  setInitialOptimalZoom,
   isWorkspaceOverview,
   isWelcomeScreen,
   returnToOverview,
@@ -5683,6 +5810,62 @@ const handleNodeExpansionChange = ({ nodeId, isExpanded }) => {
   }
 };
 
+// Track recent dragging for dots (similar to BranchNode)
+const dotWasRecentlyDragging = ref(false);
+
+// Handle dot click - specific for dot LOD nodes  
+const handleDotClick = async (e: MouseEvent, nodeId: string) => {
+  e.stopPropagation();
+  
+  // Use same logic as BranchNode - check for recent dragging
+  if (!dotWasRecentlyDragging.value) {
+    await handleNodeSelect(nodeId);
+  }
+};
+
+// Handle dot mouse down - specific for dot LOD nodes
+const handleDotMouseDown = (e: MouseEvent, node: any) => {
+  e.stopPropagation();
+  
+  // Track drag state for dots
+  let wasDragging = false;
+  
+  const startX = e.clientX;
+  const startY = e.clientY;
+  
+  const handleMouseMove = (moveEvent: MouseEvent) => {
+    const deltaX = Math.abs(moveEvent.clientX - startX);
+    const deltaY = Math.abs(moveEvent.clientY - startY);
+    
+    // If moved more than a few pixels, consider it dragging
+    if (deltaX > 3 || deltaY > 3) {
+      wasDragging = true;
+      // Start regular drag logic
+      handleDragStart(e, node);
+      // Remove these temporary listeners
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    }
+  };
+  
+  const handleMouseUp = () => {
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    
+    if (wasDragging) {
+      // Set flag to prevent immediate click handling
+      dotWasRecentlyDragging.value = true;
+      setTimeout(() => {
+        dotWasRecentlyDragging.value = false;
+      }, 100);
+    }
+  };
+  
+  // Add temporary listeners to detect drag
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
+};
+
 // Handle drag start for nodes
 const handleDragStart = (e, node) => {
   // Check if this node is part of a multi-selection
@@ -5931,9 +6114,20 @@ emitter.on('node-detach-end', () => {
 // Component lifecycle
 onMounted(async () => {
   if (isBrowser) {
-    // Load all workspaces as nodes on the infinite canvas
-    await loadAllWorkspaces();
+    // Check if we should auto-load all nodes for performance testing
+    const autoLoadedAllNodes = await checkAndLoadAllNodes();
+    
+    if (!autoLoadedAllNodes) {
+      console.log('[onMounted] Auto-load failed, using normal loadAllWorkspaces');
+      // Load all workspaces as nodes on the infinite canvas (normal mode)
+      await loadAllWorkspaces();
+    } else {
+      console.log('[onMounted] Auto-load succeeded, skipping loadAllWorkspaces');
+    }
 
+    console.log('[onMounted] Final node count in store:', store.nodes.length);
+    console.log('[onMounted] Sample nodes:', store.nodes.slice(0, 3).map(n => ({ id: n.id, title: n.title, chatId: n.chatId })));
+    
     store.nodes.forEach(node => {
       expandedNodes.value.add(node.id);
     });
@@ -5994,7 +6188,7 @@ onMounted(async () => {
 
         if (isWorkspaceOverview.value) {
           // Grid view setup complete
-          if (store.nodes.length) {
+          if (store.nodes.length && !initialZoomHandledByApp.value) {
             centerCanvas();
           }
         } else if (isWelcomeScreen.value) {
@@ -6035,10 +6229,9 @@ onMounted(async () => {
           // Still call centerOnInputContainer for any additional smoothing
           await centerOnInputContainer();
         } else if (store.nodes.length) {
-          // Auto-center on nodes when workspace loads (not in welcome screen)
-          console.log('[onMounted] Auto-centering on existing nodes');
+          // Initial zoom will be set by App.vue calling setInitialOptimalZoom
+          console.log('[onMounted] Nodes present, zoom will be set by App.vue');
           await nextTick();
-          autoFitNodes(true);
         } else {
           // No nodes and not in workspace overview - should be in welcome screen mode
           console.log('[onMounted] No nodes found, forcing welcome screen mode', {
@@ -6086,9 +6279,12 @@ onMounted(async () => {
 });
 
 // Watch for zoom and pan changes to re-render grid
-// PERFORMANCE: Add throttling to prevent excessive grid re-renders
+// PERFORMANCE: Skip during animations to prevent lag
 let gridRenderPending = false;
 watch([() => zoom.value, () => panX.value, () => panY.value], () => {
+  // Skip grid updates during node focus animations
+  if (isAnimating.value) return;
+  
   if (!gridRenderPending) {
     gridRenderPending = true;
     requestAnimationFrame(() => {
@@ -6583,32 +6779,6 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
   }
 };
 
-// TopicIslandView event handlers
-const handleNavigateToIsland = async (island: any) => {
-  try {
-    // Zoom to the island with smooth animation
-    const targetZoom = 0.3 // Zoom to show the island clearly
-    const targetPanX = (canvasRef.value?.clientWidth || 800) / 2 - island.x * targetZoom
-    const targetPanY = (canvasRef.value?.clientHeight || 600) / 2 - island.y * targetZoom
-    
-    // Use the smooth animation function
-    viewportReturn.animateToPositionWithZoom(targetPanX, targetPanY, targetZoom, 800)
-    
-  } catch (error) {
-    console.error('Error navigating to island:', error)
-  }
-}
-
-const handleZoomToOverview = () => {
-  try {
-    // Zoom out to show all content
-    if (autoFitNodes) {
-      autoFitNodes()
-    }
-  } catch (error) {
-    console.error('Error zooming to overview:', error)
-  }
-}
 </script>
 
 <style scoped>

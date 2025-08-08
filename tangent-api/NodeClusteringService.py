@@ -187,6 +187,7 @@ class NodeClusteringService:
             cluster_groups[cluster_id].append(node)
             
         new_positions = {}
+        nodes_by_id = {node['id']: node for node in nodes}
         
         # Calculate cluster centers in a grid layout
         n_clusters = len(cluster_groups)
@@ -206,10 +207,11 @@ class NodeClusteringService:
             center_x = canvas_bounds['margin'] + grid_x * cluster_width + cluster_width / 2
             center_y = canvas_bounds['margin'] + grid_y * cluster_height + cluster_height / 2
             
-            # Arrange nodes within cluster using force-directed layout
-            cluster_positions = self._arrange_nodes_in_cluster(
+            # Arrange nodes within cluster using collision-aware layout
+            cluster_positions = self._arrange_nodes_in_cluster_with_collision_detection(
                 cluster_nodes, center_x, center_y, 
-                min(cluster_width * 0.8, cluster_height * 0.8)
+                min(cluster_width * 0.8, cluster_height * 0.8),
+                new_positions, nodes_by_id, canvas_bounds
             )
             
             new_positions.update(cluster_positions)
@@ -248,6 +250,157 @@ class NodeClusteringService:
                 positions[node['id']] = {'x': x, 'y': y}
                 
         return positions
+    
+    def _arrange_nodes_in_cluster_with_collision_detection(self, nodes: List[Dict], 
+                                                          center_x: float, center_y: float, 
+                                                          max_radius: float,
+                                                          existing_positions: Dict[str, Dict[str, float]],
+                                                          nodes_by_id: Dict[str, Dict],
+                                                          canvas_bounds: Dict[str, float]) -> Dict[str, Dict[str, float]]:
+        """Arrange nodes within a cluster using collision detection"""
+        positions = {}
+        n_nodes = len(nodes)
+        
+        if n_nodes == 1:
+            # Single node - check for collisions at center
+            target_pos = {'x': center_x, 'y': center_y}
+            final_pos = self.find_collision_free_position(
+                target_pos, nodes[0], existing_positions, nodes_by_id, canvas_bounds
+            )
+            positions[nodes[0]['id']] = final_pos
+            
+        elif n_nodes <= 8:
+            # Circular arrangement for small clusters with collision detection
+            angle_step = 2 * np.pi / n_nodes
+            radius = min(max_radius / 3, 150)
+            
+            for i, node in enumerate(nodes):
+                angle = i * angle_step
+                target_x = center_x + radius * np.cos(angle)
+                target_y = center_y + radius * np.sin(angle)
+                target_pos = {'x': target_x, 'y': target_y}
+                
+                final_pos = self.find_collision_free_position(
+                    target_pos, node, existing_positions, nodes_by_id, canvas_bounds
+                )
+                positions[node['id']] = final_pos
+                existing_positions[node['id']] = final_pos  # Update for next iteration
+        else:
+            # Grid arrangement for larger clusters with collision detection
+            grid_size = int(np.ceil(np.sqrt(n_nodes)))
+            node_spacing = max_radius / grid_size
+            
+            for i, node in enumerate(nodes):
+                grid_x = i % grid_size
+                grid_y = i // grid_size
+                
+                target_x = center_x - max_radius/2 + grid_x * node_spacing
+                target_y = center_y - max_radius/2 + grid_y * node_spacing
+                target_pos = {'x': target_x, 'y': target_y}
+                
+                final_pos = self.find_collision_free_position(
+                    target_pos, node, existing_positions, nodes_by_id, canvas_bounds
+                )
+                positions[node['id']] = final_pos
+                existing_positions[node['id']] = final_pos  # Update for next iteration
+                
+        return positions
+    
+    def get_node_dimensions(self, node: Dict) -> Tuple[float, float]:
+        """Get node dimensions based on type and LOD level"""
+        # Default card dimensions
+        card_width = 672
+        card_height = 400
+        
+        # Handle special node types
+        if node.get('type') == 'tool-call-compact':
+            return 120, 40
+        
+        # For regular nodes, consider LOD but use reasonable dimensions for collision
+        # Even dot LOD should have some collision space
+        return card_width, card_height
+    
+    def check_collision(self, node1_pos: Dict[str, float], node1: Dict,
+                       node2_pos: Dict[str, float], node2: Dict,
+                       padding: float = 50) -> bool:
+        """Check if two nodes would collide at given positions"""
+        w1, h1 = self.get_node_dimensions(node1)
+        w2, h2 = self.get_node_dimensions(node2)
+        
+        # Add padding for visual spacing
+        w1 += padding
+        h1 += padding
+        w2 += padding  
+        h2 += padding
+        
+        # Check for overlap using axis-aligned bounding boxes
+        x1_min, x1_max = node1_pos['x'], node1_pos['x'] + w1
+        y1_min, y1_max = node1_pos['y'], node1_pos['y'] + h1
+        
+        x2_min, x2_max = node2_pos['x'], node2_pos['x'] + w2
+        y2_min, y2_max = node2_pos['y'], node2_pos['y'] + h2
+        
+        # No collision if separated on either axis
+        if x1_max <= x2_min or x2_max <= x1_min:
+            return False
+        if y1_max <= y2_min or y2_max <= y1_min:
+            return False
+            
+        return True
+    
+    def find_collision_free_position(self, target_pos: Dict[str, float], target_node: Dict,
+                                   existing_positions: Dict[str, Dict[str, float]],
+                                   existing_nodes: Dict[str, Dict],
+                                   canvas_bounds: Dict[str, float] = None,
+                                   max_attempts: int = 50) -> Dict[str, float]:
+        """Find a collision-free position near the target position"""
+        if not canvas_bounds:
+            canvas_bounds = {'width': 2000, 'height': 1500, 'margin': 200}
+        
+        current_pos = target_pos.copy()
+        
+        # Check if current position is collision-free
+        has_collision = False
+        for node_id, pos in existing_positions.items():
+            if self.check_collision(current_pos, target_node, pos, existing_nodes[node_id]):
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return current_pos
+        
+        # Try positions in expanding spiral pattern
+        step_size = 100
+        for attempt in range(max_attempts):
+            angle = 0.5 * attempt  # Spiral angle
+            radius = step_size * (1 + attempt * 0.2)  # Expanding radius
+            
+            # Calculate spiral position
+            spiral_x = target_pos['x'] + radius * np.cos(angle)
+            spiral_y = target_pos['y'] + radius * np.sin(angle)
+            
+            # Keep within canvas bounds
+            w, h = self.get_node_dimensions(target_node)
+            spiral_x = max(canvas_bounds['margin'], 
+                          min(spiral_x, canvas_bounds['width'] - w - canvas_bounds['margin']))
+            spiral_y = max(canvas_bounds['margin'], 
+                          min(spiral_y, canvas_bounds['height'] - h - canvas_bounds['margin']))
+            
+            test_pos = {'x': spiral_x, 'y': spiral_y}
+            
+            # Check for collisions
+            has_collision = False
+            for node_id, pos in existing_positions.items():
+                if self.check_collision(test_pos, target_node, pos, existing_nodes[node_id]):
+                    has_collision = True
+                    break
+            
+            if not has_collision:
+                return test_pos
+        
+        # If all attempts failed, return best guess
+        logger.warning(f"Could not find collision-free position after {max_attempts} attempts")
+        return current_pos
     
     async def auto_arrange_nodes(self, chat_id: str, method: str = 'kmeans', 
                                **kwargs) -> Dict[str, Any]:

@@ -49,6 +49,33 @@ class ApiService {
     const wsUrl = this.baseUrl.replace('http', 'ws') + endpoint
     return new WebSocket(wsUrl)
   }
+
+  // Convenience methods for common HTTP operations
+  public async get(endpoint: string): Promise<any> {
+    const response = await this.fetch(endpoint, { method: 'GET' })
+    return response.json()
+  }
+
+  public async post(endpoint: string, data?: any): Promise<any> {
+    const response = await this.fetch(endpoint, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined
+    })
+    return response.json()
+  }
+
+  public async put(endpoint: string, data?: any): Promise<any> {
+    const response = await this.fetch(endpoint, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined
+    })
+    return response.json()
+  }
+
+  public async delete(endpoint: string): Promise<any> {
+    const response = await this.fetch(endpoint, { method: 'DELETE' })
+    return response.json()
+  }
 }
 
 // Export singleton instance

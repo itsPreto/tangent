@@ -53,28 +53,37 @@
     </div>
 
     <!-- Preview LOD: Shows last message preview -->  
-    <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-lg border backdrop-blur-sm p-4 transition-all duration-300" :style="{
-      backgroundColor: baseColorSet?.value?.transparent || 'rgba(255, 255, 255, 0.1)',
-      borderColor: baseColorSet?.value?.base || 'rgba(255, 255, 255, 0.2)'
+    <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-xl border-2 backdrop-blur-md p-4 transition-all duration-300 shadow-lg preview-lod-card" :style="{
+      backgroundColor: 'rgba(var(--b1), 0.9)',
+      borderColor: baseColorSet?.value?.base || 'rgba(59, 130, 246, 1)',
+      boxShadow: `0 8px 32px -4px ${baseColorSet?.value?.base || 'rgba(59, 130, 246, 0.3)'}, 0 0 0 1px rgba(var(--b1), 0.1)`
     }">
       <div class="flex flex-col h-full">
         <!-- Title and message count -->
         <div class="flex items-center justify-between mb-2">
-          <span class="text-sm font-medium truncate text-base-content flex-1">
+          <span class="text-sm font-bold truncate flex-1" :style="{ color: baseColorSet?.value?.base || 'rgb(59, 130, 246)' }">
             {{ node.title || "Untitled Thread" }}
           </span>
-          <span class="text-xs text-base-content/60 ml-2 flex-shrink-0">
-            ({{ node.messages?.length || 0 }})
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0" :style="{ 
+            backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)', 
+            color: 'white' 
+          }">
+            {{ node.messages?.length || 0 }}
           </span>
         </div>
         
         <!-- Last message preview -->
         <div class="flex-1 overflow-hidden">
-          <div class="text-xs text-base-content/70 leading-relaxed" v-if="lastMessagePreview">
-            <span class="font-medium">{{ lastMessage?.role === 'user' ? 'You' : 'AI' }}:</span>
+          <div class="text-xs leading-relaxed text-base-content/90" v-if="lastMessagePreview">
+            <span class="font-semibold px-1.5 py-0.5 rounded text-xs mr-1" :style="{ 
+              backgroundColor: lastMessage?.role === 'user' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(168, 85, 247, 0.2)',
+              color: lastMessage?.role === 'user' ? 'rgb(34, 197, 94)' : 'rgb(168, 85, 247)'
+            }">
+              {{ lastMessage?.role === 'user' ? 'You' : 'AI' }}
+            </span>
             {{ lastMessagePreview }}
           </div>
-          <div class="text-xs text-base-content/50 italic" v-else>
+          <div class="text-xs text-base-content/60 italic" v-else>
             No messages yet
           </div>
         </div>
@@ -82,21 +91,42 @@
     </div>
     
     <!-- Compact LOD: Small card with title only -->
-    <div v-else-if="shouldShowCompact" class="w-[100px] h-[100px] rounded-lg border backdrop-blur-sm p-2 transition-all duration-300 flex flex-col items-center justify-center" :style="{
-      backgroundColor: baseColorSet?.value?.transparent || 'rgba(255, 255, 255, 0.1)',
-      borderColor: baseColorSet?.value?.base || 'rgba(255, 255, 255, 0.2)'
+    <div v-else-if="shouldShowCompact" class="w-[100px] h-[100px] rounded-xl border-2 backdrop-blur-md p-3 transition-all duration-300 flex flex-col items-center justify-center compact-lod-card relative overflow-hidden" :style="{
+      backgroundColor: 'rgba(var(--b1), 0.95)',
+      borderColor: baseColorSet?.value?.base || 'rgba(59, 130, 246, 1)',
+      boxShadow: `0 4px 20px -2px ${baseColorSet?.value?.base || 'rgba(59, 130, 246, 0.4)'}, 0 0 0 1px rgba(var(--b1), 0.2)`
     }">
-      <div class="text-xs font-medium text-center text-base-content truncate w-full">
-        {{ node.title || "Untitled" }}
-      </div>
-      <div class="text-xs text-base-content/60 mt-1">
+      <!-- Accent corner -->
+      <div class="absolute top-0 right-0 w-6 h-6 rounded-bl-lg" :style="{ 
+        backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)' 
+      }"></div>
+      
+      <!-- Message count badge -->
+      <div class="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border-2 border-white" :style="{ 
+        backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)', 
+        color: 'white' 
+      }">
         {{ node.messages?.length || 0 }}
       </div>
+      
+      <!-- Title -->
+      <div class="text-xs font-bold text-center leading-tight w-full overflow-hidden" :style="{ color: baseColorSet?.value?.base || 'rgb(59, 130, 246)' }">
+        {{ node.title || "Untitled" }}
+      </div>
+      
+      <!-- Status indicator -->
+      <div class="mt-2 w-2 h-2 rounded-full" :style="{ 
+        backgroundColor: node.messages?.length > 0 ? (baseColorSet?.value?.base || 'rgb(59, 130, 246)') : 'rgba(156, 163, 175, 0.5)' 
+      }"></div>
     </div>
     
     <!-- Cluster LOD: Tiny square with index -->
-    <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded bg-primary/20 border border-primary/40 flex items-center justify-center transition-all duration-300">
-      <div class="text-xs font-bold text-primary" style="font-size: 10px; transform: scale(1.2);">
+    <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded-md border-2 flex items-center justify-center transition-all duration-300 cluster-lod-dot" :style="{
+      backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)',
+      borderColor: 'rgba(var(--b1), 0.8)',
+      boxShadow: `0 2px 8px -1px ${baseColorSet?.value?.base || 'rgba(59, 130, 246, 0.5)'}`
+    }">
+      <div class="text-white font-black text-xs leading-none">
         {{ canvasStore.nodeIndices.get(node.id) || '?' }}
       </div>
     </div>
@@ -560,21 +590,21 @@
       />
     </Card>
     
-    <!-- Resize Handles for Unsnapped Selected Nodes -->
-    <div v-if="isSelected && !isSnapped && !isDragging" class="resize-handles">
+    <!-- Resize Handles for Unsnapped Selected Nodes (only in full LOD) -->
+    <div v-if="isSelected && !isSnapped && !isDragging && shouldShowFullDetail" class="resize-handles">
       <!-- Corner handle (bottom-right) -->
       <div 
         class="resize-handle resize-handle-se" 
         @mousedown="startNodeResize('se', $event)"
         :style="{ 
           position: 'absolute', 
-          bottom: `${-8 / props.zoom}px`, 
-          right: `${-8 / props.zoom}px`, 
-          width: `${16 / props.zoom}px`, 
-          height: `${16 / props.zoom}px`,
+          bottom: '-8px', 
+          right: '-8px', 
+          width: '16px', 
+          height: '16px',
           backgroundColor: 'white',
-          border: `${2 / props.zoom}px solid rgba(59, 130, 246, 0.8)`,
-          borderRadius: `${2 / props.zoom}px`,
+          border: '2px solid rgba(59, 130, 246, 0.8)',
+          borderRadius: '2px',
           cursor: 'se-resize',
           zIndex: 1001
         }">
@@ -587,12 +617,12 @@
         :style="{ 
           position: 'absolute', 
           top: '50%', 
-          right: `${-8 / props.zoom}px`, 
-          width: `${16 / props.zoom}px`, 
-          height: `${16 / props.zoom}px`,
+          right: '-8px', 
+          width: '16px', 
+          height: '16px',
           backgroundColor: 'white',
-          border: `${2 / props.zoom}px solid rgba(59, 130, 246, 0.8)`,
-          borderRadius: `${2 / props.zoom}px`,
+          border: '2px solid rgba(59, 130, 246, 0.8)',
+          borderRadius: '2px',
           cursor: 'e-resize',
           transform: 'translateY(-50%)',
           zIndex: 1001
@@ -605,13 +635,13 @@
         @mousedown="startNodeResize('s', $event)"
         :style="{ 
           position: 'absolute', 
-          bottom: `${-8 / props.zoom}px`, 
+          bottom: '-8px', 
           left: '50%', 
-          width: `${16 / props.zoom}px`, 
-          height: `${16 / props.zoom}px`,
+          width: '16px', 
+          height: '16px',
           backgroundColor: 'white',
-          border: `${2 / props.zoom}px solid rgba(59, 130, 246, 0.8)`,
-          borderRadius: `${2 / props.zoom}px`,
+          border: '2px solid rgba(59, 130, 246, 0.8)',
+          borderRadius: '2px',
           cursor: 's-resize',
           transform: 'translateX(-50%)',
           zIndex: 1001
@@ -1698,7 +1728,7 @@ const threadColor = computed(() => baseColorSet.value.base);
 
 const shouldGlow = computed(() => {
   // Glow when selected but NOT snapped (to help with arrow navigation visibility)
-  return (props.isSelected || props.isMultiSelected) && !isSnapped.value && props.zoom < 1.5;
+  return (props.isSelected || props.isMultiSelected) && !isSnapped.value;
 });
 
 
@@ -1782,9 +1812,9 @@ const nodePositionStyle = computed(() => {
     };
   }
 
-  // Normal positioning
+  // Normal positioning - let canvas handle zoom scaling
   const style: any = {
-    transform: `translate3d(${props.node.x || 0}px, ${props.node.y || 0}px, 0) scale(${props.zoom})`,
+    transform: `translate3d(${props.node.x || 0}px, ${props.node.y || 0}px, 0)`,
     transformOrigin: '0 0',
     transition: shouldHaveTransitions.value ? 'transform 0.3s ease-out' : 'none',
     // Higher z-index for selected nodes to bring them to front
@@ -2008,8 +2038,8 @@ const startNodeResize = (direction: string, e: MouseEvent) => {
   if (nodeElement && currentNode) {
     const rect = nodeElement.getBoundingClientRect();
     originalNodeDimensions.value = {
-      width: (currentNode as any).customWidth || rect.width / props.zoom,
-      height: rect.height / props.zoom  // Always use actual rendered height
+      width: (currentNode as any).customWidth || rect.width,
+      height: rect.height  // Always use actual rendered height
     };
   } else if (currentNode) {
     // Fallback if element not found
@@ -2041,10 +2071,10 @@ const handleNodeResizeMove = (e: MouseEvent) => {
   
   // Calculate new dimensions based on resize direction
   if (direction.includes('e')) {
-    newWidth = Math.max(300, original.width + deltaX / props.zoom); // Minimum width 300px
+    newWidth = Math.max(300, original.width + deltaX); // Minimum width 300px
   }
   if (direction.includes('s')) {
-    newHeight = Math.max(200, original.height + deltaY / props.zoom); // Minimum height 200px
+    newHeight = Math.max(200, original.height + deltaY); // Minimum height 200px
   }
   
   // For width-only resize (direction 'e'), preserve the actual height
@@ -3907,6 +3937,67 @@ onBeforeUnmount(() => {
 }
 
 /* Simplified: All width/height calculations now handled by calculateSnappedDimensions() */
+
+/* Enhanced LOD contrast styling */
+.preview-lod-card {
+  position: relative;
+}
+
+.preview-lod-card::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: linear-gradient(135deg, 
+    var(--node-color, rgb(59, 130, 246)) 0%, 
+    color-mix(in srgb, var(--node-color, rgb(59, 130, 246)) 70%, white) 50%,
+    var(--node-color, rgb(59, 130, 246)) 100%);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.1;
+}
+
+.compact-lod-card {
+  position: relative;
+  transform-origin: center;
+}
+
+.compact-lod-card:hover {
+  transform: scale(1.05);
+}
+
+.compact-lod-card::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: radial-gradient(circle at 30% 30%, 
+    var(--node-color, rgb(59, 130, 246)) 0%, 
+    color-mix(in srgb, var(--node-color, rgb(59, 130, 246)) 50%, transparent) 70%,
+    transparent 100%);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.15;
+}
+
+.cluster-lod-dot {
+  transform-origin: center;
+  animation: subtlePulse 3s ease-in-out infinite;
+}
+
+@keyframes subtlePulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.9; }
+}
+
+.cluster-lod-dot:hover {
+  animation-play-state: paused;
+  transform: scale(1.2);
+}
 
 /* Snapped card styling */
 .snapped-card {

@@ -1,5 +1,5 @@
 <template>
-  <!-- Topic Islands View - Rendered at cluster LOD (<1% zoom) -->
+  <!-- Topic Islands View - Rendered at topic LOD (<10% zoom) -->
   <g v-if="showTopicIslands" class="topic-islands-layer">
     <!-- Background gradient for knowledge universe feel -->
     <defs>
@@ -45,41 +45,21 @@
       />
     </g>
 
-    <!-- Topic Clusters and Connected Workspaces -->
+    <!-- Topic Clusters and Connected Root Nodes -->
     <g v-for="island in topicIslands" :key="island.id" class="topic-cluster">
-      <!-- Connections from topic cluster to workspaces -->
+      <!-- Connections from topic cluster to root nodes -->
       <g class="workspace-connections">
         <line
-          v-for="(workspace, index) in island.workspaces"
-          :key="`connection-${workspace.id}`"
+          v-for="node in getIslandRootNodes(island)"
+          :key="`connection-${node.id}`"
           :x1="island.x"
           :y1="island.y"
-          :x2="getWorkspacePosition(island, index).x"
-          :y2="getWorkspacePosition(island, index).y"
+          :x2="node.x"
+          :y2="node.y"
           :stroke="island.color"
           stroke-width="1"
           stroke-opacity="0.4"
           class="workspace-connection"
-        />
-      </g>
-      
-      <!-- Individual workspace circles -->
-      <g class="workspace-circles">
-        <circle
-          v-for="(workspace, index) in island.workspaces"
-          :key="workspace.id"
-          :cx="getWorkspacePosition(island, index).x"
-          :cy="getWorkspacePosition(island, index).y"
-          :r="8"
-          :fill="island.color"
-          :opacity="hoveredIsland?.id === island.id ? 0.9 : 0.7"
-          :stroke="island.color"
-          stroke-width="1"
-          stroke-opacity="0.8"
-          class="workspace-circle transition-all duration-300 cursor-pointer"
-          @click="navigateToWorkspace(workspace)"
-          @mouseenter="onWorkspaceHover(workspace, true)"
-          @mouseleave="onWorkspaceHover(workspace, false)"
         />
       </g>
       
@@ -139,7 +119,7 @@
         :opacity="hoveredIsland?.id === island.id ? 0.9 : 0.6"
         class="transition-all duration-300"
       >
-        {{ island.workspaces.length }} workspace{{ island.workspaces.length !== 1 ? 's' : '' }}
+        {{ getIslandRootNodes(island).length || island.workspaces.length }} workspace{{ (getIslandRootNodes(island).length || island.workspaces.length) !== 1 ? 's' : '' }}
       </text>
     </g>
 
@@ -222,6 +202,7 @@ const props = defineProps<{
     centerX: number
     centerY: number
   } | null
+  rootNodes?: any[] // Root nodes from the canvas
 }>()
 
 // Emits
@@ -240,9 +221,9 @@ const isLoading = ref(true)
 const themeStore = useThemeStore()
 const baseColorSet = computed(() => themeStore.currentColorSet)
 
-// Show topic islands only at very low zoom (below workspace overview)
+// Show topic islands only at topic LOD zoom level (below 10%)
 const showTopicIslands = computed(() => {
-  const shouldShow = props.zoomLevel < 0.05 // Show below 5% zoom (lower than workspace overview)
+  const shouldShow = props.zoomLevel < 0.10 // Show below 10% zoom for topic overview LOD
   if (shouldShow && topicIslands.value.length > 0) {
     console.log('TopicIslandView: Showing islands at zoom:', props.zoomLevel, 'Islands:', topicIslands.value.length)
   }
@@ -273,8 +254,12 @@ const legendPosition = computed(() => {
   }
 })
 
-// Total workspaces across all islands
+// Total workspaces (root nodes) across all islands
 const totalWorkspaces = computed(() => {
+  // If we have root nodes, count them, otherwise fall back to workspace count
+  if (props.rootNodes && props.rootNodes.length > 0) {
+    return props.rootNodes.length
+  }
   return topicIslands.value.reduce((total, island) => total + island.workspaces.length, 0)
 })
 
@@ -316,7 +301,19 @@ const islandConnections = computed(() => {
   return connections
 })
 
-// Get position for workspace circles around the topic cluster
+// Get root nodes that belong to this island/topic
+const getIslandRootNodes = (island: TopicIsland) => {
+  if (!props.rootNodes) return []
+  
+  // Match root nodes to islands based on workspace IDs
+  // For now, we'll associate nodes with islands based on their workspace
+  return props.rootNodes.filter(node => {
+    // Check if this node's workspace is part of this island
+    return island.workspaces?.some(ws => ws.id === node.workspaceId)
+  })
+}
+
+// Get position for workspace circles around the topic cluster (kept for legacy)
 const getWorkspacePosition = (island: TopicIsland, workspaceIndex: number) => {
   const workspaceCount = island.workspaces.length
   if (workspaceCount === 1) {
@@ -443,7 +440,7 @@ const generateIslandColor = (index: number): string => {
 // Watch for zoom level changes to trigger initialization
 watch(() => props.zoomLevel, (newZoom) => {
   console.log('TopicIslandView: Zoom changed to:', newZoom)
-  if (newZoom < 0.08 && topicIslands.value.length === 0 && !isLoading.value) {
+  if (newZoom < 0.10 && topicIslands.value.length === 0 && !isLoading.value) {
     console.log('TopicIslandView: Triggering initialization...')
     initializeIslands()
   }

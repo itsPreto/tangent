@@ -149,12 +149,45 @@
       :is-open="appStore.isSettingsOverlayOpen"
       @close="appStore.closeSettingsOverlay" />
 
+    <!-- Mock Data Controls Panel -->
+    <Transition name="slide-in-right">
+      <div v-if="showMockDataControls" class="fixed top-4 right-4 z-50 mock-data-panel">
+        <MockDataControls 
+          @data-generated="handleMockDataGenerated"
+          @data-cleared="handleMockDataCleared"
+          @performance-update="handlePerformanceUpdate"
+          @all-nodes-loaded="handleAllNodesLoaded"
+        />
+        <button 
+          @click="showMockDataControls = false"
+          class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs shadow-lg"
+          title="Close Mock Data Controls (Ctrl/Cmd + M)"
+        >
+          ×
+        </button>
+      </div>
+    </Transition>
+
+    <!-- Mock Data Controls Help Indicator (only when not shown) -->
+    <Transition name="fade">
+      <div 
+        v-if="!showMockDataControls && !isInOverview" 
+        class="fixed bottom-20 right-4 z-40 mock-data-hint"
+        @click="showMockDataControls = true"
+      >
+        <div class="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg shadow-lg cursor-pointer transition-colors">
+          <Database :size="16" />
+          <span>Mock Data (⌘M)</span>
+        </div>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, provide, watch, nextTick } from 'vue';
-import { Settings, Search, Menu } from 'lucide-vue-next';
+import { Settings, Search, Menu, Database } from 'lucide-vue-next';
 import 'highlight.js/styles/github-dark.css';
 import InfiniteCanvas from './components/canvas/InfiniteCanvas.vue';
 import FloatingCornerButton from './components/ui/FloatingCornerButton.vue';
@@ -162,6 +195,7 @@ import LeftNavigationDropdown from './components/ui/LeftNavigationDropdown.vue';
 import RightFeaturesDropdown from './components/ui/RightFeaturesDropdown.vue';
 import SlidingFooter from './components/ui/SlidingFooter.vue';
 import SettingsSlideOverlay from './components/ui/SettingsSlideOverlay.vue';
+import MockDataControls from './components/ui/MockDataControls.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -269,7 +303,8 @@ const handleWorkspaceOpen = (event: any) => {
 };
 
 provide('canvasRef', canvasRef);
-const canvasZoom = ref(1);
+// Start with a reasonable default zoom that won't be jarring
+const canvasZoom = ref(0.5);
 
 const windowSize = ref({
   innerHeight: 0,
@@ -361,6 +396,7 @@ const isHeightLocked = ref(false);
 // Responsive UI state
 const showOverflowMenu = ref(false);
 const showRightOverflowMenu = ref(false);
+const showMockDataControls = ref(false);
 
 const isInOverview = computed(() => {
   return canvasRef.value?.isWorkspaceOverview ?? true;
@@ -569,6 +605,13 @@ const handleGlobalHotkey = (e: KeyboardEvent) => {
     return;
   }
 
+  // Toggle mock data controls with Ctrl/Cmd + M
+  if ((e.ctrlKey || e.metaKey) && e.key === 'm' && !e.shiftKey) {
+    e.preventDefault();
+    showMockDataControls.value = !showMockDataControls.value;
+    return;
+  }
+
   // Handle Esc key to close model confirmation dialog
   if (e.key === 'Escape' && showConfirmDialog.value) {
     e.preventDefault();
@@ -623,6 +666,39 @@ const handleClickOutside = (e: MouseEvent) => {
   if (showRightOverflowMenu.value && !target.closest('.right-overflow-menu')) {
     showRightOverflowMenu.value = false;
   }
+  if (showMockDataControls.value && !target.closest('.mock-data-panel')) {
+    showMockDataControls.value = false;
+  }
+};
+
+// Mock Data Controls Event Handlers
+const handleMockDataGenerated = async (data: any) => {
+  console.log('Mock data generated:', data);
+  // Refresh canvas to show new data
+  if (canvasRef.value) {
+    // Trigger canvas refresh/reload
+    window.location.reload(); // Simple but effective for now
+  }
+};
+
+const handleMockDataCleared = () => {
+  console.log('Mock data cleared');
+  // Refresh canvas to remove mock data
+  if (canvasRef.value) {
+    window.location.reload(); // Simple but effective for now
+  }
+};
+
+const handlePerformanceUpdate = (metrics: any) => {
+  console.log('Performance metrics:', metrics);
+  // Could update UI with performance indicators
+};
+
+const handleAllNodesLoaded = (result: any) => {
+  console.log('All nodes loaded:', result);
+  // Close the mock data controls panel
+  showMockDataControls.value = false;
+  // The canvas will automatically display all the loaded nodes
 };
 
 // Zen mode functions for hot corners
@@ -845,6 +921,11 @@ onMounted(async () => {
   // Use nextTick to ensure DOM is fully rendered before showing UI
   await nextTick();
   
+  // Set initial optimal zoom without jarring transition
+  if (canvasRef.value && canvasRef.value.setInitialOptimalZoom) {
+    await canvasRef.value.setInitialOptimalZoom();
+  }
+  
   emitter.on('navigate-to-code-bubble', handleNavigateToCodeBubble);
 
   // Theme is now managed by the theme store, no need for DOM observation
@@ -879,8 +960,38 @@ onBeforeUnmount(() => {
 .app-container {
   transition: background-color 0.3s ease, color 0.3s ease;
   overflow: hidden;
-  height: 100vh;
-  /* Removed fixed positioning to allow margin-based content pushing */
+}
+
+/* Mock Data Panel Transitions */
+.slide-in-right-enter-active,
+.slide-in-right-leave-active {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.slide-in-right-enter-from {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.slide-in-right-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.mock-data-panel {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Fade transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .app-container.theme-acid {

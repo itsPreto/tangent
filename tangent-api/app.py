@@ -35,6 +35,7 @@ from SearchService import SearchService
 from ReflectionService import ReflectionService
 from RouterAgentService import RouterAgentService
 from AgentConfigService import AgentConfigService
+from MockDataService import MockDataService
 import tempfile
 import uuid
 import subprocess
@@ -2652,6 +2653,7 @@ claude_code_service = ClaudeCodeService(app, tool_call_service)
 reflection_service = ReflectionService()
 router_agent_service = RouterAgentService()
 agent_config_service = AgentConfigService()
+mock_data_service = MockDataService(chat_service)
 
 # Clustering endpoints
 @api_routes.route('/clustering/start', methods=['POST'])
@@ -2991,6 +2993,68 @@ def auto_arrange_nodes():
         
     except Exception as e:
         logger.error(f"Error auto-arranging nodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/nodes/fix-collisions', methods=['POST'])
+def fix_node_collisions():
+    """
+    Fix overlapping nodes by repositioning them with collision detection
+    """
+    try:
+        data = request.get_json() or {}
+        chat_id = data.get('chat_id')
+        
+        if not chat_id:
+            return jsonify({'error': 'chat_id is required'}), 400
+        
+        # Get chat and nodes
+        chat = chat_service.get_chat(chat_id)
+        if not chat or not chat.nodes:
+            return jsonify({'error': 'No nodes found'}), 400
+            
+        nodes = [node.__dict__ for node in chat.nodes]
+        nodes_by_id = {node['id']: node for node in nodes}
+        canvas_bounds = data.get('canvas_bounds', {'width': 2000, 'height': 1500, 'margin': 200})
+        
+        # Check for collisions and reposition overlapping nodes
+        new_positions = {}
+        final_positions = {}
+        
+        for node in nodes:
+            node_id = node['id']
+            current_pos = {'x': node.get('x', 0), 'y': node.get('y', 0)}
+            
+            # Find collision-free position
+            collision_free_pos = node_clustering_service.find_collision_free_position(
+                current_pos, node, final_positions, nodes_by_id, canvas_bounds
+            )
+            
+            # Only update if position changed (had collision)
+            if (collision_free_pos['x'] != current_pos['x'] or 
+                collision_free_pos['y'] != current_pos['y']):
+                new_positions[node_id] = collision_free_pos
+            
+            final_positions[node_id] = collision_free_pos
+        
+        # Update node positions in database
+        updated_count = 0
+        for node_id, new_pos in new_positions.items():
+            success = chat_service.update_node(chat_id, node_id, {
+                'x': new_pos['x'],
+                'y': new_pos['y']
+            })
+            if success:
+                updated_count += 1
+        
+        return jsonify({
+            'success': True,
+            'updated_nodes': updated_count,
+            'total_nodes': len(nodes),
+            'new_positions': new_positions
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fixing node collisions: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Search endpoints
@@ -5374,6 +5438,325 @@ def migrate_localstorage():
         })
     except Exception as e:
         logger.error(f"Error migrating localStorage: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# Mock Data Generation Endpoints
+@api_routes.route('/mock-data/generate', methods=['POST'])
+def generate_mock_data():
+    """Generate mock workspaces with configurable parameters"""
+    try:
+        data = request.get_json()
+        
+        total_nodes = data.get('totalNodes', 100)
+        num_workspaces = data.get('numWorkspaces', 5)
+        branching_factor = data.get('branchingFactor', 0.3)
+        max_depth = data.get('maxDepth', 5)
+        canvas_bounds = data.get('canvasBounds', {
+            'width': 10000, 
+            'height': 8000, 
+            'margin': 500
+        })
+        
+        # Validate parameters
+        if total_nodes < 1 or num_workspaces < 1:
+            return jsonify({'error': 'Total nodes and workspaces must be positive'}), 400
+        
+        if total_nodes < num_workspaces:
+            return jsonify({'error': 'Total nodes must be at least equal to number of workspaces'}), 400
+        
+        # Generate configuration
+        config = mock_data_service.generate_mock_workspace_config(
+            total_nodes, num_workspaces, branching_factor, max_depth, canvas_bounds
+        )
+        
+        # Create the workspaces
+        import asyncio
+        result = asyncio.run(mock_data_service.create_mock_workspaces(config))
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error generating mock data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/mock-data/config', methods=['POST'])
+def generate_mock_config():
+    """Generate mock workspace configuration without creating data"""
+    try:
+        data = request.get_json()
+        
+        total_nodes = data.get('totalNodes', 100)
+        num_workspaces = data.get('numWorkspaces', 5)
+        branching_factor = data.get('branchingFactor', 0.3)
+        max_depth = data.get('maxDepth', 5)
+        canvas_bounds = data.get('canvasBounds', {
+            'width': 10000, 
+            'height': 8000, 
+            'margin': 500
+        })
+        
+        config = mock_data_service.generate_mock_workspace_config(
+            total_nodes, num_workspaces, branching_factor, max_depth, canvas_bounds
+        )
+        
+        return jsonify({
+            'success': True,
+            'config': config,
+            'preview': {
+                'estimated_nodes_per_workspace': [ws['node_count'] for ws in config['workspaces']],
+                'total_estimated_size': sum(ws['node_count'] for ws in config['workspaces']),
+                'canvas_coverage': f"{len(config['workspaces'])} workspaces across {canvas_bounds['width']}x{canvas_bounds['height']} canvas"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating mock config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/mock-data/clear', methods=['POST'])
+def clear_mock_data():
+    """Clear all mock-generated data"""
+    try:
+        import asyncio
+        result = asyncio.run(mock_data_service.clear_mock_data())
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error clearing mock data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/clear-all-data', methods=['POST'])
+def clear_all_data():
+    """DANGER: Clear ALL data from the database including original workspaces"""
+    try:
+        # This will delete EVERYTHING - all chats and nodes
+        success = chat_service.clear_all_data()
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'All data has been cleared from the database',
+                'warning': 'This action deleted ALL chats and nodes, including original data'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to clear data'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error clearing all data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/mock-data/status', methods=['GET'])
+def get_mock_data_status():
+    """Get information about existing mock data"""
+    try:
+        # This would need to query the database for mock data statistics
+        # For now, return basic info
+        return jsonify({
+            'success': True,
+            'mock_data_exists': False,  # Would check database
+            'total_mock_nodes': 0,      # Would count mock nodes
+            'total_mock_workspaces': 0, # Would count mock workspaces
+            'last_generated': None      # Would check timestamp
+        })
+    except Exception as e:
+        logger.error(f"Error getting mock data status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/mock-data/debug-tree', methods=['POST'])
+def debug_conversation_tree():
+    """Debug conversation tree generation"""
+    try:
+        config = request.json
+        total_nodes = config.get('totalNodes', 5)
+        branching_factor = config.get('branchingFactor', 0.5)
+        max_depth = config.get('maxDepth', 3)
+        
+        # Create mock data service
+        mock_service = MockDataService(chat_service)
+        
+        # Generate a single conversation tree to debug
+        tree = mock_service.generate_conversation_tree(
+            total_nodes, branching_factor, max_depth, "Debug Tree"
+        )
+        
+        return jsonify({
+            'success': True,
+            'tree': tree,
+            'total_nodes_generated': len(tree),
+            'config': {
+                'totalNodes': total_nodes,
+                'branchingFactor': branching_factor,
+                'maxDepth': max_depth
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error debugging conversation tree: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/debug/workspace-nodes/<chat_id>', methods=['GET'])
+def debug_workspace_nodes(chat_id):
+    """Debug endpoint to check actual node count in a specific workspace"""
+    try:
+        # Get the chat data
+        chat_data = chat_service.get_chat(chat_id)
+        if not chat_data:
+            return jsonify({'error': 'Chat not found'}), 404
+        
+        nodes = chat_data.get('nodes', [])
+        
+        return jsonify({
+            'success': True,
+            'chat_id': chat_id,
+            'chat_title': chat_data.get('title', 'Unknown'),
+            'claimed_nodes': len(nodes),
+            'actual_nodes': len(nodes),
+            'node_details': [
+                {
+                    'id': node.get('id'),
+                    'title': node.get('title'),
+                    'type': node.get('type'),
+                    'parent_id': node.get('parentId'),
+                    'x': node.get('x'),
+                    'y': node.get('y')
+                } for node in nodes
+            ]
+        })
+    except Exception as e:
+        logger.error(f"Error debugging workspace nodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/debug/all-workspace-counts', methods=['GET'])
+def debug_all_workspace_counts():
+    """Debug endpoint to check node counts for all workspaces"""
+    try:
+        chat_summaries = chat_service.list_chats()
+        workspace_stats = []
+        
+        for chat_summary in chat_summaries:
+            try:
+                chat_data = chat_service.get_chat(chat_summary['id'])
+                if chat_data:
+                    nodes = chat_data.get('nodes', [])
+                    
+                    # Safely get first 5 node titles
+                    node_titles = []
+                    if nodes:
+                        try:
+                            for i, node in enumerate(nodes):
+                                if i >= 5:  # Only first 5
+                                    break
+                                if isinstance(node, dict):
+                                    node_titles.append(node.get('title', 'Untitled'))
+                                else:
+                                    node_titles.append(str(node))
+                        except Exception as e:
+                            node_titles = [f"Error processing nodes: {e}"]
+                    
+                    workspace_stats.append({
+                        'id': chat_summary['id'],
+                        'title': chat_summary.get('title', 'Unknown'),
+                        'claimed_nodes': len(nodes) if nodes else 0,
+                        'actual_node_count': len(nodes) if nodes else 0,
+                        'node_titles': node_titles,
+                        'nodes_type': str(type(nodes)),
+                        'first_node_type': str(type(nodes[0])) if nodes else 'N/A'
+                    })
+            except Exception as e:
+                workspace_stats.append({
+                    'id': chat_summary['id'], 
+                    'title': chat_summary.get('title', 'Unknown'),
+                    'error': str(e)
+                })
+        
+        return jsonify({
+            'success': True,
+            'total_workspaces': len(workspace_stats),
+            'workspaces': workspace_stats
+        })
+    except Exception as e:
+        logger.error(f"Error debugging workspace counts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/all-nodes', methods=['GET'])
+def get_all_nodes():
+    """Get ALL nodes from ALL chats for simultaneous canvas rendering"""
+    try:
+        all_nodes = []
+        all_connections = []
+        
+        # Get all chat summaries
+        chat_summaries = chat_service.list_chats()
+        
+        def flatten_nodes(node_data, chat_id, workspace_title):
+            """Recursively flatten hierarchical node structure into list"""
+            nodes_list = []
+            
+            if node_data and node_data.get('id'):
+                # Convert node to dict format expected by frontend
+                node_dict = {
+                    'id': node_data.get('id'),
+                    'chatId': chat_id,
+                    'workspaceTitle': workspace_title,
+                    'parentId': node_data.get('parentId'),
+                    'type': node_data.get('type', 'main'),
+                    'title': node_data.get('title', 'Untitled'),
+                    'x': float(node_data.get('x', 0)),
+                    'y': float(node_data.get('y', 0)),
+                    'messages': node_data.get('messages', []),
+                    'metadata': node_data.get('metadata', {}),
+                    'branchMessageIndex': node_data.get('branchMessageIndex'),
+                    'created_at': node_data.get('created_at')
+                }
+                nodes_list.append(node_dict)
+                
+                # Create connection if has parent
+                if node_data.get('parentId'):
+                    connection = {
+                        'id': f"{node_data.get('parentId')}-{node_data.get('id')}",
+                        'startNodeId': node_data.get('parentId'),
+                        'endNodeId': node_data.get('id'),
+                        'type': 'parent-child',
+                        'chatId': chat_id
+                    }
+                    all_connections.append(connection)
+                
+                # Recursively process children
+                children = node_data.get('children', [])
+                for child in children:
+                    nodes_list.extend(flatten_nodes(child, chat_id, workspace_title))
+            
+            return nodes_list
+        
+        # Load each chat with full data including nodes
+        for chat_summary in chat_summaries:
+            try:
+                # Get full chat data with hierarchical nodes
+                full_chat_data = chat_service.get_chat(chat_summary['id'])
+                if full_chat_data and 'nodes' in full_chat_data:
+                    # Flatten the hierarchical node structure
+                    workspace_nodes = flatten_nodes(
+                        full_chat_data['nodes'], 
+                        chat_summary['id'], 
+                        chat_summary.get('title', 'Untitled Workspace')
+                    )
+                    all_nodes.extend(workspace_nodes)
+                    
+            except Exception as e:
+                logger.warning(f"Error loading chat {chat_summary['id']}: {e}")
+                continue
+        
+        return jsonify({
+            'success': True,
+            'nodes': all_nodes,
+            'connections': all_connections,
+            'totalNodes': len(all_nodes),
+            'totalWorkspaces': len(chat_summaries) if chat_summaries else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting all nodes: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Register the blueprint AFTER all routes are defined

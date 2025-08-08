@@ -2051,6 +2051,65 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   };
 
+  // Load ALL nodes from ALL chats simultaneously for performance testing
+  const loadAllNodesMode = async () => {
+    try {
+      console.log('[CanvasStore] Loading ALL nodes from ALL chats...');
+      const response = await fetch('http://127.0.0.1:5050/api/all-nodes');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch all nodes: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to load all nodes');
+      }
+      
+      console.log(`[CanvasStore] Loaded ${data.totalNodes} nodes from ${data.totalWorkspaces} workspaces`);
+      
+      // Set all nodes in the store
+      nodes.value = data.nodes || [];
+      console.log('[CanvasStore] loadAllNodesMode - nodes set:', nodes.value.length, 'nodes');
+      
+      // Set connections if available
+      if (data.connections && data.connections.length > 0) {
+        // Clear existing connections first
+        connectionStore.clearAllConnections();
+        
+        // Add each connection individually
+        data.connections.forEach((connection: any) => {
+          connectionStore.addConnection({
+            id: connection.id,
+            startNodeId: connection.startNodeId,
+            endNodeId: connection.endNodeId,
+            typeId: connection.type || 'default-curved',
+            chatId: connection.chatId,
+            isVisible: true,
+            path: ''  // Will be calculated by the spline component
+          });
+        });
+        
+        console.log('[CanvasStore] Added', data.connections.length, 'connections');
+      }
+      
+      // Clear current chat ID since we're in "all nodes" mode
+      console.log('[CanvasStore] Clearing currentChatId for all nodes mode');
+      chatStore.currentChatId = null;
+      console.log('[CanvasStore] Current chat ID after clearing:', chatStore.currentChatId);
+      
+      return {
+        success: true,
+        totalNodes: data.totalNodes,
+        totalWorkspaces: data.totalWorkspaces,
+        nodes: data.nodes
+      };
+      
+    } catch (error) {
+      console.error('[CanvasStore] Error loading all nodes:', error);
+      throw error;
+    }
+  };
+
   const loadChatState = async (chatId: string) => {
     try {
       const chatData = await chatStore.loadChat(chatId);
@@ -2565,6 +2624,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     initFromLocalStorage,
     saveWorkspace,
     loadChatState,
+    loadAllNodesMode,
     clearCurrentWorkspace,
     createNewWorkspace,
     updateNode,

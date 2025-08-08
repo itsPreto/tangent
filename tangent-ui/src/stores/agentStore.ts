@@ -99,7 +99,24 @@ export const useAgentStore = defineStore('agents', () => {
   const initializeConfigs = async () => {
     try {
       const apiConfigs = await loadConfigsFromAPI();
-      agentConfigs.value = apiConfigs;
+      
+      // If no configs exist in API, create defaults
+      if (apiConfigs.length === 0) {
+        console.log('No agent configs found, creating defaults...');
+        try {
+          const result = await agentConfigAPI.createDefaultAgents();
+          console.log('Created default agents:', result);
+          // Reload configs after creating defaults
+          const newConfigs = await agentConfigAPI.getAllAgentConfigs();
+          agentConfigs.value = newConfigs;
+        } catch (createError) {
+          console.error('Failed to create default agents:', createError);
+          // Fall back to local defaults
+          agentConfigs.value = getDefaultConfigs();
+        }
+      } else {
+        agentConfigs.value = apiConfigs;
+      }
     } catch (error) {
       console.error('Failed to initialize from API, using localStorage:', error);
       agentConfigs.value = loadSavedConfigs();
