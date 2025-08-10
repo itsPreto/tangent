@@ -8,6 +8,8 @@ import re
 import time
 from typing import Dict, List, Tuple, Optional
 import requests
+from collections import defaultdict
+import numpy as np
 from flask import Flask, request, jsonify, Response, Blueprint, stream_with_context
 from flask_cors import CORS
 import logging
@@ -2862,6 +2864,175 @@ def stop_clustering():
     except Exception as e:
         logger.error(f"Error stopping clustering: {e}")
         return jsonify({'error': str(e)}), 500
+
+@api_routes.route('/workspace-clusters', methods=['GET'])
+def get_workspace_clusters():
+    """
+    Get semantic clusters of workspaces for topic-based canvas layout
+    Optimized for ultra-low zoom levels (1-5%)
+    """
+    try:
+        # Get query parameters
+        method = request.args.get('method', 'kmeans')
+        n_clusters = request.args.get('clusters', type=int)
+        auto_optimize = request.args.get('auto_optimize', 'false').lower() == 'true'
+        include_positions = request.args.get('include_positions', 'false').lower() == 'true'
+        
+        # Validate method
+        if method not in ['kmeans', 'dbscan']:
+            return jsonify({'error': 'Invalid method. Use "kmeans" or "dbscan"'}), 400
+        
+        # Check if we have cached results
+        cached_clusters = clustering_service.cached_clusters
+        if cached_clusters and clustering_service.cache_timestamp:
+            # Use cached results if they're recent (within 5 minutes)
+            cache_age = (datetime.now() - clustering_service.cache_timestamp).total_seconds()
+            if cache_age < 300:  # 5 minutes
+                logger.info(f"Using cached workspace clusters (age: {cache_age:.1f}s)")
+                clusters = cached_clusters
+            else:
+                # Cache is stale, regenerate
+                clusters = clustering_service.cluster_workspaces(
+                    method=method,
+                    n_clusters=n_clusters,
+                    auto_optimize=auto_optimize
+                )
+        else:
+            # No cache, generate fresh clusters
+            clusters = clustering_service.cluster_workspaces(
+                method=method,
+                n_clusters=n_clusters,
+                auto_optimize=auto_optimize
+            )
+        
+        if not clusters:
+            return jsonify({
+                'success': False,
+                'clusters': [],
+                'totalWorkspaces': 0,
+                'message': 'No clusters generated - check if workspaces exist'
+            })
+        
+        # Calculate topic islands layout positions if requested
+        if include_positions:
+            clusters = calculate_topic_island_positions(clusters)
+        
+        # Calculate summary statistics
+        total_workspaces = sum(cluster['size'] for cluster in clusters)
+        cluster_stats = {
+            'total_clusters': len(clusters),
+            'total_workspaces': total_workspaces,
+            'avg_cluster_size': total_workspaces / len(clusters) if clusters else 0,
+            'largest_cluster': max(cluster['size'] for cluster in clusters) if clusters else 0,
+            'smallest_cluster': min(cluster['size'] for cluster in clusters) if clusters else 0
+        }
+        
+        return jsonify({
+            'success': True,
+            'clusters': clusters,
+            'stats': cluster_stats,
+            'method': method,
+            'cached': cached_clusters is not None,
+            'generated_at': clustering_service.cache_timestamp.isoformat() if clustering_service.cache_timestamp else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting workspace clusters: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+def calculate_topic_island_positions(clusters):
+    """
+    Calculate optimal positions for topic islands to prevent overlap
+    Uses a grid-based layout with dynamic spacing
+    """
+    if not clusters:
+        return clusters
+    
+    import math
+    
+    # Calculate grid dimensions
+    num_clusters = len(clusters)
+    grid_cols = max(1, int(math.ceil(math.sqrt(num_clusters))))
+    grid_rows = max(1, int(math.ceil(num_clusters / grid_cols)))
+    
+    # Base spacing - larger for topic islands
+    ISLAND_HORIZONTAL_SPACING = 2000  # Space between topic islands
+    ISLAND_VERTICAL_SPACING = 1500
+    ISLAND_START_X = 100
+    ISLAND_START_Y = 100
+    
+    # Sort clusters by size (largest first) for better visual hierarchy
+    sorted_clusters = sorted(clusters, key=lambda c: c['size'], reverse=True)
+    
+    for i, cluster in enumerate(sorted_clusters):
+        row = i // grid_cols
+        col = i % grid_cols
+        
+        # Calculate island center position
+        center_x = ISLAND_START_X + col * ISLAND_HORIZONTAL_SPACING
+        center_y = ISLAND_START_Y + row * ISLAND_VERTICAL_SPACING
+        
+        # Add position data to cluster
+        cluster['island'] = {
+            'center_x': center_x,
+            'center_y': center_y,
+            'grid_row': row,
+            'grid_col': col
+        }
+        
+        # Calculate workspace positions within the island
+        workspace_positions = calculate_island_workspace_positions(
+            cluster['workspaces'], center_x, center_y
+        )
+        
+        # Add positions to each workspace
+        for j, workspace in enumerate(cluster['workspaces']):
+            if j < len(workspace_positions):
+                workspace['island_position'] = workspace_positions[j]
+    
+    return sorted_clusters
+
+def calculate_island_workspace_positions(workspaces, center_x, center_y):
+    """
+    Calculate positions for workspaces within a topic island
+    Arranges them in a circular/spiral pattern around the island center
+    """
+    if not workspaces:
+        return []
+    
+    positions = []
+    num_workspaces = len(workspaces)
+    
+    if num_workspaces == 1:
+        # Single workspace at center
+        positions.append({'x': center_x, 'y': center_y})
+    elif num_workspaces <= 8:
+        # Circular arrangement for small groups
+        import math
+        radius = 400  # Distance from center
+        for i, workspace in enumerate(workspaces):
+            angle = (2 * math.pi * i) / num_workspaces
+            x = center_x + radius * math.cos(angle)
+            y = center_y + radius * math.sin(angle)
+            positions.append({'x': x, 'y': y})
+    else:
+        # Spiral arrangement for larger groups
+        import math
+        radius = 300
+        angle_increment = 2.4  # Radians between each item
+        radius_increment = 50   # How much radius increases per item
+        
+        for i, workspace in enumerate(workspaces):
+            angle = i * angle_increment
+            current_radius = radius + (i * radius_increment / 8)  # Gradual spiral
+            x = center_x + current_radius * math.cos(angle)
+            y = center_y + current_radius * math.sin(angle)
+            positions.append({'x': x, 'y': y})
+    
+    return positions
 
 @api_routes.route('/visualization', methods=['GET'])
 def get_visualization_data():
@@ -5758,6 +5929,508 @@ def get_all_nodes():
     except Exception as e:
         logger.error(f"Error getting all nodes: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+def generate_simple_topic_label(titles):
+    """Generate a simple topic label from workspace titles."""
+    if not titles:
+        return "Unknown Topic"
+    
+    if len(titles) == 1:
+        return titles[0]
+    
+    # Extract common words from titles
+    all_words = []
+    for title in titles:
+        words = title.lower().split()
+        # Filter out common words
+        meaningful_words = [w for w in words if len(w) > 3 and w not in ['chat', 'conversation', 'untitled', 'workspace']]
+        all_words.extend(meaningful_words)
+    
+    if all_words:
+        # Count word frequency
+        word_counts = {}
+        for word in all_words:
+            word_counts[word] = word_counts.get(word, 0) + 1
+        
+        # Find most common meaningful word
+        if word_counts:
+            most_common_word = max(word_counts.items(), key=lambda x: x[1])
+            if most_common_word[1] > 1:  # Appears in multiple titles
+                return f"{most_common_word[0].title()} Discussion"
+    
+    # Fallback to first title or generic name
+    return titles[0] if titles else f"Topic Group"
+
+def generate_batch_topic_labels(clusters_data):
+    """Generate descriptive topic labels for multiple clusters in a single LLM request."""
+    try:
+        # Prepare structured input for batch processing
+        clusters_input = []
+        for i, cluster_data in enumerate(clusters_data):
+            titles = cluster_data['titles']
+            keywords = cluster_data['keywords']
+            contents = cluster_data['contents']
+            
+            clusters_input.append({
+                "cluster_id": i,
+                "workspace_count": len(titles),
+                "sample_titles": titles[:4],  # First 4 titles
+                "keywords": keywords[:5],     # Top 5 keywords
+                "content_sample": ' '.join(contents[:2])[:400]  # Brief content sample
+            })
+        
+        # Create structured prompt for batch processing
+        prompt = f"""You are a workspace categorization expert. Given the following clusters of workspaces, generate descriptive 2-4 word labels for each cluster.
+
+Input clusters (JSON):
+{json.dumps(clusters_input, indent=2)}
+
+Requirements for each label:
+- 2-4 words maximum
+- Descriptive and professional
+- Specific to the cluster content
+- Avoid generic terms like "Discussion", "Projects", "Group"
+- Use technical terms when appropriate (e.g., "React Development", "API Architecture", "DevOps Pipeline")
+- Consider both keywords AND workspace titles
+
+Return ONLY a JSON object with cluster_id as key and descriptive label as value:
+{{"0": "Frontend Architecture", "1": "Backend APIs", "2": "Mobile Development"}}
+
+Labels:"""
+
+        # Use a slightly larger model for better batch processing
+        response = requests.post(
+            'http://localhost:11434/api/generate',
+            json={
+                'model': 'qwen3:0.6b',  # Could also try qwen3:3b if available
+                'prompt': prompt,
+                'stream': False,
+                'options': {
+                    'temperature': 0.2,  # Lower temperature for more consistent formatting
+                    'num_predict': 150,  # More tokens for batch response
+                }
+            },
+            timeout=30  # Longer timeout for batch processing
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            generated_response = result.get('response', '').strip()
+            
+            # Clean up and extract JSON
+            import re
+            # Remove any text before the JSON object
+            json_match = re.search(r'\{[^}]*\}', generated_response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                try:
+                    labels_dict = json.loads(json_str)
+                    # Validate and clean labels
+                    cleaned_labels = {}
+                    for cluster_id, label in labels_dict.items():
+                        if label and len(label) < 60 and len(label.split()) <= 5:
+                            cleaned_labels[cluster_id] = label.strip('"\'.,;:!?\n- ').title()
+                    
+                    if cleaned_labels:
+                        logger.info(f"Generated {len(cleaned_labels)} batch labels via LLM")
+                        return cleaned_labels
+                        
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse JSON from LLM batch response")
+        
+    except Exception as e:
+        logger.warning(f"Batch LLM topic generation failed: {e}")
+    
+    # Fallback to individual processing
+    logger.info("Falling back to individual label generation")
+    return None
+
+def generate_descriptive_fallback_label(titles, keywords, content_sample):
+    """Generate a more descriptive fallback label using keywords and titles."""
+    # Combine titles and keywords for analysis
+    all_terms = []
+    
+    # Extract meaningful terms from titles
+    for title in titles[:3]:
+        terms = re.findall(r'\b[a-zA-Z]{3,}\b', title.lower())
+        all_terms.extend([t for t in terms if t not in {'the', 'and', 'for', 'with', 'chat', 'discussion'}])
+    
+    # Add keywords
+    all_terms.extend(keywords[:3])
+    
+    # Count frequency and find most meaningful combinations
+    from collections import Counter
+    term_counts = Counter(all_terms)
+    
+    # Try to create compound labels
+    top_terms = [term for term, count in term_counts.most_common(3)]
+    
+    if len(top_terms) >= 2:
+        # Create combinations
+        if any(tech in top_terms for tech in ['api', 'backend', 'frontend', 'mobile', 'web']):
+            tech_term = next(t for t in top_terms if t in ['api', 'backend', 'frontend', 'mobile', 'web'])
+            other_terms = [t for t in top_terms if t != tech_term and t not in {'development', 'system', 'application'}]
+            if other_terms:
+                return f"{tech_term.title()} {other_terms[0].title()}"
+            return f"{tech_term.title()} Development"
+        
+        # General combination
+        return f"{top_terms[0].title()} {top_terms[1].title()}"
+    
+    # Single term with context
+    if top_terms:
+        base_term = top_terms[0].title()
+        if base_term.lower() in ['design', 'ui', 'ux']:
+            return f"{base_term} System"
+        elif base_term.lower() in ['data', 'analytics']:
+            return f"{base_term} Pipeline"
+        elif base_term.lower() in ['test', 'testing']:
+            return f"{base_term} Strategy"
+        else:
+            return f"{base_term} Architecture"
+    
+    return "Development Topic"
+
+@api_routes.route('/workspaces/cluster', methods=['POST'])
+def cluster_workspaces():
+    """Cluster workspaces by semantic similarity and generate topic labels."""
+    try:
+        data = request.json or {}
+        use_existing_data = data.get('use_existing_data', False)
+        
+        # CRITICAL: Check for cached results first for fast startup
+        if hasattr(clustering_service, 'workspace_clustering_cache'):
+            cache_age = (datetime.now() - clustering_service.workspace_clustering_cache.get('timestamp', datetime.min)).total_seconds()
+            if cache_age < 300:  # Use cache if less than 5 minutes old
+                logger.info(f"Using cached workspace clustering results (age: {cache_age:.1f}s)")
+                return jsonify(clustering_service.workspace_clustering_cache['result'])
+        
+        if use_existing_data:
+            # Use existing workspace data from database
+            chats = chat_service.list_chats()
+            if not chats:
+                return jsonify({'error': 'No workspaces found'}), 400
+            
+            workspace_titles = []
+            workspace_contents = []
+            
+            for chat in chats:
+                title = chat.get('title', f'Workspace {len(workspace_titles) + 1}')
+                workspace_titles.append(title)
+                
+                # Extract content from nodes
+                content_parts = []
+                nodes = chat.get('nodes', [])
+                if isinstance(nodes, list):
+                    for node in nodes[:3]:  # First 3 nodes to avoid too much content
+                        if isinstance(node, dict):
+                            messages = node.get('messages', [])
+                            for msg in messages[:2]:  # First 2 messages per node
+                                if isinstance(msg, dict) and msg.get('content'):
+                                    content_parts.append(str(msg['content'])[:500])
+                elif isinstance(nodes, dict):
+                    # Single node structure
+                    messages = nodes.get('messages', [])
+                    for msg in messages[:5]:  # First 5 messages
+                        if isinstance(msg, dict) and msg.get('content'):
+                            content_parts.append(str(msg['content'])[:500])
+                
+                workspace_contents.append(' '.join(content_parts) if content_parts else title)
+        else:
+            # Use provided data
+            workspace_titles = data.get('titles', [])
+            workspace_contents = data.get('contents', [])
+            
+            if not workspace_titles or not workspace_contents:
+                return jsonify({'error': 'Both titles and contents are required'}), 400
+            
+            if len(workspace_titles) != len(workspace_contents):
+                return jsonify({'error': 'Titles and contents arrays must have same length'}), 400
+        
+        # Content-based topic discovery using word frequency analysis
+        logger.info(f"Discovering topics from {len(workspace_titles)} workspaces using content analysis")
+        
+        # Extract key terms from all workspace content
+        all_content_words = []
+        workspace_word_vectors = []
+        
+        import re
+        from collections import Counter
+        
+        # Common stop words to filter out
+        stop_words = {
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+            'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cant', 'wont', 'dont',
+            'what', 'where', 'when', 'why', 'how', 'who', 'which', 'whose', 'whom'
+        }
+        
+        # Process each workspace content
+        for i, content in enumerate(workspace_contents):
+            combined_text = f"{workspace_titles[i]} {content}".lower()
+            # Extract meaningful words (3+ characters, alphanumeric)
+            words = re.findall(r'\b[a-z]{3,}\b', combined_text)
+            # Filter out stop words and common technical terms
+            meaningful_words = [w for w in words if w not in stop_words and len(w) > 3]
+            workspace_word_vectors.append(Counter(meaningful_words))
+            all_content_words.extend(meaningful_words)
+        
+        # Find most common meaningful terms across all workspaces
+        global_word_freq = Counter(all_content_words)
+        # Get top frequent words but not too common (appearing in < 80% of workspaces)
+        max_workspace_freq = len(workspace_titles) * 0.8
+        candidate_topics = [word for word, freq in global_word_freq.most_common(100) 
+                           if freq >= 2 and freq < max_workspace_freq]
+        
+        logger.info(f"Found {len(candidate_topics)} candidate topic words: {candidate_topics[:10]}")
+        
+        # Dynamic clustering based on content similarity
+        clusters = []
+        workspace_clusters = {}  # workspace_index -> cluster_id
+        
+        # Create initial clusters based on dominant topic words
+        for i, word_vector in enumerate(workspace_word_vectors):
+            # Find the most relevant topic words for this workspace
+            workspace_topics = []
+            for topic_word in candidate_topics[:20]:  # Check top 20 topic candidates
+                if word_vector.get(topic_word, 0) > 0:
+                    workspace_topics.append((topic_word, word_vector[topic_word]))
+            
+            # Sort by frequency in this workspace
+            workspace_topics.sort(key=lambda x: x[1], reverse=True)
+            
+            # Assign to cluster based on top topic word
+            if workspace_topics:
+                primary_topic = workspace_topics[0][0]
+                
+                # Find existing cluster with this topic or create new one
+                cluster_id = None
+                for j, cluster in enumerate(clusters):
+                    if cluster['primary_topic'] == primary_topic:
+                        cluster_id = j
+                        break
+                
+                if cluster_id is None:
+                    # Create new cluster
+                    cluster_id = len(clusters)
+                    clusters.append({
+                        'id': cluster_id,
+                        'primary_topic': primary_topic,
+                        'workspaces': [],
+                        'all_topics': Counter()
+                    })
+                
+                # Add workspace to cluster
+                clusters[cluster_id]['workspaces'].append(i)
+                clusters[cluster_id]['all_topics'].update([t[0] for t in workspace_topics])
+                workspace_clusters[i] = cluster_id
+            else:
+                # No clear topics - assign to "misc" cluster
+                misc_cluster_id = None
+                for j, cluster in enumerate(clusters):
+                    if cluster['primary_topic'] == 'miscellaneous':
+                        misc_cluster_id = j
+                        break
+                
+                if misc_cluster_id is None:
+                    misc_cluster_id = len(clusters)
+                    clusters.append({
+                        'id': misc_cluster_id,
+                        'primary_topic': 'miscellaneous',
+                        'workspaces': [],
+                        'all_topics': Counter()
+                    })
+                
+                clusters[misc_cluster_id]['workspaces'].append(i)
+                workspace_clusters[i] = misc_cluster_id
+        
+        # Prepare data for batch topic label generation
+        clusters_for_labeling = []
+        for cluster in clusters:
+            if cluster['workspaces']:  # Only include non-empty clusters
+                workspace_indices = cluster['workspaces']
+                cluster_titles = [workspace_titles[i] for i in workspace_indices]
+                cluster_contents = [workspace_contents[i][:500] for i in workspace_indices]
+                top_topics = [word for word, _ in cluster['all_topics'].most_common(5)]
+                
+                clusters_for_labeling.append({
+                    'original_cluster': cluster,
+                    'titles': cluster_titles,
+                    'contents': cluster_contents,
+                    'keywords': top_topics
+                })
+        
+        # Generate topic labels in batch
+        batch_labels = generate_batch_topic_labels(clusters_for_labeling)
+        
+        # Generate cluster metadata with batch-generated or fallback labels
+        cluster_metadata = {}
+        
+        for i, cluster_data in enumerate(clusters_for_labeling):
+            cluster = cluster_data['original_cluster']
+            cluster_id = cluster['id']
+            workspace_indices = cluster['workspaces']
+            cluster_titles = cluster_data['titles']
+            top_topics = cluster_data['keywords']
+            
+            # Get label from batch generation or use fallback
+            if batch_labels and str(i) in batch_labels:
+                topic_label = batch_labels[str(i)]
+                logger.info(f"Using batch-generated label for cluster {cluster_id}: '{topic_label}'")
+            else:
+                # Use enhanced fallback labeling
+                try:
+                    topic_label = generate_descriptive_fallback_label(
+                        cluster_titles, 
+                        top_topics, 
+                        ' '.join(cluster_data['contents'][:2])
+                    )
+                    logger.info(f"Using fallback label for cluster {cluster_id}: '{topic_label}'")
+                except Exception as e:
+                    logger.warning(f"Fallback labeling failed for cluster {cluster_id}: {e}")
+                    topic_label = cluster['primary_topic'].title().replace('_', ' ')
+            
+            # Calculate cluster coherence based on topic word overlap
+            coherence = min(1.0, len(cluster['all_topics']) / max(1, len(workspace_indices)))
+            
+            cluster_metadata[str(cluster_id)] = {
+                'topic': topic_label,
+                'size': len(workspace_indices),
+                'coherence': coherence,
+                'keywords': top_topics[:3]
+            }
+            
+            logger.info(f"Final cluster {cluster_id}: '{topic_label}' with {len(workspace_indices)} workspaces, keywords: {top_topics[:3]}")
+        
+        # Convert to expected cluster format
+        cluster_assignments = [workspace_clusters.get(i, 0) for i in range(len(workspace_titles))]
+        clusters_array = np.array(cluster_assignments)
+        
+        logger.info(f"Created {len(cluster_metadata)} dynamic clusters based on content analysis")
+        
+        # Calculate solar system layout with topic islands and orbital workspaces
+        topic_positions, workspace_positions = calculate_solar_system_layout(
+            cluster_metadata, clusters_array, workspace_titles
+        )
+        
+        # Prepare response
+        response_data = {
+            'success': True,
+            'clusters': clusters_array.tolist(),
+            'topics': cluster_metadata,
+            'topic_positions': topic_positions,
+            'workspace_positions': workspace_positions
+        }
+        
+        # CRITICAL: Cache the result for fast future requests
+        clustering_service.workspace_clustering_cache = {
+            'result': response_data,
+            'timestamp': datetime.now()
+        }
+        logger.info("Cached workspace clustering results for fast future requests")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error clustering workspaces: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def calculate_solar_system_layout(cluster_metadata, clusters_array, workspace_titles):
+    """Calculate solar system layout: topic islands with orbital workspaces."""
+    import math
+    
+    # Solar system layout constants - ISOLATED CLUSTERS (no overlap)
+    MAX_ORBITAL_RADIUS = 700     # Maximum orbital radius (400 base + 150*2 rings + buffer)
+    ISOLATION_BUFFER = 200       # Extra buffer between territories  
+    TOPIC_SEPARATION = (MAX_ORBITAL_RADIUS * 2) + ISOLATION_BUFFER  # Total: 1600px minimum between topic centers
+    TOPIC_HORIZONTAL_GAP = 20000  # Massive gaps to prevent workspace node tree overlap
+    TOPIC_VERTICAL_GAP = 16000    # Massive vertical separation for complete isolation
+    TOPIC_START_X = 2000         # Starting position for first topic
+    TOPIC_START_Y = 2000
+    ORBITAL_BASE_RADIUS = 400    # Base orbital radius around topics (increased to clear 600x200px labels)
+    ORBITAL_RADIUS_INCREMENT = 150  # Additional radius per orbital ring
+    MIN_WORKSPACE_DISTANCE = 400 # Minimum distance between workspaces
+    
+    topics = list(cluster_metadata.keys())
+    logger.info(f"Calculating solar system layout for {len(topics)} topics")
+    
+    # Step 1: Position topic islands using waterfall grid (like current workspace positioning)
+    topics_per_row = max(1, int(math.sqrt(len(topics)) * 1.2))  # Slightly wider layout
+    topic_positions = {}
+    
+    for i, topic_id in enumerate(topics):
+        row = i // topics_per_row
+        col = i % topics_per_row
+        
+        topic_x = TOPIC_START_X + (col * TOPIC_HORIZONTAL_GAP)
+        topic_y = TOPIC_START_Y + (row * TOPIC_VERTICAL_GAP)
+        
+        topic_positions[topic_id] = {
+            "x": topic_x,
+            "y": topic_y
+        }
+        
+        topic_name = cluster_metadata[topic_id]['topic']
+        workspace_count = cluster_metadata[topic_id]['size']
+        logger.info(f"Topic '{topic_name}' positioned at ({topic_x}, {topic_y}) with {workspace_count} workspaces")
+    
+    # Step 2: Calculate orbital positions for workspaces around their topics
+    workspace_positions = {}
+    topic_workspace_counts = defaultdict(int)
+    
+    for workspace_idx, cluster_id in enumerate(clusters_array):
+        cluster_id_str = str(cluster_id)
+        
+        if cluster_id_str not in topic_positions:
+            logger.warning(f"Workspace {workspace_idx} assigned to unknown topic {cluster_id_str}")
+            continue
+            
+        topic_pos = topic_positions[cluster_id_str]
+        workspace_count_in_topic = topic_workspace_counts[cluster_id_str]
+        total_workspaces_in_topic = cluster_metadata[cluster_id_str]['size']
+        
+        # Calculate orbital position
+        # Calculate orbital ring and position for symmetrical distribution
+        workspaces_per_ring = 8  # Perfect octagon spacing (8 equally spaced positions)
+        ring_number = workspace_count_in_topic // workspaces_per_ring
+        position_in_ring = workspace_count_in_topic % workspaces_per_ring
+        
+        # Calculate radius for this ring
+        orbital_radius = ORBITAL_BASE_RADIUS + (ring_number * ORBITAL_RADIUS_INCREMENT)
+        
+        # Calculate EXACT angle for perfect symmetrical spacing
+        workspaces_this_ring = min(workspaces_per_ring, total_workspaces_in_topic - (ring_number * workspaces_per_ring))
+        angle_step = (2 * math.pi) / workspaces_this_ring
+        angle = position_in_ring * angle_step
+        
+        # Start at top (0 degrees = right, -π/2 = top)
+        angle_offset = -math.pi / 2  # Start from top instead of right
+        final_angle = angle + angle_offset
+        
+        # NO JITTER - Perfect symmetrical placement
+        orbital_x = topic_pos["x"] + math.cos(final_angle) * orbital_radius
+        orbital_y = topic_pos["y"] + math.sin(final_angle) * orbital_radius
+        
+        workspace_positions[workspace_idx] = {
+            "orbital_x": orbital_x,
+            "orbital_y": orbital_y,
+            "topic_id": cluster_id_str,
+            "topic_center_x": topic_pos["x"],
+            "topic_center_y": topic_pos["y"],
+            "orbital_ring": workspace_count_in_topic // 6
+        }
+        
+        topic_workspace_counts[cluster_id_str] += 1
+        
+        workspace_title = workspace_titles[workspace_idx] if workspace_idx < len(workspace_titles) else f"Workspace {workspace_idx}"
+        logger.info(f"Workspace '{workspace_title[:30]}...' orbiting {cluster_metadata[cluster_id_str]['topic']} at ({orbital_x:.0f}, {orbital_y:.0f})")
+    
+    logger.info(f"Solar system layout complete: {len(topics)} topic islands, {len(workspace_positions)} orbital workspaces")
+    
+    return topic_positions, workspace_positions
 
 # Register the blueprint AFTER all routes are defined
 app.register_blueprint(api_routes, url_prefix='/api')

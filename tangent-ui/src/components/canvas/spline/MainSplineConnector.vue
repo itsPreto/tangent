@@ -223,123 +223,20 @@ const isLightBackground = computed(() => !isThemeDark.value)
 
 // Active color - use theme-specific vibrant colors
 const activePathColor = computed(() => {
-  const colors = themeColors.value
-  
-  // Theme-specific active path colors for maximum visibility
-  switch (currentThemeName.value) {
-    // Light themes
-    case 'light': return colors.primary
-    case 'cupcake': return colors.primary
-    case 'bumblebee': return colors.secondary // Darker orange
-    case 'emerald': return colors.primary
-    case 'corporate': return colors.primary
-    case 'garden': return colors.primary
-    case 'lofi': return '#333333'
-    case 'pastel': return '#9b7aa8' // Muted purple
-    case 'fantasy': return colors.primary
-    case 'wireframe': return '#666666'
-    case 'lemonade': return colors.primary
-    
-    // Dark themes
-    case 'dark': return colors.secondary // Pink
-    case 'synthwave': return colors.primary // Magenta
-    case 'retro': return colors.accent
-    case 'cyberpunk': return colors.primary // Cyan
-    case 'valentine': return colors.primary
-    case 'halloween': return colors.primary
-    case 'forest': return colors.primary
-    case 'aqua': return colors.primary
-    case 'black': return colors.accent
-    case 'luxury': return colors.accent // Gold
-    case 'dracula': return colors.primary
-    case 'cmyk': return colors.primary
-    case 'autumn': return colors.accent
-    case 'business': return colors.accent
-    case 'acid': return colors.primary
-    case 'night': return colors.secondary
-    case 'coffee': return colors.secondary
-    case 'winter': return colors.primary
-    
-    default: return colors.primary
-  }
+  // Use theme-adaptive primary color that automatically adjusts to all themes
+  return `oklch(var(--p))`
 })
 
 // Inactive path color with theme-appropriate contrast
 const inactivePathColor = computed(() => {
-  // Theme-specific inactive colors
-  switch (currentThemeName.value) {
-    // Light themes - darker muted colors
-    case 'light':
-    case 'corporate':
-    case 'emerald':
-      return 'rgba(60, 60, 70, 0.4)'
-    case 'cupcake':
-    case 'pastel':
-      return 'rgba(140, 120, 140, 0.4)'
-    case 'bumblebee':
-    case 'lemonade':
-      return 'rgba(100, 80, 40, 0.4)'
-    case 'garden':
-    case 'fantasy':
-      return 'rgba(80, 90, 80, 0.4)'
-    case 'lofi':
-    case 'wireframe':
-      return 'rgba(40, 40, 40, 0.4)'
-      
-    // Dark themes - lighter muted colors
-    case 'dark':
-    case 'business':
-      return 'rgba(180, 180, 200, 0.4)'
-    case 'synthwave':
-    case 'cyberpunk':
-    case 'acid':
-      return 'rgba(150, 150, 200, 0.3)'
-    case 'retro':
-    case 'autumn':
-      return 'rgba(200, 180, 160, 0.4)'
-    case 'valentine':
-    case 'dracula':
-      return 'rgba(200, 150, 180, 0.4)'
-    case 'halloween':
-      return 'rgba(180, 120, 80, 0.4)'
-    case 'forest':
-    case 'aqua':
-      return 'rgba(150, 200, 180, 0.4)'
-    case 'black':
-      return 'rgba(120, 120, 120, 0.4)'
-    case 'luxury':
-      return 'rgba(180, 160, 120, 0.4)'
-    case 'cmyk':
-      return 'rgba(180, 180, 180, 0.4)'
-    case 'night':
-      return 'rgba(160, 170, 200, 0.4)'
-    case 'coffee':
-      return 'rgba(180, 160, 140, 0.4)'
-    case 'winter':
-      return 'rgba(180, 200, 220, 0.4)'
-      
-    default:
-      return isLightBackground.value ? 'rgba(60, 60, 60, 0.4)' : 'rgba(200, 200, 200, 0.4)'
-  }
+  // Use theme-adaptive base content color with reduced opacity
+  return `oklch(from oklch(var(--bc)) l c h / 0.3)`
 })
 
 // Glow effect color based on theme
 const glowColor = computed(() => {
-  const colors = themeColors.value
-  
-  // Special glow colors for themes
-  switch (currentThemeName.value) {
-    case 'cyberpunk': return '#00FFFF'
-    case 'synthwave': return '#FF00FF'
-    case 'acid': return '#00FF00'
-    case 'valentine': return '#FF1493'
-    case 'halloween': return '#FF4500'
-    case 'dracula': return '#BD93F9'
-    case 'luxury': return '#FFD700'
-    case 'aqua': return '#00CED1'
-    case 'neon': return colors.accent
-    default: return colors.accent
-  }
+  // Use theme-adaptive accent color for glow
+  return `oklch(var(--a))`
 })
 
 // REMOVED: The entire unreliable detectCanvasColor function is gone.
@@ -869,6 +766,11 @@ function lightenColor(hex: string, amount: number): string {
 const hasLabel = computed(() => {
   // Hide labels when either node is in dot LOD
   if (props.endLodLevel === 'dot' || props.startLodLevel === 'dot') {
+    return false
+  }
+  
+  // Only show labels when zoom level is above 30%
+  if (props.zoomLevel < 0.3) {
     return false
   }
   

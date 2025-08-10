@@ -109,7 +109,7 @@
                         <TTSControls :text="message.content"
                           :auto-trigger="props.autoTTSEnabled && startIndex + index === messages.length - 1 && !message.isStreaming"
                           :streaming-trigger="props.autoTTSEnabled && message.isStreaming && startIndex + index === messages.length - 1"
-                          :streaming-text="message.isStreaming && startIndex + index === messages.length - 1 ? streamingContent : null"
+                          :streaming-text="message.isStreaming && startIndex + index === messages.length - 1 ? (streamingContent || null) : null"
                           compact />
                       </div>
                     </template>
@@ -327,7 +327,7 @@ interface Props {
   textContentColor: string;
   threadColor: string;
   autoTTSEnabled?: boolean;
-  streamingContent: string | null;
+  streamingContent?: string | null;
   getMessageStyles: (index: number) => Record<string, any>;
   getModelDisplayName: (message: Message) => string;
   getAvatarUrl: (modelInfo: ModelInfo | null) => string;

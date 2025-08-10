@@ -14,6 +14,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { routerService } from '@/services/routerService';
 import { generateConnectionId } from '@/utils/connectionUtils';
+import { spatialIndex } from '@/services/spatialIndexService';
 
 // Helper types for model info
 type ModelSource = "custom" | "ollama" | "google" | "openrouter" | "anthropic" | "openai";
@@ -205,18 +206,10 @@ export const useCanvasStore = defineStore('canvas', () => {
         // ONLY restore if there are nodes.  An empty database should result
         // in an empty canvas state.
         if (state.nodes && state.nodes.length > 0) {
-          // Apply coordinate migration to localStorage nodes
+          // Use stored positions as-is (database now enforces proper spacing)
           const migratedNodes = state.nodes.map(node => {
-            // Fix legacy negative Y coordinates and extreme X coordinates
-            const fixedY = node.y < 0 ? Math.max(node.y + 1000, 100) : node.y;
+            const fixedY = node.y;
             let fixedX = node.x;
-            
-            // Fix extreme X coordinates for left/right branch nodes
-            if (node.type === 'left-branch' && node.x < -500) {
-              fixedX = Math.max(node.x + 2000, 50);
-            } else if (node.type === 'right-branch' && node.x > 2000) {
-              fixedX = Math.min(node.x - 2000, 1500);
-            }
             
             if (node.y !== fixedY || node.x !== fixedX) {
               console.log('[CanvasStore] Fixed localStorage extreme coordinates for node:', {
@@ -283,6 +276,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   // Topic clustering state
   const topicClusters = ref(new Map());
   const nodeTopics = ref(new Map());
+  const workspaceOrbitalPositions = ref({});
   
   // Connection labels storage
   const connectionLabels = ref(new Map<string, string>());
@@ -786,6 +780,9 @@ export const useCanvasStore = defineStore('canvas', () => {
 
     // Add to local state
     nodes.value.push(newNode);
+    
+    // Add to spatial index for O(log n) viewport queries
+    spatialIndex.addNode(newNode);
 
     // Generate title for branch nodes if requested
     if (parentId && options?.generateTitle && options?.firstUserMessage) {
@@ -1792,6 +1789,9 @@ export const useCanvasStore = defineStore('canvas', () => {
     if (node) {
       node.x = position.x;
       node.y = position.y;
+      
+      // Update spatial index for efficient viewport queries
+      spatialIndex.updateNodePosition(id, position.x, position.y);
 
       // Auto-save position if in a chat
       if (chatStore.currentChatId) {
@@ -2067,9 +2067,18 @@ export const useCanvasStore = defineStore('canvas', () => {
       
       console.log(`[CanvasStore] Loaded ${data.totalNodes} nodes from ${data.totalWorkspaces} workspaces`);
       
+      // Clear existing nodes and spatial index  
+      nodes.value = [];
+      spatialIndex.clear();
+      
       // Set all nodes in the store
       nodes.value = data.nodes || [];
       console.log('[CanvasStore] loadAllNodesMode - nodes set:', nodes.value.length, 'nodes');
+      
+      // CRITICAL: Add all loaded nodes to spatial index for viewport queries
+      nodes.value.forEach(node => {
+        spatialIndex.addNode(node);
+      });
       
       // Set connections if available
       if (data.connections && data.connections.length > 0) {
@@ -2134,24 +2143,18 @@ export const useCanvasStore = defineStore('canvas', () => {
         }
       }
 
-      // Clear existing nodes
+      // Clear existing nodes and spatial index
       nodes.value = [];
+      spatialIndex.clear();
 
       // Convert and load nodes - handle both flat array and hierarchical structure
       const processNodes = (nodeData: any): Node[] => {
         // Check if nodeData is already a flat array (for compatibility)
         if (Array.isArray(nodeData)) {
           return nodeData.map(node => {
-            // Fix legacy negative Y coordinates and extreme X coordinates
-            const fixedY = node.y < 0 ? Math.max(node.y + 1000, 100) : node.y;
+            // Use database positions as-is (database now enforces proper spacing)
+            const fixedY = node.y;
             let fixedX = node.x;
-            
-            // Fix extreme X coordinates for left/right branch nodes
-            if (node.type === 'left-branch' && node.x < -500) {
-              fixedX = Math.max(node.x + 2000, 50);
-            } else if (node.type === 'right-branch' && node.x > 2000) {
-              fixedX = Math.min(node.x - 2000, 1500);
-            }
             
             if (node.y !== fixedY || node.x !== fixedX) {
               console.log('[CanvasStore] Fixed extreme coordinates for node:', {
@@ -2211,24 +2214,9 @@ export const useCanvasStore = defineStore('canvas', () => {
         const flattenNodes = (node: any): Node[] => {
           const children = node.children || [];
           
-          // Fix legacy negative Y coordinates and extreme X coordinates
-          const fixedY = node.y < 0 ? Math.max(node.y + 1000, 100) : node.y;
+          // Use database positions as-is (database now enforces proper spacing)
+          const fixedY = node.y;
           let fixedX = node.x;
-          
-          // Fix extreme X coordinates for all nodes
-          if (node.x < -1000) {
-            // Move far-left nodes to reasonable position
-            fixedX = 50;
-          } else if (node.x > 3000) {
-            // Move far-right nodes to reasonable position
-            fixedX = 1500;
-          } else if (node.type === 'left-branch' && node.x > 900) {
-            // Left branches should be on the left side
-            fixedX = node.parentId ? -400 : node.x;
-          } else if (node.type === 'right-branch' && node.x < 100) {
-            // Right branches should be on the right side
-            fixedX = node.parentId ? 1200 : node.x;
-          }
           
           if (node.y !== fixedY || node.x !== fixedX) {
             console.log('[CanvasStore] Fixed extreme coordinates for hierarchical node:', {
@@ -2292,6 +2280,11 @@ export const useCanvasStore = defineStore('canvas', () => {
       // Load nodes and update state
       nodes.value = processNodes(chatData.nodes);
       lastSavedWorkspaceId.value = chatId;
+      
+      // CRITICAL: Add all loaded nodes to spatial index for viewport queries
+      nodes.value.forEach(node => {
+        spatialIndex.addNode(node);
+      });
       
       // Restore model parameters for each node
       nodeModelParams.value.clear();
@@ -2499,6 +2492,32 @@ export const useCanvasStore = defineStore('canvas', () => {
 
   setupRelicPopoutListener();
 
+  // Spatial index management - keep it in sync with nodes
+  watch(nodes, (newNodes) => {
+    // Rebuild spatial index when nodes change significantly
+    if (newNodes.length === 0) {
+      spatialIndex.clear();
+    } else {
+      // Check if this is a bulk update (more than 5 nodes changed)
+      spatialIndex.rebuild(newNodes);
+    }
+  }, { deep: false }); // Don't watch deep changes, only array replacement
+  
+  /**
+   * Get visible nodes using spatial index - O(log n) instead of O(n)!
+   * This is the key optimization for handling 100k+ nodes
+   */
+  const getVisibleNodes = (viewport: { x: number; y: number; width: number; height: number }, buffer = 500): Node[] => {
+    return spatialIndex.getVisibleNodes(viewport, buffer);
+  };
+  
+  /**
+   * Get nearest nodes to a point - useful for snap/focus
+   */
+  const getNearestNodes = (x: number, y: number, count = 5): Node[] => {
+    return spatialIndex.getNearestNodes(x, y, count);
+  };
+  
   // Memory management functions
   const MAX_NODE_PARAMS_CACHE = 100; // Limit the number of cached node parameters
   const MAX_TOPIC_CLUSTERS = 50; // Limit topic clusters
@@ -2591,6 +2610,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     isTransitioning,
     topicClusters,
     nodeTopics,
+    workspaceOrbitalPositions,
     customApiUrl,
     connections,
     nodeIndices,
@@ -2651,6 +2671,10 @@ export const useCanvasStore = defineStore('canvas', () => {
     cleanupMemory,
     clearAllCaches,
     getMemoryUsage,
+    
+    // Spatial indexing for performance
+    getVisibleNodes,
+    getNearestNodes,
     
     // Connection labels
     setConnectionLabel,

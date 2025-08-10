@@ -150,7 +150,7 @@
       @close="appStore.closeSettingsOverlay" />
 
     <!-- Mock Data Controls Panel -->
-    <Transition name="slide-in-right">
+    <!-- <Transition name="slide-in-right">
       <div v-if="showMockDataControls" class="fixed top-4 right-4 z-50 mock-data-panel">
         <MockDataControls 
           @data-generated="handleMockDataGenerated"
@@ -166,10 +166,10 @@
           ×
         </button>
       </div>
-    </Transition>
+    </Transition> -->
 
     <!-- Mock Data Controls Help Indicator (only when not shown) -->
-    <Transition name="fade">
+    <!-- <Transition name="fade">
       <div 
         v-if="!showMockDataControls && !isInOverview" 
         class="fixed bottom-20 right-4 z-40 mock-data-hint"
@@ -180,7 +180,7 @@
           <span>Mock Data (⌘M)</span>
         </div>
       </div>
-    </Transition>
+    </Transition> -->
 
   </div>
 </template>

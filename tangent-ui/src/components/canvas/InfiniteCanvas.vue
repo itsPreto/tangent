@@ -8,7 +8,8 @@
         'drag-active': isDragActive,
         'left-panel-open': sidePanelOpen,
         'right-panel-open': rightPanelOpen,
-        'both-panels-open': sidePanelOpen && rightPanelOpen
+        'both-panels-open': sidePanelOpen && rightPanelOpen,
+        'clustering-mode': isClusteringMode
       }
     ]"
     :style="canvasPositionStyle" 
@@ -125,7 +126,8 @@
       <!-- Detailed Workspace View (when a workspace is selected) -->
       <div v-if="!isWorkspaceOverview"
         class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-none"
-        @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
+        :style="{ cursor: shouldShowCrosshair ? 'none' : currentCursorType }"
+        @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseLeave" @mouseenter="handleMouseEnter"
         @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" 
         @touchend="handleTouchEnd" @wheel="handleWheel" @gesturestart="handleGestureStart" 
         @gesturechange="handleGestureChange" @gestureend="handleGestureEnd" tabindex="0"
@@ -139,6 +141,17 @@
           :style="selectionRectStyle"
           style="z-index: 1000;"
         />
+
+        <!-- LOD Indicator Toaster -->
+        <div class="absolute bottom-4 left-4 pointer-events-none" style="z-index: 1500;">
+          <div class="lod-toaster bg-black/80 text-white px-3 py-2 rounded-lg backdrop-blur-sm border border-white/20 text-sm font-medium">
+            <div class="flex items-center gap-2">
+              <div class="lod-dot" :class="lodDotClass"></div>
+              <span>{{ lodDisplayText }}</span>
+              <span class="text-white/60 text-xs">({{ Math.round(zoom * 100) }}%)</span>
+            </div>
+          </div>
+        </div>
 
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle" style="z-index: 2;">
@@ -408,8 +421,8 @@
                 :cx="node.x + 25"
                 :cy="node.y + 25"
                 :r="25"
-                :fill="isNodeFocused(node.id) ? '#6366F1' : '#374151'"
-                :stroke="isNodeFocused(node.id) ? '#4F46E5' : '#9CA3AF'"
+                :fill="isNodeFocused(node.id) ? 'oklch(var(--p))' : 'oklch(from oklch(var(--bc)) l c h / 0.6)'"
+                :stroke="isNodeFocused(node.id) ? 'oklch(from oklch(var(--p)) calc(l - 0.1) c h)' : 'oklch(from oklch(var(--bc)) l c h / 0.4)'"
                 :stroke-width="4"
                 class="node-dot"
                 style="cursor: pointer;"
@@ -423,16 +436,16 @@
           <!-- Original spline connections restored -->
 
           <!-- Nodes Layer -->
-          <div class="absolute" :style="nodesLayerStyle" style="z-index: 1">
+          <div class="absolute nodes-layer" :style="nodesLayerStyle" style="z-index: 1">
             <template v-for="node in visibleNodes" :key="node.id">
               <!-- Branch Node (handles all node types from all workspaces) -->
               <BranchNode v-if="(node.type === 'branch' || node.type === 'main' || node.type === 'media') && (!store.snappedNodeId || store.snappedNodeId === node.id) && getLODLevel(node.id) !== 'dot'" :node="node"
                 :is-selected="isNodeFocused(node.id)" :is-multi-selected="selectedNodeIds.has(node.id)" :selected-model="selectedModel"
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
-                :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
+                :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded" :is-panning="isPanning"
                 :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
                 :is-potential-drop-target="potentialDropTargets.has(node.id)" :disable-entrance-animation="isMorphingFromInputContainer"
-                :is-invalid-drop-target="invalidDropTargets.has(node.id)"
+                :is-invalid-drop-target="invalidDropTargets.has(node.id)" :is-zooming="isZooming" :is-global-dragging="store.isDragging"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle" @resend="(userMessageIndex) =>
                   handleResend(node.id, userMessageIndex)
@@ -443,9 +456,7 @@
                 @connection-end="handleConnectionEnd"
                 @reflectionSuggestionClick="handleReflectionSuggestionClick" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
-                  transition: store.isTransitioning
-                    ? 'transform 0.3s ease-out'
-                    : 'none',
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
                 }" />
 
               <!-- Web Node -->
@@ -457,9 +468,7 @@
                   handleResend(node.id, userMessageIndex)
                 " @delete="() => handleNodeDelete(node.id)" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
-                  transition: store.isTransitioning
-                    ? 'transform 0.3s ease-out'
-                    : 'none',
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
                 }" />
 
               <!-- Tool Call Compact Node -->
@@ -481,7 +490,7 @@
                 :open-router-api-key="openRouterApiKey" :modelType="modelType" :zoom="zoom" :lod-level="getLODLevel(node.id)"
                 :model-registry="modelRegistry" :is-side-panel-open="appStore.isLeftSidebarExpanded"
                 :is-right-panel-open="rightPanelOpen" :is-right-sidebar-expanded="rightSidebarExpanded" :supports-vision="isVisionModelSelected"
-                :disable-entrance-animation="isMorphingFromInputContainer"
+                :disable-entrance-animation="isMorphingFromInputContainer" :is-zooming="isZooming" :is-panning="isPanning" :is-global-dragging="store.isDragging"
                 @select="handleNodeSelect(node.id)" @drag-start="handleDragStart" @create-branch="handleCreateBranch"
                 @update-title="store.updateNodeTitle"
                 @resend="(userMessageIndex) => handleResend(node.id, userMessageIndex)"
@@ -506,6 +515,45 @@
                 }"
               />
             </template>
+
+            <!-- Topic Connections SVG Layer (only visible in clustering mode) -->
+            <svg 
+              v-if="isClusteringMode && topicConnections.length > 0"
+              class="absolute inset-0 w-full h-full pointer-events-none"
+              style="z-index: 0; overflow: visible;"
+              :style="svgStyle"
+            >
+              <g v-for="connection in topicConnections" :key="connection.id">
+                <line
+                  :x1="connection.from.x"
+                  :y1="connection.from.y"
+                  :x2="connection.to.x"
+                  :y2="connection.to.y"
+                  :stroke="`oklch(65% 0.15 ${(connection.topicId * 73) % 360})`"
+                  :stroke-width="Math.max(1, 8 / zoom)"
+                  stroke-dasharray="20,10"
+                  :opacity="0.4"
+                  stroke-linecap="round"
+                />
+              </g>
+            </svg>
+
+            <!-- Topic Cluster Labels (only visible in clustering mode) -->
+            <template v-if="isClusteringMode">
+              <TopicClusterLabel
+                v-for="topicLabel in topicLabels"
+                :key="`topic-${topicLabel.id}`"
+                :topic="topicLabel"
+                :position="topicLabel.position"
+                :scale="Math.min(30.0, Math.max(5.0, Math.pow(1 / zoom, 1.2)))"
+                :visible="true"
+                :show-connector="false"
+                :style="{
+                  transform: `translate(${topicLabel.position.x}px, ${topicLabel.position.y}px) translate(-50%, -50%)`,
+                  transition: isClusteringTransition ? 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)' : 'none'
+                }"
+              />
+            </template>
             
             <!-- Canvas Input Container (inside canvas coordinate system) -->
             <CanvasInputContainer
@@ -519,6 +567,7 @@
               @morph-phase-complete="handleMorphPhaseComplete"
               @request-target-position="handleTargetPositionRequest"
             />
+
             
           </div>
 
@@ -565,6 +614,33 @@
       v-if="!isWorkspaceOverview"
     />
 
+    <!-- Full Viewport Crosshair Guidelines -->
+    <div v-show="shouldShowCrosshair" class="viewport-crosshair">
+      <!-- Horizontal line across full viewport -->
+      <div 
+        class="crosshair-line-h"
+        :style="{ top: crosshairPosition.y + 'px' }"
+      ></div>
+      <!-- Vertical line across full viewport -->
+      <div 
+        class="crosshair-line-v"
+        :style="{ left: crosshairPosition.x + 'px' }"
+      ></div>
+      <!-- Center dot at intersection -->
+      <div 
+        class="crosshair-dot"
+        :style="{ left: crosshairPosition.x + 'px', top: crosshairPosition.y + 'px' }"
+      ></div>
+      <!-- Coordinates display -->
+      <div 
+        class="crosshair-coordinates"
+        ref="coordinatesRef"
+        :style="{ left: (crosshairPosition.x + 15) + 'px', top: (crosshairPosition.y + 15) + 'px' }"
+      >
+        <span>X:</span> {{ canvasCoordinates.x }} <span>Y:</span> {{ canvasCoordinates.y }}
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -582,6 +658,7 @@ import {
 import BranchNode from "./node/BranchNode.vue";
 import BranchIndexLabel from "./BranchIndexLabel.vue";
 import ToolCallCompactNode from "./node/ToolCallCompactNode.vue";
+import TopicClusterLabel from "./TopicClusterLabel.vue";
 import emitter from '@/utils/eventBus'
 import CanvasInputContainer from "./CanvasInputContainer.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
@@ -604,6 +681,11 @@ import { debounce } from 'lodash-es';
 import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download, Sparkles, Upload, ArrowRight } from "lucide-vue-next";
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
 import { autoArrangeService } from '@/services/autoArrangeService';
+import { forceLayoutService } from '@/services/forceLayoutService';
+import type { Node as ForceNode } from '@/services/forceLayoutService';
+import { dragOptimizer } from '@/services/dragOptimizationService';
+import { animationService, smoothZoomTo } from '@/services/animationService';
+import { performanceMode } from '@/services/performanceMode';
 
 // Add near the top with other refs
 const modelRegistry = ref(new Map<string, ModelInfo>());
@@ -654,6 +736,105 @@ const gridWorkspaceRef = ref(null);
 // RTS perspective constants
 const RTS_SCALE_Y = 0.6; // Vertical compression factor for RTS perspective
 const perfTestPanel = ref(null);
+
+// Crosshair cursor state
+const showCrosshair = ref(false); // Start false, set to true on mouse enter
+const crosshairRef = ref(null);
+const coordinatesRef = ref(null);
+const crosshairPosition = ref({ x: 0, y: 0 });
+const canvasCoordinates = ref({ x: 0, y: 0 });
+
+// Clustering state
+const isClusteringMode = ref(false);
+const clusteringData = ref(null);
+const topicLabels = ref([]);
+const isClusteringTransition = ref(false);
+
+// Computed property for topic connections
+const topicConnections = computed(() => {
+  if (!isClusteringMode.value || !clusteringData.value) {
+    return [];
+  }
+  
+  const connections = [];
+  const rootNodes = store.nodes.filter(node => !node.parentId);
+  
+  // Create connections from each root node to its topic center
+  // CRITICAL: chatStore.chats is in REVERSE order (newest first) but 
+  // workspace_positions uses creation order (oldest first)
+  rootNodes.forEach((node) => {
+    // Find the workspace index in frontend chat list (reverse order)
+    const frontendIndex = chatStore.chats.findIndex(chat => chat.id === node.chatId);
+    if (frontendIndex >= 0) {
+      // Convert to clustering API index (creation order) by reversing
+      const clusteringIndex = chatStore.chats.length - 1 - frontendIndex;
+      const workspacePos = clusteringData.value.workspace_positions?.[clusteringIndex];
+      if (workspacePos) {
+        const topicPos = clusteringData.value.topic_positions?.[workspacePos.topic_id];
+        if (topicPos) {
+          connections.push({
+            id: `topic-connection-${node.id}`,
+            from: {
+              x: node.x,
+              y: node.y
+            },
+            to: {
+              x: topicPos.x,
+              y: topicPos.y
+            },
+            topicId: workspacePos.topic_id
+          });
+        }
+      }
+    }
+  });
+  
+  return connections;
+});
+
+// Computed cursor type based on current interaction state
+const currentCursorType = computed(() => {
+  // If dragging nodes or workspace
+  if (store.isDragging || isMultiDragging.value || workspaceDragState.value.isDragging) {
+    return 'grabbing';
+  }
+  
+  // If resizing shapes
+  if (resizeState.value.isResizing) {
+    return 'resizing';
+  }
+  
+  // If shape dragging
+  if (shapeDragState.value.isDragging) {
+    return 'grabbing';
+  }
+  
+  // If panning the canvas
+  if (isPanning.value) {
+    return 'grabbing';
+  }
+  
+  // Based on drawing tool
+  if (drawingStore.currentTool === 'hand') {
+    return 'grab';
+  } else if (drawingStore.currentTool === 'pen' || drawingStore.currentTool === 'brush') {
+    return 'crosshair';
+  } else if (drawingStore.currentTool === 'eraser') {
+    return 'crosshair';
+  } else if (drawingStore.currentTool === 'text') {
+    return 'text';
+  } else if (drawingStore.currentTool === 'cursor') {
+    return 'move';
+  }
+  
+  // Default to crosshair for precision positioning when no active tool or general navigation
+  return 'crosshair';
+});
+
+// Show custom crosshair whenever mouse is over canvas (simplified for debugging)
+const shouldShowCrosshair = computed(() => {
+  return !isWorkspaceOverview.value && showCrosshair.value;
+});
 
 // Props
 const props = defineProps({
@@ -800,6 +981,7 @@ const expandedNodes = ref(new Set());
 const connectionLabels = ref(new Map());
 const isPanning = ref(false);
 const wasJustDragging = ref(false); // Flag to prevent immediate re-selection after dragging
+const dragAnimationFrameId = ref(null); // For throttling drag updates
 const curvature = ref(0.5); // Spline curvature (0 = straight, 1 = very curvy)
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
@@ -818,8 +1000,16 @@ const getWorkspaceRootNode = (workspaceId: string) => {
   );
 };
 
-// Computed property for topic nodes at very low zoom
+// Computed property for topic nodes at very low zoom - performance mode aware
+const topicNodesCache = ref<any[]>([]);
+const topicNodesPaused = ref(false);
+
 const topicNodes = computed(() => {
+  // Skip expensive computation during performance mode
+  if (performanceMode.isInPerformanceMode() || topicNodesPaused.value) {
+    return topicNodesCache.value;
+  }
+  
   const nodes: any[] = [];
   const topicMap = new Map<string, { rootNodeIds: Set<string>, sumX: number, sumY: number, count: number, titles: Set<string> }>();
 
@@ -858,6 +1048,8 @@ const topicNodes = computed(() => {
     });
   });
 
+  // Cache the result
+  topicNodesCache.value = nodes;
   return nodes;
 });
 
@@ -989,17 +1181,16 @@ const initializePortalAnimations = () => {
   }));
 };
 
-// Zoom constants - Updated for enhanced LOD system
-const ZOOM_MIN = 0.05; // 5% minimum zoom
+// Zoom constants
+const ZOOM_MIN = 0.001; // Allow zooming out to 0.1% for galaxy view
 const ZOOM_MAX = 2;
-const ZOOM_CLUSTER_VIEW = 0.08; // 8% zoom for cluster topic view
 const ZOOM_SENSITIVITY = 0.005;
 const PAN_SENSITIVITY = 1.0;
 
 // LOD thresholds
-const LOD_FULL_THRESHOLD = 0.60; // 60%+ for full detail
-const LOD_PREVIEW_THRESHOLD = 0.30; // 30-60% for preview
-const LOD_COMPACT_THRESHOLD = 0.10; // 10%+ for compact
+const LOD_FULL_THRESHOLD = 0.80; // 80%+ for full detail
+const LOD_PREVIEW_THRESHOLD = 0.50; // 50-80% for preview
+const LOD_COMPACT_THRESHOLD = 0.15; // 15%+ for compact
 
 // Simple Undo/Redo system for deletions and moves
 const undoStack = ref([]);
@@ -1204,13 +1395,17 @@ const cycleSnappedNodes = async (direction: string) => {
   // Find the next node to snap to
   const nextNode = candidates[0];
   if (nextNode) {
-    await handleNodeSelect(nextNode.id);
+    handleNodeSelect(nextNode.id);
   }
 };
 
 // Performance state tracking
 const isAnimating = ref(false);
 let animationTimeout: number | null = null;
+const isZooming = ref(false);
+let zoomTimeout: number | null = null;
+let panTimeout: number | null = null;
+const lastDragEndTime = ref<number | null>(null);
 
 // Simplified high-performance LOD calculation
 const getLODLevel = (nodeId: string): string => {
@@ -1661,6 +1856,39 @@ const canvasPositionStyle = computed(() => {
   }
 });
 
+// LOD indicator computed properties
+const lodDisplayText = computed(() => {
+  const currentZoom = zoom.value;
+  
+  if (currentZoom >= 0.80) {
+    return 'Full LOD (Hover to expand)';
+  } else if (currentZoom >= 0.50) {
+    return 'Preview LOD (Last message)';
+  } else if (currentZoom >= 0.30) {
+    return 'Compact LOD (Labels visible)';
+  } else if (currentZoom >= 0.15) {
+    return 'Compact LOD';
+  } else {
+    return 'Dot LOD';
+  }
+});
+
+const lodDotClass = computed(() => {
+  const currentZoom = zoom.value;
+  
+  if (currentZoom >= 0.80) {
+    return 'bg-green-500'; // Full LOD
+  } else if (currentZoom >= 0.50) {
+    return 'bg-blue-500'; // Preview LOD
+  } else if (currentZoom >= 0.30) {
+    return 'bg-yellow-500'; // Compact with labels
+  } else if (currentZoom >= 0.15) {
+    return 'bg-orange-500'; // Compact LOD
+  } else {
+    return 'bg-red-500'; // Dot LOD
+  }
+});
+
 // Selection rectangle style
 const selectionRectStyle = computed(() => {
   const rect = selectionRect.value;
@@ -1710,16 +1938,22 @@ const renderGrid = () => {
   const currentPanX = panX.value;
   const currentPanY = panY.value;
   
-  // Skip grid if zoom is too low (performance optimization)
-  if (currentZoom < 0.05) return;
+  // Skip grid only at extremely low zoom (allow grid in clustering mode)
+  if (currentZoom < 0.001) return;
   
   // Calculate grid spacing based on zoom level
   const baseGridSize = GRID_SIZE * currentZoom;
   const majorGridSize = GRID_MAJOR_SIZE * currentZoom;
   
-  // Adaptive grid density - show fewer lines when zoomed out
+  // Adaptive grid density - MASSIVE distillation for performance
   let gridStep = GRID_SIZE;
-  if (currentZoom < 0.3) {
+  if (currentZoom < 0.01) {
+    gridStep = GRID_MAJOR_SIZE * 50; // Ultra-sparse grid for clustering mode
+  } else if (currentZoom < 0.05) {
+    gridStep = GRID_MAJOR_SIZE * 10; // Very sparse grid 
+  } else if (currentZoom < 0.1) {
+    gridStep = GRID_MAJOR_SIZE * 5; // Sparse grid
+  } else if (currentZoom < 0.3) {
     gridStep = GRID_MAJOR_SIZE; // Only show major grid lines
   } else if (currentZoom < 0.6) {
     gridStep = GRID_SIZE * 2; // Show every 2nd grid line
@@ -1811,6 +2045,13 @@ const renderGrid = () => {
       majorGridColor = 'rgba(0, 0, 0, 0.4)';
       minorGridColor = 'rgba(0, 0, 0, 0.25)';
       break;
+  }
+  
+  // CLUSTERING MODE: Increase opacity for better visibility at ultra-low zoom
+  if (currentZoom < 0.1) {
+    // Extract and increase alpha values for clustering mode
+    majorGridColor = majorGridColor.replace(/0\.\d+\)$/, '0.8)'); // Increase to 0.8
+    minorGridColor = minorGridColor.replace(/0\.\d+\)$/, '0.6)'); // Increase to 0.6
   }
   
   // Draw grid stars
@@ -1953,77 +2194,170 @@ const loadAllWorkspaces = async () => {
 
 // Simple, fast visibleNodes without complex caching
 const visibleNodes = computed(() => {
-  // If snapped node exists, only show that node's children
+  // If snapped node exists, only show that node
   if (store.snappedNodeId !== null) {
     return store.nodes.filter(node => node.id === store.snappedNodeId);
   }
   
-  // For small numbers of nodes (like 4), just return all nodes
-  // Viewport culling optimization only helps with many nodes
-  if (store.nodes.length <= 10) {
+  // In clustering mode, only show root nodes (no position changes needed - they're already orbital)
+  if (isClusteringMode.value) {
+    return store.nodes.filter(node => !node.parentId);
+  }
+  
+  // For small numbers of nodes, just return all nodes
+  if (store.nodes.length <= 50) {
     return store.nodes;
   }
   
-  // Only do viewport culling for larger node counts
-  const nodesToRender = store.nodes;
-  
-  if (!canvasRef.value || nodesToRender.length === 0) {
-    return nodesToRender;
+  // Manual viewport culling - fast and reliable
+  if (!canvasRef.value) {
+    return [];
   }
   
   const viewport = viewportReturn.getViewportBounds(canvasRef.value);
   if (!viewport) {
-    return nodesToRender;
+    return [];
   }
   
-  const VIEWPORT_BUFFER = 500;
-  
-  return nodesToRender.filter(node => {
-    const nodeBounds = {
-      x: node.x || 0,
-      y: node.y || 0,
-      width: node.type === 'tool-call-compact' ? 120 : 400,
-      height: node.type === 'tool-call-compact' ? 40 : 300
-    };
+  // Simple manual viewport culling - O(n) but fast for reasonable node counts
+  const BUFFER = 500;
+  const visibleNodes = store.nodes.filter(node => {
+    // Node bounds
+    const nodeLeft = node.x;
+    const nodeRight = node.x + 400; // Approximate node width
+    const nodeTop = node.y;  
+    const nodeBottom = node.y + 300; // Approximate node height
     
-    return viewportReturn.isNodeInViewport(nodeBounds, canvasRef.value, VIEWPORT_BUFFER);
+    // Viewport bounds with buffer
+    const viewLeft = viewport.left - BUFFER;
+    const viewRight = viewport.right + BUFFER;
+    const viewTop = viewport.top - BUFFER;
+    const viewBottom = viewport.bottom + BUFFER;
+    
+    // Check intersection
+    return !(nodeRight < viewLeft || nodeLeft > viewRight || 
+             nodeBottom < viewTop || nodeTop > viewBottom);
   });
+  
+  return visibleNodes;
 });
 
-// Visible connections (only between visible nodes)
+// Visible connections - optimized with memoization and performance mode aware
+const visibleNodeIdsCache = ref(new Set<string>());
+const visibleConnectionsCache = ref<any[]>([]);
+const lastVisibleNodesLength = ref(0);
+const connectionsUpdatePaused = ref(false);
+
 const visibleConnections = computed(() => {
+  // Hide all connections in clustering mode
+  if (isClusteringMode.value) {
+    return [];
+  }
+  
   if (store.snappedNodeId !== null || isWorkspaceOverview.value || isAnimatingWorkspace.value) {
     return store.connections;
   }
 
-  const visibleNodeIds = new Set(visibleNodes.value.map(node => node.id));
-  return store.connections.filter(connection => 
-    visibleNodeIds.has(connection.parent.id) || visibleNodeIds.has(connection.child.id)
-  );
+  // Skip expensive computation during performance mode
+  if (performanceMode.isInPerformanceMode() || connectionsUpdatePaused.value) {
+    return visibleConnectionsCache.value;
+  }
+
+  // Check if we need to update the cache
+  if (visibleNodes.value.length !== lastVisibleNodesLength.value) {
+    visibleNodeIdsCache.value = new Set(visibleNodes.value.map(node => node.id));
+    lastVisibleNodesLength.value = visibleNodes.value.length;
+    
+    // Update connections cache
+    visibleConnectionsCache.value = store.connections.filter(connection => 
+      visibleNodeIdsCache.value.has(connection.parent.id) || 
+      visibleNodeIdsCache.value.has(connection.child.id)
+    );
+  }
+  
+  return visibleConnectionsCache.value;
 });
 
-// Update intersection observer when nodes change
-watch(
-  () => store.nodes,
-  (newNodes) => {
-    // Update intersection observer for new nodes
-    nextTick(() => {
-      newNodes.forEach(node => {
-        const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
-        if (nodeElement && !intersectionVisibleNodes.value.has(node.id)) {
-          observe(nodeElement, node.id);
-        }
-      });
-
-      // Update visible nodes set from intersection observer
-      const visibleIds = getVisibleElementIds();
-      intersectionVisibleNodes.value = new Set(visibleIds.filter(id => 
-        newNodes.some(node => node.id === id)
-      ));
+// Update intersection observer - performance mode aware
+const intersectionUpdatePaused = ref(false);
+const updateIntersectionObserver = debounce(() => {
+  // Skip during performance mode
+  if (performanceMode.isInPerformanceMode() || intersectionUpdatePaused.value || !visibleNodes.value.length) return;
+  
+  nextTick(() => {
+    // Only observe visible nodes for performance
+    visibleNodes.value.forEach(node => {
+      const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+      if (nodeElement && !intersectionVisibleNodes.value.has(node.id)) {
+        observe(nodeElement, node.id);
+      }
     });
-  },
-  { deep: true, immediate: true }
+
+    // Update visible nodes set from intersection observer
+    const visibleIds = getVisibleElementIds();
+    intersectionVisibleNodes.value = new Set(visibleIds.filter(id => 
+      visibleNodes.value.some(node => node.id === id)
+    ));
+  });
+}, 100);
+
+// Watch only node count changes and visible nodes changes - not deep!
+watch(
+  () => [store.nodes.length, visibleNodes.value.length],
+  updateIntersectionObserver,
+  { immediate: true }
 );
+
+// Register heavy operations with performance mode service
+onMounted(() => {
+  // Register intersection observer updates
+  performanceMode.registerHeavyOperation(
+    'intersectionObserver',
+    () => { intersectionUpdatePaused.value = true; },
+    () => { intersectionUpdatePaused.value = false; }
+  );
+  
+  // Register connections computation
+  performanceMode.registerHeavyOperation(
+    'visibleConnections',
+    () => { connectionsUpdatePaused.value = true; },
+    () => { connectionsUpdatePaused.value = false; }
+  );
+  
+  // Register viewport observer if it exists
+  if (viewportReturn?.pauseObserver && viewportReturn?.resumeObserver) {
+    performanceMode.registerHeavyOperation(
+      'viewportObserver',
+      () => viewportReturn.pauseObserver(),
+      () => viewportReturn.resumeObserver()
+    );
+  }
+  
+  // Register topic nodes computation
+  performanceMode.registerHeavyOperation(
+    'topicNodes',
+    () => { topicNodesPaused.value = true; },
+    () => { topicNodesPaused.value = false; }
+  );
+  
+  // Register force layout service if available
+  if (forceLayoutService?.pause && forceLayoutService?.resume) {
+    performanceMode.registerHeavyOperation(
+      'forceLayout',
+      () => forceLayoutService.pause(),
+      () => forceLayoutService.resume()
+    );
+  }
+  
+  // Register auto arrange service if available
+  if (autoArrangeService?.pause && autoArrangeService?.resume) {
+    performanceMode.registerHeavyOperation(
+      'autoArrange',
+      () => autoArrangeService.pause(),
+      () => autoArrangeService.resume()
+    );
+  }
+});
 
 // Coordinate conversion helpers
 const screenToWorld = (screenX, screenY) => {
@@ -2038,6 +2372,23 @@ const worldToScreen = (worldX, worldY) => {
   return {
     x: (worldX * zoom.value) + panX.value,
     y: (worldY * zoom.value) + panY.value
+  };
+};
+
+// Crosshair cursor function
+const updateCrosshair = (screenX, screenY) => {
+  if (!canvasRef.value) return;
+  
+  const rect = canvasRef.value.getBoundingClientRect();
+  crosshairPosition.value = {
+    x: screenX - rect.left,
+    y: screenY - rect.top
+  };
+  
+  const worldPos = screenToWorld(screenX, screenY);
+  canvasCoordinates.value = {
+    x: Math.round(worldPos.x),
+    y: Math.round(worldPos.y)
   };
 };
 
@@ -2381,38 +2732,20 @@ const handleNewWorkspace = async () => {
 
 // Center on input container with smooth animation (for initialization)
 const centerOnInputContainer = async () => {
-  console.log('[centerOnInputContainer] Starting - current state:', {
-    panX: panX.value,
-    panY: panY.value,
-    zoom: zoom.value
-  });
-  
   const rect = canvasRef.value?.getBoundingClientRect();
-  if (!rect) {
-    console.log('[centerOnInputContainer] No canvas rect found');
-    return;
-  }
+  if (!rect) return;
   
   // Calculate correct pan values for 120% zoom to center input container at (-3000, -3000)
   const NEW_CHAT_X = -3000;
   const NEW_CHAT_Y = -3000;
-  const targetZoom = 1.2; // 120% zoom (more comfortable)
+  const targetZoom = 1.2;
   
   // Calculate pan values to center the input container coordinate on screen
   const targetPanX = rect.width / 2 - NEW_CHAT_X * targetZoom;
   const targetPanY = rect.height / 2 - NEW_CHAT_Y * targetZoom;
   
-  console.log('[centerOnInputContainer] Using fixed values:', {
-    canvasRect: { width: rect.width, height: rect.height },
-    targetZoom,
-    targetPanX,
-    targetPanY
-  });
-  
   // Animate smoothly to the input container
   viewportReturn.animateToPositionWithZoom(targetPanX, targetPanY, targetZoom, 1000);
-  
-  console.log('[centerOnInputContainer] Animation started');
 };
 
 // Get welcome input ref for focus management
@@ -2648,51 +2981,66 @@ const calculateRequiredZoom = (bounds, containerRect) => {
 };
 
 // Handle node selection
-const handleNodeSelect = async (nodeId: string) => {
-  console.log(`[handleNodeSelect] Called for node ${nodeId}, current zoom: ${zoom.value}, LOD: ${getLODLevel(nodeId)}`);
-  
-  // Reset multi-drag and wasJustDragging flags if this is a centering request
-  // These flags are meant for actual drag operations, not centering clicks
-  if (isMultiDragging.value) {
-    console.log(`[handleNodeSelect] Clearing multi-drag state for centering`);
-    isMultiDragging.value = false;
-  }
-  
-  if (wasJustDragging.value) {
-    console.log(`[handleNodeSelect] Clearing wasJustDragging state for centering`);  
-    wasJustDragging.value = false;
-  }
-  
-  // Only check for actual ongoing drags, not flags that prevent centering
-  if (store.isDragging || shapeDragState.value.isDragging || workspaceDragState.value.isDragging) {
-    console.log(`[handleNodeSelect] Skipping due to active drag operation`);
-    return;
-  }
-
-  store.isTransitioning = false;
+const handleNodeSelect = (nodeId: string) => {
+  console.log('[CLICK DEBUG] ==============================================');
+  console.log('[CLICK DEBUG] Starting handleNodeSelect for node:', nodeId);
+  console.time('[CLICK DEBUG] Total handleNodeSelect time');
   
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) {
-    console.log(`[handleNodeSelect] Node ${nodeId} not found`);
+    console.log('[CLICK DEBUG] Node not found');
     return;
   }
 
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) {
-    console.log(`[handleNodeSelect] Canvas rect not found`);
+    console.log('[CLICK DEBUG] No canvas rect');  
     return;
   }
 
-  console.log(`[handleNodeSelect] Proceeding with centering on node at: ${node.x}, ${node.y}`);
+  console.log('[CLICK DEBUG] BEFORE setting values - zoom:', zoom.value);
+  console.log('[CLICK DEBUG] BEFORE setting values - panX:', panX.value);
+  console.log('[CLICK DEBUG] BEFORE setting values - panY:', panY.value);
   
-  const bounds = calculateNodeBounds(node);
-  const targetZoom = calculateRequiredZoom(bounds, rect);
+  // INSTANT centering - no animation, no bullshit
+  const targetZoom = 0.8;
+  // CRITICAL: Stop any momentum panning that might be interfering
+  console.log('[CLICK DEBUG] Clearing pan velocity - before:', panVelocity.value);
+  panVelocity.value.x = 0;
+  panVelocity.value.y = 0;
+  console.log('[CLICK DEBUG] Clearing pan velocity - after:', panVelocity.value);
   
-  console.log(`[handleNodeSelect] Calculated bounds:`, bounds, `Target zoom: ${targetZoom}`);
-
-  await centerOnNodeWithAnimation(nodeId, targetZoom, 600);
+  console.log('[CLICK DEBUG] About to set panX...');
+  panX.value = rect.width / 2 - node.x * targetZoom;
+  console.log('[CLICK DEBUG] About to set panY...');
+  panY.value = rect.height / 2 - node.y * targetZoom;
+  console.log('[CLICK DEBUG] About to set zoom...');
+  zoom.value = targetZoom;
   
-  store.isTransitioning = false;
+  console.log('[CLICK DEBUG] AFTER setting values - zoom:', zoom.value);
+  console.log('[CLICK DEBUG] AFTER setting values - panX:', panX.value);
+  console.log('[CLICK DEBUG] AFTER setting values - panY:', panY.value);
+  console.timeEnd('[CLICK DEBUG] Total handleNodeSelect time');
+  
+  // Debug: Let's see what's getting triggered immediately after
+  setTimeout(() => {
+    console.log('[CLICK DEBUG] 50ms AFTER CLICK - State check:');
+    console.log('  - isAnimating:', isAnimating.value);
+    console.log('  - isZooming:', isZooming.value); 
+    console.log('  - store.isTransitioning:', store.isTransitioning);
+    console.log('  - focusedNodeId:', focusedNodeId.value);
+    console.log('  - isPanning:', isPanning.value);
+  }, 50);
+  
+  setTimeout(() => {
+    console.log('[CLICK DEBUG] 200ms AFTER CLICK - Final state check:');
+    console.log('  - isAnimating:', isAnimating.value);
+    console.log('  - isZooming:', isZooming.value);
+    console.log('  - store.isTransitioning:', store.isTransitioning);
+    console.log('  - focusedNodeId:', focusedNodeId.value);
+    console.log('  - isPanning:', isPanning.value);
+    console.log('[CLICK DEBUG] ==============================================');
+  }, 200);
 };
 
 // Calculate node bounds
@@ -2713,15 +3061,8 @@ const calculateNodeBounds = (node) => {
           nodeHeight = 40;
         }
 
-        // Try to get actual DOM dimensions if available, but fallback to calculated dimensions
-        const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
-        if (nodeElement) {
-          const nodeRect = nodeElement.getBoundingClientRect();
-          // For non-compact nodes, use actual height; for compact nodes, trust our dimensions
-          if (node.type !== 'tool-call-compact') {
-            nodeHeight = nodeRect.height / zoom.value;
-          }
-        }
+        // Skip expensive DOM queries - use reasonable defaults
+        // The DOM query + getBoundingClientRect was causing lag
 
         // Use custom width if available, otherwise use the calculated full width
         nodeWidth = node.customWidth || nodeWidth;
@@ -2742,28 +3083,25 @@ const calculateNodeBounds = (node) => {
     );
   }
 
-  const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
-  if (!nodeElement) {
-    const nodeWidth = node.customWidth || store.CARD_WIDTH;
-    const nodeHeight = node.customHeight || store.CARD_HEIGHT + 100;
-    
-    return {
-      minX: node.x,
-      maxX: node.x + nodeWidth,
-      minY: node.y,
-      maxY: node.y + nodeHeight,
-    };
+  // Fast bounds calculation without expensive DOM queries
+  let nodeWidth = CARD_WIDTH;
+  let nodeHeight = CARD_HEIGHT + 100; // Add padding for content
+  
+  // Handle special node types
+  if (node.type === 'tool-call-compact') {
+    nodeWidth = 120;
+    nodeHeight = 40;
   }
-
-  const nodeRect = nodeElement.getBoundingClientRect();
-  const actualHeight = nodeRect.height / zoom.value;
-  const nodeWidth = node.customWidth || store.CARD_WIDTH;
+  
+  // Use custom dimensions if available
+  nodeWidth = node.customWidth || nodeWidth;
+  nodeHeight = node.customHeight || nodeHeight;
   
   return {
     minX: node.x,
     maxX: node.x + nodeWidth,
     minY: node.y,
-    maxY: node.y + actualHeight,
+    maxY: node.y + nodeHeight,
   };
 };
 
@@ -2798,7 +3136,7 @@ const handleWheel = (e: WheelEvent) => {
       // Let the message container handle its own scrolling
       return;
     }
-    console.log("Snapped node, ignoring wheel event");
+    // console.log("Snapped node, ignoring wheel event");
     return;
   }
 
@@ -2842,23 +3180,46 @@ const handleWheel = (e: WheelEvent) => {
     // Zoom towards mouse cursor
     panX.value = mouseX - contentX * newZoom;
     panY.value = mouseY - contentY * newZoom;
+    
+    // Set zooming flag to disable transitions
+    isZooming.value = true;
+    if (zoomTimeout) clearTimeout(zoomTimeout);
+    zoomTimeout = setTimeout(() => {
+      isZooming.value = false;
+    }, 100); // Keep flag active for 100ms after last zoom event
+    
     zoom.value = newZoom;
     
-    // Update current workspace context after zoom
-    setTimeout(() => updateCurrentWorkspace(), 50);
+    // DISABLED: This was killing performance after clicks
+    // setTimeout(() => updateCurrentWorkspace(), 50);
   } else if (shouldPan) {
-    // Handle pan with 2-finger trackpad gesture
-    panX.value -= e.deltaX * PAN_SENSITIVITY;
-    panY.value -= e.deltaY * PAN_SENSITIVITY;
+    // Set panning flag to disable node style recalculations
+    isPanning.value = true;
+    if (panTimeout) clearTimeout(panTimeout);
+    panTimeout = setTimeout(() => {
+      isPanning.value = false;
+    }, 100); // Keep flag active for 100ms after last pan event
+    
+    // Throttle pan updates to animation frame for smoother performance
+    if (!panFrame) {
+      panFrame = requestAnimationFrame(() => {
+        // Handle pan with 2-finger trackpad gesture
+        panX.value -= e.deltaX * PAN_SENSITIVITY;
+        panY.value -= e.deltaY * PAN_SENSITIVITY;
+        panFrame = null;
+      });
+    }
     
     // No pan constraints needed
   }
   
-  // Check viewport return after wheel interaction
-  viewportReturn.checkNodeVisibilityImmediate(canvasRef.value);
+  // DISABLED: These viewport checks were causing lag
+  // if (!shouldPan && !shouldZoom) {
+  //   viewportReturn.checkNodeVisibilityImmediate(canvasRef.value);
+  //   startContinuousViewportCheck();
+  // }
   
-  // Also check continuously for a short period after wheel events
-  startContinuousViewportCheck();
+  // Performance monitoring removed - use browser DevTools Performance tab for detailed profiling
 };
 
 // Pan constraints removed - input container now at fixed coordinate
@@ -2939,24 +3300,25 @@ watch(
 
 // Watch for pan/zoom changes to update fit button visibility
 // PERFORMANCE: Skip during animations to prevent lag
-let distanceCheckPending = false;
-watch([panX, panY, zoom], () => {
-  // Skip expensive operations during node focus animations
-  if (isAnimating.value) return;
-  
-  if (!distanceCheckPending) {
-    distanceCheckPending = true;
-    requestAnimationFrame(() => {
-      checkDistanceFromNodes();
-      distanceCheckPending = false;
-    });
-  }
-}, { immediate: true });
+// DISABLED: This was causing lag after clicks
+// let distanceCheckPending = false;
+// watch([panX, panY, zoom], () => {
+//   // Skip expensive operations during node focus animations or zoom operations
+//   if (isAnimating.value || isZooming.value) return;
+//   
+//   if (!distanceCheckPending) {
+//     distanceCheckPending = true;
+//     requestAnimationFrame(() => {
+//       checkDistanceFromNodes();
+//       distanceCheckPending = false;
+//     });
+//   }
+// }, { immediate: true });
 
-// Also check when nodes change
-watch(() => store.nodes, () => {
+// Only check when node count changes, not deep properties
+watch(() => store.nodes.length, () => {
   checkDistanceFromNodes();
-}, { deep: true });
+});
 
 // Handle file drag events
 const handleDragEnter = (e: DragEvent) => {
@@ -3033,10 +3395,13 @@ const handleDrop = async (e: DragEvent) => {
       const rect = canvasRef.value?.getBoundingClientRect();
       if (!rect) throw new Error("Canvas reference not found");
 
-      const position = {
+      const dropPosition = {
         x: (e.clientX - rect.left - panX.value) / zoom.value,
         y: (e.clientY - rect.top - panY.value) / zoom.value,
       };
+
+      // Find non-overlapping position using collision detection
+      const position = findNonOverlappingPosition(dropPosition.x, dropPosition.y);
 
       // Create a new branch node immediately with filename as temporary title
       const newNode = await store.addNode(null, -1, position, {
@@ -3192,30 +3557,38 @@ const returnToOverview = async () => {
 };
 
 const handleWorkspaceSelect = async (workspaceId: string) => {
-  console.log('Selecting workspace:', workspaceId);
-  console.log('Before state change - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
+  console.log('[WORKSPACE DEBUG] ==========================================');
+  console.log('[WORKSPACE DEBUG] Selecting workspace:', workspaceId);
+  console.log('[WORKSPACE DEBUG] Before state change - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
+  console.log('[WORKSPACE DEBUG] Current store.nodes before load:', store.nodes.length);
 
   store.isTransitioning = false;
   expandingWorkspaceId.value = workspaceId;
 
   const workspaceNode = document.querySelector(`[data-workspace-id="${workspaceId}"]`);
   if (!workspaceNode) {
-    console.warn(`Could not find workspace node with id ${workspaceId}`);
+    console.log('[WORKSPACE DEBUG] Could not find workspace node with id', workspaceId, '- loading directly from store');
     isWelcomeScreen.value = false;
     isWorkspaceOverview.value = false;
-    console.log('After state change (no node) - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
+    console.log('[WORKSPACE DEBUG] After state change (no node) - isWelcomeScreen:', isWelcomeScreen.value, 'isWorkspaceOverview:', isWorkspaceOverview.value);
     
     // Clear any snapped node state before loading new workspace
     if (store.snappedNodeId) {
+      console.log('[WORKSPACE DEBUG] Clearing snapped node:', store.snappedNodeId);
       store.unsnapNode(store.snappedNodeId);
     }
     
+    console.log('[WORKSPACE DEBUG] About to call store.loadChatState...');
     await store.loadChatState(workspaceId);
+    console.log('[WORKSPACE DEBUG] After loadChatState - store.nodes:', store.nodes.length);
+    console.log('[WORKSPACE DEBUG] Nodes loaded:', store.nodes.map(n => ({id: n.id.slice(0,8), x: n.x, y: n.y, type: n.type})));
+    
     expandedNodes.value = new Set(store.nodes.map(node => node.id));
     await nextTick();
-
+    
+    console.log('[WORKSPACE DEBUG] After nextTick - about to call autoFitNodes');
     // Auto-center on loaded nodes (disable transition to prevent slide-in animation)
-    console.log('[handleWorkspaceSelect] Auto-centering on loaded nodes (no workspace node case)');
+    console.log('[WORKSPACE DEBUG] Auto-centering on loaded nodes (no workspace node case)');
     autoFitNodes(true);
     
     return;
@@ -3318,6 +3691,7 @@ const handleImportCompleted = async (importResult: { imported: number; skipped: 
   await nextTick();
   autoFitNodes();
 };
+
 
 const getImportIcon = (format: string) => {
   switch (format) {
@@ -4027,7 +4401,7 @@ const createTemplateWorkspace = async (nodes, connections, mainNode) => {
 };
 
 
-const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 800) => {
+const centerOnNodeWithAnimation = (nodeId, targetZoom = 0.6, duration = 400) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
@@ -4044,52 +4418,37 @@ const centerOnNodeWithAnimation = async (nodeId, targetZoom = 0.6, duration = 80
   
   focusedNodeId.value = nodeId;
   
-  return new Promise((resolve) => {
-    const startTime = performance.now();
+  // Simple, fast animation without all the overhead
+  const startTime = performance.now();
+  
+  const animate = (currentTime) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
     
-    const startWorldX = (rect.width / 2 - startPanX) / startZoom;
-    const startWorldY = (rect.height / 2 - startPanY) / startZoom;
-
-    const endWorldX = nodeCenterX;
-    const endWorldY = nodeCenterY;
+    // Simple easeOut
+    const eased = 1 - Math.pow(1 - progress, 3);
     
-    const targetScreenX = rect.width / 2;
-    const targetScreenY = rect.height / 2;
+    // Direct interpolation - no services, no overhead
+    const currentZoom = startZoom + (targetZoom - startZoom) * eased;
+    const targetPanX = rect.width / 2 - nodeCenterX * targetZoom;
+    const targetPanY = rect.height / 2 - nodeCenterY * targetZoom;
     
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const easeOut = 1 - Math.pow(1 - progress, 2);
-      
-      const currentZoom = startZoom + (targetZoom - startZoom) * easeOut;
-      const currentWorldX = startWorldX + (endWorldX - startWorldX) * easeOut;
-      const currentWorldY = startWorldY + (endWorldY - startWorldY) * easeOut;
-      
-      panX.value = targetScreenX - currentWorldX * currentZoom;
-      panY.value = targetScreenY - currentWorldY * currentZoom;
-      zoom.value = currentZoom;
-      
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        zoom.value = targetZoom;
-        panX.value = targetScreenX - endWorldX * targetZoom;
-        panY.value = targetScreenY - endWorldY * targetZoom;
-
-        isAnimating.value = false;
-        
-        resolve();
-      }
-    };
+    panX.value = startPanX + (targetPanX - startPanX) * eased;
+    panY.value = startPanY + (targetPanY - startPanY) * eased;
+    zoom.value = currentZoom;
     
-    requestAnimationFrame(animate);
-  });
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      isAnimating.value = false;
+    }
+  };
+  
+  requestAnimationFrame(animate);
 };
 
 // Center on a specific node
 const centerOnNode = (nodeId) => {
-  console.log('🎯 centerOnNode called for', nodeId);
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
@@ -4184,6 +4543,65 @@ const checkAndAutoSnapSingleBranch = () => {
   return false;
 };
 
+
+// Collision detection for node placement (fallback for static placement)
+const findNonOverlappingPosition = (targetX: number, targetY: number, excludeParentId?: string): { x: number, y: number } => {
+  const MIN_DISTANCE = 250; // Minimum distance between node centers (5 grid dots)
+  const STEP_SIZE = 50; // How far to move when searching for free space (1 grid dot)
+  const MAX_ATTEMPTS = 50; // Maximum number of positions to try
+  
+  let attempts = 0;
+  let currentX = targetX;
+  let currentY = targetY;
+  
+  const isPositionFree = (x: number, y: number): boolean => {
+    // Check against all existing nodes except the parent
+    for (const node of store.nodes) {
+      if (excludeParentId && node.id === excludeParentId) continue;
+      
+      const dx = x - node.x;
+      const dy = y - node.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < MIN_DISTANCE) {
+        return false;
+      }
+    }
+    return true;
+  };
+  
+  // First try the target position
+  if (isPositionFree(currentX, currentY)) {
+    return { x: currentX, y: currentY };
+  }
+  
+  // Search in expanding circles around the target position
+  for (let radius = STEP_SIZE; radius <= MAX_ATTEMPTS * STEP_SIZE; radius += STEP_SIZE) {
+    // Try positions around the circle at this radius
+    const numPositions = Math.max(8, Math.floor(radius / STEP_SIZE * 2));
+    
+    for (let i = 0; i < numPositions; i++) {
+      const angle = (i / numPositions) * 2 * Math.PI;
+      const testX = targetX + Math.cos(angle) * radius;
+      const testY = targetY + Math.sin(angle) * radius;
+      
+      attempts++;
+      if (attempts >= MAX_ATTEMPTS) break;
+      
+      if (isPositionFree(testX, testY)) {
+        return { x: testX, y: testY };
+      }
+    }
+    
+    if (attempts >= MAX_ATTEMPTS) break;
+  }
+  
+  // If no free position found, return the original position
+  // This prevents infinite loops but may result in overlap
+  console.warn('Collision detection: No free position found, using original position');
+  return { x: targetX, y: targetY };
+};
+
 // Handle branch creation
 const handleCreateBranch = async (
   parentId: string,
@@ -4210,10 +4628,12 @@ const handleCreateBranch = async (
   const existingBranches = store.nodes.filter((n) => n.parentId === parentId);
   const verticalOffset = existingBranches.length * (store.CARD_HEIGHT + 20);
 
-  const adjustedPosition = {
-    x: position.x,
-    y: parentNode.y + verticalOffset,
-  };
+  // Find non-overlapping position using collision detection
+  const adjustedPosition = findNonOverlappingPosition(
+    position.x,
+    parentNode.y + verticalOffset,
+    parentId
+  );
 
   // Extract the first user message for title generation
   // This could be from the initial data or the most recent message
@@ -4408,6 +4828,18 @@ const handleMouseUp = (e) => {
     return;
   }
   
+  // Update drag end time whenever any dragging stops
+  if (store.isDragging || isMultiDragging.value) {
+    lastDragEndTime.value = Date.now();
+    
+    // End optimized drag and commit final positions
+    dragOptimizer.endDrag(async (nodeId, position) => {
+      await store.updateNodePosition(nodeId, position);
+    });
+    
+    // Performance mode exit is now handled by dragOptimizer.endDrag()
+  }
+  
   if (workspaceDragState.value.isDragging) {
     const { activeId } = workspaceDragState.value;
     if (activeId) {
@@ -4522,6 +4954,16 @@ const handleMouseUp = (e) => {
   viewportReturn.checkNodeVisibility(canvasRef.value);
 };
 
+const handleMouseEnter = (e) => {
+  showCrosshair.value = true;
+};
+
+const handleMouseLeave = (e) => {
+  showCrosshair.value = false;
+  // Also trigger handleMouseUp for consistency
+  handleMouseUp(e);
+};
+
 const handleCanvasMouseDown = (e) => {
   if (snappedNodeId.value !== null) return;
 
@@ -4549,8 +4991,8 @@ const handleCanvasMouseDown = (e) => {
       selectedNodeIds.value.add(clickedNode.id);
     }
 
-    // Start multi-drag if node is selected
-    if (selectedNodeIds.value.has(clickedNode.id)) {
+    // Start multi-drag if node is selected (but prevent if node is in full LOD)
+    if (selectedNodeIds.value.has(clickedNode.id) && getLODLevel(clickedNode.id) !== 'full') {
       isMultiDragging.value = true;
       multiDragStartPositions.value.clear();
       multiDragShapePositions.value.clear();
@@ -5280,17 +5722,24 @@ const shouldShowDistanceIndicator = computed(() => {
 
 // Check if user is far from visible nodes
 const checkDistanceFromNodes = () => {
+  console.log('[FUNCTION DEBUG] checkDistanceFromNodes called');
+  console.time('[FUNCTION DEBUG] checkDistanceFromNodes execution time');
+  
   if (!canvasRef.value || !store.nodes.length || isWorkspaceOverview.value || isWelcomeScreen.value) {
     showFitButton.value = false;
+    console.timeEnd('[FUNCTION DEBUG] checkDistanceFromNodes execution time');
     return;
   }
 
+  console.log('[FUNCTION DEBUG] About to call calculateNodeBounds...');
   const bounds = calculateNodeBounds(null);
   if (!bounds) {
     showFitButton.value = false;
+    console.timeEnd('[FUNCTION DEBUG] checkDistanceFromNodes execution time');
     return;
   }
 
+  console.log('[FUNCTION DEBUG] About to call getBoundingClientRect...');
   const rect = canvasRef.value.getBoundingClientRect();
   const currentViewport = {
     left: -panX.value / zoom.value,
@@ -5317,14 +5766,192 @@ const checkDistanceFromNodes = () => {
   // Show button if no overlap or if zoomed out too much to see nodes clearly
   const isZoomedOutTooMuch = zoom.value < 0.3;
   showFitButton.value = !hasOverlap || isZoomedOutTooMuch;
+  
+  console.timeEnd('[FUNCTION DEBUG] checkDistanceFromNodes execution time');
 };
 
-// Reset workspace physics (placeholder function)
-const resetWorkspacePhysics = () => {
-  // Reset any physics-related state for workspaces
-  // This can be expanded later if needed
-  console.log('Workspace physics reset');
+// Convert canvas nodes to force layout nodes
+const convertToForceNodes = (): ForceNode[] => {
+  const forceNodes = store.nodes.map(node => ({
+    id: node.id,
+    x: node.x || 0,
+    y: node.y || 0,
+    vx: 0,
+    vy: 0,
+    workspaceId: node.chatId, // Use chatId as workspaceId
+    parentId: node.parentId,
+    width: getEffectiveCardDimensions(node).width,
+    height: getEffectiveCardDimensions(node).height,
+    fixed: snappedNodeId.value === node.id // Don't move snapped nodes
+  }));
+  
+  console.log('Sample force nodes:', forceNodes.slice(0, 3));
+  console.log('Workspaces found:', [...new Set(forceNodes.map(n => n.workspaceId))]);
+  
+  return forceNodes;
 };
+
+// Apply force layout results back to canvas nodes
+const applyForceLayout = (forceNodes: ForceNode[]) => {
+  forceNodes.forEach(forceNode => {
+    const canvasNode = store.nodes.find(n => n.id === forceNode.id);
+    if (canvasNode && !forceNode.fixed) {
+      // Smooth position updates to prevent jarring movements
+      const smoothingFactor = 0.1;
+      const targetX = forceNode.x;
+      const targetY = forceNode.y;
+      
+      const newX = canvasNode.x + (targetX - canvasNode.x) * smoothingFactor;
+      const newY = canvasNode.y + (targetY - canvasNode.y) * smoothingFactor;
+      
+      store.updateNodePosition(forceNode.id, { x: newX, y: newY });
+    }
+  });
+};
+
+// Start continuous force simulation
+const startForceSimulation = () => {
+  console.log('Force simulation triggered!');
+  console.log('Current nodes:', store.nodes.length);
+  
+  if (forceLayoutService.isSimulating.value) {
+    forceLayoutService.stopSimulation();
+  }
+  
+  const forceNodes = convertToForceNodes();
+  console.log('Force nodes created:', forceNodes.length);
+  
+  forceLayoutService.startSimulation(forceNodes, (updatedNodes) => {
+    applyForceLayout(updatedNodes);
+  });
+};
+
+// Stop force simulation
+const stopForceSimulation = () => {
+  forceLayoutService.stopSimulation();
+};
+
+// Apply single force layout pass (non-animated)
+const applySingleForceLayout = () => {
+  const forceNodes = convertToForceNodes();
+  const layoutResult = forceLayoutService.applySingleLayout(forceNodes);
+  
+  // Apply results immediately
+  layoutResult.forEach(forceNode => {
+    store.updateNodePosition(forceNode.id, { x: forceNode.x, y: forceNode.y });
+  });
+};
+
+// Enhanced physics reset with force layout
+const resetWorkspacePhysics = () => {
+  console.log('Applying force-based workspace physics...');
+  applySingleForceLayout();
+};
+
+// Export currently visible nodes and connections
+const exportVisibleNodes = () => {
+  // Calculate current viewport bounds
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Convert screen coordinates to canvas coordinates
+  const viewportLeft = -panX.value / zoom.value;
+  const viewportRight = (-panX.value + viewportWidth) / zoom.value;
+  const viewportTop = -panY.value / zoom.value;
+  const viewportBottom = (-panY.value + viewportHeight) / zoom.value;
+  
+  // Filter nodes that are visible in the viewport
+  const visibleNodes = store.nodes.filter(node => {
+    const nodeLeft = node.x;
+    const nodeRight = node.x + getEffectiveCardDimensions(node).width;
+    const nodeTop = node.y;
+    const nodeBottom = node.y + getEffectiveCardDimensions(node).height;
+    
+    // Check if node overlaps with viewport
+    return !(nodeRight < viewportLeft || 
+             nodeLeft > viewportRight || 
+             nodeBottom < viewportTop || 
+             nodeTop > viewportBottom);
+  });
+  
+  // Find connections between visible nodes
+  const visibleConnections = [];
+  visibleNodes.forEach(node => {
+    if (node.parentId) {
+      const parentNode = visibleNodes.find(n => n.id === node.parentId);
+      if (parentNode) {
+        visibleConnections.push({
+          id: `${node.parentId}-${node.id}`,
+          startNodeId: node.parentId,
+          endNodeId: node.id,
+          startNode: {
+            id: parentNode.id,
+            title: parentNode.title,
+            x: parentNode.x,
+            y: parentNode.y
+          },
+          endNode: {
+            id: node.id,
+            title: node.title,
+            x: node.x,
+            y: node.y,
+            branchMessageIndex: node.branchMessageIndex
+          },
+          label: store.getConnectionLabel?.(node.parentId, node.id) || ''
+        });
+      }
+    }
+  });
+  
+  const exportData = {
+    viewport: {
+      zoom: zoom.value,
+      panX: panX.value,
+      panY: panY.value,
+      bounds: {
+        left: viewportLeft,
+        right: viewportRight,
+        top: viewportTop,
+        bottom: viewportBottom
+      },
+      dimensions: {
+        width: viewportWidth,
+        height: viewportHeight
+      }
+    },
+    nodes: visibleNodes.map(node => ({
+      id: node.id,
+      title: node.title,
+      type: node.type,
+      x: node.x,
+      y: node.y,
+      parentId: node.parentId,
+      branchMessageIndex: node.branchMessageIndex,
+      chatId: node.chatId,
+      messageCount: node.messages?.length || 0,
+      lastMessage: node.messages?.slice(-1)[0]?.content?.slice(0, 100) || '',
+      dimensions: getEffectiveCardDimensions(node)
+    })),
+    connections: visibleConnections,
+    metadata: {
+      exportedAt: new Date().toISOString(),
+      totalNodesInCanvas: store.nodes.length,
+      visibleNodeCount: visibleNodes.length,
+      connectionCount: visibleConnections.length
+    }
+  };
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
+  console.log('Visible nodes exported to clipboard:', exportData);
+  
+  return exportData;
+};
+
+// Expose to window for console access
+if (typeof window !== 'undefined') {
+  window.exportVisibleNodes = exportVisibleNodes;
+}
 
 // Enhanced bounds calculation for RTS
 const calculateWorkspacesBounds = () => {
@@ -5537,6 +6164,11 @@ defineExpose({
 
 // Reset inactivity timer
 const resetInactivityTimer = () => {
+  // Skip inactivity timer during drag operations or when a node is snapped
+  if (store.isDragging || store.snappedNodeId !== null) {
+    return;
+  }
+  
   if (inactivityTimer.value) {
     clearTimeout(inactivityTimer.value);
   }
@@ -5550,16 +6182,20 @@ const resetInactivityTimer = () => {
   }, AUTO_CENTER_DELAY);
 };
 
-// Handle mouse movement
+// Throttled pan handler for better performance
+let panFrame = null;
 const handleMouseMove = (e) => {
   // Always check viewport return if panning, regardless of other conditions
   if (isPanning.value && lastPanPosition.value) {
-    panX.value = e.clientX - lastPanPosition.value.x;
-    panY.value = e.clientY - lastPanPosition.value.y;
-    
-    // No pan constraints needed
-    
-    viewportReturn.checkNodeVisibilityImmediate(canvasRef.value);
+    // Throttle pan updates to animation frame for smoother performance
+    if (!panFrame) {
+      panFrame = requestAnimationFrame(() => {
+        panX.value = e.clientX - lastPanPosition.value.x;
+        panY.value = e.clientY - lastPanPosition.value.y;
+        viewportReturn.checkNodeVisibilityImmediate(canvasRef.value);
+        panFrame = null;
+      });
+    }
   }
   
   if (snappedNodeId.value !== null) return;
@@ -5572,6 +6208,9 @@ const handleMouseMove = (e) => {
 
   // Update mouse position for coordinate system display
   mousePosition.value = { x: e.clientX, y: e.clientY };
+
+  // Update crosshair position and canvas coordinates
+  updateCrosshair(e.clientX, e.clientY);
 
   const worldMousePos = screenToWorld(e.clientX, e.clientY);
   
@@ -5620,21 +6259,27 @@ const handleMouseMove = (e) => {
   }
 
   if (isMultiDragging.value && dragStartPosition.value) {
-    // Handle multi-node dragging (and unified node+shape dragging)
+    // Handle multi-node dragging with optimized batching
     const deltaX = worldMousePos.x - dragStartPosition.value.x;
     const deltaY = worldMousePos.y - dragStartPosition.value.y;
 
-    // Apply delta to all selected nodes
+    // Batch position updates for smooth dragging
+    const updates = [];
     selectedNodeIds.value.forEach(nodeId => {
       const node = store.nodes.find(n => n.id === nodeId);
       const startPos = multiDragStartPositions.value.get(nodeId);
       if (node && startPos) {
-        store.updateNodePosition(nodeId, {
-          x: startPos.x + deltaX,
-          y: startPos.y + deltaY
-        });
+        const newX = startPos.x + deltaX;
+        const newY = startPos.y + deltaY;
+        updates.push({ id: nodeId, x: newX, y: newY });
+        // Update visual position immediately (not reactive store)
+        node.x = newX;
+        node.y = newY;
       }
     });
+    
+    // Use optimized drag service for batched RAF updates
+    dragOptimizer.updateDrag(updates);
     
     // Also move selected shapes when dragging nodes
     drawingStore.selectedShapes.forEach(shape => {
@@ -5675,10 +6320,17 @@ const handleMouseMove = (e) => {
     const canvasX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
     const canvasY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
 
-    store.updateNodePosition(store.activeNode, {
-      x: canvasX - store.dragOffset.x,
-      y: canvasY - store.dragOffset.y,
-    });
+    const newX = canvasX - store.dragOffset.x;
+    const newY = canvasY - store.dragOffset.y;
+    
+    // Update visual position immediately
+    const node = store.nodes.find(n => n.id === store.activeNode);
+    if (node) {
+      node.x = newX;
+      node.y = newY;
+      // Use optimized drag service for batched updates
+      dragOptimizer.updateDrag([{ id: store.activeNode, x: newX, y: newY }]);
+    }
   } else if (selectionRect.value.isActive) {
     // Handle selection rectangle
     selectionRect.value.currentX = e.clientX;
@@ -5819,7 +6471,7 @@ const handleDotClick = async (e: MouseEvent, nodeId: string) => {
   
   // Use same logic as BranchNode - check for recent dragging
   if (!dotWasRecentlyDragging.value) {
-    await handleNodeSelect(nodeId);
+    handleNodeSelect(nodeId);
   }
 };
 
@@ -5868,20 +6520,44 @@ const handleDotMouseDown = (e: MouseEvent, node: any) => {
 
 // Handle drag start for nodes
 const handleDragStart = (e, node) => {
-  // Check if this node is part of a multi-selection
+  // Prevent dragging nodes when they are in full detail LOD
+  if (getLODLevel(node.id) === 'full') {
+    return;
+  }
+  
+  // Check if multi-drag is already active (set by handleCanvasMouseDown)
+  if (isMultiDragging.value && selectedNodeIds.value.has(node.id) && selectedNodeIds.value.size > 1) {
+    // Multi-drag already set up, just ensure drag start position is set
+    if (!dragStartPosition.value) {
+      const canvasRect = canvasRef.value.getBoundingClientRect();
+      const worldX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
+      const worldY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
+      dragStartPosition.value = { x: worldX, y: worldY };
+    }
+    return;
+  }
+  
+  // Check if this node is part of a multi-selection but multi-drag isn't active yet
   if (selectedNodeIds.value.has(node.id) && selectedNodeIds.value.size > 1) {
     // Start multi-drag
     isMultiDragging.value = true;
     multiDragStartPositions.value.clear();
     multiDragShapePositions.value.clear();
     
+    // Collect nodes for optimized drag
+    const nodesToDrag = [];
+    
     // Save start positions for all selected nodes
     selectedNodeIds.value.forEach(nodeId => {
       const selectedNode = store.nodes.find(n => n.id === nodeId);
       if (selectedNode) {
         multiDragStartPositions.value.set(nodeId, { x: selectedNode.x, y: selectedNode.y });
+        nodesToDrag.push({ id: nodeId, x: selectedNode.x, y: selectedNode.y });
       }
     });
+    
+    // Initialize drag optimizer for smooth dragging
+    dragOptimizer.startDrag(nodesToDrag);
     
     // Save start positions for all selected shapes
     drawingStore.selectedShapes.forEach(shape => {
@@ -5923,6 +6599,9 @@ const handleDragStart = (e, node) => {
       x: canvasX - node.x,
       y: canvasY - node.y,
     };
+    
+    // Initialize drag optimizer for single node
+    dragOptimizer.startDrag([{ id: node.id, x: node.x, y: node.y }]);
   }
 };
 
@@ -6132,6 +6811,17 @@ onMounted(async () => {
       expandedNodes.value.add(node.id);
     });
 
+    // Preload clustering data for faster topic switching
+    // CRITICAL: If app loads at clustering zoom level, preload immediately
+    if (zoom.value < 0.1) {
+      console.log('[PRELOAD] App loaded at clustering zoom, preloading immediately');
+      preloadClusteringData();
+    } else {
+      setTimeout(() => {
+        preloadClusteringData();
+      }, 1000); // Delay only if not immediately needed
+    }
+
     // Migrate existing connections to new system
     store.migrateConnectionsToNewSystem();
 
@@ -6278,11 +6968,151 @@ onMounted(async () => {
   }
 });
 
+// Clustering functions
+const shouldShowClustering = computed(() => {
+  return zoom.value < 0.1; // Show clustering when zoom is less than 10%
+});
+
+const triggerClustering = async () => {
+  if (!chatStore.chats || chatStore.chats.length < 2) {
+    return; // Need at least 2 workspaces to cluster
+  }
+
+  try {
+    isClusteringTransition.value = true;
+    
+    // Use cached clustering data if available
+    if (clusteringData.value && topicLabels.value.length > 0) {
+      // Already have clustering data, just show it
+      isClusteringMode.value = true;
+      isClusteringTransition.value = false;
+      return;
+    }
+    
+    // Call clustering API only if we don't have cached data
+    const response = await fetch('http://127.0.0.1:5050/api/workspaces/cluster', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        use_existing_data: true
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Clustering API failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    clusteringData.value = result;
+
+    // Use topic positions from the solar system layout
+    topicLabels.value = Object.entries(result.topics).map(([topicId, topic]) => {
+      const topicPos = result.topic_positions[topicId];
+      
+      return {
+        id: topicId,
+        topic: topic.topic,
+        size: topic.size,
+        coherence: topic.coherence,
+        keywords: topic.keywords || [],
+        position: { 
+          x: topicPos.x,
+          y: topicPos.y
+        }
+      };
+    });
+    
+    // Store workspace orbital positions for node repositioning
+    store.workspaceOrbitalPositions = result.workspace_positions;
+
+    isClusteringMode.value = true;
+    
+  } catch (error) {
+    console.error('Failed to cluster workspaces:', error);
+  } finally {
+    isClusteringTransition.value = false;
+  }
+};
+
+const exitClustering = () => {
+  isClusteringTransition.value = true;
+  
+  setTimeout(() => {
+    isClusteringMode.value = false;
+    // Keep cached data for faster re-entry
+    // clusteringData.value = null;
+    // topicLabels.value = [];
+    isClusteringTransition.value = false;
+  }, 300); // Allow transition animation
+};
+
+// Preload clustering data for faster switching
+let isPreloading = false;
+const preloadClusteringData = async () => {
+  if (clusteringData.value || !chatStore.chats || chatStore.chats.length < 2 || isPreloading) {
+    return; // Already cached, not enough workspaces, or already preloading
+  }
+  
+  isPreloading = true;
+  
+  try {
+    const response = await fetch('http://127.0.0.1:5050/api/workspaces/cluster', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        use_existing_data: true
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      clusteringData.value = result;
+      
+      // Prepare topic labels
+      topicLabels.value = Object.entries(result.topics).map(([topicId, topic]) => {
+        const topicPos = result.topic_positions[topicId];
+        
+        return {
+          id: topicId,
+          topic: topic.topic,
+          size: topic.size,
+          coherence: topic.coherence,
+          keywords: topic.keywords || [],
+          position: { 
+            x: topicPos.x,
+            y: topicPos.y
+          }
+        };
+      });
+      
+      store.workspaceOrbitalPositions = result.workspace_positions;
+      console.log('🚀 Preloaded clustering data for fast switching');
+    }
+  } catch (error) {
+    console.log('Failed to preload clustering data:', error);
+  } finally {
+    isPreloading = false;
+  }
+};
+
+// Watch zoom level to trigger clustering mode
+watch(shouldShowClustering, (showClustering) => {
+  if (showClustering && !isClusteringMode.value && !isClusteringTransition.value) {
+    triggerClustering();
+  } else if (!showClustering && isClusteringMode.value && !isClusteringTransition.value) {
+    exitClustering();
+  }
+});
+
 // Watch for zoom and pan changes to re-render grid
 // PERFORMANCE: Skip during animations to prevent lag
 let gridRenderPending = false;
 watch([() => zoom.value, () => panX.value, () => panY.value], () => {
-  // Skip grid updates during node focus animations
+  // Skip grid updates only during node focus animations (not zoom/pan)
   if (isAnimating.value) return;
   
   if (!gridRenderPending) {
@@ -6779,6 +7609,7 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
   }
 };
 
+
 </script>
 
 <style scoped>
@@ -6807,6 +7638,68 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
 
 .onboarding-drag-active .drop-zone-inner {
   background: oklch(from oklch(var(--p)) l c h / 0.05) !important;
+}
+
+/* Full viewport crosshair guidelines */
+.viewport-crosshair {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.crosshair-line-h {
+  position: absolute;
+  left: 0;
+  width: 100vw;
+  height: 1px;
+  background: oklch(from oklch(var(--bc)) l c h / 0.15);
+  box-shadow: 0 0 2px oklch(from oklch(var(--b1)) l c h / 0.8);
+  transform: translateY(-0.5px);
+  mix-blend-mode: difference;
+}
+
+.crosshair-line-v {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100vh;
+  background: oklch(from oklch(var(--bc)) l c h / 0.15);
+  box-shadow: 0 0 2px oklch(from oklch(var(--b1)) l c h / 0.8);
+  transform: translateX(-0.5px);
+  mix-blend-mode: difference;
+}
+
+.crosshair-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(var(--bc));
+  box-shadow: 0 0 6px oklch(from oklch(var(--b1)) l c h / 0.8), 0 0 2px oklch(var(--bc));
+  transform: translate(-3px, -3px);
+  mix-blend-mode: difference;
+}
+
+.crosshair-coordinates {
+  position: absolute;
+  background: oklch(from oklch(var(--b1)) l c h / 0.95);
+  color: oklch(var(--bc));
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
+  box-shadow: 0 4px 12px oklch(from oklch(var(--b1)) l c h / 0.3);
+}
+
+.crosshair-coordinates span {
+  color: oklch(from oklch(var(--bc)) l c h / 0.6);
 }
 </style>
 
@@ -7268,7 +8161,7 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
   @apply absolute overflow-hidden;
   width: 100%;
   height: 100%;
-  background: linear-gradient(180deg, 
+  background: linear-gradient(1deg, 
     oklch(from oklch(var(--b1)) l c h / 0.98) 0%, 
     oklch(from oklch(var(--p)) l c h / 0.95) 100%);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
@@ -7805,5 +8698,61 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
 
 .selection-boundary {
   pointer-events: none;
+}
+
+/* LOD Toaster styles */
+.lod-toaster {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.lod-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease;
+}
+
+/* Clustering mode transitions */
+.enhanced-infinite-canvas.clustering-mode {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.enhanced-infinite-canvas.clustering-mode .nodes-layer {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Fade out non-root nodes in clustering mode */
+.enhanced-infinite-canvas.clustering-mode [data-node-type="child"] {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Enhanced visibility for root nodes in clustering */
+.enhanced-infinite-canvas.clustering-mode [data-node-type="root"] {
+  opacity: 1;
+  transform: scale(1.1);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Topic cluster label animations */
+@keyframes clusterAppear {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(20px);
+  }
+  60% {
+    transform: scale(1.1) translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.topic-cluster-entering {
+  animation: clusterAppear 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 </style>

@@ -439,9 +439,9 @@ const generateIslandColor = (index: number): string => {
 
 // Watch for zoom level changes to trigger initialization
 watch(() => props.zoomLevel, (newZoom) => {
-  console.log('TopicIslandView: Zoom changed to:', newZoom)
+  // console.log('TopicIslandView: Zoom changed to:', newZoom)
   if (newZoom < 0.10 && topicIslands.value.length === 0 && !isLoading.value) {
-    console.log('TopicIslandView: Triggering initialization...')
+    // console.log('TopicIslandView: Triggering initialization...')
     initializeIslands()
   }
 }, { immediate: true })

@@ -130,22 +130,22 @@ const togglePlayback = async () => {
 }
 
 const startReading = async () => {
-  console.log('SmartTTSControls: startReading called, text:', props.text.slice(0, 50), 'canSpeak:', canSpeak.value)
+  // console.log('SmartTTSControls: startReading called, text:', props.text.slice(0, 50), 'canSpeak:', canSpeak.value)
   
   if (!props.text.trim() || !canSpeak.value) {
-    console.log('SmartTTSControls: Cannot start reading - no text or cannot speak')
+    // console.log('SmartTTSControls: Cannot start reading - no text or cannot speak')
     return
   }
 
   try {
-    console.log('SmartTTSControls: Starting Smart TTS with voice:', selectedVoice.value, 'speed:', speed.value)
+    // console.log('SmartTTSControls: Starting Smart TTS with voice:', selectedVoice.value, 'speed:', speed.value)
     
     // Use smart TTS with word-level chunking for immediate playback
     await smartTTSService.speakSmart(props.text, {
       voice: selectedVoice.value,
       speed: speed.value
     })
-    console.log('SmartTTSControls: Smart TTS completed successfully')
+    // console.log('SmartTTSControls: Smart TTS completed successfully')
   } catch (error) {
     console.error('SmartTTSControls: Smart TTS error:', error)
   }
@@ -180,7 +180,7 @@ const startStreamingMode = () => {
   streamingBuffer.value = ''
   lastProcessedLength.value = 0
   
-  console.log('Started streaming TTS mode')
+  // console.log('Started streaming TTS mode')
 }
 
 const stopStreamingMode = async () => {
@@ -199,7 +199,7 @@ const stopStreamingMode = async () => {
   streamingBuffer.value = ''
   lastProcessedLength.value = 0
   
-  console.log('Stopped streaming TTS mode')
+  // console.log('Stopped streaming TTS mode')
 }
 
 const processStreamingText = async (newText: string) => {
@@ -282,9 +282,9 @@ watch(
 watch(
   () => props.autoTrigger,
   (shouldAutoTrigger) => {
-    console.log('TTSControls: autoTrigger changed to:', shouldAutoTrigger, 'text:', props.text.slice(0, 50), 'canSpeak:', canSpeak.value)
+    // console.log('TTSControls: autoTrigger changed to:', shouldAutoTrigger, 'text:', props.text.slice(0, 50), 'canSpeak:', canSpeak.value)
     if (shouldAutoTrigger && props.text.trim() && !isStreamingMode.value && canSpeak.value) {
-      console.log('TTSControls: Starting auto-reading...')
+      // console.log('TTSControls: Starting auto-reading...')
       // Small delay to let the component fully render
       setTimeout(() => {
         startReading()

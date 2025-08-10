@@ -17,6 +17,7 @@
     ]" ref="nodeElement"
     :data-node-id="node.id" :data-side-panel-open="isSidePanelOpen" :data-right-panel-open="isRightPanelOpen" :data-right-sidebar-expanded="isRightSidebarExpanded"
     @click="handleNodeClick" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp"
+    @mouseenter="handleMouseEnter" @mouseleave="handleMouseLeave"
     @dragover="supportsVision ? handleDragOver : undefined" @drop="supportsVision ? handleDrop : undefined"
     @wheel="handleNodeWheel"
     :style="[nodePositionStyle, nodeThemeStyle, lodNodeStyle, dropTargetStyle, snappedLayoutStyle]">
@@ -54,19 +55,20 @@
 
     <!-- Preview LOD: Shows last message preview -->  
     <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-xl border-2 backdrop-blur-md p-4 transition-all duration-300 shadow-lg preview-lod-card" :style="{
-      backgroundColor: 'rgba(var(--b1), 0.9)',
-      borderColor: baseColorSet?.value?.base || 'rgba(59, 130, 246, 1)',
-      boxShadow: `0 8px 32px -4px ${baseColorSet?.value?.base || 'rgba(59, 130, 246, 0.3)'}, 0 0 0 1px rgba(var(--b1), 0.1)`
+      background: 'oklch(from oklch(var(--b1)) l c h / 0.85)',
+      borderColor: 'oklch(from oklch(var(--p)) l c h / 0.6)',
+      boxShadow: `0 8px 32px -4px oklch(from oklch(var(--p)) l c h / 0.3), 0 0 0 1px oklch(from oklch(var(--bc)) l c h / 0.1)`,
+      color: 'oklch(var(--bc))'
     }">
       <div class="flex flex-col h-full">
         <!-- Title and message count -->
         <div class="flex items-center justify-between mb-2">
-          <span class="text-sm font-bold truncate flex-1" :style="{ color: baseColorSet?.value?.base || 'rgb(59, 130, 246)' }">
+          <span class="text-sm font-bold truncate flex-1" :style="{ color: 'oklch(var(--p))' }">
             {{ node.title || "Untitled Thread" }}
           </span>
           <span class="text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0" :style="{ 
-            backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)', 
-            color: 'white' 
+            backgroundColor: 'oklch(var(--p))', 
+            color: 'oklch(var(--pc))' 
           }">
             {{ node.messages?.length || 0 }}
           </span>
@@ -76,8 +78,8 @@
         <div class="flex-1 overflow-hidden">
           <div class="text-xs leading-relaxed text-base-content/90" v-if="lastMessagePreview">
             <span class="font-semibold px-1.5 py-0.5 rounded text-xs mr-1" :style="{ 
-              backgroundColor: lastMessage?.role === 'user' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(168, 85, 247, 0.2)',
-              color: lastMessage?.role === 'user' ? 'rgb(34, 197, 94)' : 'rgb(168, 85, 247)'
+              backgroundColor: lastMessage?.role === 'user' ? 'oklch(from oklch(var(--su)) l c h / 0.2)' : 'oklch(from oklch(var(--p)) l c h / 0.2)',
+              color: lastMessage?.role === 'user' ? 'oklch(var(--su))' : 'oklch(var(--p))'
             }">
               {{ lastMessage?.role === 'user' ? 'You' : 'AI' }}
             </span>
@@ -90,43 +92,26 @@
       </div>
     </div>
     
-    <!-- Compact LOD: Small card with title only -->
-    <div v-else-if="shouldShowCompact" class="w-[100px] h-[100px] rounded-xl border-2 backdrop-blur-md p-3 transition-all duration-300 flex flex-col items-center justify-center compact-lod-card relative overflow-hidden" :style="{
-      backgroundColor: 'rgba(var(--b1), 0.95)',
-      borderColor: baseColorSet?.value?.base || 'rgba(59, 130, 246, 1)',
-      boxShadow: `0 4px 20px -2px ${baseColorSet?.value?.base || 'rgba(59, 130, 246, 0.4)'}, 0 0 0 1px rgba(var(--b1), 0.2)`
+    <!-- Compact LOD: Simplified small card -->
+    <div v-else-if="shouldShowCompact" class="w-[60px] h-[60px] rounded-lg border-2 transition-all duration-300 flex items-center justify-center compact-lod-card relative" :style="{
+      backgroundColor: 'oklch(var(--p))',
+      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.3)',
+      color: 'oklch(var(--pc))'
     }">
-      <!-- Accent corner -->
-      <div class="absolute top-0 right-0 w-6 h-6 rounded-bl-lg" :style="{ 
-        backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)' 
-      }"></div>
-      
-      <!-- Message count badge -->
-      <div class="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border-2 border-white" :style="{ 
-        backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)', 
-        color: 'white' 
-      }">
+      <!-- Message count only -->
+      <div class="font-bold text-sm" :style="{ color: 'oklch(var(--pc))' }">
         {{ node.messages?.length || 0 }}
       </div>
-      
-      <!-- Title -->
-      <div class="text-xs font-bold text-center leading-tight w-full overflow-hidden" :style="{ color: baseColorSet?.value?.base || 'rgb(59, 130, 246)' }">
-        {{ node.title || "Untitled" }}
-      </div>
-      
-      <!-- Status indicator -->
-      <div class="mt-2 w-2 h-2 rounded-full" :style="{ 
-        backgroundColor: node.messages?.length > 0 ? (baseColorSet?.value?.base || 'rgb(59, 130, 246)') : 'rgba(156, 163, 175, 0.5)' 
-      }"></div>
     </div>
     
     <!-- Cluster LOD: Tiny square with index -->
     <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded-md border-2 flex items-center justify-center transition-all duration-300 cluster-lod-dot" :style="{
-      backgroundColor: baseColorSet?.value?.base || 'rgb(59, 130, 246)',
-      borderColor: 'rgba(var(--b1), 0.8)',
-      boxShadow: `0 2px 8px -1px ${baseColorSet?.value?.base || 'rgba(59, 130, 246, 0.5)'}`
+      backgroundColor: 'oklch(var(--p))',
+      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.8)',
+      boxShadow: '0 2px 8px -1px oklch(from oklch(var(--p)) l c h / 0.5)',
+      color: 'oklch(var(--pc))'
     }">
-      <div class="text-white font-black text-xs leading-none">
+      <div class="font-black text-xs leading-none" :style="{ color: 'oklch(var(--pc))' }">
         {{ canvasStore.nodeIndices.get(node.id) || '?' }}
       </div>
     </div>
@@ -135,7 +120,8 @@
     <Card v-else :class="[
       'node-card overflow-x-hidden',
       'backdrop-blur transition-all duration-300',
-      isSnapped ? 'snapped-card snapped' : ''
+      isSnapped ? 'snapped-card snapped' : '',
+      { 'hover-loading': isHovering && !shouldShowFullContent }
     ]" :style="cardStyle">
       <!-- Compact Header with Title and Avatars -->
       <div v-if="!isSnapped" class="px-3 pt-2 pb-2">
@@ -310,8 +296,17 @@
         </div>
       </Teleport>
       
+      <!-- Placeholder content when not hovered -->
+      <div v-if="!shouldShowFullContent && !isSnapped" class="px-3 py-8 flex items-center justify-center text-base-content/60">
+        <div class="text-center">
+          <div class="text-sm font-medium mb-1">{{ node.title || "Untitled Thread" }}</div>
+          <div class="text-xs">{{ node.messages?.length || 0 }} messages</div>
+          <div v-if="isHovering" class="text-xs mt-2 opacity-60">Loading content...</div>
+        </div>
+      </div>
+      
       <!-- Full LOD: Complete content -->
-      <div :class="['px-3 pb-3', isSnapped ? 'snapped-content pt-16' : 'pt-1']"
+      <div v-if="shouldShowFullContent || isSnapped" :class="['px-3 pb-3', isSnapped ? 'snapped-content pt-16' : 'pt-1']"
         :style="isSnapped ? { height: '100%', display: 'flex', flexDirection: 'column' } : {}">
         <!-- Simplified Header with Controls (Hidden when snapped since it's teleported to top) -->
         <div v-if="!isSnapped" class="flex items-center justify-between mb-3">
@@ -732,6 +727,9 @@ interface BranchNodeProps {  // Use a dedicated interface
   isPotentialDropTarget?: boolean;
   isInvalidDropTarget?: boolean;
   disableEntranceAnimation?: boolean;
+  isZooming?: boolean;
+  isPanning?: boolean;
+  isGlobalDragging?: boolean;
 }
 
 const props = defineProps<BranchNodeProps>();
@@ -743,6 +741,31 @@ const hasMounted = ref(false);
 const shouldHaveTransitions = computed(() => {
   return hasMounted.value && !props.disableEntranceAnimation;
 });
+
+// Hover state for full LOD content rendering
+const isHovering = ref(false);
+const shouldShowFullContent = ref(false);
+let hoverTimer: number | null = null;
+
+const handleMouseEnter = () => {
+  if (props.lodLevel === 'full' || props.lodLevel === undefined) {
+    isHovering.value = true;
+    hoverTimer = setTimeout(() => {
+      if (isHovering.value) {
+        shouldShowFullContent.value = true;
+      }
+    }, 1000); // 1 second delay
+  }
+};
+
+const handleMouseLeave = () => {
+  isHovering.value = false;
+  shouldShowFullContent.value = false;
+  if (hoverTimer) {
+    clearTimeout(hoverTimer);
+    hoverTimer = null;
+  }
+};
 
 // Initialize layout composable for responsive snapped node layout
 const {
@@ -788,6 +811,10 @@ const expandedMessages = ref(new Set<number>());
 const titleInputRef = ref<HTMLElement | null>(null);
 const isDraggable = ref(false);
 const isDragging = ref(false);
+
+// Cache styles during zoom to prevent layout thrashing
+const cachedPositionStyle = ref(null);
+const cachedThemeStyle = ref(null);
 const dragStartPosition = ref({ x: 0, y: 0 });
 const DRAG_THRESHOLD = 5;
 const isStreaming = ref(false);
@@ -1126,8 +1153,9 @@ const lastMessagePreview = computed(() => {
 });
 
 const lodNodeStyle = computed(() => {
+  // Disable transitions during zoom for smooth performance
   const baseStyle = {
-    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, width 0.3s ease, height 0.3s ease'
+    transition: props.isZooming ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, width 0.3s ease, height 0.3s ease'
   };
   
   if (shouldShowPreview.value) {
@@ -1640,6 +1668,11 @@ const dropTargetStyle = computed(() => {
 
 // Generate theme-specific styles for the node
 const nodeThemeStyle = computed(() => {
+  // Skip expensive recalculations during zoom operations
+  if (props.isZooming) {
+    return cachedThemeStyle.value || {};
+  }
+  
   // Use the composable's theme colors
   const textColor = baseColorSet.value.contrastText;
   const bgColors = backgroundColors.value;
@@ -1720,6 +1753,8 @@ const nodeThemeStyle = computed(() => {
   // Merge base styles with theme-specific message styles
   const mergedStyles = { ...baseStyles, ...themeMessageStyles.value };
   
+  // Cache the style for zoom operations
+  cachedThemeStyle.value = mergedStyles;
   return mergedStyles;
 });
 
@@ -1783,14 +1818,27 @@ const handleInputClick = (e: MouseEvent) => {
 };
 
 const handleNodeClick = (e: MouseEvent) => {
-  if ((e.target as HTMLElement).closest('input') || wasRecentlyDragging.value) {
+  if ((e.target as HTMLElement).closest('input')) {
     e.stopPropagation();
     return;
   }
+  
+  // CRITICAL: Don't emit 'select' (which triggers center animation) if node was recently dragged
+  if (wasRecentlyDragging.value) {
+    console.log('[DRAG DEBUG] Node was recently dragging, skipping select emission');
+    return;
+  }
+  
+  // Only emit select for actual clicks (not after drags)
   emit('select');
 };
 
 const nodePositionStyle = computed(() => {
+  // Skip expensive recalculations during zoom or pan operations
+  if (props.isZooming || props.isPanning) {
+    return cachedPositionStyle.value || {};
+  }
+  
   if (isSnapped.value) {
     const dimensions = calculateSnappedDimensions();
     if (!dimensions) return {};
@@ -1802,7 +1850,7 @@ const nodePositionStyle = computed(() => {
       leftPosition = '0px';
     }
     
-    return {
+    const result = {
       position: 'fixed',
       left: leftPosition,
       top: '0px',
@@ -1810,13 +1858,18 @@ const nodePositionStyle = computed(() => {
       zIndex: 1000,
       transition: isTransitioningSnap.value ? 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)' : 'none'
     };
+    
+    // Cache the style for zoom operations
+    cachedPositionStyle.value = result;
+    return result;
   }
 
   // Normal positioning - let canvas handle zoom scaling
   const style: any = {
     transform: `translate3d(${props.node.x || 0}px, ${props.node.y || 0}px, 0)`,
     transformOrigin: '0 0',
-    transition: shouldHaveTransitions.value ? 'transform 0.3s ease-out' : 'none',
+    // CRITICAL: No transitions during drag or zoom operations for smooth performance
+    transition: (shouldHaveTransitions.value && !isDragging.value && !props.isZooming) ? 'transform 0.3s ease-out' : 'none',
     // Higher z-index for selected nodes to bring them to front
     zIndex: props.isSelected ? 100 : 10
   };
@@ -1829,6 +1882,8 @@ const nodePositionStyle = computed(() => {
     style.height = `${(props.node as any).customHeight}px`;
   }
   
+  // Cache the style for zoom operations
+  cachedPositionStyle.value = style;
   return style;
 });
 
@@ -1965,6 +2020,11 @@ const nodeStyles = computed(() => ({
 }));
 
 const handleMouseDown = (e: MouseEvent) => {
+  // Prevent dragging when node is in full detail LOD
+  if (props.lodLevel === 'full') {
+    return;
+  }
+  
   if (props.node.type !== 'main' && !isSnapped.value) {
     dragStartPosition.value = { x: e.clientX, y: e.clientY };
     isDraggable.value = true;
@@ -2015,9 +2075,8 @@ const handleMouseUp = () => {
     setTimeout(() => {
       wasRecentlyDragging.value = false;
     }, 100); // Reset after a short delay
-  } else {
-    emit('select');
   }
+  // REMOVED emit('select') - let the click handler deal with selection
 };
 
 // Node resize functions
@@ -3345,6 +3404,11 @@ const handleReflectionSuggestionClick = (suggestion: any) => {
 };
 
 onBeforeUnmount(() => {
+  // Clean up hover timer
+  if (hoverTimer) {
+    clearTimeout(hoverTimer);
+    hoverTimer = null;
+  }
   document.body.classList.remove('has-snapped-node');
   emitter.off('debug-sandbox');
   emitter.off('streaming-complete');
@@ -3385,18 +3449,18 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-/* Enhanced node card styling with better theme support */
+/* Enhanced node card styling with theme-adaptive support */
 .node-card {
   backdrop-filter: blur(12px);
-  background-color: var(--base-bg-color) !important;
-  border: 1px solid var(--node-border-color);
+  background: oklch(from oklch(var(--b1)) l c h / 0.8);
+  border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
   transition: all 0.3s ease;
   position: relative;
-  box-shadow: 0 4px 12px var(--node-shadow-color);
+  box-shadow: 0 4px 12px oklch(from oklch(var(--b1)) l c h / 0.3);
   overflow: visible !important;
   border-radius: 0.75rem;
-  color: var(--node-text-color);
-  /* Ensure proper text color inheritance */
+  color: oklch(var(--bc));
+  mix-blend-mode: normal;
 }
 
 /* Apply margins only when snapped */
