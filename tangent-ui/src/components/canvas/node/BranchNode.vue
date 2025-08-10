@@ -55,7 +55,7 @@
 
     <!-- Preview LOD: Shows last message preview -->  
     <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-xl border-2 backdrop-blur-md p-4 transition-all duration-300 shadow-lg preview-lod-card" :style="{
-      background: 'oklch(from oklch(var(--b1)) l c h / 0.85)',
+      background: isDarkTheme ? 'color-mix(in srgb, oklch(var(--b1)) 95%, oklch(var(--p)) 8%)' : 'color-mix(in srgb, oklch(var(--b1)) 95%, oklch(var(--p)) 5%)',
       borderColor: 'oklch(from oklch(var(--p)) l c h / 0.6)',
       boxShadow: `0 8px 32px -4px oklch(from oklch(var(--p)) l c h / 0.3), 0 0 0 1px oklch(from oklch(var(--bc)) l c h / 0.1)`,
       color: 'oklch(var(--bc))'
@@ -94,9 +94,10 @@
     
     <!-- Compact LOD: Simplified small card -->
     <div v-else-if="shouldShowCompact" class="w-[60px] h-[60px] rounded-lg border-2 transition-all duration-300 flex items-center justify-center compact-lod-card relative" :style="{
-      backgroundColor: 'oklch(var(--p))',
-      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.3)',
-      color: 'oklch(var(--pc))'
+      backgroundColor: isDarkTheme ? 'color-mix(in srgb, oklch(var(--p)) 85%, oklch(var(--bc)) 15%)' : 'color-mix(in srgb, oklch(var(--p)) 90%, white 10%)',
+      borderColor: isDarkTheme ? 'oklch(from oklch(var(--bc)) l c h / 0.4)' : 'oklch(from oklch(var(--bc)) l c h / 0.3)',
+      color: isDarkTheme ? 'oklch(var(--pc))' : 'oklch(var(--pc))',
+      boxShadow: isDarkTheme ? '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.3)' : '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.2)'
     }">
       <!-- Message count only -->
       <div class="font-bold text-sm" :style="{ color: 'oklch(var(--pc))' }">
@@ -106,10 +107,10 @@
     
     <!-- Cluster LOD: Tiny square with index -->
     <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded-md border-2 flex items-center justify-center transition-all duration-300 cluster-lod-dot" :style="{
-      backgroundColor: 'oklch(var(--p))',
-      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.8)',
-      boxShadow: '0 2px 8px -1px oklch(from oklch(var(--p)) l c h / 0.5)',
-      color: 'oklch(var(--pc))'
+      backgroundColor: isDarkTheme ? 'color-mix(in srgb, oklch(var(--p)) 80%, oklch(var(--bc)) 20%)' : 'color-mix(in srgb, oklch(var(--p)) 85%, white 15%)',
+      borderColor: isDarkTheme ? 'oklch(from oklch(var(--bc)) l c h / 0.6)' : 'oklch(from oklch(var(--bc)) l c h / 0.4)',
+      boxShadow: isDarkTheme ? '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.4)' : '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.3)',
+      color: isDarkTheme ? 'oklch(var(--pc))' : 'oklch(var(--pc))'
     }">
       <div class="font-black text-xs leading-none" :style="{ color: 'oklch(var(--pc))' }">
         {{ canvasStore.nodeIndices.get(node.id) || '?' }}
@@ -1561,17 +1562,17 @@ const themeMessageStyles = computed(() => {
   const secondaryColor = themeStoreColors.secondary;
   const accentColor = themeStoreColors.accent;
   
-  // Dark themes
-  const darkThemes = ['dark', 'synthwave', 'cyberpunk', 'dracula', 'night', 'black', 'luxury', 'forest', 'coffee'];
+  // Dark themes - enhanced contrast
+  const darkThemes = ['dark', 'synthwave', 'cyberpunk', 'dracula', 'night', 'black', 'luxury', 'forest', 'coffee', 'halloween', 'aqua', 'neon', 'acid'];
   if (darkThemes.includes(theme)) {
-    styles['--node-text-color'] = 'rgba(255, 255, 255, 0.95)';
-    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 10%, rgba(0, 0, 0, 0.8))`;
-    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(30, 30, 30, 0.6))`;
+    styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
+    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 15%, rgba(0, 0, 0, 0.90))`;
+    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 10%, rgba(25, 25, 25, 0.85))`;
   } else {
-    // Light themes - improved contrast
-    styles['--node-text-color'] = 'rgba(0, 0, 0, 0.95)'; // Increased from 0.85 to 0.95
-    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 12%, rgba(255, 255, 255, 0.95))`; // More opacity and color mix
-    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 8%, rgba(240, 240, 240, 0.9))`; // Darker background
+    // Light themes - enhanced contrast
+    styles['--node-text-color'] = 'rgba(0, 0, 0, 0.98)';
+    styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 18%, rgba(255, 255, 255, 0.92))`;
+    styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 12%, rgba(245, 245, 245, 0.88))`;
   }
   
   // Theme-specific user message backgrounds using actual theme colors
@@ -1580,36 +1581,62 @@ const themeMessageStyles = computed(() => {
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(5, 5, 15, 0.95)), color-mix(in srgb, ${accentColor} 6%, rgba(8, 8, 18, 0.95)))`;
       styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 8%, rgba(8, 8, 18, 0.95)), color-mix(in srgb, ${primaryColor} 5%, rgba(5, 5, 15, 0.95)))`;
       styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
-      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(3, 3, 10, 0.98))`;
-      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(6, 6, 12, 0.96))`;
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 6%, rgba(3, 3, 10, 0.95))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(6, 6, 12, 0.93))`;
       break;
     case 'synthwave':
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(8, 2, 15, 0.95)), color-mix(in srgb, ${accentColor} 6%, rgba(12, 4, 18, 0.95)))`;
       styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 7%, rgba(10, 3, 16, 0.95)), color-mix(in srgb, ${primaryColor} 6%, rgba(8, 2, 15, 0.95)))`;
       styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
-      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(5, 1, 10, 0.98))`;
-      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(7, 2, 12, 0.96))`;
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 6%, rgba(5, 1, 10, 0.95))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(7, 2, 12, 0.93))`;
       break;
     case 'halloween':
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(15, 5, 0, 0.95)), color-mix(in srgb, ${secondaryColor} 6%, rgba(18, 8, 2, 0.95)))`;
       styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${accentColor} 8%, rgba(12, 6, 0, 0.95)), color-mix(in srgb, ${primaryColor} 6%, rgba(15, 5, 0, 0.95)))`;
       styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
-      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(10, 3, 0, 0.98))`;
-      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(12, 4, 0, 0.96))`;
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 6%, rgba(10, 3, 0, 0.95))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(12, 4, 0, 0.93))`;
       break;
     case 'acid':
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 6%, rgba(5, 10, 5, 0.96)), color-mix(in srgb, ${accentColor} 4%, rgba(8, 12, 8, 0.96)))`;
       styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 6%, rgba(8, 12, 8, 0.96)), color-mix(in srgb, ${accentColor} 4%, rgba(5, 10, 5, 0.96)))`;
       styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
-      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(3, 6, 3, 0.98))`;
-      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 2%, rgba(5, 8, 5, 0.97))`;
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(3, 6, 3, 0.95))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(5, 8, 5, 0.93))`;
       break;
     case 'aqua':
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 8%, rgba(0, 8, 12, 0.95)), color-mix(in srgb, ${accentColor} 6%, rgba(2, 10, 15, 0.95)))`;
       styles['--ai-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${secondaryColor} 8%, rgba(2, 10, 15, 0.95)), color-mix(in srgb, ${primaryColor} 6%, rgba(0, 8, 12, 0.95)))`;
       styles['--node-text-color'] = 'rgba(255, 255, 255, 0.98)';
-      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 4%, rgba(0, 5, 8, 0.98))`;
-      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 3%, rgba(1, 6, 10, 0.96))`;
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 6%, rgba(0, 5, 8, 0.95))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 5%, rgba(1, 6, 10, 0.93))`;
+      break;
+    
+    // Light theme specific adjustments for better contrast
+    case 'cupcake':
+    case 'pastel':
+    case 'fantasy':
+    case 'wireframe':
+    case 'lemonade':
+      styles['--node-text-color'] = 'rgba(0, 0, 0, 0.95)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 22%, rgba(255, 255, 255, 0.88))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 16%, rgba(240, 240, 240, 0.85))`;
+      break;
+    
+    case 'bumblebee':
+    case 'emerald':
+    case 'garden':
+      styles['--node-text-color'] = 'rgba(0, 0, 0, 0.95)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 20%, rgba(255, 255, 255, 0.90))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 14%, rgba(245, 245, 245, 0.87))`;
+      break;
+      
+    case 'valentine':
+    case 'watermelon':
+      styles['--node-text-color'] = 'rgba(0, 0, 0, 0.95)';
+      styles['--base-bg-color'] = `color-mix(in srgb, ${primaryColor} 25%, rgba(255, 255, 255, 0.85))`;
+      styles['--message-bg-color'] = `color-mix(in srgb, ${primaryColor} 18%, rgba(248, 248, 248, 0.82))`;
       break;
     case 'night':
       styles['--user-message-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${primaryColor} 40%, transparent), color-mix(in srgb, ${secondaryColor} 35%, transparent))`;
@@ -3064,6 +3091,18 @@ watch(() => props.node.title, (newTitle) => {
   titleInput.value = newTitle || '';
 }, { immediate: true });
 
+// Watch for snapped node changes from store to sync local state
+watch(() => canvasStore.snappedNodeId, (newSnappedId) => {
+  const shouldBeSnapped = newSnappedId === props.node.id;
+  if (shouldBeSnapped !== isSnapped.value) {
+    isSnapped.value = shouldBeSnapped;
+    if (shouldBeSnapped) {
+      // Update snapped dimensions when becoming snapped
+      updateSnappedDimensions();
+    }
+  }
+}, { immediate: true });
+
 watch(() => props.isSidePanelOpen, () => {
   if (isSnapped.value) {
     updateSnappedDimensions();
@@ -3452,15 +3491,11 @@ onBeforeUnmount(() => {
 /* Enhanced node card styling with theme-adaptive support */
 .node-card {
   backdrop-filter: blur(12px);
-  background: oklch(from oklch(var(--b1)) l c h / 0.8);
+  /* background: oklch(from oklch(var(--b1)) l c h / 0.8); */
   border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.2);
   transition: all 0.3s ease;
   position: relative;
   box-shadow: 0 4px 12px oklch(from oklch(var(--b1)) l c h / 0.3);
-  overflow: visible !important;
-  border-radius: 0.75rem;
-  color: oklch(var(--bc));
-  mix-blend-mode: normal;
 }
 
 /* Apply margins only when snapped */
@@ -4065,7 +4100,6 @@ onBeforeUnmount(() => {
 
 /* Snapped card styling */
 .snapped-card {
-  background: linear-gradient(to bottom, var(--node-color-transparent), rgba(var(--b1), 0.8)) !important;
   backdrop-filter: blur(16px) !important;
   border: 1px solid var(--node-border-color);
   width: var(--snapped-content-width, 70%) !important;

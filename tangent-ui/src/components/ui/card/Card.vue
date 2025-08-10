@@ -16,7 +16,7 @@ defineProps<{
 
 <style scoped>
 .bg-card {
-  background-color: rgb(var(--color-base-100) / 1);
+  background-color: var(--base-bg-color, color-mix(in srgb, oklch(var(--b1)) 95%, oklch(var(--p)) 3%));
 }
 
 .text-card-foreground {

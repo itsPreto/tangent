@@ -54,6 +54,27 @@
       </div>
     </Transition>
 
+    <!-- Clustering Loading Overlay -->
+    <Transition name="fade" mode="out-in">
+      <div v-if="isLoadingClustering" class="canvas-loading-overlay clustering-load">
+        <div class="loading-container lottie-loading">
+          <div class="lottie-wrapper">
+            <DotLottieVue 
+              :src="'/loading-animation-2.lottie'"
+              autoplay 
+              loop 
+              :style="{ width: '180px', height: '180px' }"
+              class="lottie-loader"
+            />
+            <div class="loading-glow"></div>
+          </div>
+          <div class="loading-content">
+            <h3 class="loading-title">Discovering Topic Clusters</h3>
+            <p class="loading-subtitle">Analyzing workspace relationships...</p>
+          </div>
+        </div>
+      </div>
+    </Transition>
       
       <!-- Main Canvas -->
       <div v-if="!chatStore.isLoading" class="workspace-container">
@@ -148,11 +169,10 @@
             <div class="flex items-center gap-2">
               <div class="lod-dot" :class="lodDotClass"></div>
               <span>{{ lodDisplayText }}</span>
-              <span class="text-white/60 text-xs">({{ Math.round(zoom * 100) }}%)</span>
             </div>
           </div>
         </div>
-
+        
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle" style="z-index: 2;">
           <!-- SVG Layer for Connections and Drawing -->
@@ -456,7 +476,8 @@
                 @connection-end="handleConnectionEnd"
                 @reflectionSuggestionClick="handleReflectionSuggestionClick" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
-                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
+                  opacity: (!node.parentId && isClusteringMode) ? workspaceFadeFactor : 1,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out, opacity 0.3s ease-out' : 'opacity 0.3s ease-out',
                 }" />
 
               <!-- Web Node -->
@@ -468,7 +489,8 @@
                   handleResend(node.id, userMessageIndex)
                 " @delete="() => handleNodeDelete(node.id)" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
-                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
+                  opacity: (!node.parentId && isClusteringMode) ? workspaceFadeFactor : 1,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out, opacity 0.3s ease-out' : 'opacity 0.3s ease-out',
                 }" />
 
               <!-- Tool Call Compact Node -->
@@ -500,7 +522,8 @@
                 @update-messages="(messages) => store.updateNodeMessages(node.id, messages)"
                 @reflectionSuggestionClick="handleReflectionSuggestionClick" :style="{
                   transform: `translate(${node.x}px, ${node.y}px)`,
-                  transition: store.isTransitioning ? 'transform 0.3s ease-out' : 'none',
+                  opacity: (!node.parentId && isClusteringMode) ? workspaceFadeFactor : 1,
+                  transition: store.isTransitioning ? 'transform 0.3s ease-out, opacity 0.3s ease-out' : 'opacity 0.3s ease-out',
                 }" />
 
               <!-- Branch Index Label -->
@@ -532,7 +555,7 @@
                   :stroke="`oklch(65% 0.15 ${(connection.topicId * 73) % 360})`"
                   :stroke-width="Math.max(1, 8 / zoom)"
                   stroke-dasharray="20,10"
-                  :opacity="0.4"
+                  :opacity="topicConnectionOpacity"
                   stroke-linecap="round"
                 />
               </g>
@@ -545,11 +568,10 @@
                 :key="`topic-${topicLabel.id}`"
                 :topic="topicLabel"
                 :position="topicLabel.position"
-                :scale="Math.min(30.0, Math.max(5.0, Math.pow(1 / zoom, 1.2)))"
+                :scale="topicLabelScaleFactor"
                 :visible="true"
                 :show-connector="false"
                 :style="{
-                  transform: `translate(${topicLabel.position.x}px, ${topicLabel.position.y}px) translate(-50%, -50%)`,
                   transition: isClusteringTransition ? 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)' : 'none'
                 }"
               />
@@ -566,7 +588,22 @@
               @transition-complete="handleInputTransitionComplete"
               @morph-phase-complete="handleMorphPhaseComplete"
               @request-target-position="handleTargetPositionRequest"
+              @focus-container="handleContainerFocus"
             />
+
+            <!-- Tangent Logo positioned at center hub above input container -->
+            <div 
+              class="tangent-logo-canvas"
+              :style="{ 
+                position: 'absolute', 
+                left: '0px', 
+                top: '-100px',
+                transform: 'translateX(-50%)',
+                zIndex: 500
+              }"
+            >
+              <TangentLogo class="w-16 h-16 opacity-70 hover:opacity-100 transition-opacity duration-300" />
+            </div>
 
             
           </div>
@@ -666,6 +703,7 @@ import WebBranchNode from "./node/WebBranchNode.vue";
 import MainSplineConnector from "./spline/MainSplineConnector.vue";
 import TopDocker from "./TopDocker.vue";
 import BottomDocker from "./BottomDocker.vue";
+import TangentLogo from "@/components/logo/TangentLogo.vue";
 import ShapePropertiesPanel from "./ShapePropertiesPanel.vue";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -749,6 +787,7 @@ const isClusteringMode = ref(false);
 const clusteringData = ref(null);
 const topicLabels = ref([]);
 const isClusteringTransition = ref(false);
+const isLoadingClustering = ref(false);
 
 // Computed property for topic connections
 const topicConnections = computed(() => {
@@ -814,6 +853,11 @@ const currentCursorType = computed(() => {
     return 'grabbing';
   }
   
+  // If in snapped node mode, use default cursor (no crosshair for node placement)
+  if (store.snappedNodeId) {
+    return 'default';
+  }
+  
   // Based on drawing tool
   if (drawingStore.currentTool === 'hand') {
     return 'grab';
@@ -831,9 +875,9 @@ const currentCursorType = computed(() => {
   return 'crosshair';
 });
 
-// Show custom crosshair whenever mouse is over canvas (simplified for debugging)
+// Show custom crosshair whenever mouse is over canvas (but not in snapped mode)
 const shouldShowCrosshair = computed(() => {
-  return !isWorkspaceOverview.value && showCrosshair.value;
+  return !isWorkspaceOverview.value && showCrosshair.value && !store.snappedNodeId;
 });
 
 // Props
@@ -1126,8 +1170,6 @@ provide('performanceTestingActive', false);
 const lastActivityTimestamp = ref(Date.now());
 const autoZoomEnabled = ref(true);
 const isAutoZooming = ref(false);
-const AUTO_CENTER_DELAY = 30000; // 30 seconds
-const inactivityTimer = ref(null);
 
 const isClusterVizFocused = ref(false);
 const windowSize = ref({
@@ -1182,7 +1224,7 @@ const initializePortalAnimations = () => {
 };
 
 // Zoom constants
-const ZOOM_MIN = 0.001; // Allow zooming out to 0.1% for galaxy view
+const ZOOM_MIN = 0.0099; // Cap zoom to minimum 0.99%
 const ZOOM_MAX = 2;
 const ZOOM_SENSITIVITY = 0.005;
 const PAN_SENSITIVITY = 1.0;
@@ -1430,6 +1472,7 @@ const getLODLevel = (nodeId: string): string => {
     return 'dot';
   }
 };
+
 
 // Calculate effective card dimensions based on LOD level and node type
 const getEffectiveCardDimensions = (node: any) => {
@@ -2199,9 +2242,10 @@ const visibleNodes = computed(() => {
     return store.nodes.filter(node => node.id === store.snappedNodeId);
   }
   
-  // In clustering mode, only show root nodes (no position changes needed - they're already orbital)
+  // In clustering mode, show root nodes with fade-out effect
   if (isClusteringMode.value) {
-    return store.nodes.filter(node => !node.parentId);
+    const rootNodes = store.nodes.filter(node => !node.parentId);
+    return rootNodes;
   }
   
   // For small numbers of nodes, just return all nodes
@@ -3114,6 +3158,7 @@ const handleNodePositionUpdate = (
 };
 
 const handleWheel = (e: WheelEvent) => {
+
   // Check if the wheel event is from a messages scroll container
   const messagesContainer = (e.target as HTMLElement).closest('.messages-scroll-container');
   if (messagesContainer) {
@@ -3248,9 +3293,6 @@ onBeforeUnmount(() => {
 
   if (canvasRef.value) {
     canvasRef.value.removeEventListener("wheel", handleWheel);
-  }
-  if (inactivityTimer.value) {
-    clearTimeout(inactivityTimer.value);
   }
 });
 
@@ -3589,7 +3631,7 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
     console.log('[WORKSPACE DEBUG] After nextTick - about to call autoFitNodes');
     // Auto-center on loaded nodes (disable transition to prevent slide-in animation)
     console.log('[WORKSPACE DEBUG] Auto-centering on loaded nodes (no workspace node case)');
-    autoFitNodes(true);
+    autoFitNodes(true, true); // disableTransition=true, forceZoom=true
     
     return;
   }
@@ -3633,7 +3675,7 @@ const handleWorkspaceSelect = async (workspaceId: string) => {
 
   // Always auto-fit when entering canvas (no auto-snap, no transition to prevent slide-in)
   await nextTick();
-  autoFitNodes(true);
+  autoFitNodes(true, true); // disableTransition=true, forceZoom=true
 
   emitter.emit('workspace-opened');
 
@@ -3783,13 +3825,29 @@ const handleOpenWorkspace = async (workspaceId: string) => {
 const isMorphingFromInputContainer = ref(false);
 
 // Canvas Input Container Handlers (New Canvas-First UX)
-const handleWorkspaceCreated = async (message: string, targetPosition?: { x: number, y: number }) => {
+const handleWorkspaceCreated = async (message: string, targetPosition?: { x: number, y: number }, config?: any) => {
   isCreatingWorkspace.value = true;
   isMorphingFromInputContainer.value = true; // Disable entrance animations
   
   try {
+    // Pass Claude Code config if provided
+    const claudeCodeConfig = config?.isClaudeCode ? {
+      isClaudeCode: true,
+      claudeCodeSettings: {
+        mode: config.mode,
+        allowedTools: config.allowedTools,
+        workingDir: config.workingDir,
+        systemPrompt: config.systemPrompt,
+        costLimit: config.costLimit,
+        mcpConfig: config.mcpConfig,
+        resumeSession: config.resumeSession,
+        autoCompact: config.autoCompact,
+        compactThreshold: config.compactThreshold
+      }
+    } : undefined;
+    
     // Create a new workspace with the user's message at the exact input container position
-    await handleGenerateWorkspace(message, undefined, undefined, targetPosition || { x: 0, y: 0 });
+    await handleGenerateWorkspace(message, undefined, claudeCodeConfig, targetPosition || { x: 0, y: 0 });
   } finally {
     isCreatingWorkspace.value = false;
     // Reset morphing flag after a short delay to allow the node to render
@@ -3809,6 +3867,7 @@ const handleInputTransitionComplete = () => {
   // Input container stays visible at fixed coordinate
   isWelcomeScreen.value = false;
 };
+
 
 // New handlers for enhanced 3-phase transition
 const handleMorphPhaseComplete = (phase: string) => {
@@ -3836,6 +3895,29 @@ const handleTargetPositionRequest = () => {
   });
   
   console.log('Target position set for node creation:', targetWorldPosition.value);
+};
+
+const handleContainerFocus = () => {
+  // Center container on viewport and set zoom to 90% when user starts typing
+  if (!canvasRef.value) return;
+  
+  const rect = canvasRef.value.getBoundingClientRect();
+  const containerX = 0; // Input container world position (center)
+  const containerY = 0;
+  const targetZoom = 0.9; // 90% zoom
+  
+  // Calculate pan values to center the container
+  panX.value = rect.width / 2 - containerX * targetZoom;
+  panY.value = rect.height / 2 - containerY * targetZoom;
+  zoom.value = targetZoom;
+  
+  console.log('Focused input container - centering viewport', {
+    containerX,
+    containerY,
+    targetZoom,
+    panX: panX.value,
+    panY: panY.value
+  });
 };
 
 const handleGenerateWorkspace = async (userInput: string, template?: any, claudeCodeConfig?: any, targetPosition?: { x: number, y: number }) => {
@@ -5256,10 +5338,10 @@ const handleKeyDown = (e: KeyboardEvent) => {
       return;
     }
     
-    // Fit to View: Ctrl/Cmd + 0 (alternative shortcut)
+    // Fit to View: Ctrl/Cmd + 0 (alternative shortcut) - LOD-aware
     if (cmdKey && e.key === '0') {
       e.preventDefault();
-      autoFitNodes();
+      autoFitNodes(); // Uses new LOD-aware behavior
       return;
     }
     
@@ -5623,8 +5705,9 @@ const isViewportOutsideBounds = computed(() => {
          viewportTop > bounds.maxY + margin;
 });
 
-const autoFitNodes = (disableTransition = false) => {
-  console.log('[autoFitNodes] Called with conditions:', {
+// Original autoFitNodes for legacy compatibility 
+const autoFitNodesLegacy = (disableTransition = false) => {
+  console.log('[autoFitNodesLegacy] Called with conditions:', {
     hasCanvasRef: !!canvasRef.value,
     autoZoomEnabled: autoZoomEnabled.value,
     isDragging: store.isDragging,
@@ -5643,7 +5726,7 @@ const autoFitNodes = (disableTransition = false) => {
     workspaceDragState.value.isDragging ||
     store.snappedNodeId !== null // Added: Do not auto-fit if a node is snapped
   ) {
-    console.log('[autoFitNodes] Skipped due to conditions');
+    console.log('[autoFitNodesLegacy] Skipped due to conditions');
     return;
   }
 
@@ -5695,6 +5778,125 @@ const autoFitNodes = (disableTransition = false) => {
       store.isTransitioning = false;
     }
   }, 300);
+};
+
+// New LOD-aware fit-to-view that respects current zoom level
+const autoFitNodes = (disableTransition = false, forceZoom = false) => {
+  console.log('[autoFitNodes] Called with conditions:', {
+    hasCanvasRef: !!canvasRef.value,
+    autoZoomEnabled: autoZoomEnabled.value,
+    isDragging: store.isDragging,
+    isPanning: isPanning.value,
+    workspaceDragging: workspaceDragState.value.isDragging,
+    nodeCount: store.nodes.length,
+    currentZoom: zoom.value,
+    currentLOD: zoom.value >= LOD_FULL_THRESHOLD ? 'full' : zoom.value >= LOD_PREVIEW_THRESHOLD ? 'preview' : zoom.value >= LOD_COMPACT_THRESHOLD ? 'compact' : 'dot',
+    forceZoom,
+    disableTransition
+  });
+  
+  if (
+    !canvasRef.value ||
+    !autoZoomEnabled.value ||
+    store.isDragging ||
+    isPanning.value ||
+    workspaceDragState.value.isDragging ||
+    store.snappedNodeId !== null // Added: Do not auto-fit if a node is snapped
+  ) {
+    console.log('[autoFitNodes] Skipped due to conditions');
+    return;
+  }
+
+  const bounds = isWorkspaceOverview.value ? calculateWorkspacesBounds() : calculateCanvasBounds();
+  if (!bounds) return;
+
+  const rect = canvasRef.value.getBoundingClientRect();
+  const padding = isWorkspaceOverview.value ? 120 : 200;
+
+  // Calculate content center position
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+  
+  // Calculate target center position on screen
+  let targetCenterX = rect.width / 2;
+  if (appStore.isRightContentPanelOpen) {
+    // Center in the available 64% space (32% of total viewport width from left edge)
+    targetCenterX = rect.width * 0.32; // 64% / 2 = 32%
+  }
+
+  // If forceZoom is true, use legacy behavior (for initial load, etc.)
+  if (forceZoom) {
+    console.log('[autoFitNodes] Force zoom mode - using legacy calculation');
+    return autoFitNodesLegacy(disableTransition);
+  }
+
+  // LOD-aware fit: Only adjust pan to center content, preserve current zoom
+  const currentZoom = zoom.value;
+  
+  // Check if all content is already visible at current zoom
+  const contentWidth = bounds.maxX - bounds.minX + padding * 2;
+  const contentHeight = bounds.maxY - bounds.minY + padding * 2;
+  const adjustedContentHeight = contentHeight * RTS_SCALE_Y;
+  
+  const availableWidth = appStore.isRightContentPanelOpen 
+    ? rect.width * 0.64  
+    : rect.width;
+
+  const contentFitsX = (contentWidth * currentZoom) <= availableWidth;
+  const contentFitsY = (adjustedContentHeight * currentZoom) <= rect.height;
+
+  if (contentFitsX && contentFitsY) {
+    // Content fits - just center it
+    console.log('[autoFitNodes] Content fits at current zoom, centering only');
+    
+    if (!disableTransition) {
+      store.isTransitioning = true;
+    }
+
+    panX.value = targetCenterX - centerX * currentZoom;
+    panY.value = rect.height / 2 - centerY * currentZoom;
+
+    setTimeout(() => {
+      if (!disableTransition) {
+        store.isTransitioning = false;
+      }
+    }, 300);
+  } else {
+    // Content doesn't fit - need to adjust zoom but respect LOD boundaries
+    console.log('[autoFitNodes] Content does not fit, adjusting zoom with LOD consideration');
+    
+    const scaleX = availableWidth / contentWidth;
+    const scaleY = rect.height / adjustedContentHeight;
+    let newZoom = Math.min(scaleX, scaleY, 1);
+
+    // Clamp zoom to LOD boundaries to prevent jarring transitions
+    const currentLODLevel = getLODLevel('dummy'); // Get current LOD based on zoom
+    
+    // If we're in a specific LOD level, try to stay within reasonable bounds
+    if (currentZoom >= LOD_FULL_THRESHOLD && newZoom < LOD_PREVIEW_THRESHOLD) {
+      // Large jump from full to preview/compact - clamp to preview threshold
+      newZoom = Math.max(newZoom, LOD_PREVIEW_THRESHOLD);
+    } else if (currentZoom >= LOD_PREVIEW_THRESHOLD && newZoom < LOD_COMPACT_THRESHOLD) {
+      // Jump from preview to compact/dot - clamp to compact threshold  
+      newZoom = Math.max(newZoom, LOD_COMPACT_THRESHOLD);
+    }
+
+    isAutoZooming.value = true;
+    if (!disableTransition) {
+      store.isTransitioning = true;
+    }
+
+    zoom.value = newZoom;
+    panX.value = targetCenterX - centerX * newZoom;
+    panY.value = rect.height / 2 - centerY * newZoom;
+
+    setTimeout(() => {
+      isAutoZooming.value = false;
+      if (!disableTransition) {
+        store.isTransitioning = false;
+      }
+    }, 300);
+  }
 
   window.autoFitNodes = autoFitNodes;
 };
@@ -6090,9 +6292,8 @@ const setInitialOptimalZoom = async () => {
         ? rect.width * 0.64  // Use 64% of width (100% - 36% panel)
         : rect.width;
       
-      const scaleX = availableWidth / contentWidth;
-      const scaleY = rect.height / contentHeight;
-      const optimalZoom = Math.min(scaleX, scaleY, 1.0); // Don't zoom in beyond 100%
+      // Always start at minimum zoom for full overview
+      const optimalZoom = ZOOM_MIN;
       
       // Calculate center position
       const centerX = (bounds.minX + bounds.maxX) / 2;
@@ -6105,7 +6306,7 @@ const setInitialOptimalZoom = async () => {
       panX.value = targetPanX;
       panY.value = targetPanY;
       
-      console.log('[setInitialOptimalZoom] Set optimal zoom:', {
+      console.log('[setInitialOptimalZoom] Set min zoom for overview:', {
         optimalZoom,
         bounds,
         targetPanX,
@@ -6162,24 +6363,9 @@ defineExpose({
   toggleFullscreen
 });
 
-// Reset inactivity timer
+// Reset inactivity timer (disabled)
 const resetInactivityTimer = () => {
-  // Skip inactivity timer during drag operations or when a node is snapped
-  if (store.isDragging || store.snappedNodeId !== null) {
-    return;
-  }
-  
-  if (inactivityTimer.value) {
-    clearTimeout(inactivityTimer.value);
-  }
-
-  lastActivityTimestamp.value = Date.now();
-
-  inactivityTimer.value = setTimeout(() => {
-    if (Date.now() - lastActivityTimestamp.value >= AUTO_CENTER_DELAY) {
-      autoFitNodes();
-    }
-  }, AUTO_CENTER_DELAY);
+  // Auto-center on idle has been disabled
 };
 
 // Throttled pan handler for better performance
@@ -6750,7 +6936,7 @@ emitter.on('workspace-loaded', (data: { chatId: string; nodeCount: number }) => 
         // Always auto-fit nodes after workspace load (no auto-snap, no transition to prevent slide-in)
         if (store.nodes.length > 0) {
           console.log('[InfiniteCanvas] Calling autoFitNodes after workspace load');
-          autoFitNodes(true);
+          autoFitNodes(true, true); // disableTransition=true, forceZoom=true
         }
       }, 100);
     });
@@ -6973,11 +7159,135 @@ const shouldShowClustering = computed(() => {
   return zoom.value < 0.1; // Show clustering when zoom is less than 10%
 });
 
+
+// Workspace nodes with smooth visibility transitions
+const workspaceFadeFactor = computed(() => {
+  if (!isClusteringMode.value) return 1;
+  
+  if (zoom.value >= 0.01) { // Above 1% - gradual fade in
+    // Smooth transition from 20% to 100% opacity over 1%-6% range
+    const transitionFactor = Math.min(1, (zoom.value - 0.01) / 0.05);
+    // Use easing for smoother feel
+    const easedFactor = Math.pow(transitionFactor, 0.7);
+    return 0.2 + easedFactor * 0.8; // 20% to 100% opacity
+  } else {
+    // Below 1% - fade out workspace nodes
+    const minZoom = 0.003; // Fully faded at 0.3% zoom
+    if (zoom.value <= minZoom) return 0;
+    // Smooth fade between minZoom and 1%
+    const fadeFactor = (zoom.value - minZoom) / (0.01 - minZoom);
+    return fadeFactor * 0.2; // Up to 20% opacity
+  }
+});
+
+// Topic label scaling - smooth continuous scaling
+const topicLabelScaleFactor = computed(() => {
+  if (!isClusteringMode.value) return 1;
+  
+  if (zoom.value >= 0.1) {
+    // Above 10% - hide topics (normal node view)
+    return 0;
+  } else if (zoom.value >= 0.08) {
+    // 8%-10% - fade out transition
+    const fadeFactor = (0.1 - zoom.value) / (0.1 - 0.08);
+    return fadeFactor * 0.8; // Fade from 0.8x to 0
+  } else {
+    // Below 8% - continuous inverse scaling for consistent size
+    const baseScale = 1 / zoom.value;
+    
+    // Smooth adjustment factor based on zoom level
+    // Use a smooth curve instead of stepped adjustments
+    let adjustmentFactor;
+    if (zoom.value < 0.005) {
+      // Extreme zoom out - larger but controlled
+      adjustmentFactor = 0.35;
+    } else {
+      // Smooth interpolation for normal clustering range
+      // Increased factors for better text readability
+      // At 8%: factor = 0.25 (scale = 3.1x)
+      // At 5%: factor = 0.28 (scale = 5.6x)  
+      // At 1%: factor = 0.32 (scale = 32x)
+      // Logarithmic interpolation for smoothness
+      const t = Math.log(zoom.value / 0.08) / Math.log(0.005 / 0.08);
+      adjustmentFactor = 0.25 + t * (0.35 - 0.25);
+    }
+    
+    return baseScale * adjustmentFactor;
+  }
+});
+
+
+// Topic connections visibility - always visible in clustering mode
+const topicConnectionOpacity = computed(() => {
+  if (!isClusteringMode.value) return 0;
+  
+  // Always show connections when topics are visible
+  if (zoom.value < 0.1) {
+    // Stronger at mid-range zooms
+    if (zoom.value >= 0.03 && zoom.value <= 0.08) {
+      return 0.6; // Good visibility for navigation
+    } else if (zoom.value < 0.03) {
+      // Fade out at extreme zoom out
+      return 0.3;
+    } else {
+      // Fade near transition to normal view
+      return 0.4;
+    }
+  }
+  return 0;
+});
+
+// Calculate converged position for workspace root nodes
+const getConvergedNodePosition = (nodeId: string, originalX: number, originalY: number) => {
+  if (!isClusteringMode.value || convergenceFactor.value === 0 || !clusteringData.value) {
+    return { x: originalX, y: originalY };
+  }
+  
+  // Find which topic this node belongs to
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node || node.parentId) {
+    return { x: originalX, y: originalY }; // Only converge root nodes
+  }
+  
+  // Find the workspace index (convert from frontend reverse order to clustering API order)
+  const frontendIndex = chatStore.chats.findIndex(chat => {
+    return store.nodes.some(n => n.chatId === chat.id && n.id === nodeId);
+  });
+  
+  if (frontendIndex === -1) {
+    return { x: originalX, y: originalY };
+  }
+  
+  // Convert to clustering API index (creation order)
+  const clusteringIndex = chatStore.chats.length - 1 - frontendIndex;
+  
+  // Find the topic assignment for this workspace
+  const topicAssignment = clusteringData.value.clusters?.[clusteringIndex];
+  if (typeof topicAssignment === 'undefined') {
+    return { x: originalX, y: originalY };
+  }
+  
+  // Find the topic center position
+  const topicId = String(topicAssignment);
+  const topicPosition = clusteringData.value.topic_positions?.[topicId];
+  if (!topicPosition) {
+    return { x: originalX, y: originalY };
+  }
+  
+  // Interpolate between original orbital position and topic center
+  const targetX = topicPosition.x;
+  const targetY = topicPosition.y;
+  
+  return { x: originalX, y: originalY };
+};
+
 const triggerClustering = async () => {
   if (!chatStore.chats || chatStore.chats.length < 2) {
     return; // Need at least 2 workspaces to cluster
   }
 
+  let loadingTimeout; // Declare here for proper scoping
+  
   try {
     isClusteringTransition.value = true;
     
@@ -6988,6 +7298,11 @@ const triggerClustering = async () => {
       isClusteringTransition.value = false;
       return;
     }
+    
+    // Only show loading overlay if request takes more than 200ms (to avoid flash for cached responses)
+    loadingTimeout = setTimeout(() => {
+      isLoadingClustering.value = true;
+    }, 200);
     
     // Call clustering API only if we don't have cached data
     const response = await fetch('http://127.0.0.1:5050/api/workspaces/cluster', {
@@ -7027,12 +7342,17 @@ const triggerClustering = async () => {
     // Store workspace orbital positions for node repositioning
     store.workspaceOrbitalPositions = result.workspace_positions;
 
+    // CRITICAL: Reload nodes from database to get updated orbital positions
+    await store.loadAllNodesMode();
+
     isClusteringMode.value = true;
     
   } catch (error) {
     console.error('Failed to cluster workspaces:', error);
   } finally {
+    clearTimeout(loadingTimeout);
     isClusteringTransition.value = false;
+    isLoadingClustering.value = false;
   }
 };
 
@@ -7057,7 +7377,14 @@ const preloadClusteringData = async () => {
   
   isPreloading = true;
   
+  let loadingTimeout; // Declare here for proper scoping
+  
   try {
+    // Only show loading overlay if request takes more than 200ms (to avoid flash for cached responses)
+    loadingTimeout = setTimeout(() => {
+      isLoadingClustering.value = true;
+    }, 200);
+    
     const response = await fetch('http://127.0.0.1:5050/api/workspaces/cluster', {
       method: 'POST',
       headers: {
@@ -7095,7 +7422,9 @@ const preloadClusteringData = async () => {
   } catch (error) {
     console.log('Failed to preload clustering data:', error);
   } finally {
+    clearTimeout(loadingTimeout);
     isPreloading = false;
+    isLoadingClustering.value = false;
   }
 };
 
@@ -8138,6 +8467,22 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
   --lottie-hue: 300deg;
   --lottie-saturation: 1.4;
   --lottie-brightness: 1.1;
+}
+
+/* Clustering-specific loading overlay */
+.clustering-load {
+  background: oklch(from oklch(var(--b1)) l c h / 0.85);
+  backdrop-filter: blur(20px);
+}
+
+.clustering-load .loading-title {
+  color: oklch(var(--p));
+  font-size: 1.5rem;
+}
+
+.clustering-load .loading-subtitle {
+  color: oklch(var(--bc) / 0.7);
+  font-size: 1rem;
 }
 
 /* UI Element Entrance Animations */

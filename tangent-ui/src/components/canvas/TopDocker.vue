@@ -136,20 +136,6 @@
         <span class="tool-number">8</span>
       </button>
 
-      <!-- Image tool -->
-      <button 
-        @click="setTool('image')"
-        :class="['tool-button', { 'active': currentTool === 'image' }]"
-        title="Image"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="M21 15l-5-5L5 21"/>
-        </svg>
-        <span class="tool-number">9</span>
-      </button>
-
       <!-- Eraser tool -->
       <button 
         @click="setTool('eraser')"
@@ -160,17 +146,6 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
         </svg>
         <span class="tool-number">0</span>
-      </button>
-
-      <!-- More tools -->
-      <button 
-        @click="setTool('more')"
-        :class="['tool-button', { 'active': currentTool === 'more' }]"
-        title="More Tools"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
-        </svg>
       </button>
     </div>
     
@@ -443,7 +418,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
     '7': 'pen',
     'f': 'fill',
     '8': 'text',
-    '9': 'image',
     '0': 'eraser'
   };
   
@@ -487,9 +461,7 @@ const getToolMessage = (tool: string) => {
     'hand': 'Pan around the canvas',
     'lock': 'Lock/unlock objects',
     'eraser': 'Click on shapes to delete them',
-    'fill': 'Click inside enclosed areas to fill them',
-    'more': 'More tools coming soon',
-    'image': 'Click to place an image'
+    'fill': 'Click inside enclosed areas to fill them'
   };
   return messages[tool] || 'Tool selected';
 };
@@ -588,10 +560,25 @@ onUnmounted(() => {
 }
 
 /* Responsive design */
+@media (max-width: 1200px) {
+  .toolbar-container {
+    max-width: 95vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .toolbar-container::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   .toolbar-container {
     flex-wrap: wrap;
     max-width: 90vw;
+    justify-content: center;
+    gap: 2px;
   }
   
   .tool-button {
@@ -599,7 +586,26 @@ onUnmounted(() => {
     height: 36px;
   }
   
+  
   .canvas-help-text {
+    display: none;
+  }
+}
+
+@media (max-width: 580px) {
+  .toolbar-container {
+    gap: 1px;
+    padding: 6px;
+  }
+  
+  .tool-button {
+    width: 32px;
+    height: 32px;
+  }
+  
+  
+  /* Hide tool numbers on very small screens to reduce clutter */
+  .tool-number {
     display: none;
   }
 }

@@ -596,7 +596,7 @@ onBeforeUnmount(() => {
 .theme-logo-container {
   position: relative;
   z-index: 50;
-  transform: translateY(2px);
+  transform: translateY(14px);
   /* Adjust logo position slightly down */
 }
 

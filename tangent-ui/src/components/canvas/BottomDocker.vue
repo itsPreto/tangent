@@ -30,7 +30,7 @@
       <div class="control-group info-group">
         <div class="info-item">
           <div class="info-label">Zoom</div>
-          <div class="info-value">{{ Math.round(zoom * 100) }}%</div>
+          <div class="info-value">{{ zoom >= 0.01 ? Math.round(zoom * 100) + '%' : (zoom * 100).toFixed(2) + '%' }}</div>
         </div>
         <div class="info-item coords-item">
           <div class="info-label">Position</div>

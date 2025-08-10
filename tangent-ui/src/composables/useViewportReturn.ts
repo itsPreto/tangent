@@ -70,9 +70,9 @@ export function useViewportReturn(
     const inputContainer = canvasElement?.querySelector('.canvas-input-container')
     
     if (inputContainer) {
-      // Input container now lives at fixed world coordinate (-3000, -3000)
-      const NEW_CHAT_X = -3000
-      const NEW_CHAT_Y = -3000
+      // Input container now lives at fixed world coordinate (0, 0) - center hub
+      const NEW_CHAT_X = 0
+      const NEW_CHAT_Y = 0
       
       nodes.push({
         id: 'input-container',

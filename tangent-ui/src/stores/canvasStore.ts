@@ -292,6 +292,8 @@ export const useCanvasStore = defineStore('canvas', () => {
     if (!snappedNodesStack.value.includes(nodeId)) {
       snappedNodesStack.value.push(nodeId);
     }
+    // Ensure the has-snapped-node class is applied for proper layout
+    document.body.classList.add('has-snapped-node');
   };
 
   const unsnapNode = (nodeId: string) => {

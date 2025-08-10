@@ -1,12 +1,5 @@
 <template>
   <div class="left-navigation-dropdown" :class="'theme-' + currentTheme">
-    <!-- Header with TangentLogo (theme toggle functionality) -->
-    <div class="dropdown-header">
-      <div class="app-title" @click.stop>
-        <TangentLogo class="w-6 h-6" />
-      </div>
-    </div>
-
     <!-- Navigation Items -->
     <div class="nav-section">
       <div

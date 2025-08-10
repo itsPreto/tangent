@@ -14,7 +14,9 @@
       <div v-for="(message, index) in visibleMessages" :key="`${nodeId}-message-${startIndex + index}`"
         :ref="el => messageRefs[startIndex + index] = el" class="relative group message-container" :class="{
           'user-message': message.role === 'user',
-          'ai-message': message.role === 'assistant'
+          'ai-message': message.role === 'assistant',
+          'slash-command': message.role === 'slash_command',
+          'mode-switch': message.role === 'mode_switch'
         }" :data-message-index="startIndex + index" :data-message-id="`${nodeId}-message-${startIndex + index}`"
         :data-code-bubble-parent="true" :style="getMessageStyles(startIndex + index)">
         <!-- Timestamp now handled in header, removed duplicate -->
@@ -120,8 +122,30 @@
 
             <!-- Modern chat bubble layout -->
             <div class="message-bubble-container">
+              <!-- Slash Command Component -->
+              <div v-if="message.role === 'slash_command'" class="slash-command-wrapper">
+                <SlashCommandComponent 
+                  :command="message.command"
+                  :parameters="message.parameters"
+                  :status="message.status"
+                  :results="message.results"
+                  :execution-time="message.executionTime"
+                  :timestamp="message.timestamp"
+                />
+              </div>
+              
+              <!-- Mode Switch Component -->
+              <div v-else-if="message.role === 'mode_switch'" class="mode-switch-wrapper">
+                <div class="mode-switch-indicator">
+                  <div class="mode-switch-content">
+                    <span class="mode-switch-text">Switched to {{ message.newMode }} mode</span>
+                    <span class="mode-switch-time">{{ formatTime(message.timestamp) }}</span>
+                  </div>
+                </div>
+              </div>
+              
               <!-- User message bubble (right side) -->
-              <div v-if="message.role === 'user'" class="user-bubble-wrapper">
+              <div v-else-if="message.role === 'user'" class="user-bubble-wrapper">
                 <div class="user-bubble">
                   <div class="message-content-wrapper">
                     <MessageContent v-if="editingMessageIndex !== startIndex + index" :content="message.content"
@@ -143,7 +167,7 @@
               </div>
 
               <!-- AI message bubble (left side) -->
-              <div v-else class="ai-bubble-wrapper">
+              <div v-else-if="message.role === 'assistant'" class="ai-bubble-wrapper">
                 <div class="ai-avatar-container">
                   <img :src="getAvatarUrl(getModelInfo(message.modelId))" :alt="getModelDisplayName(message)"
                     class="ai-avatar" />
@@ -311,6 +335,7 @@ import MessageContent from './MessageContent.vue';
 import MessageTimestamp from './MessageTimestamp.vue';
 import TTSControls from './TTSControls.vue';
 import ReflectionSuggestions from './ReflectionSuggestions.vue';
+import SlashCommandComponent from './SlashCommandComponent.vue';
 import type { Message } from '@/types/message';
 import type { ModelInfo } from '@/types/model';
 import { useThemeStore } from '@/stores/themeStore';
@@ -1417,5 +1442,48 @@ defineExpose({
     margin-left: 0;
     max-width: 100%;
   }
+}
+
+/* Slash Command Wrapper */
+.slash-command-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+
+/* Mode Switch Wrapper */
+.mode-switch-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+
+.mode-switch-indicator {
+  background: oklch(from oklch(var(--info)) l c h / 0.1);
+  border: 1px solid oklch(from oklch(var(--info)) l c h / 0.2);
+  border-radius: 1rem;
+  padding: 0.375rem 0.75rem;
+  max-width: 300px;
+}
+
+.mode-switch-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.mode-switch-text {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: oklch(var(--info));
+}
+
+.mode-switch-time {
+  font-size: 0.625rem;
+  opacity: 0.7;
+  color: oklch(var(--bc));
 }
 </style>

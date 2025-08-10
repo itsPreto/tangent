@@ -4592,8 +4592,14 @@ def send_claude_code_message(instance_id):
     try:
         data = request.json
         message = data.get('message', '')
-        success = claude_code_service.send_message_sync(instance_id, message)
-        return jsonify({'success': success})
+        
+        # Check if it's a slash command
+        if claude_code_service.is_slash_command(message):
+            result = claude_code_service.handle_slash_command(instance_id, message)
+            return jsonify(result)
+        else:
+            success = claude_code_service.send_message_sync(instance_id, message)
+            return jsonify({'success': success})
     except Exception as e:
         logger.error(f"Error sending message to Claude Code instance: {e}")
         return jsonify({'error': str(e)}), 500
@@ -6100,10 +6106,25 @@ def cluster_workspaces():
         use_existing_data = data.get('use_existing_data', False)
         
         # CRITICAL: Check for cached results first for fast startup
+        # Try file-based cache first for persistence across restarts
+        import pickle
+        cache_file = Path('clustering_cache.pkl')
+        try:
+            if cache_file.exists():
+                with open(cache_file, 'rb') as f:
+                    cache_data = pickle.load(f)
+                cache_age = (datetime.now() - cache_data.get('timestamp', datetime.min)).total_seconds()
+                if cache_age < 3600:  # Use cache if less than 1 hour old (was 5 minutes)
+                    logger.info(f"Using file-cached workspace clustering results (age: {cache_age:.1f}s)")
+                    return jsonify(cache_data['result'])
+        except Exception as e:
+            logger.warning(f"Failed to load clustering cache file: {e}")
+        
+        # Fallback to memory cache
         if hasattr(clustering_service, 'workspace_clustering_cache'):
             cache_age = (datetime.now() - clustering_service.workspace_clustering_cache.get('timestamp', datetime.min)).total_seconds()
-            if cache_age < 300:  # Use cache if less than 5 minutes old
-                logger.info(f"Using cached workspace clustering results (age: {cache_age:.1f}s)")
+            if cache_age < 3600:  # Use cache if less than 1 hour old (was 5 minutes)
+                logger.info(f"Using memory-cached workspace clustering results (age: {cache_age:.1f}s)")
                 return jsonify(clustering_service.workspace_clustering_cache['result'])
         
         if use_existing_data:
@@ -6325,11 +6346,23 @@ def cluster_workspaces():
         }
         
         # CRITICAL: Cache the result for fast future requests
-        clustering_service.workspace_clustering_cache = {
+        cache_data = {
             'result': response_data,
             'timestamp': datetime.now()
         }
-        logger.info("Cached workspace clustering results for fast future requests")
+        
+        # Save to memory cache
+        clustering_service.workspace_clustering_cache = cache_data
+        
+        # Save to file cache for persistence across restarts
+        try:
+            import pickle
+            with open('clustering_cache.pkl', 'wb') as f:
+                pickle.dump(cache_data, f)
+            logger.info("Cached workspace clustering results to file and memory for fast future requests")
+        except Exception as e:
+            logger.warning(f"Failed to save clustering cache to file: {e}")
+            logger.info("Cached workspace clustering results to memory only")
         
         return jsonify(response_data)
         
@@ -6357,25 +6390,52 @@ def calculate_solar_system_layout(cluster_metadata, clusters_array, workspace_ti
     topics = list(cluster_metadata.keys())
     logger.info(f"Calculating solar system layout for {len(topics)} topics")
     
-    # Step 1: Position topic islands using waterfall grid (like current workspace positioning)
-    topics_per_row = max(1, int(math.sqrt(len(topics)) * 1.2))  # Slightly wider layout
+    # Step 1: Position topic islands using circular layout around center (0, 0)
+    CENTER_X = 0
+    CENTER_Y = 0
+    MIN_TOPIC_SEPARATION = (MAX_ORBITAL_RADIUS * 2) + ISOLATION_BUFFER  # 1600px minimum between topic centers
+    
     topic_positions = {}
     
-    for i, topic_id in enumerate(topics):
-        row = i // topics_per_row
-        col = i % topics_per_row
+    if len(topics) == 1:
+        # Single topic at center
+        topic_positions[topics[0]] = {"x": CENTER_X, "y": CENTER_Y}
+        logger.info(f"Single topic '{cluster_metadata[topics[0]]['topic']}' positioned at center (0, 0)")
+    else:
+        # Multiple topics arranged in concentric circles
+        topics_per_circle = 6  # Maximum 6 topics per circle for optimal spacing
         
-        topic_x = TOPIC_START_X + (col * TOPIC_HORIZONTAL_GAP)
-        topic_y = TOPIC_START_Y + (row * TOPIC_VERTICAL_GAP)
-        
-        topic_positions[topic_id] = {
-            "x": topic_x,
-            "y": topic_y
-        }
-        
-        topic_name = cluster_metadata[topic_id]['topic']
-        workspace_count = cluster_metadata[topic_id]['size']
-        logger.info(f"Topic '{topic_name}' positioned at ({topic_x}, {topic_y}) with {workspace_count} workspaces")
+        for i, topic_id in enumerate(topics):
+            if i < topics_per_circle:
+                # Inner circle - massive radius for min zoom visibility  
+                circle_radius = 25000  # 25000px from center for excellent spacing at 0.99% zoom
+                topics_in_this_circle = min(len(topics), topics_per_circle)
+                angle = (2 * math.pi * i) / topics_in_this_circle
+            else:
+                # Outer circles - add 12000px for each additional ring
+                ring_number = (i - topics_per_circle) // topics_per_circle + 1
+                circle_radius = 25000 + (ring_number * 12000)
+                position_in_ring = (i - topics_per_circle) % topics_per_circle
+                remaining_topics = len(topics) - topics_per_circle - (ring_number - 1) * topics_per_circle
+                topics_in_this_circle = min(topics_per_circle, remaining_topics)
+                angle = (2 * math.pi * position_in_ring) / topics_in_this_circle
+            
+            # Start from top (angle offset -π/2)
+            angle_offset = -math.pi / 2
+            final_angle = angle + angle_offset
+            
+            topic_x = CENTER_X + math.cos(final_angle) * circle_radius
+            topic_y = CENTER_Y + math.sin(final_angle) * circle_radius
+            
+            topic_positions[topic_id] = {
+                "x": topic_x,
+                "y": topic_y
+            }
+            
+            topic_name = cluster_metadata[topic_id]['topic']
+            workspace_count = cluster_metadata[topic_id]['size']
+            ring_info = f"center" if i == 0 and len(topics) == 1 else f"circle {(i // topics_per_circle) + 1}"
+            logger.info(f"Topic '{topic_name}' positioned at ({topic_x:.0f}, {topic_y:.0f}) in {ring_info} with {workspace_count} workspaces")
     
     # Step 2: Calculate orbital positions for workspaces around their topics
     workspace_positions = {}

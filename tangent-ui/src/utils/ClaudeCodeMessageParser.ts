@@ -58,6 +58,28 @@ export interface ClaudeCodeRawOutputMessage {
   parse_error?: string
 }
 
+export interface ClaudeCodeSlashCommandMessage {
+  type: 'slash_command'
+  command: string
+  parameters?: string
+  status: 'pending' | 'executing' | 'success' | 'error'
+  results?: {
+    type: 'text' | 'config' | 'cost' | 'tools' | 'help' | 'mcp' | 'memory' | 'generic'
+    content: any
+  }
+  execution_time?: number
+  session_id: string
+  timestamp: Date
+}
+
+export interface ClaudeCodeModeSwitchMessage {
+  type: 'mode_switch'
+  previous_mode: string
+  new_mode: string
+  session_id: string
+  timestamp: Date
+}
+
 export type ClaudeCodeMessage = 
   | ClaudeCodeSystemMessage
   | ClaudeCodeTextMessage
@@ -66,6 +88,8 @@ export type ClaudeCodeMessage =
   | ClaudeCodeResultMessage
   | ClaudeCodeUnknownMessage
   | ClaudeCodeRawOutputMessage
+  | ClaudeCodeSlashCommandMessage
+  | ClaudeCodeModeSwitchMessage
 
 export interface ParsedStreamingMessage {
   id: string
@@ -132,6 +156,8 @@ export class ClaudeCodeMessageParser {
       case 'tool_use':
       case 'user':
       case 'result':
+      case 'slash_command':
+      case 'mode_switch':
         return message.session_id
       default:
         return null
@@ -142,7 +168,10 @@ export class ClaudeCodeMessageParser {
    * Check if a message indicates completion
    */
   private isMessageComplete(message: ClaudeCodeMessage): boolean {
-    return message.type === 'result'
+    return message.type === 'result' || 
+           (message.type === 'slash_command' && message.status === 'success') ||
+           (message.type === 'slash_command' && message.status === 'error') ||
+           message.type === 'mode_switch'
   }
   
   /**
@@ -157,6 +186,60 @@ export class ClaudeCodeMessageParser {
    */
   getCurrentSession(): string | null {
     return this.currentSession
+  }
+  
+  /**
+   * Create a slash command message for the timeline
+   */
+  createSlashCommandMessage(
+    command: string,
+    parameters?: string,
+    status: 'pending' | 'executing' | 'success' | 'error' = 'pending',
+    results?: any,
+    executionTime?: number
+  ): ParsedStreamingMessage {
+    const message: ClaudeCodeSlashCommandMessage = {
+      type: 'slash_command',
+      command,
+      parameters,
+      status,
+      results,
+      execution_time: executionTime,
+      session_id: this.currentSession || 'unknown',
+      timestamp: new Date()
+    }
+    
+    return {
+      id: this.generateMessageId(),
+      timestamp: new Date(),
+      message,
+      sessionId: this.currentSession || 'unknown',
+      isComplete: status === 'success' || status === 'error'
+    }
+  }
+  
+  /**
+   * Create a mode switch message for the timeline
+   */
+  createModeSwitchMessage(
+    previousMode: string,
+    newMode: string
+  ): ParsedStreamingMessage {
+    const message: ClaudeCodeModeSwitchMessage = {
+      type: 'mode_switch',
+      previous_mode: previousMode,
+      new_mode: newMode,
+      session_id: this.currentSession || 'unknown',
+      timestamp: new Date()
+    }
+    
+    return {
+      id: this.generateMessageId(),
+      timestamp: new Date(),
+      message,
+      sessionId: this.currentSession || 'unknown',
+      isComplete: true
+    }
   }
   
   /**

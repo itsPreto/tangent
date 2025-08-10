@@ -86,7 +86,193 @@ class ClaudeCodeService:
             return False
         
         instance = self.active_instances[instance_id]
+        
+        # Check if this is a slash command and handle it specially
+        if self.is_slash_command(message):
+            return self.handle_slash_command(instance_id, message)
+        
         return instance.send_message_sync(message)
+    
+    def is_slash_command(self, message: str) -> bool:
+        """Check if message is a slash command"""
+        return message.strip().startswith('/')
+    
+    def handle_slash_command(self, instance_id: str, command: str) -> Dict:
+        """Handle slash command execution"""
+        if instance_id not in self.active_instances:
+            return {'success': False, 'error': 'Instance not found'}
+        
+        instance = self.active_instances[instance_id]
+        command = command.strip()
+        
+        # Parse command and parameters
+        parts = command.split(' ', 1)
+        cmd = parts[0]
+        params = parts[1] if len(parts) > 1 else ''
+        
+        try:
+            if cmd == '/config':
+                return self.handle_config_command(instance, params)
+            elif cmd == '/tools':
+                return self.handle_tools_command(instance, params)
+            elif cmd == '/help':
+                return self.handle_help_command(instance, params)
+            elif cmd == '/cost':
+                return self.handle_cost_command(instance, params)
+            elif cmd == '/clear':
+                return self.handle_clear_command(instance, params)
+            elif cmd == '/compact':
+                return self.handle_compact_command(instance, params)
+            elif cmd == '/mcp':
+                return self.handle_mcp_command(instance, params)
+            elif cmd == '/memory':
+                return self.handle_memory_command(instance, params)
+            else:
+                # Pass unknown commands directly to Claude Code CLI
+                return {'success': instance.send_message_sync(command)}
+                
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def handle_config_command(self, instance, params: str) -> Dict:
+        """Handle /config command"""
+        config_info = {
+            'model': instance.config.get('model', 'claude-3-5-sonnet-20241022'),
+            'max_tokens': instance.config.get('max_tokens', 8192),
+            'temperature': instance.config.get('temperature', 0.7),
+            'tools_enabled': instance.config.get('tools', []),
+            'mcp_enabled': instance.config.get('mcp', {}).get('enabled', False),
+            'working_directory': instance.config.get('workingDirectory', os.getcwd()),
+            'cost_limit': instance.config.get('costLimit', 5.0)
+        }
+        
+        return {
+            'success': True,
+            'type': 'config',
+            'data': config_info
+        }
+    
+    def handle_tools_command(self, instance, params: str) -> Dict:
+        """Handle /tools command"""
+        available_tools = [
+            {'name': 'Read', 'status': 'active', 'description': 'Read files from disk'},
+            {'name': 'Write', 'status': 'active', 'description': 'Write files to disk'},
+            {'name': 'Edit', 'status': 'active', 'description': 'Edit existing files'},
+            {'name': 'Bash', 'status': 'active', 'description': 'Execute shell commands'},
+            {'name': 'Grep', 'status': 'active', 'description': 'Search file contents'},
+            {'name': 'Glob', 'status': 'active', 'description': 'Find files by patterns'}
+        ]
+        
+        return {
+            'success': True,
+            'type': 'tools',
+            'data': available_tools
+        }
+    
+    def handle_help_command(self, instance, params: str) -> Dict:
+        """Handle /help command"""
+        help_info = {
+            'commands': [
+                '/config - Show current configuration',
+                '/tools - List available tools',
+                '/cost - Display usage costs',
+                '/clear - Clear conversation history',
+                '/compact - Compact conversation',
+                '/mcp - Manage MCP servers',
+                '/memory - Show memory usage',
+                '/help - Show this help'
+            ],
+            'shortcuts': [
+                'Shift+Tab - Switch mode',
+                'Ctrl+C - Stop current operation',
+                'Escape - Cancel input'
+            ]
+        }
+        
+        return {
+            'success': True,
+            'type': 'help',
+            'data': help_info
+        }
+    
+    def handle_cost_command(self, instance, params: str) -> Dict:
+        """Handle /cost command"""
+        # Mock cost data (would be real in production)
+        cost_info = {
+            'session_cost': 0.45,
+            'total_cost': 2.34,
+            'tokens_used': 12543,
+            'tokens_limit': instance.config.get('max_tokens', 8192),
+            'cost_limit': instance.config.get('costLimit', 5.0)
+        }
+        
+        return {
+            'success': True,
+            'type': 'cost',
+            'data': cost_info
+        }
+    
+    def handle_clear_command(self, instance, params: str) -> Dict:
+        """Handle /clear command"""
+        # Clear instance conversation history
+        instance.conversation_history = []
+        
+        return {
+            'success': True,
+            'type': 'clear',
+            'data': {'message': 'Conversation history cleared'}
+        }
+    
+    def handle_compact_command(self, instance, params: str) -> Dict:
+        """Handle /compact command"""
+        # Mock compaction (would compress conversation in real implementation)
+        original_count = len(getattr(instance, 'conversation_history', []))
+        compacted_count = max(1, original_count // 3)
+        
+        return {
+            'success': True,
+            'type': 'compact',
+            'data': {
+                'original_messages': original_count,
+                'compacted_messages': compacted_count,
+                'compression_ratio': f'{((original_count - compacted_count) / original_count * 100):.1f}%' if original_count > 0 else '0%'
+            }
+        }
+    
+    def handle_mcp_command(self, instance, params: str) -> Dict:
+        """Handle /mcp command"""
+        # Mock MCP server data
+        mcp_servers = [
+            {'name': 'filesystem', 'status': 'connected', 'tools': 5},
+            {'name': 'browser', 'status': 'connected', 'tools': 8},
+            {'name': 'database', 'status': 'disconnected', 'tools': 12}
+        ]
+        
+        return {
+            'success': True,
+            'type': 'mcp',
+            'data': mcp_servers
+        }
+    
+    def handle_memory_command(self, instance, params: str) -> Dict:
+        """Handle /memory command"""
+        # Mock memory usage data
+        memory_info = {
+            'context_size': 4096,
+            'tokens_used': 2048,
+            'memory_usage': '12.5 MB',
+            'context_items': [
+                {'type': 'file', 'name': 'main.py', 'size': '2.1 KB'},
+                {'type': 'conversation', 'name': 'Recent chat', 'size': '8.4 KB'},
+                {'type': 'tools', 'name': 'Tool outputs', 'size': '1.9 KB'}
+            ]
+        }
+        
+        return {
+            'success': True,
+            'type': 'memory',
+            'data': memory_info
+        }
     
     async def pause_instance(self, instance_id: str) -> bool:
         """Pause a Claude Code instance"""

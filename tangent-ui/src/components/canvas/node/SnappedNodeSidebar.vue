@@ -46,6 +46,47 @@
       </div>
     </div>
 
+    <!-- Claude Code Mode Indicator -->
+    <div class="sidebar-section" v-if="isClaudeCodeSession">
+      <h3 class="section-title">Claude Code</h3>
+      
+      <div class="mode-indicator-card">
+        <div class="mode-header">
+          <div class="mode-icon" :class="`mode-${currentMode}`">
+            <component :is="getModeIcon(currentMode)" class="w-4 h-4" />
+          </div>
+          <div class="mode-info">
+            <span class="mode-name">{{ currentMode === 'default' ? 'General' : currentMode.charAt(0).toUpperCase() + currentMode.slice(1) }} Mode</span>
+            <span class="mode-hint">Shift+Tab to switch</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Command History -->
+    <div class="sidebar-section" v-if="isClaudeCodeSession && recentCommands.length > 0">
+      <h3 class="section-title">Recent Commands</h3>
+      <div class="command-history">
+        <div 
+          v-for="command in recentCommands" 
+          :key="command.id"
+          class="command-item"
+          :class="command.status"
+        >
+          <div class="command-icon">
+            <component :is="getCommandIcon(command.command)" class="w-3 h-3" />
+          </div>
+          <div class="command-details">
+            <span class="command-name">{{ command.command }}</span>
+            <span class="command-time">{{ formatTime(command.timestamp) }}</span>
+          </div>
+          <div class="command-status" :class="command.status">
+            <component :is="getStatusIcon(command.status)" class="w-3 h-3" />
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Context-Aware Activity Feed -->
     <div class="sidebar-section" v-if="isClaudeCodeSession">
       <h3 class="section-title">Tool Activity</h3>
@@ -96,8 +137,29 @@ import {
   PencilIcon, 
   MagnifyingGlassIcon,
   CodeBracketIcon,
-  FolderIcon
+  FolderIcon,
+  Cog6ToothIcon,
+  CpuChipIcon,
+  LightBulbIcon,
+  CheckIcon,
+  XMarkIcon,
+  ClockIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/vue/24/outline'
+import { 
+  Settings,
+  Zap,
+  Brain,
+  Check,
+  X,
+  AlertCircle,
+  Clock,
+  Terminal,
+  DollarSign,
+  HelpCircle,
+  Trash2,
+  Archive
+} from 'lucide-vue-next'
 import { metricsService } from '@/services/metricsService'
 import { useSnappedNodeLayout } from '@/composables/useSnappedNodeLayout'
 import emitter from '@/utils/eventBus'
@@ -193,6 +255,49 @@ const getToolIcon = (tool: string) => {
     'Task': CodeBracketIcon
   }
   return iconMap[tool] || CodeBracketIcon
+}
+
+// Mock current mode (would come from Claude Code service in real implementation)
+const currentMode = ref('default')
+
+// Mock recent commands (would come from store in real implementation)
+const recentCommands = ref([
+  { id: '1', command: '/config', status: 'success', timestamp: Date.now() - 30000 },
+  { id: '2', command: '/tools', status: 'success', timestamp: Date.now() - 120000 },
+  { id: '3', command: '/help', status: 'success', timestamp: Date.now() - 300000 }
+])
+
+const getModeIcon = (mode: string) => {
+  const iconMap: Record<string, any> = {
+    'default': Terminal,
+    'planning': Brain,
+    'coding': CpuChipIcon,
+    'analysis': LightBulbIcon,
+    'config': Cog6ToothIcon
+  }
+  return iconMap[mode] || Terminal
+}
+
+const getCommandIcon = (command: string) => {
+  const iconMap: Record<string, any> = {
+    '/config': Settings,
+    '/tools': CodeBracketIcon,
+    '/help': HelpCircle,
+    '/clear': Trash2,
+    '/cost': DollarSign,
+    '/compact': Archive
+  }
+  return iconMap[command] || Terminal
+}
+
+const getStatusIcon = (status: string) => {
+  const statusIconMap: Record<string, any> = {
+    'success': Check,
+    'error': X,
+    'pending': Clock,
+    'executing': AlertCircle
+  }
+  return statusIconMap[status] || Clock
 }
 
 const formatTime = (timestamp: number) => {
@@ -382,6 +487,158 @@ onMounted(() => {
 .activity-time {
   font-size: 0.625rem;
   opacity: 0.6;
+}
+
+/* Mode Indicator Card */
+.mode-indicator-card {
+  background: var(--sidebar-card-bg, rgba(var(--node-color-rgb), 0.1));
+  border: 1px solid var(--sidebar-card-border, rgba(var(--node-color-rgb), 0.2));
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.mode-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mode-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  background: rgba(var(--node-color-rgb), 0.2);
+  color: var(--node-color);
+}
+
+.mode-icon.mode-default {
+  background: rgba(75, 85, 99, 0.2);
+  color: #4b5563;
+}
+
+.mode-icon.mode-planning {
+  background: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
+}
+
+.mode-icon.mode-coding {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.mode-icon.mode-analysis {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.mode-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--node-color);
+}
+
+.mode-hint {
+  font-size: 0.6875rem;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Command History */
+.command-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.command-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: rgba(var(--node-color-rgb), 0.05);
+  border: 1px solid rgba(var(--node-color-rgb), 0.1);
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
+}
+
+.command-item:hover {
+  background: rgba(var(--node-color-rgb), 0.1);
+  border-color: rgba(var(--node-color-rgb), 0.2);
+}
+
+.command-item.success {
+  border-left: 3px solid #22c55e;
+}
+
+.command-item.error {
+  border-left: 3px solid #ef4444;
+}
+
+.command-item.pending {
+  border-left: 3px solid #f59e0b;
+}
+
+.command-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.command-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.command-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--node-color);
+}
+
+.command-time {
+  font-size: 0.625rem;
+  opacity: 0.6;
+}
+
+.command-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.command-status.success {
+  color: #22c55e;
+}
+
+.command-status.error {
+  color: #ef4444;
+}
+
+.command-status.pending {
+  color: #f59e0b;
 }
 
 /* Scrollbar styling */

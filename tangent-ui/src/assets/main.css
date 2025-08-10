@@ -122,7 +122,7 @@
   
   /* Node/Card Styles */
   .theme-node-card {
-    background: var(--node-bg);
+    /* background: var(--node-bg); */
     border: 1px solid var(--node-border);
     box-shadow: var(--node-shadow);
     @apply rounded-lg backdrop-blur-sm transition-all duration-[var(--transition-normal)];

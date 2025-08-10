@@ -96,8 +96,8 @@ export const useThemeStore = defineStore('theme', {
      */
     isDarkTheme: (state) => (theme: ThemeName): boolean => {
       const darkThemes = ['dark', 'synthwave', 'cyberpunk', 
-        'halloween', 'forest', 'aqua', 'black', 'luxury', 'neon', 'dracula', 
-        'business', 'acid', 'night', 'coffee'];
+        'halloween', 'forest', 'aqua', 'black', 'luxury', 'dracula', 
+        'night', 'coffee'];
       return darkThemes.includes(theme);
     }
   },

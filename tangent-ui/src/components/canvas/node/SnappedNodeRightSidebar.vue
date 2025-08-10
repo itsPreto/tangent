@@ -98,6 +98,77 @@
       </div>
     </div>
 
+    <!-- Command Palette (Claude Code only) -->
+    <div class="sidebar-section" v-if="isClaudeCodeSession">
+      <h3 class="section-title">Command Palette</h3>
+      
+      <div class="command-palette">
+        <div class="command-search">
+          <input 
+            type="text" 
+            v-model="commandSearch" 
+            placeholder="Type / for commands..." 
+            class="search-input"
+            @keydown.enter="executeSearchedCommand"
+          />
+        </div>
+        
+        <div class="quick-commands">
+          <button 
+            v-for="command in filteredQuickCommands" 
+            :key="command.name"
+            class="quick-command-btn"
+            @click="executeQuickCommand(command)"
+            :title="command.description"
+          >
+            <component :is="command.icon" class="w-3 h-3" />
+            <span class="command-text">{{ command.name }}</span>
+            <span class="command-key">{{ command.key }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MCP Status (Claude Code only) -->
+    <div class="sidebar-section" v-if="isClaudeCodeSession">
+      <h3 class="section-title">MCP Servers</h3>
+      
+      <div class="mcp-status">
+        <div 
+          v-for="server in mcpServers" 
+          :key="server.name"
+          class="mcp-server"
+          :class="server.status"
+        >
+          <div class="server-indicator">
+            <div class="status-dot" :class="server.status"></div>
+          </div>
+          <div class="server-info">
+            <span class="server-name">{{ server.name }}</span>
+            <span class="server-tools">{{ server.toolCount }} tools</span>
+          </div>
+          <div class="server-actions">
+            <button 
+              v-if="server.status === 'disconnected'"
+              @click="connectMcpServer(server.name)"
+              class="connect-btn"
+              title="Connect server"
+            >
+              <component :is="ConnectIcon" class="w-3 h-3" />
+            </button>
+            <button 
+              v-else
+              @click="showMcpTools(server.name)"
+              class="tools-btn"
+              title="View tools"
+            >
+              <component :is="ToolsIcon" class="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Smart Suggestions -->
     <div class="sidebar-section">
       <h3 class="section-title">Quick Actions</h3>
@@ -125,6 +196,7 @@
           v-for="branch in relatedBranches" 
           :key="branch.id"
           class="related-item"
+          :class="{ 'is-current': canvasStore.snappedNodeId === branch.id }"
           @click="navigateToBranch(branch.id)"
         >
           <div class="related-preview">
@@ -275,7 +347,8 @@ import {
 } from '@heroicons/vue/24/outline'
 import { 
   X, Lightbulb, AlertCircle, Code, Zap, Brain, CheckCircle, 
-  XCircle, ThumbsUp, ThumbsDown 
+  XCircle, ThumbsUp, ThumbsDown, Settings, Terminal, DollarSign,
+  HelpCircle, Trash2, Archive, Wrench, Link
 } from 'lucide-vue-next'
 import { useSnappedNodeLayout } from '@/composables/useSnappedNodeLayout'
 import { useCanvasStore } from '@/stores/canvasStore'
@@ -389,6 +462,38 @@ const selectedReflection = ref<any>(null)
 
 // Use responsive layout composable  
 const { rightSidebarStyle: responsiveStyle, layoutStrategy } = useSnappedNodeLayout()
+
+// Command palette state
+const commandSearch = ref('')
+
+// Quick commands for Claude Code
+const quickCommands = ref([
+  { name: '/config', description: 'View and edit configuration', icon: Settings, key: 'C' },
+  { name: '/tools', description: 'List available tools', icon: Wrench, key: 'T' },
+  { name: '/help', description: 'Show help information', icon: HelpCircle, key: 'H' },
+  { name: '/cost', description: 'Display usage costs', icon: DollarSign, key: '$' },
+  { name: '/clear', description: 'Clear conversation history', icon: Trash2, key: 'X' },
+  { name: '/compact', description: 'Compact conversation', icon: Archive, key: 'K' },
+])
+
+const filteredQuickCommands = computed(() => {
+  if (!commandSearch.value) return quickCommands.value
+  return quickCommands.value.filter(cmd => 
+    cmd.name.toLowerCase().includes(commandSearch.value.toLowerCase()) ||
+    cmd.description.toLowerCase().includes(commandSearch.value.toLowerCase())
+  )
+})
+
+// Mock MCP servers (would come from Claude Code service in real implementation)
+const mcpServers = ref([
+  { name: 'filesystem', status: 'connected', toolCount: 5 },
+  { name: 'browser', status: 'connected', toolCount: 8 },
+  { name: 'database', status: 'disconnected', toolCount: 12 },
+  { name: 'api-client', status: 'connected', toolCount: 3 }
+])
+
+const ConnectIcon = Link
+const ToolsIcon = Wrench
 
 // Real thread navigation data from canvasStore
 const threadNodes = computed<ThreadNode[]>(() => {
@@ -796,13 +901,25 @@ const navigateToBranch = (branchId: string) => {
   // Navigate to a related branch (different chat)
   const targetNode = canvasStore.nodes.find(node => node.id === branchId)
   if (targetNode) {
+    // First ensure the target node is visible on canvas if not already
+    if (!targetNode.x || !targetNode.y) {
+      // Position it if it doesn't have coordinates
+      targetNode.x = window.innerWidth / 2
+      targetNode.y = window.innerHeight / 2
+    }
+    
+    // Snap to the target node (this will maintain snapped mode)
     canvasStore.snapNode(branchId)
     
-    // If it's from a different chat, we might need to load that chat
+    // If it's from a different chat, we might need to load that chat's context
     if (targetNode.chatId !== currentNode.value?.chatId) {
-      // This could trigger a chat switch if needed
-      console.log('Switching to chat:', targetNode.chatId)
+      console.log('Navigating to thread from different chat:', targetNode.chatId)
+      // In the future, this could trigger loading the full chat context
     }
+    
+    console.log(`Navigated to similar thread: ${targetNode.title || branchId}`)
+  } else {
+    console.warn('Target node not found:', branchId)
   }
 }
 
@@ -825,6 +942,70 @@ const openFile = (filePath: string) => {
 
 const executeAction = (action: ContextualAction) => {
   action.action()
+}
+
+// Command palette methods
+const executeSearchedCommand = () => {
+  if (commandSearch.value.startsWith('/')) {
+    executeSlashCommand(commandSearch.value)
+    commandSearch.value = ''
+  }
+}
+
+const executeQuickCommand = (command: any) => {
+  executeSlashCommand(command.name)
+}
+
+const executeSlashCommand = async (command: string) => {
+  try {
+    // Get active Claude Code instance
+    const activeInstance = toolCallStore.activeClaudeCodeInstance
+    if (!activeInstance) {
+      console.warn('No active Claude Code instance for slash command')
+      return
+    }
+
+    // Send slash command to backend
+    const response = await fetch(`/api/claude-code/instances/${activeInstance.id}/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: command
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to execute slash command')
+    }
+
+    console.log(`Executed slash command: ${command}`)
+  } catch (error) {
+    console.error('Error executing slash command:', error)
+  }
+}
+
+// MCP methods
+const connectMcpServer = async (serverName: string) => {
+  try {
+    // Mock connection logic (would connect to MCP server in real implementation)
+    const server = mcpServers.value.find(s => s.name === serverName)
+    if (server) {
+      server.status = 'connected'
+      console.log(`Connected to MCP server: ${serverName}`)
+    }
+  } catch (error) {
+    console.error(`Error connecting to MCP server ${serverName}:`, error)
+  }
+}
+
+const showMcpTools = (serverName: string) => {
+  // Mock show tools logic (would display tools in a modal or panel)
+  const server = mcpServers.value.find(s => s.name === serverName)
+  if (server) {
+    console.log(`Showing tools for MCP server: ${serverName} (${server.toolCount} tools)`)
+  }
 }
 
 // Reflection handlers
@@ -1158,6 +1339,178 @@ onBeforeUnmount(() => {
   border-color: rgba(139, 92, 246, 0.3);
 }
 
+/* Command Palette Styles */
+.command-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.command-search {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: rgba(var(--node-color-rgb), 0.05);
+  border: 1px solid rgba(var(--node-color-rgb), 0.2);
+  border-radius: 0.375rem;
+  color: var(--node-text-color);
+  font-size: 0.875rem;
+  font-family: monospace;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.search-input:focus {
+  border-color: var(--node-color);
+  box-shadow: 0 0 0 2px rgba(var(--node-color-rgb), 0.1);
+}
+
+.search-input::placeholder {
+  color: rgba(var(--node-color-rgb), 0.5);
+}
+
+.quick-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.quick-command-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: rgba(var(--node-color-rgb), 0.05);
+  border: 1px solid rgba(var(--node-color-rgb), 0.1);
+  border-radius: 0.25rem;
+  color: var(--node-text-color);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-command-btn:hover {
+  background: rgba(var(--node-color-rgb), 0.1);
+  border-color: rgba(var(--node-color-rgb), 0.2);
+}
+
+.command-text {
+  font-family: monospace;
+  flex: 1;
+  text-align: left;
+}
+
+.command-key {
+  font-size: 0.625rem;
+  font-weight: 600;
+  opacity: 0.6;
+  background: rgba(var(--node-color-rgb), 0.1);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.125rem;
+}
+
+/* MCP Status Styles */
+.mcp-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.mcp-server {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(var(--node-color-rgb), 0.05);
+  border: 1px solid rgba(var(--node-color-rgb), 0.1);
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
+}
+
+.mcp-server:hover {
+  background: rgba(var(--node-color-rgb), 0.08);
+}
+
+.mcp-server.connected {
+  border-left: 3px solid #22c55e;
+}
+
+.mcp-server.disconnected {
+  border-left: 3px solid #ef4444;
+}
+
+.server-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.status-dot.connected {
+  background: #22c55e;
+}
+
+.status-dot.disconnected {
+  background: #ef4444;
+}
+
+.server-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.server-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--node-color);
+}
+
+.server-tools {
+  font-size: 0.625rem;
+  opacity: 0.7;
+}
+
+.server-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.connect-btn, .tools-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: transparent;
+  border: 1px solid rgba(var(--node-color-rgb), 0.2);
+  border-radius: 0.25rem;
+  color: var(--node-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.connect-btn:hover, .tools-btn:hover {
+  background: rgba(var(--node-color-rgb), 0.1);
+  border-color: rgba(var(--node-color-rgb), 0.3);
+}
+
 .related-list {
   display: flex;
   flex-direction: column;
@@ -1176,6 +1529,17 @@ onBeforeUnmount(() => {
 .related-item:hover {
   background: rgba(var(--node-color-rgb), 0.1);
   border-color: rgba(var(--node-color-rgb), 0.2);
+}
+
+.related-item.is-current {
+  background: rgba(var(--node-color-rgb), 0.15);
+  border-color: var(--node-color);
+  border-left: 3px solid var(--node-color);
+}
+
+.related-item.is-current .related-title {
+  font-weight: 600;
+  color: var(--node-color);
 }
 
 .related-preview {

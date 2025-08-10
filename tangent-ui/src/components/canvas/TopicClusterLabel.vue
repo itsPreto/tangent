@@ -2,7 +2,7 @@
   <div
     class="topic-cluster-label"
     :style="{
-      transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+      transform: `translate(${position.x}px, ${position.y}px) translate(-50%, -50%) scale(${scale})`,
       opacity: visible ? 1 : 0,
       '--topic-color': topicColor,
     }"
@@ -201,4 +201,5 @@ const topicColor = computed(() => {
 .topic-cluster-label.entering {
   animation: fadeInScale 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 </style>
