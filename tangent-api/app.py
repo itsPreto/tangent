@@ -38,6 +38,8 @@ from ReflectionService import ReflectionService
 from RouterAgentService import RouterAgentService
 from AgentConfigService import AgentConfigService
 from MockDataService import MockDataService
+from CanvasConfigService import CanvasConfigService
+from ConfigFileWatcher import ConfigFileWatcher
 import tempfile
 import uuid
 import subprocess
@@ -2656,6 +2658,234 @@ reflection_service = ReflectionService()
 router_agent_service = RouterAgentService()
 agent_config_service = AgentConfigService()
 mock_data_service = MockDataService(chat_service)
+config_service = CanvasConfigService()
+
+# Global variable to store config change events for SSE
+config_change_events = []
+config_change_lock = threading.Lock()
+
+def on_config_changed(config_data):
+    """Callback for when config file changes"""
+    with config_change_lock:
+        config_change_events.append({
+            'timestamp': time.time(),
+            'config': config_data,
+            'event': 'config_updated'
+        })
+        # Keep only last 10 events
+        if len(config_change_events) > 10:
+            config_change_events.pop(0)
+
+# Initialize file watcher
+config_watcher = ConfigFileWatcher(config_service.config_path, on_config_changed)
+config_watcher.start_watching()
+
+# Canvas Configuration endpoints
+@api_routes.route('/config', methods=['GET'])
+def get_canvas_config():
+    """Get complete canvas configuration"""
+    try:
+        config = config_service.load_config()
+        return jsonify({
+            'success': True,
+            'config': config,
+            'last_modified': config_service._last_modified
+        })
+    except Exception as e:
+        logger.error(f"Error getting canvas config: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config', methods=['PUT'])
+def update_canvas_config():
+    """Update complete canvas configuration"""
+    try:
+        config_data = request.get_json()
+        if not config_data:
+            return jsonify({'success': False, 'error': 'No configuration data provided'}), 400
+        
+        success = config_service.save_config(config_data)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Configuration updated successfully',
+                'config': config_data
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to save configuration'}), 500
+    except Exception as e:
+        logger.error(f"Error updating canvas config: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/<section>', methods=['GET'])
+def get_config_section(section):
+    """Get specific configuration section"""
+    try:
+        section_data = config_service.get_section(section)
+        if section_data is None:
+            return jsonify({'success': False, 'error': f'Section "{section}" not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'section': section,
+            'data': section_data
+        })
+    except Exception as e:
+        logger.error(f"Error getting config section {section}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/<section>', methods=['PUT'])
+def update_config_section(section):
+    """Update specific configuration section"""
+    try:
+        section_data = request.get_json()
+        if not section_data:
+            return jsonify({'success': False, 'error': 'No section data provided'}), 400
+        
+        success = config_service.update_section(section, section_data)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Section "{section}" updated successfully',
+                'section': section,
+                'data': section_data
+            })
+        else:
+            return jsonify({'success': False, 'error': f'Failed to update section "{section}"'}), 500
+    except Exception as e:
+        logger.error(f"Error updating config section {section}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/positioning', methods=['GET'])
+def get_positioning_values():
+    """Get all positioning values for migration purposes"""
+    try:
+        positioning = config_service.get_positioning_values()
+        return jsonify({
+            'success': True,
+            'positioning': positioning
+        })
+    except Exception as e:
+        logger.error(f"Error getting positioning values: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/reload', methods=['POST'])
+def reload_config():
+    """Force reload configuration from file"""
+    try:
+        config = config_service.load_config()
+        return jsonify({
+            'success': True,
+            'message': 'Configuration reloaded successfully',
+            'config': config,
+            'last_modified': config_service._last_modified
+        })
+    except Exception as e:
+        logger.error(f"Error reloading config: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/validate', methods=['POST'])
+def validate_config():
+    """Validate configuration data without saving"""
+    try:
+        config_data = request.get_json()
+        if not config_data:
+            return jsonify({'success': False, 'error': 'No configuration data provided'}), 400
+        
+        # Use the internal validation method
+        config_service._validate_config(config_data)
+        return jsonify({
+            'success': True,
+            'message': 'Configuration is valid',
+            'valid': True
+        })
+    except Exception as e:
+        logger.error(f"Config validation error: {e}")
+        return jsonify({'success': False, 'error': str(e), 'valid': False}), 400
+
+@api_routes.route('/config/export', methods=['GET'])
+def export_config():
+    """Export configuration as JSON"""
+    try:
+        json_config = config_service.export_to_json()
+        return Response(
+            json_config,
+            mimetype='application/json',
+            headers={
+                'Content-Disposition': 'attachment; filename=tangent-config.json'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error exporting config: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/import', methods=['POST'])
+def import_config():
+    """Import configuration from JSON"""
+    try:
+        if 'file' in request.files:
+            # Handle file upload
+            file = request.files['file']
+            json_string = file.read().decode('utf-8')
+        elif request.json:
+            # Handle JSON body
+            json_string = json.dumps(request.json)
+        else:
+            return jsonify({'success': False, 'error': 'No configuration data provided'}), 400
+        
+        success = config_service.import_from_json(json_string)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Configuration imported successfully'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to import configuration'}), 500
+    except Exception as e:
+        logger.error(f"Error importing config: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_routes.route('/config/stream', methods=['GET'])
+def stream_config_changes():
+    """Server-Sent Events endpoint for real-time config changes"""
+    def generate():
+        yield "data: {\"event\": \"connected\", \"message\": \"Config stream connected\"}\n\n"
+        
+        last_event_time = 0
+        while True:
+            try:
+                with config_change_lock:
+                    # Send any new events
+                    for event in config_change_events:
+                        if event['timestamp'] > last_event_time:
+                            yield f"data: {json.dumps(event)}\n\n"
+                            last_event_time = event['timestamp']
+                
+                # Check if config service detected file changes
+                if config_service.reload_if_modified():
+                    config_data = config_service.config_data
+                    event = {
+                        'timestamp': time.time(),
+                        'config': config_data,
+                        'event': 'config_reloaded'
+                    }
+                    yield f"data: {json.dumps(event)}\n\n"
+                
+                time.sleep(1)  # Check every second
+                
+            except GeneratorExit:
+                break
+            except Exception as e:
+                logger.error(f"Error in config stream: {e}")
+                yield f"data: {{\"event\": \"error\", \"error\": \"{str(e)}\"}}\n\n"
+                break
+    
+    return Response(stream_with_context(generate()), 
+                   mimetype='text/event-stream',
+                   headers={
+                       'Cache-Control': 'no-cache',
+                       'Connection': 'keep-alive',
+                       'Access-Control-Allow-Origin': '*'
+                   })
 
 # Clustering endpoints
 @api_routes.route('/clustering/start', methods=['POST'])

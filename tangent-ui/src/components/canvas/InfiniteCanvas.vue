@@ -594,13 +594,7 @@
             <!-- Tangent Logo positioned at center hub above input container -->
             <div 
               class="tangent-logo-canvas"
-              :style="{ 
-                position: 'absolute', 
-                left: '0px', 
-                top: '-100px',
-                transform: 'translateX(-50%)',
-                zIndex: 500
-              }"
+              :style="logoStyle"
             >
               <TangentLogo class="w-16 h-16 opacity-70 hover:opacity-100 transition-opacity duration-300" />
             </div>
@@ -715,6 +709,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useThemeStore } from "@/stores/themeStore";
 import type { ModelInfo } from '@/types/model';
+import { configService } from '@/services/ConfigService';
 import { debounce } from 'lodash-es';
 import { Plus, Circle, LayoutGrid, Bot, MessageSquare, Download, Sparkles, Upload, ArrowRight } from "lucide-vue-next";
 import { DotLottieVue } from '@lottiefiles/dotlottie-vue';
@@ -778,6 +773,29 @@ const perfTestPanel = ref(null);
 // Crosshair cursor state
 const showCrosshair = ref(false); // Start false, set to true on mouse enter
 const crosshairRef = ref(null);
+
+// Logo positioning from config
+const logoPosition = ref({ x: 0, y: -100 }); // Default fallback values
+
+// Load logo position from config
+const loadLogoPosition = async () => {
+  try {
+    const position = await configService.getLogoPosition()
+    logoPosition.value = position
+    console.log('Logo position loaded from config:', position)
+  } catch (error) {
+    console.warn('Failed to load logo position from config, using defaults:', error)
+  }
+}
+
+// Computed style for logo positioning
+const logoStyle = computed(() => ({
+  position: 'absolute',
+  left: `${logoPosition.value.x}px`,
+  top: `${logoPosition.value.y}px`,
+  transform: 'translateX(-50%)',
+  zIndex: 500
+}))
 const coordinatesRef = ref(null);
 const crosshairPosition = ref({ x: 0, y: 0 });
 const canvasCoordinates = ref({ x: 0, y: 0 });
@@ -2750,14 +2768,26 @@ const handleNewWorkspace = async () => {
   isWorkspaceOverview.value = false;
   isWelcomeScreen.value = true;
   
-  // Navigate to the input container coordinate (-3000, -3000) with smooth animation
+  // Navigate to the input container coordinate from config with smooth animation
   await nextTick();
   const rect = canvasRef.value?.getBoundingClientRect();
   if (rect) {
-    // Calculate correct pan values for 120% zoom to center input container at (-3000, -3000)
-    const NEW_CHAT_X = -3000;
-    const NEW_CHAT_Y = -3000;
-    const targetZoom = 1.2; // 120% zoom (more comfortable)
+    // Get input container position and dimensions from config
+    let inputPosition, containerDimensions;
+    try {
+      const hubConfig = await configService.getHubConfig();
+      inputPosition = hubConfig.components.canvas_input_container.position;
+      containerDimensions = hubConfig.components.canvas_input_container.dimensions;
+    } catch (error) {
+      console.warn('Failed to get input container config, using defaults:', error);
+      inputPosition = { x: 0, y: 0 }; // Default to center hub
+      containerDimensions = { width: 600, height: 300 }; // Default dimensions
+    }
+    
+    // Calculate center of input container, offset up by 200px for better positioning
+    const NEW_CHAT_X = inputPosition.x + containerDimensions.width / 2;
+    const NEW_CHAT_Y = inputPosition.y + containerDimensions.height / 2 - 200;
+    const targetZoom = 1.5; // 150% zoom
     
     // Calculate pan values to center the input container coordinate on screen
     const targetPanX = rect.width / 2 - NEW_CHAT_X * targetZoom;
@@ -3283,6 +3313,9 @@ const isInitializing = ref(false);
 
 // Cleanup on component unmount
 onBeforeUnmount(() => {
+  // Clean up config listener
+  configService.stopListening();
+  
   window.removeEventListener("keydown", handleKeyDown);
   window.removeEventListener("dragenter", handleDragEnter);
   window.removeEventListener("dragleave", handleDragLeave);
@@ -3897,13 +3930,27 @@ const handleTargetPositionRequest = () => {
   console.log('Target position set for node creation:', targetWorldPosition.value);
 };
 
-const handleContainerFocus = () => {
+const handleContainerFocus = async () => {
   // Center container on viewport and set zoom to 90% when user starts typing
   if (!canvasRef.value) return;
   
   const rect = canvasRef.value.getBoundingClientRect();
-  const containerX = 0; // Input container world position (center)
-  const containerY = 0;
+  
+  // Get input container position and dimensions from config
+  let inputPosition, containerDimensions;
+  try {
+    const hubConfig = await configService.getHubConfig();
+    inputPosition = hubConfig.components.canvas_input_container.position;
+    containerDimensions = hubConfig.components.canvas_input_container.dimensions;
+  } catch (error) {
+    console.warn('Failed to get input container config, using defaults:', error);
+    inputPosition = { x: 0, y: 0 }; // Default to center hub
+    containerDimensions = { width: 600, height: 300 }; // Default dimensions
+  }
+  
+  // Calculate center of input container
+  const containerX = inputPosition.x + containerDimensions.width / 2;
+  const containerY = inputPosition.y + containerDimensions.height / 2;
   const targetZoom = 0.9; // 90% zoom
   
   // Calculate pan values to center the container
@@ -7047,6 +7094,18 @@ onMounted(async () => {
 
     // Initialize model registry
     updateModelRegistry();
+
+    // Load logo position from config
+    await loadLogoPosition();
+
+    // Start listening to config changes for real-time updates
+    configService.startListening();
+    configService.addEventListener('config_updated', (data) => {
+      if (data.config && data.config.hub) {
+        logoPosition.value = data.config.hub.components.tangent_logo.position;
+        console.log('Logo position updated via config change:', logoPosition.value);
+      }
+    });
 
     // Simulate loading progress for modern UI
     const interval = setInterval(() => {

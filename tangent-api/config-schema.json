@@ -1,0 +1,323 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tangent Canvas Configuration Schema",
+  "description": "Schema for validating Tangent canvas configuration files",
+  "type": "object",
+  "required": ["version", "hub", "topic_clusters", "nodes", "viewport"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Configuration schema version"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp when config was created"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp when config was last updated"
+    },
+    "hub": {
+      "type": "object",
+      "required": ["position", "components"],
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/position2d"
+        },
+        "components": {
+          "type": "object",
+          "properties": {
+            "tangent_logo": {
+              "type": "object",
+              "required": ["position", "dimensions"],
+              "properties": {
+                "position": {
+                  "$ref": "#/definitions/position2d"
+                },
+                "dimensions": {
+                  "$ref": "#/definitions/dimensions2d"
+                }
+              }
+            },
+            "canvas_input_container": {
+              "type": "object",
+              "required": ["position", "dimensions"],
+              "properties": {
+                "position": {
+                  "$ref": "#/definitions/position2d"
+                },
+                "dimensions": {
+                  "type": "object",
+                  "required": ["width", "height"],
+                  "properties": {
+                    "width": {
+                      "type": "number",
+                      "minimum": 200
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 100
+                    },
+                    "claude_mode_width": {
+                      "type": "number",
+                      "minimum": 200
+                    }
+                  }
+                },
+                "z_index": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "topic_clusters": {
+      "type": "object",
+      "required": ["layout_mode"],
+      "properties": {
+        "layout_mode": {
+          "type": "string",
+          "enum": ["circular", "grid", "spiral"]
+        },
+        "circle_configuration": {
+          "type": "object",
+          "properties": {
+            "inner_circle": {
+              "$ref": "#/definitions/circle_config"
+            },
+            "outer_circle": {
+              "$ref": "#/definitions/circle_config"
+            }
+          }
+        },
+        "grid_configuration": {
+          "type": "object",
+          "properties": {
+            "columns": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "spacing": {
+              "$ref": "#/definitions/position2d"
+            },
+            "offset": {
+              "$ref": "#/definitions/position2d"
+            }
+          }
+        }
+      }
+    },
+    "nodes": {
+      "type": "object",
+      "required": ["default_dimensions", "spacing"],
+      "properties": {
+        "default_dimensions": {
+          "type": "object",
+          "properties": {
+            "standard": {
+              "$ref": "#/definitions/dimensions2d"
+            },
+            "compact": {
+              "$ref": "#/definitions/dimensions2d"
+            }
+          }
+        },
+        "spacing": {
+          "type": "object",
+          "properties": {
+            "minimum_distance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cluster_padding": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "viewport": {
+      "type": "object",
+      "required": ["default_zoom", "min_zoom", "max_zoom"],
+      "properties": {
+        "default_zoom": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 5.0
+        },
+        "min_zoom": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 1.0
+        },
+        "max_zoom": {
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 10.0
+        },
+        "center_animation_duration": {
+          "type": "number",
+          "minimum": 100,
+          "maximum": 2000
+        },
+        "distance_indicator": {
+          "type": "object",
+          "properties": {
+            "threshold": {
+              "type": "number",
+              "minimum": 500
+            },
+            "show_delay": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "lod": {
+      "type": "object",
+      "properties": {
+        "thresholds": {
+          "type": "object",
+          "properties": {
+            "high_detail": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 1.0
+            },
+            "medium_detail": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 0.5
+            },
+            "low_detail": {
+              "type": "number",
+              "minimum": 0.001,
+              "maximum": 0.1
+            },
+            "ultra_low": {
+              "type": "number",
+              "minimum": 0.0001,
+              "maximum": 0.01
+            }
+          }
+        },
+        "buffer_zones": {
+          "type": "object",
+          "properties": {
+            "viewport_buffer": {
+              "type": "number",
+              "minimum": 0
+            },
+            "culling_buffer": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "visual": {
+      "type": "object",
+      "properties": {
+        "theme_aware_backgrounds": {
+          "type": "boolean"
+        },
+        "contrast_enhancement": {
+          "type": "boolean"
+        },
+        "node_border_radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "shadow_blur": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "development": {
+      "type": "object",
+      "properties": {
+        "debug_mode": {
+          "type": "boolean"
+        },
+        "show_coordinate_grid": {
+          "type": "boolean"
+        },
+        "log_position_changes": {
+          "type": "boolean"
+        },
+        "curl_test_endpoint": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "properties": {
+        "backup_original_positions": {
+          "type": "boolean"
+        },
+        "validate_before_apply": {
+          "type": "boolean"
+        },
+        "rollback_on_error": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "position2d": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "dimensions2d": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": {
+          "type": "number",
+          "minimum": 1
+        },
+        "height": {
+          "type": "number",
+          "minimum": 1
+        }
+      }
+    },
+    "circle_config": {
+      "type": "object",
+      "required": ["radius", "max_topics"],
+      "properties": {
+        "radius": {
+          "type": "number",
+          "minimum": 1000
+        },
+        "max_topics": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        }
+      }
+    }
+  }
+}

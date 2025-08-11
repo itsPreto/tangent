@@ -1,0 +1,74 @@
+version: '1.0'
+created_at: '2025-08-10T18:20:00Z'
+updated_at: '2025-08-10T23:04:11.387171+00:00'
+hub:
+  position:
+    x: 0
+    y: 0
+  components:
+    tangent_logo:
+      position:
+        x: 60
+        y: -200
+      dimensions:
+        width: 250
+        height: 80
+topic_clusters:
+  layout_mode: circular
+  circle_configuration:
+    inner_circle:
+      radius: 25000
+      max_topics: 8
+    outer_circle:
+      radius: 40000
+      max_topics: 16
+  grid_configuration:
+    columns: 3
+    spacing:
+      x: 15000
+      y: 10000
+    offset:
+      x: 0
+      y: 5000
+nodes:
+  default_dimensions:
+    standard:
+      width: 400
+      height: 300
+    compact:
+      width: 120
+      height: 40
+  spacing:
+    minimum_distance: 500
+    cluster_padding: 1000
+viewport:
+  default_zoom: 0.9
+  min_zoom: 0.001
+  max_zoom: 3.0
+  center_animation_duration: 600
+  distance_indicator:
+    threshold: 2000
+    show_delay: 50
+lod:
+  thresholds:
+    high_detail: 0.5
+    medium_detail: 0.1
+    low_detail: 0.05
+    ultra_low: 0.01
+  buffer_zones:
+    viewport_buffer: 500
+    culling_buffer: 1000
+visual:
+  theme_aware_backgrounds: true
+  contrast_enhancement: true
+  node_border_radius: 8
+  shadow_blur: 12
+development:
+  debug_mode: false
+  show_coordinate_grid: false
+  log_position_changes: false
+  curl_test_endpoint: http://127.0.0.1:5050/api/config
+migration:
+  backup_original_positions: true
+  validate_before_apply: true
+  rollback_on_error: true
