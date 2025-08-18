@@ -76,7 +76,13 @@
       :style="{ cursor: appStore.isSettingsOverlayOpen ? 'pointer' : 'auto' }"
     >
       <!-- Canvas Area -->
-      <div class="canvas-area">
+      <div class="canvas-area" style="position: relative;" :class="{ 'viewport-animating': isViewportAnimating }">
+        <!-- Territory Overlay -->
+        <WorkspaceTerritoryOverlay 
+          :show-territories="showWorkspaceTerritories"
+          :canvas-transform="canvasTransform"
+        />
+        
         <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
           :model-type="modelType" :side-panel-open="false"
           :right-panel-open="dropdownState !== 'collapsed'" 
@@ -148,6 +154,9 @@
     <SettingsSlideOverlay 
       :is-open="appStore.isSettingsOverlayOpen"
       @close="appStore.closeSettingsOverlay" />
+      
+    <!-- Performance Test Overlay -->
+    <PerformanceTestOverlay @toggle-territories="showWorkspaceTerritories = $event" />
 
     <!-- Mock Data Controls Panel -->
     <!-- <Transition name="slide-in-right">
@@ -195,6 +204,8 @@ import LeftNavigationDropdown from './components/ui/LeftNavigationDropdown.vue';
 import RightFeaturesDropdown from './components/ui/RightFeaturesDropdown.vue';
 import SlidingFooter from './components/ui/SlidingFooter.vue';
 import SettingsSlideOverlay from './components/ui/SettingsSlideOverlay.vue';
+import PerformanceTestOverlay from './components/ui/PerformanceTestOverlay.vue';
+import WorkspaceTerritoryOverlay from './components/ui/WorkspaceTerritoryOverlay.vue';
 import MockDataControls from './components/ui/MockDataControls.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
@@ -220,6 +231,9 @@ const selectedToolCall = ref<any | null>(null);
 
 // Canvas and workspace state
 const canvasRef = ref<InstanceType<typeof InfiniteCanvas> | null>(null);
+const showWorkspaceTerritories = ref(false);
+const canvasTransform = ref({ zoom: 1, panX: 0, panY: 0 });
+const isViewportAnimating = ref(false);
 
 // Computed props for InfiniteCanvas in dual sidebar mode
 
@@ -305,6 +319,30 @@ const handleWorkspaceOpen = (event: any) => {
 provide('canvasRef', canvasRef);
 // Start with a reasonable default zoom that won't be jarring
 const canvasZoom = ref(0.5);
+
+// Animation detection for pan fix
+let animationTimeoutId = null;
+const detectViewportAnimation = () => {
+  isViewportAnimating.value = true;
+  
+  // Clear existing timeout
+  if (animationTimeoutId) {
+    clearTimeout(animationTimeoutId);
+  }
+  
+  // Reset after animation completes (most canvas animations are 300-800ms)
+  animationTimeoutId = setTimeout(() => {
+    isViewportAnimating.value = false;
+  }, 1000);
+};
+
+// Provide the animation detection function and flag after they're declared
+provide('detectViewportAnimation', detectViewportAnimation);
+provide('isViewportAnimating', isViewportAnimating);
+
+// The animation detection will be handled directly by the InfiniteCanvas component
+// when it starts programmatic pan/zoom animations (like focusOnNode, autoFitNodes, etc.)
+// This avoids interfering with user-initiated zoom/pan gestures
 
 const windowSize = ref({
   innerHeight: 0,
@@ -1525,6 +1563,15 @@ onBeforeUnmount(() => {
 
 /* The InfiniteCanvas should handle content centering internally via props */
 /* We're passing: right-panel-width, effective-canvas-width, effective-right-margin */
+
+/* Fix for pan animation conflicts - disable mouse events during viewport animations */
+.canvas-area.viewport-animating {
+  pointer-events: none;
+}
+
+.canvas-area.viewport-animating * {
+  pointer-events: none !important;
+}
 
 /* Morphing panel animation */
 @keyframes slideInFromRight {

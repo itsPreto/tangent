@@ -679,6 +679,7 @@
 import {
   ref,
   provide,
+  inject,
   computed,
   nextTick,
   onMounted,
@@ -730,6 +731,10 @@ const toolCallStore = useToolCallStore();
 const modelStore = useModelStore();
 const appStore = useAppStore();
 const themeStore = useThemeStore();
+
+// Inject pan animation fix from App.vue
+const detectViewportAnimation = inject('detectViewportAnimation');
+const isViewportAnimating = inject('isViewportAnimating', ref(false));
 
 
 // Theme computeds
@@ -2843,6 +2848,10 @@ const centerAndSnapNode = (nodeId: string) => {
   }
 
   store.isTransitioning = true;
+  // Signal viewport animation to prevent pan conflicts
+  if (detectViewportAnimation) {
+    detectViewportAnimation();
+  }
 
   const center = getNodeCenter(node);
   if (!canvasRef.value) {
@@ -3270,9 +3279,11 @@ const handleWheel = (e: WheelEvent) => {
   } else if (shouldPan) {
     // Set panning flag to disable node style recalculations
     isPanning.value = true;
+    isTrackpadPanning.value = true; // Mark as trackpad panning
     if (panTimeout) clearTimeout(panTimeout);
     panTimeout = setTimeout(() => {
       isPanning.value = false;
+      isTrackpadPanning.value = false; // Reset trackpad panning flag
     }, 100); // Keep flag active for 100ms after last pan event
     
     // Throttle pan updates to animation frame for smoother performance
@@ -4582,6 +4593,10 @@ const centerOnNode = (nodeId) => {
   if (!node) return;
 
   store.isTransitioning = true;
+  // Signal viewport animation to prevent pan conflicts
+  if (detectViewportAnimation) {
+    detectViewportAnimation();
+  }
   
   // Use the same bounds calculation as clicking for consistency
   const bounds = calculateNodeBounds(node);
@@ -5813,6 +5828,10 @@ const autoFitNodesLegacy = (disableTransition = false) => {
   isAutoZooming.value = true;
   if (!disableTransition) {
     store.isTransitioning = true;
+    // Signal viewport animation to prevent pan conflicts
+    if (detectViewportAnimation) {
+      detectViewportAnimation();
+    }
   }
 
   zoom.value = newZoom;
@@ -5898,6 +5917,10 @@ const autoFitNodes = (disableTransition = false, forceZoom = false) => {
     
     if (!disableTransition) {
       store.isTransitioning = true;
+      // Signal viewport animation to prevent pan conflicts
+      if (detectViewportAnimation) {
+        detectViewportAnimation();
+      }
     }
 
     panX.value = targetCenterX - centerX * currentZoom;
@@ -5931,6 +5954,10 @@ const autoFitNodes = (disableTransition = false, forceZoom = false) => {
     isAutoZooming.value = true;
     if (!disableTransition) {
       store.isTransitioning = true;
+      // Signal viewport animation to prevent pan conflicts
+      if (detectViewportAnimation) {
+        detectViewportAnimation();
+      }
     }
 
     zoom.value = newZoom;
@@ -6415,11 +6442,15 @@ const resetInactivityTimer = () => {
   // Auto-center on idle has been disabled
 };
 
+// Track if we're doing trackpad panning (2-finger gesture) vs mouse dragging
+const isTrackpadPanning = ref(false);
+
 // Throttled pan handler for better performance
 let panFrame = null;
 const handleMouseMove = (e) => {
   // Always check viewport return if panning, regardless of other conditions
-  if (isPanning.value && lastPanPosition.value) {
+  // BUT skip if we're doing trackpad panning (2-finger gesture)
+  if (isPanning.value && lastPanPosition.value && !isTrackpadPanning.value) {
     // Throttle pan updates to animation frame for smoother performance
     if (!panFrame) {
       panFrame = requestAnimationFrame(() => {
