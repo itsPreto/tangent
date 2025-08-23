@@ -398,6 +398,71 @@ const autoArrange = () => {
   height: 16px;
 }
 
+/* Theme-specific overrides for extreme dark themes */
+[data-theme="cyberpunk"] .docker-container {
+  background: oklch(30% 0.1 280 / 0.95);
+  border-color: oklch(50% 0.3 280 / 0.3);
+}
+
+[data-theme="acid"] .docker-container {
+  background: oklch(28% 0.1 120 / 0.95);
+  border-color: oklch(60% 0.4 120 / 0.3);
+}
+
+[data-theme="cyberpunk"] .action-button {
+  background: oklch(35% 0.2 280 / 0.1);
+  border-color: oklch(50% 0.3 280 / 0.2);
+  color: oklch(75% 0.3 280 / 0.8);
+}
+
+[data-theme="acid"] .action-button {
+  background: oklch(35% 0.2 120 / 0.1);
+  border-color: oklch(60% 0.4 120 / 0.2);
+  color: oklch(75% 0.4 120 / 0.8);
+}
+
+[data-theme="cyberpunk"] .action-button:hover {
+  background: oklch(45% 0.2 280 / 0.2);
+  color: oklch(85% 0.3 280);
+}
+
+[data-theme="acid"] .action-button:hover {
+  background: oklch(50% 0.3 120 / 0.2);
+  color: oklch(85% 0.4 120);
+}
+
+[data-theme="cyberpunk"] .action-button.active {
+  background: oklch(60% 0.3 280 / 0.3);
+  color: oklch(90% 0.4 280);
+  border-color: oklch(60% 0.3 280 / 0.5);
+}
+
+[data-theme="acid"] .action-button.active {
+  background: oklch(70% 0.4 120 / 0.3);
+  color: oklch(90% 0.5 120);
+  border-color: oklch(70% 0.4 120 / 0.5);
+}
+
+[data-theme="cyberpunk"] .coords-value,
+[data-theme="cyberpunk"] .curvature-value {
+  background: oklch(35% 0.2 280 / 0.15);
+  color: oklch(80% 0.3 280);
+}
+
+[data-theme="acid"] .coords-value,
+[data-theme="acid"] .curvature-value {
+  background: oklch(35% 0.2 120 / 0.15);
+  color: oklch(80% 0.4 120);
+}
+
+[data-theme="cyberpunk"] .separator {
+  background: oklch(50% 0.3 280 / 0.3);
+}
+
+[data-theme="acid"] .separator {
+  background: oklch(60% 0.4 120 / 0.3);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .docker-container {

@@ -54,11 +54,11 @@
     </div>
 
     <!-- Preview LOD: Shows last message preview -->  
-    <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-xl border-2 backdrop-blur-md p-4 transition-all duration-300 shadow-lg preview-lod-card" :style="{
-      background: isDarkTheme ? 'color-mix(in srgb, oklch(var(--b1)) 95%, oklch(var(--p)) 8%)' : 'color-mix(in srgb, oklch(var(--b1)) 95%, oklch(var(--p)) 5%)',
-      borderColor: 'oklch(from oklch(var(--p)) l c h / 0.6)',
-      boxShadow: `0 8px 32px -4px oklch(from oklch(var(--p)) l c h / 0.3), 0 0 0 1px oklch(from oklch(var(--bc)) l c h / 0.1)`,
-      color: 'oklch(var(--bc))'
+    <div v-if="shouldShowPreview" class="w-[480px] h-[120px] rounded-xl border backdrop-blur-md p-4 transition-all duration-300 shadow-md preview-lod-card" :style="{
+      background: getLODBackground('preview'),
+      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.2)',
+      boxShadow: '0 4px 16px -2px oklch(from oklch(var(--bc)) l c h / 0.15)',
+      color: getLODTextColor('preview')
     }">
       <div class="flex flex-col h-full">
         <!-- Title and message count -->
@@ -93,11 +93,11 @@
     </div>
     
     <!-- Compact LOD: Simplified small card -->
-    <div v-else-if="shouldShowCompact" class="w-[60px] h-[60px] rounded-lg border-2 transition-all duration-300 flex items-center justify-center compact-lod-card relative" :style="{
-      backgroundColor: isDarkTheme ? 'color-mix(in srgb, oklch(var(--p)) 85%, oklch(var(--bc)) 15%)' : 'color-mix(in srgb, oklch(var(--p)) 90%, white 10%)',
-      borderColor: isDarkTheme ? 'oklch(from oklch(var(--bc)) l c h / 0.4)' : 'oklch(from oklch(var(--bc)) l c h / 0.3)',
-      color: isDarkTheme ? 'oklch(var(--pc))' : 'oklch(var(--pc))',
-      boxShadow: isDarkTheme ? '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.3)' : '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.2)'
+    <div v-else-if="shouldShowCompact" class="w-[60px] h-[60px] rounded-lg border backdrop-blur-sm transition-all duration-300 flex items-center justify-center compact-lod-card relative" :style="{
+      background: getLODBackground('compact'),
+      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.15)',
+      color: getLODTextColor('compact'),
+      boxShadow: '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.1)'
     }">
       <!-- Message count only -->
       <div class="font-bold text-sm" :style="{ color: 'oklch(var(--pc))' }">
@@ -106,11 +106,11 @@
     </div>
     
     <!-- Cluster LOD: Tiny square with index -->
-    <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded-md border-2 flex items-center justify-center transition-all duration-300 cluster-lod-dot" :style="{
-      backgroundColor: isDarkTheme ? 'color-mix(in srgb, oklch(var(--p)) 80%, oklch(var(--bc)) 20%)' : 'color-mix(in srgb, oklch(var(--p)) 85%, white 15%)',
-      borderColor: isDarkTheme ? 'oklch(from oklch(var(--bc)) l c h / 0.6)' : 'oklch(from oklch(var(--bc)) l c h / 0.4)',
-      boxShadow: isDarkTheme ? '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.4)' : '0 2px 8px -1px oklch(from oklch(var(--bc)) l c h / 0.3)',
-      color: isDarkTheme ? 'oklch(var(--pc))' : 'oklch(var(--pc))'
+    <div v-else-if="shouldShowCluster" class="w-[20px] h-[20px] rounded-md border flex items-center justify-center transition-all duration-300 cluster-lod-dot" :style="{
+      background: 'oklch(from oklch(var(--b1)) l c h / 0.6)',
+      borderColor: 'oklch(from oklch(var(--bc)) l c h / 0.1)',
+      color: 'oklch(var(--bc))',
+      boxShadow: 'none'
     }">
       <div class="font-black text-xs leading-none" :style="{ color: 'oklch(var(--pc))' }">
         {{ canvasStore.nodeIndices.get(node.id) || '?' }}
@@ -193,12 +193,17 @@
         <div v-if="isSnapped" 
              class="snapped-node-header fixed top-0 z-[9999]"
              :style="{ 
-               borderBottom: '1px solid var(--node-border-color)',
-               color: 'var(--node-text-color)',
+               background: 'linear-gradient(180deg, oklch(from oklch(var(--b1)) calc(l + 0.02) c h / 0.98), oklch(from oklch(var(--b1)) l c h / 0.95))',
+               backdropFilter: 'blur(20px) saturate(150%)',
+               borderBottom: '1px solid oklch(from oklch(var(--bc)) l c h / 0.08)',
+               color: 'oklch(var(--bc))',
+               boxShadow: '0 1px 0 oklch(from oklch(var(--bc)) l c h / 0.05), 0 4px 12px -2px oklch(from oklch(var(--bc)) l c h / 0.08)',
                left: '0px',
-               width: appStore.isRightContentPanelOpen ? '45vw' : '65vw'
+               top: '20px',
+               width: appStore.isRightContentPanelOpen ? '40vw' : '55vw',
+               height: '60px'
              }">
-          <div class="flex items-center justify-between space-around px-6 py-4 max-w-6xl mx-auto w-full">
+          <div class="flex items-center justify-between px-3 py-1.5 h-full w-full">
             <!-- Left: Controls -->
             <div class="flex items-center">
               <!-- Expand/Collapse Button -->
@@ -649,7 +654,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, onMounted, nextTick, onBeforeUnmount, onUnmounted, watch } from 'vue';
 import {
   ChevronDown,
   ChevronUp,
@@ -749,6 +754,7 @@ const shouldShowFullContent = ref(false);
 let hoverTimer: number | null = null;
 
 const handleMouseEnter = () => {
+  // Handle the existing hover logic for full LOD content loading
   if (props.lodLevel === 'full' || props.lodLevel === undefined) {
     isHovering.value = true;
     hoverTimer = setTimeout(() => {
@@ -757,15 +763,55 @@ const handleMouseEnter = () => {
       }
     }, 1000); // 1 second delay
   }
+  
+  // Handle the new expand-on-hover logic
+  // Only enable expansion for preview and compact LODs, or full LOD in preview mode
+  if (props.lodLevel === 'preview' || props.lodLevel === 'compact' || 
+      ((props.lodLevel === 'full' || props.lodLevel === undefined) && !shouldShowExpandedContent.value)) {
+    isHoveringForExpansion.value = true;
+    
+    // Clear any existing expand timer
+    if (expandTimer.value) {
+      clearTimeout(expandTimer.value);
+    }
+    
+    // Set timer to expand after 1 second
+    expandTimer.value = setTimeout(() => {
+      if (isHoveringForExpansion.value) {
+        shouldShowExpandedContent.value = true;
+        // Notify InfiniteCanvas that this node is expanded
+        emit('set-node-expanded', props.node.id, true);
+      }
+    }, 1000);
+  }
 };
 
 const handleMouseLeave = () => {
+  // Handle existing logic
   isHovering.value = false;
   shouldShowFullContent.value = false;
   if (hoverTimer) {
     clearTimeout(hoverTimer);
     hoverTimer = null;
   }
+  
+  // Handle new expand logic
+  isHoveringForExpansion.value = false;
+  
+  // Clear the expand timer
+  if (expandTimer.value) {
+    clearTimeout(expandTimer.value);
+    expandTimer.value = null;
+  }
+  
+  // Collapse back to preview mode after a short delay
+  setTimeout(() => {
+    if (!isHoveringForExpansion.value) {
+      shouldShowExpandedContent.value = false;
+      // Notify InfiniteCanvas that this node is no longer expanded
+      emit('set-node-expanded', props.node.id, false);
+    }
+  }, 200);
 };
 
 // Initialize layout composable for responsive snapped node layout
@@ -797,7 +843,8 @@ const emit = defineEmits([
   'expansion-change',
   'update-messages',
   'update-node',
-  'reflectionSuggestionClick'
+  'reflectionSuggestionClick',
+  'set-node-expanded'
 ]);
 
 // Local state and refs
@@ -1062,18 +1109,90 @@ let abortController: AbortController | null = null;
 const isMediaProcessing = ref(false);
 const isAutoCaptioning = ref(false);
 
-// Enhanced LOD System - 5 levels
+// Hover-to-expand system
+const isHoveringForExpansion = ref(false);
+const shouldShowExpandedContent = ref(false);
+const expandTimer = ref<NodeJS.Timeout | null>(null);
+
+// Enhanced LOD System - Preview becomes default "full", detailed content on demand
 const shouldShowFullDetail = computed(() => {
-  return props.lodLevel === 'full' || props.lodLevel === undefined;
+  // Only show detailed content when explicitly expanded via hover/focus
+  return (props.lodLevel === 'full' || props.lodLevel === undefined) && shouldShowExpandedContent.value;
 });
+
 const shouldShowPreview = computed(() => {
-  return props.lodLevel === 'preview';
+  // Never show preview LOD for snapped nodes
+  if (isSnapped.value) return false;
+  
+  // Preview is now the default for "full" LOD when not expanded
+  return props.lodLevel === 'preview' || 
+         ((props.lodLevel === 'full' || props.lodLevel === undefined) && !shouldShowExpandedContent.value);
 });
+
 const shouldShowCompact = computed(() => {
+  // Never show compact LOD for snapped nodes
+  if (isSnapped.value) return false;
+  
   return props.lodLevel === 'compact';
 });
+
+// Get consistent LOD background across all levels
+const getLODBackground = (lodLevel: string) => {
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+  
+  // Special handling for extreme dark themes - use consistent colors across ALL LODs
+  let baseBackground;
+  
+  if (currentTheme === 'cyberpunk') {
+    // Use a purple-tinted background for ALL cyberpunk LODs
+    baseBackground = 'color-mix(in srgb, oklch(var(--b1)) 80%, oklch(70% 0.4 280) 20%)';
+  } else if (currentTheme === 'acid') {
+    // Use a green-tinted background for ALL acid LODs
+    baseBackground = 'color-mix(in srgb, oklch(var(--b1)) 80%, oklch(80% 0.5 120) 20%)';
+  } else {
+    // Default: standard color-mix formula
+    baseBackground = 'color-mix(in srgb, oklch(var(--b1)) 95%, oklch(var(--p)) 3%)';
+  }
+  
+  // Apply consistent transparency based on LOD level
+  switch (lodLevel) {
+    case 'full':
+      return baseBackground; // 100% solid
+    case 'preview':
+      return `color-mix(in srgb, ${baseBackground} 90%, transparent 10%)`;
+    case 'compact':
+      return `color-mix(in srgb, ${baseBackground} 85%, transparent 15%)`;
+    default:
+      return baseBackground;
+  }
+};
+
+// Get consistent LOD text color for proper contrast
+const getLODTextColor = (lodLevel: string) => {
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+  
+  // Special handling for extreme themes - use dark text on light backgrounds
+  if (currentTheme === 'cyberpunk') {
+    return 'oklch(25% 0.4 280)'; // Dark purple text
+  } else if (currentTheme === 'acid') {
+    return 'oklch(30% 0.5 120)'; // Dark green text
+  } else {
+    // Default: use standard theme text color
+    return 'oklch(var(--bc))';
+  }
+};
 const shouldShowCluster = computed(() => {
+  // Never show cluster LOD for snapped nodes
+  if (isSnapped.value) return false;
+  
   return props.lodLevel === 'cluster';
+});
+
+// Cleanup on unmount for expand timer
+onUnmounted(() => {
+  if (expandTimer.value) {
+    clearTimeout(expandTimer.value);
+  }
 });
 
 // Node dimensions for connection handles
@@ -1923,6 +2042,12 @@ const cardStyle = computed(() => {
   }
   
   const style: any = {};
+  
+  // Apply consistent background for extreme themes
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+  if (currentTheme === 'cyberpunk' || currentTheme === 'acid') {
+    style.background = getLODBackground('full');
+  }
   
   // Use custom dimensions if available, otherwise use defaults
   if ((props.node as any).customWidth) {
@@ -3550,49 +3675,11 @@ onBeforeUnmount(() => {
 .glow-highlight .node-card {
   position: relative;
   border-color: var(--node-color);
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-.glow-highlight .node-card::after {
-  content: '';
-  position: absolute;
-  inset: -20px;
-  border-radius: inherit;
-  background: transparent;
-  box-shadow: 
-    inset 0 0 30px 10px var(--node-glow-color),
-    inset 0 0 60px 20px var(--node-glow-color);
-  opacity: 0.5;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.glow-highlight .node-card {
   box-shadow: 
     0 0 0 2px var(--node-color),
-    0 0 15px 5px var(--node-glow-color),
-    0 0 30px 10px var(--node-glow-color),
-    0 0 45px 15px var(--node-glow-color),
+    0 0 12px 3px var(--node-glow-color),
     0 8px 20px var(--node-shadow-color);
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 
-      0 0 0 2px var(--node-color),
-      0 0 15px 5px var(--node-glow-color),
-      0 0 30px 10px var(--node-glow-color),
-      0 0 45px 15px var(--node-glow-color),
-      0 8px 20px var(--node-shadow-color);
-  }
-  50% {
-    box-shadow: 
-      0 0 0 3px var(--node-color),
-      0 0 25px 8px var(--node-glow-color),
-      0 0 50px 15px var(--node-glow-color),
-      0 0 75px 25px var(--node-glow-color),
-      0 8px 25px var(--node-shadow-color);
-  }
+  transition: box-shadow 0.3s ease;
 }
 
 /* Streaming effect overlays */
@@ -3613,7 +3700,8 @@ onBeforeUnmount(() => {
   background-size: 200% 100%;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
-  animation: flowBorder 3s linear infinite;
+  /* Removed infinite animation for performance - enable only when streaming */
+  /* animation: flowBorder 3s linear infinite; */
   opacity: 0;
   transition: opacity 1s ease-in-out;
   z-index: 0;
@@ -4085,7 +4173,14 @@ onBeforeUnmount(() => {
 
 .cluster-lod-dot {
   transform-origin: center;
-  animation: subtlePulse 3s ease-in-out infinite;
+  /* Removed infinite animation for performance */
+  /* animation: subtlePulse 3s ease-in-out infinite; */
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.cluster-lod-dot:hover {
+  transform: scale(1.1);
+  opacity: 0.9;
 }
 
 @keyframes subtlePulse {
@@ -4093,21 +4188,18 @@ onBeforeUnmount(() => {
   50% { transform: scale(1.1); opacity: 0.9; }
 }
 
-.cluster-lod-dot:hover {
-  animation-play-state: paused;
-  transform: scale(1.2);
-}
+/* Removed duplicate hover state */
 
 /* Snapped card styling */
 .snapped-card {
   backdrop-filter: blur(16px) !important;
   border: 1px solid var(--node-border-color);
-  width: var(--snapped-content-width, 70%) !important;
+  width: var(--snapped-content-width, 55%) !important;
   display: flex !important;
   flex-direction: column !important;
   height: var(--snapped-content-height, calc(100vh - 8rem)) !important;
   max-height: var(--snapped-content-height, calc(100vh - 8rem)) !important;
-  max-width: var(--snapped-content-width, 70%) !important;
+  max-width: var(--snapped-content-width, 55%) !important;
   overflow-y: hidden !important;
   box-shadow: 0 8px 32px var(--node-shadow-color);
   border-radius: 1.25rem;
@@ -4278,7 +4370,9 @@ onBeforeUnmount(() => {
   position: absolute;
   font-size: 20px;
   opacity: 0.3;
-  animation: float-bats 15s ease-in-out infinite;
+  /* Removed infinite animation for performance */
+  /* animation: float-bats 15s ease-in-out infinite; */
+  transform: translateY(0) rotate(-5deg);
   pointer-events: none;
 }
 
@@ -4464,10 +4558,102 @@ onBeforeUnmount(() => {
   justify-self: anchor-center;
 }
 
-/* Theme-aware styling for snapped header */
+/* Theme-aware styling for snapped header with improved contrast */
 .snapped-node-header {
-  --header-bg: rgba(var(--p), 0.85);
-  --header-text: var(--node-text-color);
+  --header-bg: oklch(from oklch(var(--b1)) calc(l * 0.95) c h / 0.98);
+  --header-text: oklch(var(--bc));
+  --header-border: oklch(from oklch(var(--bc)) l c h / 0.2);
+}
+
+/* Dark theme overrides for snapped header */
+.theme-dark .snapped-node-header,
+.theme-synthwave .snapped-node-header,
+.theme-cyberpunk .snapped-node-header,
+.theme-dracula .snapped-node-header,
+.theme-luxury .snapped-node-header,
+.theme-halloween .snapped-node-header,
+.theme-aqua .snapped-node-header,
+.theme-forest .snapped-node-header,
+.theme-night .snapped-node-header,
+.theme-coffee .snapped-node-header {
+  --header-bg: oklch(from oklch(var(--b2)) calc(l * 0.9) c h / 0.95);
+  --header-text: oklch(from oklch(var(--bc)) calc(l * 1.1) c h);
+  --header-border: oklch(from oklch(var(--bc)) l c h / 0.3);
+}
+
+/* Light theme overrides for snapped header */
+.theme-light .snapped-node-header,
+.theme-cupcake .snapped-node-header,
+.theme-bumblebee .snapped-node-header,
+.theme-valentine .snapped-node-header,
+.theme-garden .snapped-node-header,
+.theme-lofi .snapped-node-header,
+.theme-pastel .snapped-node-header,
+.theme-wireframe .snapped-node-header,
+.theme-winter .snapped-node-header {
+  --header-bg: oklch(from oklch(var(--b1)) calc(l * 0.98) c h / 0.98);
+  --header-text: oklch(from oklch(var(--bc)) calc(l * 0.9) c h);
+  --header-border: oklch(from oklch(var(--bc)) l c h / 0.15);
+}
+
+/* Extreme dark theme overrides for better contrast */
+.theme-cyberpunk .snapped-node-header {
+  --header-bg: oklch(15% 0.1 280 / 0.95);
+  --header-text: oklch(85% 0.3 280);
+  --header-border: oklch(40% 0.3 280 / 0.4);
+}
+
+.theme-acid .snapped-node-header {
+  --header-bg: oklch(12% 0.1 120 / 0.95);
+  --header-text: oklch(85% 0.4 120);
+  --header-border: oklch(50% 0.4 120 / 0.4);
+}
+
+/* Extreme theme node content overrides - darker text for lighter backgrounds */
+.theme-cyberpunk .node-card,
+.theme-cyberpunk .compact-lod-card,
+.theme-cyberpunk .cluster-lod-card,
+.theme-cyberpunk .preview-lod-card {
+  color: oklch(25% 0.4 280) !important; /* Much darker purple text */
+  border-color: oklch(40% 0.3 280 / 0.8) !important;
+}
+
+.theme-acid .node-card,
+.theme-acid .compact-lod-card,
+.theme-acid .cluster-lod-card,
+.theme-acid .preview-lod-card {
+  color: oklch(30% 0.5 120) !important; /* Much darker green text */
+  border-color: oklch(50% 0.4 120 / 0.8) !important;
+}
+
+/* Override specific text elements for better contrast */
+.theme-cyberpunk .node-card *,
+.theme-cyberpunk .compact-lod-card *,
+.theme-cyberpunk .preview-lod-card * {
+  color: oklch(25% 0.4 280) !important;
+}
+
+.theme-acid .node-card *,
+.theme-acid .compact-lod-card *,
+.theme-acid .preview-lod-card * {
+  color: oklch(30% 0.5 120) !important;
+}
+
+/* Button and interactive element overrides */
+.theme-cyberpunk .node-card button,
+.theme-cyberpunk .compact-lod-card button,
+.theme-cyberpunk .preview-lod-card button {
+  background: oklch(35% 0.3 280 / 0.2) !important;
+  color: oklch(20% 0.4 280) !important;
+  border-color: oklch(35% 0.3 280 / 0.5) !important;
+}
+
+.theme-acid .node-card button,
+.theme-acid .compact-lod-card button,
+.theme-acid .preview-lod-card button {
+  background: oklch(40% 0.4 120 / 0.2) !important;
+  color: oklch(25% 0.5 120) !important;
+  border-color: oklch(40% 0.4 120 / 0.5) !important;
 }
 
 /* Responsive adjustments for snapped header */

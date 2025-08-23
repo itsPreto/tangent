@@ -149,7 +149,7 @@
         class="absolute inset-0 transition-transform duration-500 ease-in-out overscroll-none touch-none"
         :style="{ cursor: shouldShowCrosshair ? 'none' : currentCursorType }"
         @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseLeave" @mouseenter="handleMouseEnter"
-        @mousedown="handleCanvasMouseDown" @contextmenu.prevent="handleContextMenu" @touchstart="handleTouchStart" @touchmove="handleTouchMove" 
+        @mousedown="handleCanvasMouseDown" @touchstart="handleTouchStart" @touchmove="handleTouchMove" 
         @touchend="handleTouchEnd" @wheel="handleWheel" @gesturestart="handleGestureStart" 
         @gesturechange="handleGestureChange" @gestureend="handleGestureEnd" tabindex="0"
         @keydown="handleKeyDown">
@@ -163,9 +163,9 @@
           style="z-index: 1000;"
         />
 
-        <!-- Selection Dialog (temporarily disabled for performance testing) -->
+        <!-- Selection Dialog -->
         <div
-          v-if="false && (selectedNodeIds.size > 0 || drawingStore.selectedShapeIds.length > 0)"
+          v-if="(selectedNodeIds.size > 0 || drawingStore.selectedShapeIds.length > 0)"
           class="selection-dialog fixed bottom-4 right-4 pointer-events-auto z-50"
         >
           <div class="selection-dialog-content">
@@ -244,42 +244,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Island Confirmation Dialog (temporarily disabled for performance) -->
-        <div
-          v-if="false && drawingStore.showIslandConfirmation && drawingStore.potentialIslandShape"
-          class="fixed bottom-4 left-1/2 transform -translate-x-1/2 pointer-events-auto z-50"
-        >
-          <div class="bg-base-100 border border-primary/20 rounded-xl shadow-2xl p-4 max-w-sm animate-slide-up">
-            <div class="flex items-start gap-3">
-              <div class="flex-shrink-0 w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-                </svg>
-              </div>
-              <div class="flex-1">
-                <h3 class="text-sm font-semibold text-base-content mb-1">Island Detected!</h3>
-                <p class="text-xs text-base-content/70 mb-3">
-                  Found {{ drawingStore.potentialIslandNodes.length }} nodes from the same workspace. Create an island to group them?
-                </p>
-                <div class="flex gap-2">
-                  <button
-                    @click="acceptIslandCreation"
-                    class="px-3 py-1.5 bg-primary text-primary-content text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors"
-                  >
-                    Create Island
-                  </button>
-                  <button
-                    @click="rejectIslandCreation"
-                    class="px-3 py-1.5 bg-base-200 text-base-content text-xs font-medium rounded-lg hover:bg-base-300 transition-colors"
-                  >
-                    Keep as Drawing
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
         
         <!-- Canvas Transform Container -->
         <div class="absolute transform-gpu" :style="transformStyle" style="z-index: 2;">
@@ -297,10 +261,10 @@
             
             <!-- Grid background that scales with canvas -->
             <rect 
-              x="-10000" 
-              y="-10000" 
-              width="20000" 
-              height="20000" 
+              :x="gridBounds.x" 
+              :y="gridBounds.y" 
+              :width="gridBounds.width" 
+              :height="gridBounds.height" 
               fill="url(#grid-pattern)" 
               pointer-events="none"
               style="z-index: -1;"
@@ -396,7 +360,10 @@
                   :fill="shape.fillColor" 
                   :opacity="shape.opacity"
                   stroke="none"
-                  :class="{ 'selected': shape.isSelected }"
+                  :class="{ 
+                    'selected': shape.isSelected,
+                    'potential-island': shape.isPotentialIsland 
+                  }"
                   @click="handleShapeClick(shape.id, $event)"
                   @mousedown="handleShapeMouseDown(shape.id, $event)"
                   :style="{ cursor: drawingStore.currentTool === 'eraser' ? 'crosshair' : shape.isLocked ? 'not-allowed' : 'pointer' }" />
@@ -701,8 +668,7 @@
             </template>
             
             <!-- Canvas Input Container (inside canvas coordinate system) -->
-            <!-- Temporarily disabled - replaced with right-click context menu -->
-            <!-- <CanvasInputContainer
+            <CanvasInputContainer
               v-if="!store.snappedNodeId"
               ref="canvasInputRef"
               :zoom="zoom"
@@ -714,7 +680,7 @@
               @morph-phase-complete="handleMorphPhaseComplete"
               @request-target-position="handleTargetPositionRequest"
               @focus-container="handleContainerFocus"
-            /> -->
+            />
 
             <!-- Tangent Logo positioned at center hub above input container -->
             <div 
@@ -797,18 +763,6 @@
       </div>
     </div>
 
-    <!-- Canvas Context Menu -->
-    <CanvasContextMenu
-      :visible="contextMenuVisible"
-      :x="contextMenuPosition.x"
-      :y="contextMenuPosition.y"
-      :world-x="contextMenuWorldPosition.x"
-      :world-y="contextMenuWorldPosition.y"
-      @new-chat="handleCreateNewChat"
-      @new-claude-code="handleCreateClaudeCode"
-      @close="contextMenuVisible = false"
-    />
-
   </div>
 </template>
 
@@ -830,7 +784,6 @@ import ToolCallCompactNode from "./node/ToolCallCompactNode.vue";
 import TopicClusterLabel from "./TopicClusterLabel.vue";
 import emitter from '@/utils/eventBus'
 import CanvasInputContainer from "./CanvasInputContainer.vue";
-import CanvasContextMenu from "./CanvasContextMenu.vue";
 import WorkspaceSearchBar from "../workspace/WorkspaceSearchBar.vue";
 import WebBranchNode from "./node/WebBranchNode.vue";
 import MainSplineConnector from "./spline/MainSplineConnector.vue";
@@ -949,11 +902,6 @@ const clusteringData = ref(null);
 const topicLabels = ref([]);
 const isClusteringTransition = ref(false);
 const isLoadingClustering = ref(false);
-
-// Context menu state
-const contextMenuVisible = ref(false);
-const contextMenuPosition = ref({ x: 0, y: 0 });
-const contextMenuWorldPosition = ref({ x: 0, y: 0 });
 
 // Computed property for topic connections
 const topicConnections = computed(() => {
@@ -1195,8 +1143,6 @@ const dragAnimationFrameId = ref(null); // For throttling drag updates
 const curvature = ref(0.5); // Spline curvature (0 = straight, 1 = very curvy)
 const lastPanPosition = ref({ x: 0, y: 0 });
 const focusedNodeId = ref(null);
-const potentialCenterNodeId = ref<string | null>(null); // Node to potentially center on if not dragging
-const dragStartMousePos = ref<{ x: number; y: number } | null>(null); // Mouse position at drag start
 const mousePosition = ref({ x: 0, y: 0 });
 const showFitButton = ref(false);
 // Node that's been clicked on for LOD focus
@@ -1492,7 +1438,33 @@ const gridDotColor = computed(() => {
   return `oklch(from oklch(var(--bc)) l c h / ${baseOpacity * zoomFactor})`;
 });
 
-// Grid bounds removed - was causing performance issues with getBoundingClientRect()
+// Calculate grid bounds based on viewport
+const gridBounds = computed(() => {
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return { x: -1000, y: -1000, width: 2000, height: 2000 };
+  
+  // Calculate visible world coordinates
+  const viewportWidth = rect.width;
+  const viewportHeight = rect.height;
+  const currentZoom = zoom.value;
+  
+  // Convert viewport to world coordinates
+  const worldLeft = (-panX.value) / currentZoom;
+  const worldTop = (-panY.value) / currentZoom;
+  const worldRight = worldLeft + (viewportWidth / currentZoom);
+  const worldBottom = worldTop + (viewportHeight / currentZoom);
+  
+  // Expand bounds for seamless grid and snap to grid spacing
+  const padding = gridSpacing.value * 2;
+  const spacing = gridSpacing.value;
+  
+  const x = Math.floor((worldLeft - padding) / spacing) * spacing;
+  const y = Math.floor((worldTop - padding) / spacing) * spacing;
+  const width = Math.ceil((worldRight + padding - x) / spacing) * spacing;
+  const height = Math.ceil((worldBottom + padding - y) / spacing) * spacing;
+  
+  return { x, y, width, height };
+});
 
 // Zen mode - activate when in new chat area (near input container coordinate)
 const isInZenMode = computed(() => {
@@ -4712,104 +4684,16 @@ const createTemplateWorkspace = async (nodes, connections, mainNode) => {
 };
 
 
-// Center on node with chained animation (pan first, then zoom)
-const centerOnNodeWithChainedAnimation = (nodeId, targetZoom = 0.6) => {
-  const node = store.nodes.find((n) => n.id === nodeId);
-  if (!node) return;
-
-  isAnimating.value = true;
-  store.isTransitioning = true;
-
-  const bounds = calculateNodeBounds(node);
-  const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
-  const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
-  const rect = canvasRef.value.getBoundingClientRect();
-
-  // Calculate target positions at CURRENT zoom (for pan)
-  const panTargetX = rect.width / 2 - nodeCenterX * zoom.value;
-  const panTargetY = rect.height / 2 - nodeCenterY * zoom.value;
-
-  const startPanX = panX.value;
-  const startPanY = panY.value;
-  const startZoom = zoom.value;
-  
-  focusedNodeId.value = nodeId;
-  
-  // Phase 1: Pan to center the node at current zoom
-  const panDuration = 300;
-  const panStartTime = performance.now();
-  
-  const panAnimate = (currentTime) => {
-    const elapsed = currentTime - panStartTime;
-    const progress = Math.min(elapsed / panDuration, 1);
-    
-    // Smooth easing for pan
-    const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-    
-    // Only interpolate pan, keep zoom constant
-    panX.value = startPanX + (panTargetX - startPanX) * eased;
-    panY.value = startPanY + (panTargetY - startPanY) * eased;
-    
-    if (progress < 1) {
-      requestAnimationFrame(panAnimate);
-    } else {
-      // Pan complete, now start zoom if needed
-      if (Math.abs(targetZoom - startZoom) > 0.01) {
-        // Phase 2: Zoom while maintaining center
-        const zoomDuration = 200;
-        const zoomStartTime = performance.now();
-        
-        const zoomAnimate = (currentTime) => {
-          const elapsed = currentTime - zoomStartTime;
-          const progress = Math.min(elapsed / zoomDuration, 1);
-          
-          // Smooth easing for zoom
-          const eased = 1 - Math.pow(1 - progress, 3);
-          
-          // Interpolate zoom and adjust pan to maintain center
-          const currentZoom = startZoom + (targetZoom - startZoom) * eased;
-          zoom.value = currentZoom;
-          
-          // Recalculate pan to keep node centered during zoom
-          panX.value = rect.width / 2 - nodeCenterX * currentZoom;
-          panY.value = rect.height / 2 - nodeCenterY * currentZoom;
-          
-          if (progress < 1) {
-            requestAnimationFrame(zoomAnimate);
-          } else {
-            // Animation complete
-            isAnimating.value = false;
-            store.isTransitioning = false;
-          }
-        };
-        
-        requestAnimationFrame(zoomAnimate);
-      } else {
-        // No zoom needed, animation complete
-        isAnimating.value = false;
-        store.isTransitioning = false;
-      }
-    }
-  };
-  
-  requestAnimationFrame(panAnimate);
-};
-
 const centerOnNodeWithAnimation = (nodeId, targetZoom = 0.6, duration = 400) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
   isAnimating.value = true;
-  store.isTransitioning = true;
 
   const bounds = calculateNodeBounds(node);
   const nodeCenterX = bounds.minX + (bounds.maxX - bounds.minX) / 2;
   const nodeCenterY = bounds.minY + (bounds.maxY - bounds.minY) / 2;
   const rect = canvasRef.value.getBoundingClientRect();
-
-  // Calculate target positions BEFORE starting animation
-  const targetPanX = rect.width / 2 - nodeCenterX * targetZoom;
-  const targetPanY = rect.height / 2 - nodeCenterY * targetZoom;
 
   const startPanX = panX.value;
   const startPanY = panY.value;
@@ -4817,39 +4701,36 @@ const centerOnNodeWithAnimation = (nodeId, targetZoom = 0.6, duration = 400) => 
   
   focusedNodeId.value = nodeId;
   
-  // Improved animation with proper easing
+  // Simple, fast animation without all the overhead
   const startTime = performance.now();
   
   const animate = (currentTime) => {
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / duration, 1);
     
-    // Smooth ease-in-out-cubic for more natural motion
-    const eased = progress < 0.5 
-      ? 4 * progress * progress * progress 
-      : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+    // Simple easeOut
+    const eased = 1 - Math.pow(1 - progress, 3);
     
-    // Interpolate all values smoothly
+    // Direct interpolation - no services, no overhead
+    const currentZoom = startZoom + (targetZoom - startZoom) * eased;
+    const targetPanX = rect.width / 2 - nodeCenterX * targetZoom;
+    const targetPanY = rect.height / 2 - nodeCenterY * targetZoom;
+    
     panX.value = startPanX + (targetPanX - startPanX) * eased;
     panY.value = startPanY + (targetPanY - startPanY) * eased;
-    zoom.value = startZoom + (targetZoom - startZoom) * eased;
+    zoom.value = currentZoom;
     
     if (progress < 1) {
       requestAnimationFrame(animate);
     } else {
-      // Ensure exact final values
-      panX.value = targetPanX;
-      panY.value = targetPanY;
-      zoom.value = targetZoom;
       isAnimating.value = false;
-      store.isTransitioning = false;
     }
   };
   
   requestAnimationFrame(animate);
 };
 
-// Center on a specific node with smooth animation
+// Center on a specific node
 const centerOnNode = (nodeId) => {
   const node = store.nodes.find((n) => n.id === nodeId);
   if (!node) return;
@@ -4867,37 +4748,23 @@ const centerOnNode = (nodeId) => {
 
   const rect = canvasRef.value.getBoundingClientRect();
 
-  // Determine target zoom if current is too low
-  const targetZoom = zoom.value < 0.5 ? 0.6 : zoom.value;
-  const targetPanX = rect.width / 2 - centerX * targetZoom;
-  const targetPanY = rect.height / 2 - centerY * targetZoom;
+  // If zoom is too low for full detail, zoom in to spotlight the node
+  if (zoom.value < 0.5) {
+    // Zoom to just above the threshold
+    const targetZoom = 0.6;
+    panX.value = rect.width / 2 - centerX * targetZoom;
+    panY.value = rect.height / 2 - centerY * targetZoom;
+    zoom.value = targetZoom;
+  } else {
+    panX.value = rect.width / 2 - centerX * zoom.value;
+    panY.value = rect.height / 2 - centerY * zoom.value;
+  }
 
-  // Use animation service for smooth transition
-  animationService.animateTo(
-    {
-      panX: targetPanX,
-      panY: targetPanY,
-      zoom: targetZoom
-    },
-    {
-      panX: panX.value,
-      panY: panY.value,
-      zoom: zoom.value
-    },
-    {
-      duration: 500,
-      easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic for smooth deceleration
-      onUpdate: (values) => {
-        panX.value = values.panX;
-        panY.value = values.panY;
-        zoom.value = values.zoom;
-      },
-      onComplete: () => {
-        store.isTransitioning = false;
-        focusedNodeId.value = nodeId;
-      }
-    }
-  );
+  focusedNodeId.value = nodeId;
+
+  setTimeout(() => {
+    store.isTransitioning = false;
+  }, 300);
 };
 
 // Check if workspace has only one branch node and auto-snap it
@@ -5248,23 +5115,6 @@ const handleMouseUp = (e) => {
     return;
   }
   
-  // Check if we should center on a clicked node (not dragged)
-  if (potentialCenterNodeId.value && dragStartMousePos.value) {
-    const dx = Math.abs(e.clientX - dragStartMousePos.value.x);
-    const dy = Math.abs(e.clientY - dragStartMousePos.value.y);
-    const dragThreshold = 5; // pixels
-    
-    // If mouse moved less than threshold, it's a click not a drag
-    if (dx < dragThreshold && dy < dragThreshold && !isMultiDragging.value) {
-      // Center on the node with chained animation (pan first, then zoom)
-      centerOnNodeWithChainedAnimation(potentialCenterNodeId.value, zoom.value > 0.5 ? zoom.value : 0.6);
-    }
-    
-    // Clear the potential center node
-    potentialCenterNodeId.value = null;
-    dragStartMousePos.value = null;
-  }
-  
   // Update drag end time whenever any dragging stops
   if (store.isDragging || isMultiDragging.value) {
     lastDragEndTime.value = Date.now();
@@ -5429,11 +5279,6 @@ const handleCanvasMouseDown = (e) => {
       selectedNodeIds.value.delete(clickedNode.id);
     } else {
       selectedNodeIds.value.add(clickedNode.id);
-      
-      // Store the clicked node ID to potentially center on it later (on mouseup if not dragged)
-      // Don't center immediately - wait to see if it's a drag or a click
-      potentialCenterNodeId.value = clickedNode.id;
-      dragStartMousePos.value = { x: e.clientX, y: e.clientY };
     }
 
     // Start multi-drag if node is selected
@@ -5600,156 +5445,6 @@ const handleGestureEnd = (e: any) => {
   e.stopPropagation();
 };
 
-// Handle right-click context menu
-const handleContextMenu = (e: MouseEvent) => {
-  // Don't show context menu if clicking on a node
-  const clickedNode = findNodeAt(e.clientX, e.clientY);
-  
-  if (clickedNode) {
-    return;
-  }
-  
-  // Calculate world position
-  const canvasRect = canvasRef.value.getBoundingClientRect();
-  const worldX = (e.clientX - canvasRect.left - panX.value) / zoom.value;
-  const worldY = (e.clientY - canvasRect.top - panY.value) / zoom.value;
-  
-  // Check if any shape is at this position
-  const clickedOnShape = drawingStore.shapes.some(shape => {
-    if (shape.type === 'rectangle') {
-      return worldX >= shape.x && worldX <= shape.x + shape.width &&
-             worldY >= shape.y && worldY <= shape.y + shape.height;
-    } else if (shape.type === 'circle') {
-      const dx = worldX - shape.x;
-      const dy = worldY - shape.y;
-      return Math.sqrt(dx * dx + dy * dy) <= shape.radius;
-    }
-    // Add more shape types as needed
-    return false;
-  });
-  
-  if (clickedOnShape) {
-    return;
-  }
-  
-  // Set context menu position
-  contextMenuPosition.value = { x: e.clientX, y: e.clientY };
-  contextMenuWorldPosition.value = { x: worldX, y: worldY };
-  contextMenuVisible.value = true;
-};
-
-// Handle creating a new chat node
-const handleCreateNewChat = async (position: { x: number; y: number }) => {
-  try {
-    // Create a new chat with an initial node at the specified position
-    const chatTitle = `New Chat ${new Date().toLocaleTimeString()}`;
-    const initialNode = {
-      title: "Root Thread",
-      x: position.x,
-      y: position.y,
-      messages: [],
-      metadata: {}
-    };
-    
-    const newChatId = await chatStore.createChat(chatTitle, initialNode);
-    
-    if (newChatId) {
-      // Load the chat state into the canvas
-      await store.loadChatState(newChatId);
-      
-      // Set as current chat
-      chatStore.currentChatId.value = newChatId;
-      
-      // Reload all chats to update the list
-      await chatStore.loadChats();
-      
-      // Find the newly created node and focus it
-      await nextTick();
-      const newNode = store.nodes.find(n => n.chatId === newChatId && !n.parentId);
-      if (newNode) {
-        // Pan to the new node
-        const canvasRect = canvasRef.value.getBoundingClientRect();
-        const targetX = canvasRect.width / 2 - newNode.x * zoom.value;
-        const targetY = canvasRect.height / 2 - newNode.y * zoom.value;
-        animationService.animatePan(panX, panY, targetX, targetY, 300);
-      }
-      
-      // Exit welcome screen mode if needed
-      if (isWelcomeScreen.value) {
-        isWelcomeScreen.value = false;
-      }
-    }
-  } catch (error) {
-    console.error('Failed to create new chat:', error);
-  }
-};
-
-// Handle creating a Claude Code session
-const handleCreateClaudeCode = async (position: { x: number; y: number }) => {
-  try {
-    const { useAgentStore } = await import('@/stores/agentStore');
-    const agentStore = useAgentStore();
-    
-    // Create Claude Code configuration
-    const config = {
-      title: `Claude Code Session ${new Date().toLocaleTimeString()}`,
-      position: position,
-      metadata: {
-        type: 'claude-code',
-        createdAt: new Date().toISOString()
-      }
-    };
-    
-    // Launch Claude Code instance
-    const instanceId = await agentStore.launchClaudeCode(config);
-    
-    if (instanceId) {
-      // Create a new chat with Claude Code metadata
-      const chatTitle = config.title;
-      const initialNode = {
-        title: "Claude Code Root",
-        x: position.x,
-        y: position.y,
-        messages: [],
-        metadata: {
-          claudeCodeInstanceId: instanceId,
-          type: 'claude-code'
-        }
-      };
-      
-      const newChatId = await chatStore.createChat(chatTitle, initialNode);
-      
-      if (newChatId) {
-        // Load the chat state into the canvas
-        await store.loadChatState(newChatId);
-        
-        // Set as current chat
-        chatStore.currentChatId.value = newChatId;
-        
-        // Reload all chats to update the list
-        await chatStore.loadChats();
-        
-        // Pan to the new node
-        await nextTick();
-        const newNode = store.nodes.find(n => n.chatId === newChatId && !n.parentId);
-        if (newNode) {
-          const canvasRect = canvasRef.value.getBoundingClientRect();
-          const targetX = canvasRect.width / 2 - newNode.x * zoom.value;
-          const targetY = canvasRect.height / 2 - newNode.y * zoom.value;
-          animationService.animatePan(panX, panY, targetX, targetY, 300);
-        }
-        
-        // Exit welcome screen mode if needed
-        if (isWelcomeScreen.value) {
-          isWelcomeScreen.value = false;
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Failed to create Claude Code session:', error);
-  }
-};
-
 // Find closest node in a direction
 const findClosestNodeInDirection = (currentNode, direction) => {
   const currentCenter = getNodeCenter(currentNode);
@@ -5821,7 +5516,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
     startPanAnimation();
     return;
   }
-
 
   if (!isEditing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
     e.preventDefault();
@@ -6843,7 +6537,7 @@ const setInitialOptimalZoom = async () => {
     // For welcome screen, center on input container
     const NEW_CHAT_X = -3000;
     const NEW_CHAT_Y = -3000;
-    const targetZoom = 1.0; // Adjusted for 150% max zoom
+    const targetZoom = 1.2;
     
     if (rect) {
       const targetPanX = rect.width / 2 - NEW_CHAT_X * targetZoom;
@@ -7666,7 +7360,8 @@ onMounted(async () => {
       expandedNodes.value.add(node.id);
     });
 
-    // Drawing persistence disabled - drawing store reverted to original version
+    // Disable drawing persistence for now - just let drawing work without persistence
+    drawingStore.setCurrentChatId(null);
     console.log('[InfiniteCanvas] Drawing tools enabled without persistence');
 
     // Preload clustering data for faster topic switching
@@ -7770,7 +7465,7 @@ onMounted(async () => {
             // Calculate correct pan values for 120% zoom to center input container at (-3000, -3000)
             const NEW_CHAT_X = -3000;
             const NEW_CHAT_Y = -3000;
-            const targetZoom = 1.2;
+            const targetZoom = 1.2; // 120% zoom (much more comfortable)
             
             // Calculate pan values to center the input container coordinate on screen
             const targetPanX = rect.width / 2 - NEW_CHAT_X * targetZoom;
@@ -7814,7 +7509,7 @@ onMounted(async () => {
             // Calculate correct pan values for 120% zoom to center input container at (-3000, -3000)
             const NEW_CHAT_X = -3000;
             const NEW_CHAT_Y = -3000;
-            const targetZoom = 1.2;
+            const targetZoom = 1.2; // 120% zoom (much more comfortable)
             
             // Calculate pan values to center the input container coordinate on screen
             const targetPanX = rect.width / 2 - NEW_CHAT_X * targetZoom;
@@ -8147,7 +7842,8 @@ const setupThemeWatcher = () => {
   themeObserver = new MutationObserver(() => {
     requestAnimationFrame(() => {
       renderGrid();
-      // Theme color update removed - drawing store reverted to original version
+      // Update drawing store colors for new theme
+      drawingStore.updateStrokeColorForTheme();
     });
   });
   
@@ -8645,7 +8341,7 @@ const performFloodFillOnCanvas = (x: number, y: number) => {
       console.log('Flood fill completed successfully');
       
       // Check if the filled area contains multiple nodes from same workspace
-      // checkForPotentialIslandAfterFill(); // Temporarily disabled for performance
+      checkForPotentialIslandAfterFill();
     } else {
       console.log('No enclosed area found to fill');
     }
@@ -8701,57 +8397,6 @@ const showIslandPotentialIndicator = (shape, nodes) => {
   shape.isPotentialIsland = true;
   
   console.log(`Potential island detected with ${nodes.length} nodes from workspace`);
-};
-
-// Accept island creation
-const acceptIslandCreation = () => {
-  if (!drawingStore.potentialIslandShape) return;
-  
-  // Convert the fill shape to an island
-  const outlineShapes = drawingStore.shapes.filter(s => 
-    s.type === 'pen' && s.points && 
-    drawingStore.isPointInShape({ x: s.x, y: s.y }, drawingStore.potentialIslandShape)
-  );
-  
-  // Create the island
-  const island = drawingStore.createIslandFromFill(drawingStore.potentialIslandShape, outlineShapes);
-  
-  // Get node positions and bind them to the island
-  const nodePositions = drawingStore.potentialIslandNodes.map(nodeId => {
-    const node = store.nodes.find(n => n.id === nodeId);
-    return node ? {
-      id: node.id,
-      x: node.x,
-      y: node.y,
-      width: getEffectiveCardDimensions(node).width,
-      height: getEffectiveCardDimensions(node).height
-    } : null;
-  }).filter(Boolean);
-  
-  drawingStore.bindNodesToIsland(island, nodePositions);
-  
-  // Clear the potential island state
-  clearIslandPotentialState();
-  
-  console.log(`Island created with ${nodePositions.length} bound nodes`);
-};
-
-// Reject island creation
-const rejectIslandCreation = () => {
-  // Just clear the potential island state, keeping the fill as a regular drawing
-  clearIslandPotentialState();
-  console.log('Island creation rejected - kept as regular fill shape');
-};
-
-// Clear the potential island visual state
-const clearIslandPotentialState = () => {
-  if (drawingStore.potentialIslandShape) {
-    drawingStore.potentialIslandShape.isPotentialIsland = false;
-  }
-  
-  drawingStore.potentialIslandShape = null;
-  drawingStore.potentialIslandNodes = [];
-  drawingStore.showIslandConfirmation = false;
 };
 
 
@@ -9963,24 +9608,5 @@ const clearIslandPotentialState = () => {
 
 .topic-cluster-entering {
   animation: clusterAppear 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-/* Potential Island Pulsing Animation */
-
-
-/* Island confirmation dialog animation */
-@keyframes slideUp {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, 20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-.animate-slide-up {
-  animation: slideUp 0.3s ease-out;
 }
 </style>

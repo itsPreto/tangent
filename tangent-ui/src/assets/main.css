@@ -189,3 +189,28 @@
     @apply transition-colors duration-200;
   }
 }
+
+/* Performance optimizations for animations */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+/* Disable heavy animations by default, enable only when needed */
+.pause-animations * {
+  animation-play-state: paused !important;
+}
+
+/* Only run animations when components are visible */
+.animate-when-visible {
+  animation-play-state: paused;
+}
+
+.animate-when-visible:hover,
+.animate-when-visible.is-active {
+  animation-play-state: running;
+}

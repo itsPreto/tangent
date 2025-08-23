@@ -25,11 +25,11 @@ export function useSnappedNodeLayout() {
     MINIMAL: 800,
     // Optimal width for dual sidebar experience
     DUAL_SIDEBAR_OPTIMAL: 1500,
-    // Sidebar widths
-    SIDEBAR_WIDTH_VW: 10,
-    SIDEBAR_WIDTH_PX: 240,
+    // Sidebar widths - increased for better visibility
+    SIDEBAR_WIDTH_VW: 15,
+    SIDEBAR_WIDTH_PX: 320,  // Increased from 240px
     // Minimum sidebar width before stacking (prevents too much shrinking)
-    SIDEBAR_MIN_WIDTH_PX: 200
+    SIDEBAR_MIN_WIDTH_PX: 280  // Increased from 200px
   }
 
   const updateWindowDimensions = () => {
@@ -92,11 +92,11 @@ export function useSnappedNodeLayout() {
       case 'stacked-left':
         const stackedSidebarWidth = Math.min(
           LAYOUT_BREAKPOINTS.SIDEBAR_WIDTH_PX, 
-          available * 0.15 // Max 15% of available width
+          available * 0.20 // Increased to 20% of available width
         )
         const nodeWidthStacked = appStore.isRightContentPanelOpen 
-          ? '45vw' // Your current logic for right content panel
-          : `calc(100vw - ${stackedSidebarWidth}px - 40px)` // Account for margins
+          ? '40vw' // Reduced from 45vw
+          : `calc(100vw - ${stackedSidebarWidth}px - 60px)` // Account for margins
 
         return {
           containerWidth: appStore.isRightContentPanelOpen ? '65vw' : '100vw',
@@ -116,7 +116,7 @@ export function useSnappedNodeLayout() {
           LAYOUT_BREAKPOINTS.SIDEBAR_MIN_WIDTH_PX,
           Math.min(
             LAYOUT_BREAKPOINTS.SIDEBAR_WIDTH_PX,
-            available * 0.15 // Max 15% of available width
+            available * 0.20 // Increased to 20% of available width
           )
         )
         
@@ -125,8 +125,8 @@ export function useSnappedNodeLayout() {
           containerHeight: `${height}px`,
           sidebarWidth: `${calculatedSidebarWidth}px`,
           sidebarHeight: `${height - 40}px`,
-          nodeMarginLeft: `${calculatedSidebarWidth + 20}px`,
-          nodeWidth: `calc(100vw - ${calculatedSidebarWidth * 2 + 60}px)`, // Account for both sidebars + margins
+          nodeMarginLeft: `${calculatedSidebarWidth + 30}px`,  // Increased margin
+          nodeWidth: `calc(100vw - ${calculatedSidebarWidth * 2 + 100}px)`, // More space for sidebars
           shouldStackSidebars: false,
           layoutMode: 'dual-sidebar'
         }

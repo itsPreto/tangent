@@ -359,6 +359,29 @@ export const useAgentStore = defineStore('agents', () => {
     }
   };
 
+  // Launch Claude Code instance with configuration
+  const launchClaudeCode = async (config: Record<string, any>): Promise<string | null> => {
+    // Import toolCallStore dynamically to avoid circular dependencies
+    const { useToolCallStore } = await import('./toolCallStore');
+    const toolCallStore = useToolCallStore();
+    
+    try {
+      // Create the Claude Code instance
+      const instanceId = await toolCallStore.createClaudeCodeInstance(config);
+      
+      if (instanceId) {
+        console.log('[AgentStore] Successfully created Claude Code instance:', instanceId);
+        return instanceId;
+      } else {
+        console.error('[AgentStore] Failed to create Claude Code instance - no instance ID returned');
+        return null;
+      }
+    } catch (error) {
+      console.error('[AgentStore] Error launching Claude Code:', error);
+      throw error;
+    }
+  };
+
   // Remove a custom agent (can't remove default agents)
   const removeAgent = async (agentId: string) => {
     const agent = agentConfigs.value.find(a => a.id === agentId);
@@ -401,6 +424,7 @@ export const useAgentStore = defineStore('agents', () => {
     createAgentType,
     updateAgentTriggers,
     saveConfigs,
-    initializeConfigs
+    initializeConfigs,
+    launchClaudeCode
   };
 });

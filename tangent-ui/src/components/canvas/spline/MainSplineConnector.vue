@@ -27,12 +27,11 @@
       :stroke-dasharray="dashPattern"
       fill="none"
       class="transition-all duration-300 connector-path"
-      :class="{ 'active-path': isActive, 'hovered-path': isHovered }"
+      :class="{ 'active-path': isActive, 'hovered-path': isHovered, 'spline-glow': isHovered }"
       :style="{
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
-        pointerEvents: 'none',
-        filter: isHovered ? `drop-shadow(0 0 ${strokeWidth.value * 0.5}px ${activePathColor.value})` : 'none'
+        pointerEvents: 'none'
       }"
     />
     
@@ -50,10 +49,7 @@
         r="8"
         :fill="connectionCircleColor"
         :opacity="isConnectionHovered ? 0.3 : 0.1"
-        :style="{
-          filter: isConnectionHovered ? `blur(4px)` : 'blur(2px)',
-          transition: 'all 0.2s ease'
-        }"
+:class="{ 'connection-glow': isConnectionHovered }"
       />
       <!-- Inner circle -->
       <circle
@@ -85,11 +81,10 @@
       :stroke-width="strokeWidth * 6"
       :stroke-dasharray="dashPattern"
       fill="none"
-      class="glow-path"
+      class="glow-path glow-path-blur"
       :style="{
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
-        filter: `blur(${strokeWidth * 1.5}px)`,
         opacity: 0.8,
         pointerEvents: 'none'
       }"
@@ -116,9 +111,7 @@
               fill: getLabelColor(),
               pointerEvents: 'all',
               cursor: 'pointer',
-              ...(shouldUseNeonGlow() ? {
-                filter: `drop-shadow(0 0 2px ${glowColor})`
-              } : {})
+              ...(shouldUseNeonGlow() ? { 'text-shadow': `0 0 2px ${glowColor}` } : {})
             }"
             @dblclick.stop="handleLabelDoubleClick"
           >
@@ -221,22 +214,38 @@ const themeColors = computed(() => {
 
 const isLightBackground = computed(() => !isThemeDark.value)
 
-// Active color - use theme-specific vibrant colors
+// Active color - enhanced contrast for better visibility
 const activePathColor = computed(() => {
-  // Use theme-adaptive primary color that automatically adjusts to all themes
-  return `oklch(var(--p))`
+  // Special handling for extremely dark themes
+  if (currentThemeName.value === 'cyberpunk') {
+    return `oklch(70% 0.4 280)`; // Bright purple for cyberpunk
+  }
+  if (currentThemeName.value === 'acid') {
+    return `oklch(80% 0.5 120)`; // Bright green for acid
+  }
+  
+  // Use theme primary with enhanced saturation for better visibility
+  return `oklch(from oklch(var(--p)) calc(l * 0.9) calc(c * 1.2) h)`
 })
 
-// Inactive path color with theme-appropriate contrast
+// Inactive path color with improved contrast against flat backgrounds
 const inactivePathColor = computed(() => {
-  // Use theme-adaptive base content color with reduced opacity
-  return `oklch(from oklch(var(--bc)) l c h / 0.3)`
+  // Special handling for extremely dark themes
+  if (currentThemeName.value === 'cyberpunk') {
+    return `oklch(50% 0.3 280 / 0.6)`; // Dimmer purple for cyberpunk
+  }
+  if (currentThemeName.value === 'acid') {
+    return `oklch(60% 0.4 120 / 0.5)`; // Dimmer green for acid
+  }
+  
+  // Increase opacity and adjust lightness for better visibility against simplified backgrounds
+  return `oklch(from oklch(var(--bc)) calc(l * 0.8) calc(c * 1.1) h / 0.5)`
 })
 
-// Glow effect color based on theme
+// Glow effect color with enhanced visibility
 const glowColor = computed(() => {
-  // Use theme-adaptive accent color for glow
-  return `oklch(var(--a))`
+  // Use theme accent with enhanced saturation for better glow effect
+  return `oklch(from oklch(var(--a)) calc(l * 1.1) calc(c * 1.3) h)`
 })
 
 // REMOVED: The entire unreliable detectCanvasColor function is gone.
@@ -357,59 +366,34 @@ const pathAndControlPoints = computed(() => {
   const { startPoint, endPoint } = calculateConnectionPoints()
   const dx = endPoint.x - startPoint.x
   const dy = endPoint.y - startPoint.y
-  const dist = Math.hypot(dx, dy)
   
-  // Customizable curve calculation based on curvature prop
-  // curvature: 0 = straight line, 1 = moderate curve, 3 = extremely curvy
-  const curvatureMultiplier = Math.max(0, props.curvature) // Allow values above 1 for extreme curves
+  // Simplified curvature calculation for better performance
+  const curvature = Math.max(0, Math.min(3, props.curvature)) // Clamp to reasonable range
+  const distance = Math.abs(dx)
   
-  // Scale the base curve more dramatically for higher curvature values
-  const baseCurveRatio = curvatureMultiplier <= 1 
-    ? 0.1 + curvatureMultiplier * 0.8  // 0.1 to 0.9 for values 0-1
-    : 0.9 + (curvatureMultiplier - 1) * 1.5  // 0.9 to 3.9 for values 1-3
-  const baseCurve = dist * baseCurveRatio
-  
-  // Dramatically increase max curve distance for higher values
-  const maxCurve = curvatureMultiplier <= 1
-    ? 100 + curvatureMultiplier * 400  // 100px to 500px for values 0-1
-    : 500 + (curvatureMultiplier - 1) * 800  // 500px to 2100px for values 1-3
-  const cpDist = Math.min(baseCurve, maxCurve)
-  
-  // Increase vertical influence dramatically for higher curvature
-  const verticalInfluence = curvatureMultiplier <= 1
-    ? curvatureMultiplier * 0.3  // 0 to 0.3 for values 0-1
-    : 0.3 + (curvatureMultiplier - 1) * 0.6  // 0.3 to 1.5 for values 1-3
-  const maxVertical = curvatureMultiplier <= 1
-    ? 60 * curvatureMultiplier  // 0 to 60px for values 0-1
-    : 60 + (curvatureMultiplier - 1) * 100  // 60px to 260px for values 1-3
-  const vert = Math.min(Math.abs(dy) * verticalInfluence, maxVertical) * (dy < 0 ? -1 : 1)
+  // Simple curve distance calculation
+  const cpDist = Math.min(distance * 0.5 * curvature, 300) // Max 300px curve
+  const vertOffset = Math.min(Math.abs(dy) * 0.2 * curvature, 100) * (dy < 0 ? -1 : 1)
 
   const controlPoint1 = {
     x: startPoint.x + (isLeftBranch.value ? -cpDist : cpDist),
-    y: startPoint.y + vert * 0.5
+    y: startPoint.y + vertOffset * 0.5
   }
   const controlPoint2 = {
     x: endPoint.x + (isLeftBranch.value ? cpDist * 0.6 : -cpDist * 0.6),
-    y: endPoint.y - vert * 0.5
+    y: endPoint.y - vertOffset * 0.5
   }
 
-  // Clean up path formatting for better performance with NaN safety
-  const safeNum = (n) => isNaN(n) ? 0 : n
-  const path = `M${safeNum(startPoint.x).toFixed(1)},${safeNum(startPoint.y).toFixed(1)}C${safeNum(controlPoint1.x).toFixed(1)},${safeNum(controlPoint1.y).toFixed(1)},${safeNum(controlPoint2.x).toFixed(1)},${safeNum(controlPoint2.y).toFixed(1)},${safeNum(endPoint.x).toFixed(1)},${safeNum(endPoint.y).toFixed(1)}`
-
+  // Simplified path formatting for better performance
+  const path = `M${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}C${controlPoint1.x.toFixed(1)},${controlPoint1.y.toFixed(1)},${controlPoint2.x.toFixed(1)},${controlPoint2.y.toFixed(1)},${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}`
 
   return { startPoint, endPoint, controlPoint1, controlPoint2, path }
 })
 
 const pathData = computed(() => pathAndControlPoints.value.path)
 const reversedPathData = computed(() => {
-  const { startPoint, endPoint, controlPoint1, controlPoint2 } =
-    pathAndControlPoints.value
-  const safeNum = (n) => isNaN(n) ? 0 : n
-  return `M ${safeNum(endPoint.x)} ${safeNum(endPoint.y)}
-          C ${safeNum(controlPoint2.x)} ${safeNum(controlPoint2.y)},
-            ${safeNum(controlPoint1.x)} ${safeNum(controlPoint1.y)},
-            ${safeNum(startPoint.x)} ${safeNum(startPoint.y)}`
+  const { startPoint, endPoint, controlPoint1, controlPoint2 } = pathAndControlPoints.value
+  return `M${endPoint.x.toFixed(1)},${endPoint.y.toFixed(1)}C${controlPoint2.x.toFixed(1)},${controlPoint2.y.toFixed(1)},${controlPoint1.x.toFixed(1)},${controlPoint1.y.toFixed(1)},${startPoint.x.toFixed(1)},${startPoint.y.toFixed(1)}`
 })
 
 // Styling - consistent across all zoom levels
@@ -480,9 +464,12 @@ const shouldShowConnectionCircle = computed(() => {
   return true
 })
 
+// Cache font size to avoid constant recalculation during zoom transitions
 const fontSize = computed(() => {
-  // Scale font size inversely with zoom level to maintain readability
-  return baseFontSize / Math.max(props.zoomLevel, 0.1) // Prevent division by zero
+  const zoomLevel = Math.max(props.zoomLevel, 0.1)
+  // Clamp zoom scaling to reduce visual jitter and improve performance
+  const clampedZoom = Math.max(0.3, Math.min(2.0, zoomLevel))
+  return baseFontSize / clampedZoom
 })
 
 // Compute unique path ID based on node positions
@@ -490,17 +477,15 @@ const pathId = computed(() => {
   return `connection-path-${props.startNode.id}-${props.endNode.id}-${Math.round(props.startNode.x)}-${Math.round(props.startNode.y)}-${Math.round(props.endNode.x)}-${Math.round(props.endNode.y)}`
 })
 
-// Gradient coordinates for directional flow from parent to child
+// Simplified gradient coordinates - cache to avoid recalculation during zoom
 const gradientCoords = computed(() => {
-  const { startPoint, endPoint } = calculateConnectionPoints()
-  
-  const safeNum = (n) => isNaN(n) ? 0 : n
+  const { startPoint, endPoint } = connectionPoints.value
   
   return {
-    x1: safeNum(startPoint.x),
-    y1: safeNum(startPoint.y),
-    x2: safeNum(endPoint.x),
-    y2: safeNum(endPoint.y)
+    x1: startPoint.x || 0,
+    y1: startPoint.y || 0,
+    x2: endPoint.x || 0,
+    y2: endPoint.y || 0
   }
 })
 
@@ -655,96 +640,41 @@ function getInputBackgroundColor(): string {
   }
 }
 
-// Get label color with proper contrast for all themes
+// Simplified label color calculation for performance
+const cachedLabelColor = ref('#000000')
+
 function getLabelColor(): string {
-  const colors = themeColors.value
-  
-  // Helper function to calculate luminance
-  function getLuminance(hex: string): number {
-    const r = parseInt(hex.slice(1, 3), 16) / 255
-    const g = parseInt(hex.slice(3, 5), 16) / 255
-    const b = parseInt(hex.slice(5, 7), 16) / 255
-    
-    const toLinear = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-    
-    return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
-  }
-  
-  // Helper function to calculate contrast ratio
-  function getContrastRatio(color1: string, color2: string): number {
-    const lum1 = getLuminance(color1)
-    const lum2 = getLuminance(color2)
-    const brightest = Math.max(lum1, lum2)
-    const darkest = Math.min(lum1, lum2)
-    return (brightest + 0.05) / (darkest + 0.05)
-  }
-  
-  // Get candidate colors for each theme
-  const candidateColors = []
-  
-  // For light themes, prefer darker colors
-  if (!isThemeDark.value) {
-    candidateColors.push('#000000', '#333333', '#555555', colors.primary, colors.secondary)
-    // Add darker variants of theme colors
-    candidateColors.push(darkenColor(colors.primary, 0.3))
-    candidateColors.push(darkenColor(colors.secondary, 0.3))
-  } else {
-    // For dark themes, prefer lighter colors  
-    candidateColors.push('#FFFFFF', '#CCCCCC', '#AAAAAA', colors.primary, colors.secondary, colors.accent)
-    // Add lighter variants of theme colors
-    candidateColors.push(lightenColor(colors.primary, 0.3))
-    candidateColors.push(lightenColor(colors.secondary, 0.3))
-    candidateColors.push(lightenColor(colors.accent, 0.3))
-  }
-  
-  // Special overrides for problematic themes
+  // Return cached value to avoid expensive recalculation during zoom
+  return cachedLabelColor.value
+}
+
+function updateLabelColor() {
+  // Simple theme-based color selection without expensive luminance calculations
   switch (currentThemeName.value) {
-    case 'bumblebee':
-      candidateColors.unshift('#181830', '#000000') // Dark colors for yellow background
-      break
     case 'cyberpunk':
-      candidateColors.unshift('#00FFFF', '#FFFFFF') // Cyan or white for contrast
+      cachedLabelColor.value = '#C084FC'
       break
     case 'synthwave':
-      candidateColors.unshift('#FF00FF', '#00FFFF') // Bright magenta/cyan
+      cachedLabelColor.value = '#FF00FF'
       break
     case 'acid':
-      candidateColors.unshift('#FFFF00', '#00FF00') // Bright yellow/green
+      cachedLabelColor.value = '#84CC16'
       break
     case 'valentine':
-      candidateColors.unshift('#FFB6C1', '#FFFFFF') // Light pink or white
+      cachedLabelColor.value = '#FFB6C1'
       break
     case 'halloween':
-      candidateColors.unshift('#FF8C00', '#FFFFFF') // Orange or white
+      cachedLabelColor.value = '#FF8C00'
       break
     case 'luxury':
-      candidateColors.unshift('#FFD700', '#FFFFFF') // Gold or white
+      cachedLabelColor.value = '#FFD700'
       break
+    case 'bumblebee':
+      cachedLabelColor.value = '#181830'
+      break
+    default:
+      cachedLabelColor.value = isThemeDark.value ? '#FFFFFF' : '#000000'
   }
-  
-  // Try to get background color from CSS custom properties or fallback
-  const backgroundColor = isThemeDark.value ? '#1a1a1a' : '#ffffff'
-  
-  // Find the color with best contrast (minimum 4.5:1 for accessibility)
-  let bestColor = candidateColors[0]
-  let bestContrast = getContrastRatio(bestColor, backgroundColor)
-  
-  for (const color of candidateColors) {
-    const contrast = getContrastRatio(color, backgroundColor)
-    if (contrast > bestContrast) {
-      bestColor = color
-      bestContrast = contrast
-    }
-  }
-  
-  // Ensure minimum contrast - if none meet the threshold, use black or white
-  if (bestContrast < 4.5) {
-    const blackContrast = getContrastRatio('#000000', backgroundColor)
-    const whiteContrast = getContrastRatio('#FFFFFF', backgroundColor)
-    bestColor = blackContrast > whiteContrast ? '#000000' : '#FFFFFF'
-  }
-  
-  return bestColor
 }
 
 // Helper functions for color manipulation
@@ -882,9 +812,9 @@ function setupObserver() {
   return () => obs.disconnect()
 }
 
-// Performance optimized watch - only update when positions actually change
+// Performance optimized watch - debounced updates during zoom transitions
 let lastPositions = { sx: 0, sy: 0, ex: 0, ey: 0 }
-let frameRequested = false
+let updateTimeout: number | null = null
 
 watch(
   () => [
@@ -894,23 +824,23 @@ watch(
     props.endNode.y
   ],
   ([sx, sy, ex, ey]) => {
-    // Only trigger updates if position changed significantly (> 0.5px)
+    // Only trigger updates if position changed significantly (> 1px for better performance)
     const changed = 
-      Math.abs(sx - lastPositions.sx) > 0.5 ||
-      Math.abs(sy - lastPositions.sy) > 0.5 ||
-      Math.abs(ex - lastPositions.ex) > 0.5 ||
-      Math.abs(ey - lastPositions.ey) > 0.5
+      Math.abs(sx - lastPositions.sx) > 1 ||
+      Math.abs(sy - lastPositions.sy) > 1 ||
+      Math.abs(ex - lastPositions.ex) > 1 ||
+      Math.abs(ey - lastPositions.ey) > 1
     
-    if (changed && !frameRequested) {
-      frameRequested = true
-      requestAnimationFrame(() => {
+    if (changed) {
+      // Debounce updates during rapid position changes
+      if (updateTimeout) clearTimeout(updateTimeout)
+      updateTimeout = window.setTimeout(() => {
         lastPositions = { sx, sy, ex, ey }
-        frameRequested = false
-        // Paths update automatically via computed properties
-      })
+        updateTimeout = null
+      }, 16) // One frame delay
     }
   },
-  { flush: 'post' } // Use post-flush for better performance
+  { flush: 'post' }
 )
 
 // Lifecycle
@@ -922,6 +852,7 @@ onMounted(() => {
     const theme = document.documentElement.getAttribute('data-theme') as ThemeName || 'light'
     currentThemeName.value = theme
     isThemeDark.value = themeStore.isDarkTheme(theme)
+    updateLabelColor() // Update cached label color when theme changes
   }
   
   const themeObserver = new MutationObserver(updateTheme)
@@ -1221,6 +1152,27 @@ path {
 /* Interaction area visual feedback */
 .spline-interaction-area {
   transition: all 0.2s ease;
+}
+
+/* Performance-optimized CSS classes to replace inline filters */
+.spline-glow {
+  filter: drop-shadow(0 0 3px var(--p));
+}
+
+.connection-glow {
+  filter: blur(4px);
+  transition: all 0.2s ease;
+}
+
+.glow-path-blur {
+  filter: blur(3px);
+}
+
+/* Only animate glow effects when not actively zooming */
+@media (prefers-reduced-motion: no-preference) {
+  .spline-glow {
+    transition: filter 0.3s ease;
+  }
 }
 
 /* Debug visualization (uncomment to see hitbox) */

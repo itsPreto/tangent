@@ -78,10 +78,10 @@
       <!-- Canvas Area -->
       <div class="canvas-area" style="position: relative;" :class="{ 'viewport-animating': isViewportAnimating }">
         <!-- Territory Overlay -->
-        <WorkspaceTerritoryOverlay 
+        <!-- <WorkspaceTerritoryOverlay 
           :show-territories="showWorkspaceTerritories"
           :canvas-transform="canvasTransform"
-        />
+        /> -->
         
         <InfiniteCanvas ref="canvasRef" :selected-model="selectedModel?.id || ''" :open-router-api-key="openRouterApiKey"
           :model-type="modelType" :side-panel-open="false"
@@ -156,7 +156,7 @@
       @close="appStore.closeSettingsOverlay" />
       
     <!-- Performance Test Overlay -->
-    <PerformanceTestOverlay @toggle-territories="showWorkspaceTerritories = $event" />
+    <!-- <PerformanceTestOverlay @toggle-territories="showWorkspaceTerritories = $event" /> -->
 
     <!-- Mock Data Controls Panel -->
     <!-- <Transition name="slide-in-right">
@@ -204,9 +204,6 @@ import LeftNavigationDropdown from './components/ui/LeftNavigationDropdown.vue';
 import RightFeaturesDropdown from './components/ui/RightFeaturesDropdown.vue';
 import SlidingFooter from './components/ui/SlidingFooter.vue';
 import SettingsSlideOverlay from './components/ui/SettingsSlideOverlay.vue';
-import PerformanceTestOverlay from './components/ui/PerformanceTestOverlay.vue';
-import WorkspaceTerritoryOverlay from './components/ui/WorkspaceTerritoryOverlay.vue';
-import MockDataControls from './components/ui/MockDataControls.vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useModelStore } from '@/stores/modelStore';
 import { useChatStore } from '@/stores/chatStore';

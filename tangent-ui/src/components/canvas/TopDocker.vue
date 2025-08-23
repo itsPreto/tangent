@@ -362,8 +362,8 @@ const dockerStyle = computed(() => {
   };
 });
 
-// Current tool state
-const currentTool = ref<string>('cursor');
+// Current tool state - sync with drawing store
+const currentTool = computed(() => drawingStore.currentTool);
 
 // Customization panel state
 const showCustomizationPanel = computed(() => {
@@ -383,7 +383,6 @@ const strokeWidths = ref([1, 2, 4, 8, 16]);
 
 // Set the current tool
 const setTool = (tool: string) => {
-  currentTool.value = tool;
   drawingStore.setCurrentTool(tool);
   
   // Emit tool change event
@@ -921,6 +920,47 @@ onUnmounted(() => {
   background: oklch(from oklch(var(--b1)) l c h / 0.3);
   border-radius: 12px;
   border: 1px solid oklch(from oklch(var(--bc)) l c h / 0.08);
+}
+
+/* Theme-specific overrides for extreme dark themes */
+[data-theme="cyberpunk"] .drawing-docker {
+  background: oklch(30% 0.1 280 / 0.95);
+  border-color: oklch(50% 0.3 280 / 0.3);
+}
+
+[data-theme="acid"] .drawing-docker {
+  background: oklch(28% 0.1 120 / 0.95);
+  border-color: oklch(60% 0.4 120 / 0.3);
+}
+
+[data-theme="cyberpunk"] .tool-button {
+  color: oklch(75% 0.3 280 / 0.8);
+}
+
+[data-theme="acid"] .tool-button {
+  color: oklch(75% 0.4 120 / 0.8);
+}
+
+[data-theme="cyberpunk"] .tool-button:hover {
+  background: oklch(40% 0.2 280 / 0.2);
+  color: oklch(85% 0.3 280);
+}
+
+[data-theme="acid"] .tool-button:hover {
+  background: oklch(45% 0.3 120 / 0.2);
+  color: oklch(85% 0.4 120);
+}
+
+[data-theme="cyberpunk"] .tool-button.active {
+  background: oklch(60% 0.3 280 / 0.3);
+  color: oklch(90% 0.4 280);
+  box-shadow: 0 0 0 2px oklch(60% 0.3 280 / 0.5), 0 4px 12px oklch(60% 0.3 280 / 0.3);
+}
+
+[data-theme="acid"] .tool-button.active {
+  background: oklch(70% 0.4 120 / 0.3);
+  color: oklch(90% 0.5 120);
+  box-shadow: 0 0 0 2px oklch(70% 0.4 120 / 0.5), 0 4px 12px oklch(70% 0.4 120 / 0.3);
 }
 
 /* Grid layout improvements */
